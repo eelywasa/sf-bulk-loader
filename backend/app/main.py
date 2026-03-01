@@ -3,6 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.connections import router as connections_router
+from app.api.jobs import router as jobs_router
+from app.api.load_plans import router as load_plans_router
+from app.api.load_runs import router as load_runs_router
+from app.api.load_steps import router as load_steps_router
+from app.api.utility import router as utility_router
+from app.api.utility import ws_router
 from app.config import settings
 from app.database import engine
 
@@ -30,7 +37,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# REST routers — each owns its own prefix
+app.include_router(connections_router)
+app.include_router(load_plans_router)
+app.include_router(load_steps_router)
+app.include_router(load_runs_router)
+app.include_router(jobs_router)
+app.include_router(utility_router)
 
-@app.get("/api/health", tags=["utility"])
-async def health_check() -> dict:
-    return {"status": "ok", "env": settings.app_env}
+# WebSocket router — no prefix, path is /ws/runs/{run_id}
+app.include_router(ws_router)
