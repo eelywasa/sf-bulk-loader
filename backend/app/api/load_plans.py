@@ -1,0 +1,127 @@
+"""Load Plans API — CRUD for load plan configurations."""
+
+import logging
+from typing import List
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.database import get_db
+from app.models.connection import Connection
+from app.models.load_plan import LoadPlan
+from app.models.load_run import LoadRun, RunStatus
+from app.schemas.load_plan import (
+    LoadPlanCreate,
+    LoadPlanListResponse,
+    LoadPlanResponse,
+    LoadPlanUpdate,
+)
+from app.schemas.load_run import LoadRunCreate, LoadRunResponse
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/load-plans", tags=["load-plans"])
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+async def _get_plan_with_steps(plan_id: str, db: AsyncSession) -> LoadPlan:
+    result = await db.execute(
+        select(LoadPlan)
+        .where(LoadPlan.id == plan_id)
+        .options(selectinload(LoadPlan.load_steps))
+    )
+    plan = result.scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
+    return plan
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
+
+@router.get("/", response_model=List[LoadPlanListResponse])
+async def list_load_plans(db: AsyncSession = Depends(get_db)) -> List[LoadPlan]:
+    result = await db.execute(select(LoadPlan).order_by(LoadPlan.created_at.desc()))
+    return list(result.scalars().all())
+
+
+@router.post("/", response_model=LoadPlanResponse, status_code=status.HTTP_201_CREATED)
+async def create_load_plan(data: LoadPlanCreate, db: AsyncSession = Depends(get_db)) -> LoadPlan:
+    # Validate the referenced connection exists
+    conn = await db.get(Connection, data.connection_id)
+    if conn is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    plan = LoadPlan(**data.model_dump())
+    db.add(plan)
+    await db.commit()
+
+    # Re-query with steps loaded for the response
+    return await _get_plan_with_steps(plan.id, db)
+
+
+@router.get("/{plan_id}", response_model=LoadPlanResponse)
+async def get_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> LoadPlan:
+    return await _get_plan_with_steps(plan_id, db)
+
+
+@router.put("/{plan_id}", response_model=LoadPlanResponse)
+async def update_load_plan(
+    plan_id: str,
+    data: LoadPlanUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> LoadPlan:
+    plan = await _get_plan_with_steps(plan_id, db)
+    update_data = data.model_dump(exclude_unset=True)
+
+    if "connection_id" in update_data:
+        conn = await db.get(Connection, update_data["connection_id"])
+        if conn is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    for field, value in update_data.items():
+        setattr(plan, field, value)
+
+    await db.commit()
+    return await _get_plan_with_steps(plan_id, db)
+
+
+@router.delete("/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> None:
+    plan = await db.get(LoadPlan, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
+    await db.delete(plan)
+    await db.commit()
+
+
+@router.post("/{plan_id}/run", response_model=LoadRunResponse, status_code=status.HTTP_201_CREATED)
+async def start_load_run(
+    plan_id: str,
+    data: LoadRunCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> LoadRun:
+    """Create a new Load Run for a plan and enqueue it for background execution."""
+    plan = await db.get(LoadPlan, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
+
+    run = LoadRun(
+        load_plan_id=plan_id,
+        status=RunStatus.pending,
+        initiated_by=data.initiated_by,
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+
+    # Orchestrator will be wired here once implemented (§4.4).
+    # background_tasks.add_task(orchestrator.execute_run, run.id)
+
+    logger.info("Load run %s created for plan %s (initiated_by=%s)", run.id, plan_id, data.initiated_by)
+    return run
