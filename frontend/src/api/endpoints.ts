@@ -13,6 +13,12 @@ import type {
   InputFilePreview,
 } from './types'
 
+// ─── Health ──────────────────────────────────────────────────────────────────
+
+export const healthApi = {
+  get: () => api.get<{ status: string; env: string }>('/api/health'),
+}
+
 // ─── Connections ──────────────────────────────────────────────────────────────
 
 export const connectionsApi = {

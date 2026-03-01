@@ -1,5 +1,7 @@
 import type { ApiValidationError } from './types'
 
+const BASE_URL = import.meta.env.VITE_API_URL ?? ''
+
 // ─── ApiError class ───────────────────────────────────────────────────────────
 
 export class ApiError extends Error {
@@ -54,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // JSON parse failed — keep statusText as message
     }
 
-    throw new ApiError(response.status, message, detail)
+    throw new ApiError({ status: response.status, message, detail })
   }
 
   // 204 No Content — return undefined
