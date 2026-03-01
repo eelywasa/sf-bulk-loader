@@ -24,94 +24,62 @@ export class ApiError extends Error {
     this.detail = detail
     this.code = code
   }
-
-  /**
-   * Returns a human-readable summary of all validation errors.
-   * Only meaningful when `detail` is an array (422 response).
-   */
-  validationMessages(): string[] {
-    if (!Array.isArray(this.detail)) return [this.message]
-    return this.detail.map((e) => `${e.loc.join('.')}: ${e.msg}`)
-  }
 }
 
-// ─── Core fetch wrapper ───────────────────────────────────────────────────────
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const url = `${BASE_URL}${path}`
 
-/**
- * Wraps `fetch` with:
- *  - JSON Content-Type header by default (skipped for FormData / non-object bodies)
- *  - Automatic `ApiError` thrown on non-2xx responses
- *  - 422 bodies are mapped to `detail: ApiValidationError[]`
- *  - All other error bodies are mapped to `detail: string`
- *  - 204 No Content is returned as `undefined`
- */
-export async function apiFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const headers = new Headers(init.headers)
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...init?.headers,
+    },
+    ...init,
+  })
 
-  // Auto-set JSON content type when body is a plain string/object (not FormData/Blob)
-  if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json')
-  }
-
-  const res = await fetch(path, { ...init, headers })
-
-  if (!res.ok) {
+  if (!response.ok) {
     let detail: string | ApiValidationError[] | undefined
-    let message: string
+    let message = response.statusText || `HTTP ${response.status}`
 
     try {
-      const body = (await res.json()) as { detail?: unknown; message?: unknown }
-
-      if (res.status === 422 && Array.isArray(body.detail)) {
+      const body = await response.json()
+      if (response.status === 422 && Array.isArray(body.detail)) {
         detail = body.detail as ApiValidationError[]
         message = 'Validation error'
       } else if (typeof body.detail === 'string') {
         detail = body.detail
         message = body.detail
-      } else if (typeof body.message === 'string') {
-        message = body.message
-        detail = body.message
-      } else {
-        message = `HTTP ${res.status}: ${res.statusText}`
-        detail = message
       }
     } catch {
-      message = `HTTP ${res.status}: ${res.statusText}`
+      // JSON parse failed — keep statusText as message
     }
 
-    throw new ApiError({ status: res.status, message, detail })
+    throw new ApiError(response.status, message, detail)
   }
 
-  if (res.status === 204) {
+  // 204 No Content — return undefined
+  if (response.status === 204) {
     return undefined as T
   }
 
-  return res.json() as Promise<T>
+  return response.json() as Promise<T>
 }
 
-// ─── Convenience helpers ──────────────────────────────────────────────────────
+export const api = {
+  get: <T>(path: string): Promise<T> => request<T>(path),
 
-export function apiGet<T>(path: string): Promise<T> {
-  return apiFetch<T>(path, { method: 'GET' })
-}
+  post: <T>(path: string, body?: unknown): Promise<T> =>
+    request<T>(path, {
+      method: 'POST',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
 
-export function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  return apiFetch<T>(path, {
-    method: 'POST',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-}
+  put: <T>(path: string, body?: unknown): Promise<T> =>
+    request<T>(path, {
+      method: 'PUT',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
 
-export function apiPut<T>(path: string, body?: unknown): Promise<T> {
-  return apiFetch<T>(path, {
-    method: 'PUT',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-}
-
-export function apiDelete<T = void>(path: string): Promise<T> {
-  return apiFetch<T>(path, { method: 'DELETE' })
+  delete: <T = void>(path: string): Promise<T> =>
+    request<T>(path, { method: 'DELETE' }),
 }
