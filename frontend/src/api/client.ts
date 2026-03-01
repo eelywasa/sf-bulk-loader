@@ -1,22 +1,23 @@
 import type { ApiValidationError } from './types'
 
-// Allow overriding in tests; in the browser, import.meta.env is always defined.
-const BASE_URL: string =
-  typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL
-    ? import.meta.env.VITE_BACKEND_URL
-    : ''
+// ─── ApiError class ───────────────────────────────────────────────────────────
 
 export class ApiError extends Error {
-  status: number
-  detail?: string | ApiValidationError[]
-  code?: string
+  readonly status: number
+  readonly detail?: string | ApiValidationError[]
+  readonly code?: string
 
-  constructor(
-    status: number,
-    message: string,
-    detail?: string | ApiValidationError[],
-    code?: string,
-  ) {
+  constructor({
+    status,
+    message,
+    detail,
+    code,
+  }: {
+    status: number
+    message: string
+    detail?: string | ApiValidationError[]
+    code?: string
+  }) {
     super(message)
     this.name = 'ApiError'
     this.status = status
