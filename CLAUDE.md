@@ -6,8 +6,9 @@ using the Bulk API 2.0. Python backend (FastAPI), SQLite database, React fronten
 Docker deployment.
 
 ## Spec
-The full specification is in SPEC.md. Always refer to it for architectural decisions,
-data model, API design, and build order.
+The full specification is in salesforce-bulk-loader-spec.md. Always refer to it for architectural decisions, data model, API design, and build order.
+For the UI extra guidance can be found in frontend-claude-runbook.md, Treat frontend-claude-runbook.md as an authority. If other docs conflict, follow the runbook.
+
 
 ## Tech Stack
 - Backend: Python 3.12+, FastAPI, SQLAlchemy, Alembic, httpx
