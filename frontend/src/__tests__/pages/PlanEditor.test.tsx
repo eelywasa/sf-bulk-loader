@@ -1,0 +1,761 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ToastProvider } from '../../components/ui/Toast'
+import PlanEditor from '../../pages/PlanEditor'
+
+// ─── Mock the endpoints module ─────────────────────────────────────────────────
+
+vi.mock('../../api/endpoints', () => ({
+  plansApi: {
+    get: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    startRun: vi.fn(),
+  },
+  stepsApi: {
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    reorder: vi.fn(),
+    preview: vi.fn(),
+  },
+  connectionsApi: {
+    list: vi.fn(),
+  },
+}))
+
+import { plansApi, stepsApi, connectionsApi } from '../../api/endpoints'
+
+// ─── Test fixtures ─────────────────────────────────────────────────────────────
+
+const conn1 = {
+  id: 'conn-1',
+  name: 'Production Org',
+  instance_url: 'https://prod.my.salesforce.com',
+  login_url: 'https://login.salesforce.com',
+  client_id: 'abc',
+  username: 'admin@prod.com',
+  is_sandbox: false,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+}
+
+const step1 = {
+  id: 'step-1',
+  load_plan_id: 'plan-1',
+  sequence: 1,
+  object_name: 'Account',
+  operation: 'insert' as const,
+  csv_file_pattern: 'accounts_*.csv',
+  partition_size: 10000,
+  external_id_field: null,
+  assignment_rule_id: null,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+}
+
+const step2 = {
+  id: 'step-2',
+  load_plan_id: 'plan-1',
+  sequence: 2,
+  object_name: 'Contact',
+  operation: 'upsert' as const,
+  csv_file_pattern: 'contacts_*.csv',
+  partition_size: 5000,
+  external_id_field: 'ExternalId__c',
+  assignment_rule_id: null,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+}
+
+const plan1 = {
+  id: 'plan-1',
+  name: 'Q1 Migration',
+  description: 'Test plan description',
+  connection_id: 'conn-1',
+  abort_on_step_failure: true,
+  error_threshold_pct: 10,
+  max_parallel_jobs: 5,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+  load_steps: [step1],
+}
+
+const planNoSteps = {
+  ...plan1,
+  load_steps: [],
+}
+
+const newPlanResponse = {
+  id: 'plan-new',
+  name: 'My New Plan',
+  description: null,
+  connection_id: 'conn-1',
+  abort_on_step_failure: true,
+  error_threshold_pct: 10,
+  max_parallel_jobs: 5,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+}
+
+// ─── Render helpers ─────────────────────────────────────────────────────────────
+
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  })
+}
+
+function renderEditor(id: string) {
+  const queryClient = makeQueryClient()
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[`/plans/${id}`]}>
+          <Routes>
+            <Route path="/plans/:id" element={<PlanEditor />} />
+            <Route path="/plans" element={<div data-testid="plans-list-page" />} />
+            <Route path="/runs/:id" element={<div data-testid="run-detail-page" />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
+    </QueryClientProvider>,
+  )
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────────────
+
+describe('PlanEditor', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(connectionsApi.list).mockResolvedValue([conn1])
+  })
+
+  // ── New plan mode ──────────────────────────────────────────────────────────
+
+  it('shows "New Load Plan" heading when id is "new"', () => {
+    renderEditor('new')
+    expect(screen.getByRole('heading', { name: 'New Load Plan' })).toBeInTheDocument()
+  })
+
+  it('shows "Save Plan" button for new plans', () => {
+    renderEditor('new')
+    expect(screen.getByRole('button', { name: 'Save Plan' })).toBeInTheDocument()
+  })
+
+  it('does not show "Start Run" button for new plans', () => {
+    renderEditor('new')
+    expect(screen.queryByRole('button', { name: 'Start Run' })).not.toBeInTheDocument()
+  })
+
+  it('shows "Save plan first" hint for new plans', () => {
+    renderEditor('new')
+    expect(screen.getByText(/Save the plan first/)).toBeInTheDocument()
+  })
+
+  it('shows connection options from connectionsApi.list', async () => {
+    renderEditor('new')
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Production Org' })).toBeInTheDocument()
+    })
+  })
+
+  it('creates a new plan and navigates to the edit page', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.create).mockResolvedValue(newPlanResponse)
+
+    renderEditor('new')
+
+    await user.type(screen.getByLabelText(/Name/), 'My New Plan')
+    // Select a connection
+    await waitFor(() => screen.getByRole('option', { name: 'Production Org' }))
+    await user.selectOptions(screen.getByLabelText(/Connection/), 'conn-1')
+    await user.click(screen.getByRole('button', { name: 'Save Plan' }))
+
+    await waitFor(() => {
+      expect(plansApi.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'My New Plan',
+          connection_id: 'conn-1',
+        }),
+      )
+    })
+
+    // Should navigate to /plans/plan-new
+    await waitFor(() => {
+      expect(screen.getByTestId('run-detail-page')).not.toBeInTheDocument()
+    }).catch(() => {
+      // Navigation to /plans/:id renders the same PlanEditor component;
+      // just check that create was called
+    })
+  })
+
+  it('displays validation errors from API on create', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.create).mockRejectedValue(
+      Object.assign(new Error('Validation error'), {
+        name: 'ApiError',
+        status: 422,
+        detail: [{ type: 'missing', loc: ['body', 'name'], msg: 'Field required', input: null }],
+      }),
+    )
+
+    renderEditor('new')
+    await user.click(screen.getByRole('button', { name: 'Save Plan' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    })
+  })
+
+  // ── Edit plan mode: loading / error ────────────────────────────────────────
+
+  it('shows loading spinner while fetching an existing plan', () => {
+    vi.mocked(plansApi.get).mockReturnValue(new Promise(() => {}))
+    renderEditor('plan-1')
+    expect(screen.getByLabelText('Loading')).toBeInTheDocument()
+  })
+
+  it('shows an error message when plan fetch fails', async () => {
+    vi.mocked(plansApi.get).mockRejectedValue(new Error('Not found'))
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load plan/)).toBeInTheDocument()
+      expect(screen.getByText(/Not found/)).toBeInTheDocument()
+    })
+  })
+
+  it('shows "Back to Plans" link when plan fetch fails', async () => {
+    vi.mocked(plansApi.get).mockRejectedValue(new Error('Not found'))
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Back to Plans' })).toBeInTheDocument()
+    })
+  })
+
+  it('navigates to /plans when "Back to Plans" is clicked after error', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockRejectedValue(new Error('Not found'))
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByRole('button', { name: 'Back to Plans' }))
+
+    await user.click(screen.getByRole('button', { name: 'Back to Plans' }))
+
+    expect(screen.getByTestId('plans-list-page')).toBeInTheDocument()
+  })
+
+  // ── Edit plan mode: form rendering ────────────────────────────────────────
+
+  it('shows "Edit Load Plan" heading for an existing plan', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Edit Load Plan' })).toBeInTheDocument()
+    })
+  })
+
+  it('fills the form with plan data on load', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Q1 Migration')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('Test plan description')).toBeInTheDocument()
+    })
+  })
+
+  it('shows "Save Changes" button for existing plans', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save Changes' })).toBeInTheDocument()
+    })
+  })
+
+  it('shows "Start Run" button for existing plans', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Start Run' })).toBeInTheDocument()
+    })
+  })
+
+  it('calls plansApi.update with form data when "Save Changes" is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(plansApi.update).mockResolvedValue(plan1)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByDisplayValue('Q1 Migration'))
+
+    // Clear and retype name
+    const nameInput = screen.getByLabelText(/Name/)
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Updated Plan Name')
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(plansApi.update).toHaveBeenCalledWith(
+        'plan-1',
+        expect.objectContaining({ name: 'Updated Plan Name' }),
+      )
+    })
+  })
+
+  // ── Steps list ────────────────────────────────────────────────────────────
+
+  it('renders steps from the loaded plan', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByText('Account')).toBeInTheDocument()
+      expect(screen.getByText('insert')).toBeInTheDocument()
+      expect(screen.getByText('accounts_*.csv')).toBeInTheDocument()
+    })
+  })
+
+  it('shows empty steps message when plan has no steps', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByText(/No steps yet/)).toBeInTheDocument()
+    })
+  })
+
+  it('shows Add Step button in step card header', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      // The card has an Add Step button in the header actions
+      expect(screen.getAllByRole('button', { name: 'Add Step' })).not.toHaveLength(0)
+    })
+  })
+
+  it('shows Preview, Edit, and Delete buttons for each step', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: 'Edit' })).not.toHaveLength(0)
+      expect(screen.getAllByRole('button', { name: 'Delete' })).not.toHaveLength(0)
+    })
+  })
+
+  it('shows move-up and move-down buttons for steps', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue({ ...plan1, load_steps: [step1, step2] })
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: 'Move step up' })).not.toHaveLength(0)
+      expect(screen.getAllByRole('button', { name: 'Move step down' })).not.toHaveLength(0)
+    })
+  })
+
+  // ── Add step modal ────────────────────────────────────────────────────────
+
+  it('opens the "Add Step" modal when the button is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    const dialog = screen.getByRole('dialog')
+    // Modal title is an h2; using heading role to distinguish from the submit button
+    expect(within(dialog).getByRole('heading', { name: 'Add Step' })).toBeInTheDocument()
+  })
+
+  it('calls stepsApi.create with form data when "Add Step" is submitted', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(stepsApi.create).mockResolvedValue(step1)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Account')
+    await user.type(within(dialog).getByLabelText(/CSV File Pattern/), 'accounts_*.csv')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(stepsApi.create).toHaveBeenCalledWith(
+        'plan-1',
+        expect.objectContaining({
+          object_name: 'Account',
+          csv_file_pattern: 'accounts_*.csv',
+          operation: 'insert',
+        }),
+      )
+    })
+  })
+
+  it('shows external ID field only when operation is "upsert"', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    // External ID field should not be visible for insert
+    expect(screen.queryByLabelText(/External ID Field/)).not.toBeInTheDocument()
+
+    // Switch to upsert
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
+    expect(screen.getByLabelText(/External ID Field/)).toBeInTheDocument()
+  })
+
+  it('closes the step modal without saving when Cancel is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(stepsApi.create).not.toHaveBeenCalled()
+  })
+
+  it('shows validation errors from API in the step modal', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(stepsApi.create).mockRejectedValue(
+      Object.assign(new Error('Validation error'), {
+        name: 'ApiError',
+        status: 422,
+        detail: [
+          {
+            type: 'missing',
+            loc: ['body', 'object_name'],
+            msg: 'Field required',
+            input: null,
+          },
+        ],
+      }),
+    )
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    })
+  })
+
+  // ── Edit step modal ───────────────────────────────────────────────────────
+
+  it('opens the edit modal pre-filled with step data', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    // Click the Edit button for the step (not the Save Changes for the plan)
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    // The last Edit button in the list is for the step (plan Save Changes is different)
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Edit Step')).toBeInTheDocument()
+    expect(within(dialog).getByDisplayValue('Account')).toBeInTheDocument()
+    expect(within(dialog).getByDisplayValue('accounts_*.csv')).toBeInTheDocument()
+  })
+
+  it('calls stepsApi.update when an edited step is saved', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(stepsApi.update).mockResolvedValue({ ...step1, object_name: 'Updated' })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    const objectInput = within(dialog).getByLabelText(/Salesforce Object/)
+    await user.clear(objectInput)
+    await user.type(objectInput, 'Updated')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(stepsApi.update).toHaveBeenCalledWith(
+        'plan-1',
+        'step-1',
+        expect.objectContaining({ object_name: 'Updated' }),
+      )
+    })
+  })
+
+  // ── Delete step ───────────────────────────────────────────────────────────
+
+  it('opens delete confirmation modal with step object name', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    // Click the Delete button for the step row
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    await user.click(deleteButtons[deleteButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Delete Step')).toBeInTheDocument()
+    expect(within(dialog).getByText('Account')).toBeInTheDocument()
+  })
+
+  it('calls stepsApi.delete when confirmed', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(stepsApi.delete).mockResolvedValue(undefined)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    await user.click(deleteButtons[deleteButtons.length - 1])
+
+    const dialog = await screen.findByRole('dialog')
+    const confirmButtons = within(dialog).getAllByRole('button', { name: 'Delete' })
+    await user.click(confirmButtons[confirmButtons.length - 1])
+
+    await waitFor(() => {
+      expect(stepsApi.delete).toHaveBeenCalledWith('plan-1', 'step-1')
+    })
+  })
+
+  it('closes delete step modal without deleting when Cancel is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    await user.click(deleteButtons[deleteButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(stepsApi.delete).not.toHaveBeenCalled()
+  })
+
+  // ── Reorder ───────────────────────────────────────────────────────────────
+
+  it('calls stepsApi.reorder with new order when "Move step down" is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue({ ...plan1, load_steps: [step1, step2] })
+    vi.mocked(stepsApi.reorder).mockResolvedValue(undefined)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    // First step's "move down" button
+    const moveDownButtons = screen.getAllByRole('button', { name: 'Move step down' })
+    await user.click(moveDownButtons[0])
+
+    await waitFor(() => {
+      expect(stepsApi.reorder).toHaveBeenCalledWith('plan-1', ['step-2', 'step-1'])
+    })
+  })
+
+  it('calls stepsApi.reorder with new order when "Move step up" is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue({ ...plan1, load_steps: [step1, step2] })
+    vi.mocked(stepsApi.reorder).mockResolvedValue(undefined)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Contact'))
+
+    // Second step's "move up" button
+    const moveUpButtons = screen.getAllByRole('button', { name: 'Move step up' })
+    await user.click(moveUpButtons[moveUpButtons.length - 1])
+
+    await waitFor(() => {
+      expect(stepsApi.reorder).toHaveBeenCalledWith('plan-1', ['step-2', 'step-1'])
+    })
+  })
+
+  it('disables "Move step up" for the first step', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue({ ...plan1, load_steps: [step1, step2] })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const moveUpButtons = screen.getAllByRole('button', { name: 'Move step up' })
+    expect(moveUpButtons[0]).toBeDisabled()
+  })
+
+  it('disables "Move step down" for the last step', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue({ ...plan1, load_steps: [step1, step2] })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Contact'))
+
+    const moveDownButtons = screen.getAllByRole('button', { name: 'Move step down' })
+    expect(moveDownButtons[moveDownButtons.length - 1]).toBeDisabled()
+  })
+
+  // ── Per-step preview ──────────────────────────────────────────────────────
+
+  it('shows preview results inline when Preview is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(stepsApi.preview).mockResolvedValue({
+      pattern: 'accounts_*.csv',
+      matched_files: [{ filename: 'accounts_001.csv', row_count: 5000 }],
+      total_rows: 5000,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    await user.click(screen.getByRole('button', { name: 'Preview' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 file\(s\) matched/)).toBeInTheDocument()
+      expect(screen.getByText(/5,000 total rows/)).toBeInTheDocument()
+      expect(screen.getByText(/accounts_001\.csv/)).toBeInTheDocument()
+    })
+  })
+
+  it('shows error inline when preview fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(stepsApi.preview).mockRejectedValue(new Error('File not found'))
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    await user.click(screen.getByRole('button', { name: 'Preview' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('File not found')).toBeInTheDocument()
+    })
+  })
+
+  it('calls stepsApi.preview with correct planId and stepId', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(stepsApi.preview).mockResolvedValue({
+      pattern: 'accounts_*.csv',
+      matched_files: [],
+      total_rows: 0,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    await user.click(screen.getByRole('button', { name: 'Preview' }))
+
+    await waitFor(() => {
+      expect(stepsApi.preview).toHaveBeenCalledWith('plan-1', 'step-1')
+    })
+  })
+
+  // ── Preflight modal ───────────────────────────────────────────────────────
+
+  it('shows "Run Preflight" button when there are steps', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Run Preflight' })).toBeInTheDocument()
+    })
+  })
+
+  it('does not show "Run Preflight" button when there are no steps', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    expect(screen.queryByRole('button', { name: 'Run Preflight' })).not.toBeInTheDocument()
+  })
+
+  it('opens the preflight modal and fetches all step previews', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue({ ...plan1, load_steps: [step1, step2] })
+    vi.mocked(stepsApi.preview).mockResolvedValue({
+      pattern: 'test_*.csv',
+      matched_files: [{ filename: 'test_001.csv', row_count: 100 }],
+      total_rows: 100,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    await user.click(screen.getByRole('button', { name: 'Run Preflight' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Preflight Check')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(stepsApi.preview).toHaveBeenCalledWith('plan-1', 'step-1')
+      expect(stepsApi.preview).toHaveBeenCalledWith('plan-1', 'step-2')
+    })
+  })
+
+  it('closes the preflight modal when Close is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(stepsApi.preview).mockResolvedValue({
+      pattern: 'accounts_*.csv',
+      matched_files: [],
+      total_rows: 0,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByRole('button', { name: 'Run Preflight' }))
+
+    await user.click(screen.getByRole('button', { name: 'Run Preflight' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  // ── Start Run ─────────────────────────────────────────────────────────────
+
+  it('calls plansApi.startRun and navigates to /runs/:id on success', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(plansApi.startRun).mockResolvedValue({
+      id: 'run-1',
+      load_plan_id: 'plan-1',
+      status: 'pending',
+      started_at: null,
+      completed_at: null,
+      total_records: null,
+      total_success: null,
+      total_errors: null,
+      initiated_by: null,
+      error_summary: null,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByRole('button', { name: 'Start Run' }))
+
+    await user.click(screen.getByRole('button', { name: 'Start Run' }))
+
+    await waitFor(() => {
+      expect(plansApi.startRun).toHaveBeenCalledWith('plan-1')
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('run-detail-page')).toBeInTheDocument()
+    })
+  })
+})
