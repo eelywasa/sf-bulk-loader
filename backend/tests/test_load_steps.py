@@ -74,6 +74,28 @@ def test_add_step_invalid_operation_returns_422(client):
     assert resp.status_code == 422
 
 
+# ── Auto-sequence ──────────────────────────────────────────────────────────────
+
+
+def test_add_step_without_sequence_assigns_1(client):
+    pid = _plan_id(client, _conn_id(client))
+    payload = {k: v for k, v in _STEP.items() if k != "sequence"}
+    resp = client.post(f"/api/load-plans/{pid}/steps", json=payload)
+    assert resp.status_code == 201
+    assert resp.json()["sequence"] == 1
+
+
+def test_add_step_without_sequence_appends_to_end(client):
+    pid = _plan_id(client, _conn_id(client))
+    payload = {k: v for k, v in _STEP.items() if k != "sequence"}
+    s1 = client.post(f"/api/load-plans/{pid}/steps", json=payload).json()
+    s2 = client.post(f"/api/load-plans/{pid}/steps", json=payload).json()
+    s3 = client.post(f"/api/load-plans/{pid}/steps", json=payload).json()
+    assert s1["sequence"] == 1
+    assert s2["sequence"] == 2
+    assert s3["sequence"] == 3
+
+
 # ── Update step ────────────────────────────────────────────────────────────────
 
 

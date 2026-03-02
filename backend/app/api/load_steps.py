@@ -4,10 +4,10 @@ import csv
 import glob
 import logging
 import os
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -59,7 +59,14 @@ async def add_step(
     db: AsyncSession = Depends(get_db),
 ) -> LoadStep:
     await _get_plan_or_404(plan_id, db)
-    step = LoadStep(load_plan_id=plan_id, **data.model_dump())
+    step_data = data.model_dump()
+    if step_data.get("sequence") is None:
+        result = await db.execute(
+            select(func.max(LoadStep.sequence)).where(LoadStep.load_plan_id == plan_id)
+        )
+        max_seq: Optional[int] = result.scalar()
+        step_data["sequence"] = (max_seq or 0) + 1
+    step = LoadStep(load_plan_id=plan_id, **step_data)
     db.add(step)
     await db.commit()
     await db.refresh(step)
