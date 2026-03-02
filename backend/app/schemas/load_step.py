@@ -17,7 +17,7 @@ class LoadStepBase(BaseModel):
 
 
 class LoadStepCreate(LoadStepBase):
-    pass
+    sequence: Optional[int] = None
 
 
 class LoadStepUpdate(BaseModel):
