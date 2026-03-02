@@ -26,18 +26,26 @@ export class ApiError extends Error {
     this.detail = detail
     this.code = code
   }
+
+  validationMessages(): string[] {
+    if (Array.isArray(this.detail)) {
+      return this.detail.map((e) => `${e.loc.join('.')}: ${e.msg}`)
+    }
+    return [this.message]
+  }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// ─── Core fetch wrapper ───────────────────────────────────────────────────────
+
+export async function apiFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const url = `${BASE_URL}${path}`
 
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-    ...init,
-  })
+  const headers = new Headers(init?.headers)
+  if (typeof init?.body === 'string' && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const response = await fetch(url, { ...init, headers })
 
   if (!response.ok) {
     let detail: string | ApiValidationError[] | undefined
@@ -51,6 +59,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       } else if (typeof body.detail === 'string') {
         detail = body.detail
         message = body.detail
+      } else if (typeof body.message === 'string') {
+        message = body.message
       }
     } catch {
       // JSON parse failed — keep statusText as message
@@ -67,21 +77,35 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+// ─── Convenience helpers ──────────────────────────────────────────────────────
+
+export function apiGet<T = unknown>(path: string): Promise<T> {
+  return apiFetch<T>(path, { method: 'GET' })
+}
+
+export function apiPost<T = unknown>(path: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'POST',
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  })
+}
+
+export function apiPut<T = unknown>(path: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'PUT',
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  })
+}
+
+export function apiDelete<T = void>(path: string): Promise<T> {
+  return apiFetch<T>(path, { method: 'DELETE' })
+}
+
+// ─── Object-style API (used by endpoints) ────────────────────────────────────
+
 export const api = {
-  get: <T>(path: string): Promise<T> => request<T>(path),
-
-  post: <T>(path: string, body?: unknown): Promise<T> =>
-    request<T>(path, {
-      method: 'POST',
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    }),
-
-  put: <T>(path: string, body?: unknown): Promise<T> =>
-    request<T>(path, {
-      method: 'PUT',
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    }),
-
-  delete: <T = void>(path: string): Promise<T> =>
-    request<T>(path, { method: 'DELETE' }),
+  get: apiGet,
+  post: apiPost,
+  put: apiPut,
+  delete: apiDelete,
 }

@@ -117,8 +117,8 @@ export const jobsApi = {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 export const filesApi = {
-  list: () => api.get<InputFileInfo[]>('/api/files/input'),
-  preview: (filename: string, rows = 25) =>
+  listInput: () => api.get<InputFileInfo[]>('/api/files/input'),
+  previewInput: (filename: string, rows = 25) =>
     api.get<InputFilePreview>(
       `/api/files/input/${encodeURIComponent(filename)}/preview?rows=${rows}`,
     ),
