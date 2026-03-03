@@ -79,7 +79,8 @@ describe('Routing', () => {
 
   it('renders RunDetail at /runs/:id', () => {
     renderRoute('/runs/run-456')
-    expect(screen.getByRole('heading', { name: 'Run Detail' })).toBeInTheDocument()
+    // RunDetail fetches asynchronously; on initial render it shows a loading indicator
+    expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
   it('renders JobDetail at /runs/:runId/jobs/:jobId', () => {
