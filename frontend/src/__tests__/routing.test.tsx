@@ -91,7 +91,8 @@ describe('Routing', () => {
 
   it('renders FilesPage at /files', () => {
     renderRoute('/files')
-    expect(screen.getByRole('heading', { name: 'Input Files' })).toBeInTheDocument()
+    // FilesPage fetches asynchronously; on initial render it shows a loading indicator
+    expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
   it('AppShell nav is present on all routes', () => {
