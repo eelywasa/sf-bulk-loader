@@ -48,7 +48,7 @@ export const plansApi = {
   update: (id: string, data: Partial<LoadPlanCreate>) =>
     api.put<LoadPlan>(`/api/load-plans/${id}`, data),
   delete: (id: string) => api.delete(`/api/load-plans/${id}`),
-  startRun: (id: string) => api.post<LoadRun>(`/api/load-plans/${id}/run`),
+  startRun: (id: string) => api.post<LoadRun>(`/api/load-plans/${id}/run`, {}),
 }
 
 // ─── Load Steps ───────────────────────────────────────────────────────────────
