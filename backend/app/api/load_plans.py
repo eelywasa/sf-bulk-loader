@@ -19,6 +19,7 @@ from app.schemas.load_plan import (
     LoadPlanUpdate,
 )
 from app.schemas.load_run import LoadRunCreate, LoadRunResponse
+from app.services import orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +121,7 @@ async def start_load_run(
     await db.commit()
     await db.refresh(run)
 
-    # Orchestrator will be wired here once implemented (§4.4).
-    # background_tasks.add_task(orchestrator.execute_run, run.id)
+    background_tasks.add_task(orchestrator.execute_run, run.id)
 
     logger.info("Load run %s created for plan %s (initiated_by=%s)", run.id, plan_id, data.initiated_by)
     return run
