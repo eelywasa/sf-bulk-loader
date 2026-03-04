@@ -152,7 +152,7 @@ export default function AppShell() {
               end={item.end}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center px-5 py-2.5 text-sm font-medium transition-colors duration-100',
+                  'flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors duration-100',
                   isActive
                     ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-r-2 border-blue-600 dark:border-blue-500'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100',
