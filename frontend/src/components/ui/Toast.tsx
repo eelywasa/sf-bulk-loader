@@ -1,5 +1,13 @@
 import React, { createContext, useCallback, useContext, useState } from 'react'
 import clsx from 'clsx'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
+import {
+  faCircleCheck,
+  faCircleXmark,
+  faTriangleExclamation,
+  faCircleInfo,
+} from '@fortawesome/free-solid-svg-icons'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -17,26 +25,26 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
-const toastStyles: Record<ToastType, { container: string; icon: string; symbol: string }> = {
+const toastStyles: Record<ToastType, { container: string; icon: string; faIcon: IconDefinition }> = {
   success: {
     container: 'bg-white border-l-4 border-green-500',
     icon: 'text-green-500',
-    symbol: '✓',
+    faIcon: faCircleCheck,
   },
   error: {
     container: 'bg-white border-l-4 border-red-500',
     icon: 'text-red-500',
-    symbol: '✕',
+    faIcon: faCircleXmark,
   },
   warning: {
     container: 'bg-white border-l-4 border-orange-500',
     icon: 'text-orange-500',
-    symbol: '!',
+    faIcon: faTriangleExclamation,
   },
   info: {
     container: 'bg-white border-l-4 border-blue-500',
     icon: 'text-blue-500',
-    symbol: 'i',
+    faIcon: faCircleInfo,
   },
 }
 
@@ -66,9 +74,7 @@ function ToastContainer({
               style.container,
             )}
           >
-            <span className={clsx('flex-shrink-0 w-5 h-5 text-center font-bold text-sm leading-5 rounded-full', style.icon)}>
-              {style.symbol}
-            </span>
+            <FontAwesomeIcon icon={style.faIcon} className={clsx('flex-shrink-0 w-5 h-5', style.icon)} />
             <p className="flex-1 text-sm text-gray-800">{toast.message}</p>
             <button
               onClick={() => onRemove(toast.id)}

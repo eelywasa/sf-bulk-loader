@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import AppShell from '../../layout/AppShell'
@@ -111,5 +111,20 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: /theme/i }))
     await user.click(screen.getByRole('menuitemradio', { name: /light/i }))
     expect(screen.queryByRole('button', { name: /theme/i })).not.toBeInTheDocument()
+  })
+
+  it('renders an icon for each nav item', () => {
+    renderAppShell()
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' })
+    const links = within(nav).getAllByRole('link')
+    links.forEach((link) => {
+      expect(link.querySelector('svg')).toBeInTheDocument()
+    })
+  })
+
+  it('renders the logo icon in the brand area', () => {
+    const { container } = renderAppShell()
+    const brand = container.querySelector('.px-5.py-4')
+    expect(brand?.querySelector('svg')).toBeInTheDocument()
   })
 })
