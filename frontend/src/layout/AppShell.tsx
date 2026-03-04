@@ -2,19 +2,34 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import clsx from 'clsx'
 import { type Theme, useTheme } from '../context/ThemeContext'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
+import {
+  faHexagonNodes,
+  faGaugeHigh,
+  faPlug,
+  faListCheck,
+  faPlay,
+  faFolderOpen,
+  faGear,
+  faChevronDown,
+  faChevronRight,
+  faCheck,
+} from '@fortawesome/free-solid-svg-icons'
 
 interface NavItem {
   path: string
   label: string
+  icon: IconDefinition
   end?: boolean
 }
 
 const navItems: NavItem[] = [
-  { path: '/', label: 'Dashboard', end: true },
-  { path: '/connections', label: 'Connections' },
-  { path: '/plans', label: 'Load Plans' },
-  { path: '/runs', label: 'Runs' },
-  { path: '/files', label: 'Files' },
+  { path: '/', label: 'Dashboard', icon: faGaugeHigh, end: true },
+  { path: '/connections', label: 'Connections', icon: faPlug },
+  { path: '/plans', label: 'Load Plans', icon: faListCheck },
+  { path: '/runs', label: 'Runs', icon: faPlay },
+  { path: '/files', label: 'Files', icon: faFolderOpen },
 ]
 
 const themeOptions: { value: Theme; label: string }[] = [
@@ -56,16 +71,12 @@ function SettingsMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {/* Gear icon */}
-        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
+        <FontAwesomeIcon icon={faGear} className="w-4 h-4 flex-shrink-0" />
         <span className="flex-1 text-left font-medium">Settings</span>
-        {/* Chevron up when open, down when closed */}
-        <svg className={clsx('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        <FontAwesomeIcon
+          icon={faChevronDown}
+          className={clsx('w-3.5 h-3.5 transition-transform', open && 'rotate-180')}
+        />
       </button>
 
       {/* Settings popover — floats above the button */}
@@ -80,9 +91,10 @@ function SettingsMenu() {
               aria-expanded={themeOpen}
             >
               <span>Theme</span>
-              <svg className={clsx('w-3.5 h-3.5 transition-transform', themeOpen && 'rotate-90')} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
+              <FontAwesomeIcon
+                icon={faChevronRight}
+                className={clsx('w-3.5 h-3.5 transition-transform', themeOpen && 'rotate-90')}
+              />
             </button>
 
             {/* Theme submenu — floats to the right of the popover */}
@@ -99,9 +111,7 @@ function SettingsMenu() {
                     {/* Checkmark placeholder — keeps alignment consistent */}
                     <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
                       {theme === opt.value && (
-                        <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
+                        <FontAwesomeIcon icon={faCheck} className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                       )}
                     </span>
                     {opt.label}
@@ -125,13 +135,7 @@ export default function AppShell() {
         <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-4 h-4 text-white">
-                <path d="M6 6h6a2 2 0 0 1 2 2v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M18 18h-6a2 2 0 0 1-2-2v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M10 12h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                <path d="M16 10l2 2-2 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M4 6h2M18 18h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
+              <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
             </div>
             <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight">
               Bulk Loader
@@ -155,6 +159,7 @@ export default function AppShell() {
                 )
               }
             >
+              <FontAwesomeIcon icon={item.icon} className="w-4 h-4 flex-shrink-0" />
               {item.label}
             </NavLink>
           ))}

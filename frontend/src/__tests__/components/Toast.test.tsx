@@ -79,4 +79,17 @@ describe('Toast / useToast', () => {
     expect(screen.queryByText('Saved!')).not.toBeInTheDocument()
     vi.useRealTimers()
   })
+
+  it('renders an svg icon in each toast type', async () => {
+    const user = userEvent.setup()
+    renderToasts()
+    for (const btnName of ['Success', 'Error', 'Info', 'Warning']) {
+      await user.click(screen.getByRole('button', { name: btnName }))
+    }
+    const alerts = screen.getAllByRole('alert')
+    expect(alerts).toHaveLength(4)
+    alerts.forEach((alert) => {
+      expect(alert.querySelector('svg')).toBeInTheDocument()
+    })
+  })
 })
