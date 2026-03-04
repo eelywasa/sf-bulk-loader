@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import AppShell from '../../layout/AppShell'
+import { ThemeProvider } from '../../context/ThemeContext'
 
 function renderAppShell(initialPath = '/') {
   const router = createMemoryRouter(
@@ -19,7 +21,11 @@ function renderAppShell(initialPath = '/') {
     ],
     { initialEntries: [initialPath] },
   )
-  return render(<RouterProvider router={router} />)
+  return render(
+    <ThemeProvider>
+      <RouterProvider router={router} />
+    </ThemeProvider>,
+  )
 }
 
 describe('AppShell', () => {
@@ -68,5 +74,42 @@ describe('AppShell', () => {
   it('has a main navigation landmark', () => {
     renderAppShell()
     expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument()
+  })
+
+  it('renders Settings button instead of version string', () => {
+    renderAppShell()
+    expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument()
+    expect(screen.queryByText('SF Bulk Loader v0.1')).not.toBeInTheDocument()
+  })
+
+  it('Settings menu is closed by default', () => {
+    renderAppShell()
+    expect(screen.queryByRole('button', { name: /theme/i })).not.toBeInTheDocument()
+  })
+
+  it('opens Settings menu on click', async () => {
+    const user = userEvent.setup()
+    renderAppShell()
+    await user.click(screen.getByRole('button', { name: /settings/i }))
+    expect(screen.getByRole('button', { name: /theme/i })).toBeInTheDocument()
+  })
+
+  it('opens Theme submenu on click', async () => {
+    const user = userEvent.setup()
+    renderAppShell()
+    await user.click(screen.getByRole('button', { name: /settings/i }))
+    await user.click(screen.getByRole('button', { name: /theme/i }))
+    expect(screen.getByRole('menuitemradio', { name: /light/i })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /dark/i })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /system/i })).toBeInTheDocument()
+  })
+
+  it('closes menu after selecting a theme', async () => {
+    const user = userEvent.setup()
+    renderAppShell()
+    await user.click(screen.getByRole('button', { name: /settings/i }))
+    await user.click(screen.getByRole('button', { name: /theme/i }))
+    await user.click(screen.getByRole('menuitemradio', { name: /light/i }))
+    expect(screen.queryByRole('button', { name: /theme/i })).not.toBeInTheDocument()
   })
 })

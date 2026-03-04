@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../components/ui/Toast'
+import { ThemeProvider } from '../context/ThemeContext'
 import AppShell from '../layout/AppShell'
 import Dashboard from '../pages/Dashboard'
 import Connections from '../pages/Connections'
@@ -38,11 +39,13 @@ function renderRoute(path: string) {
   )
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <RouterProvider router={router} />
-      </ToastProvider>
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </QueryClientProvider>
+    </ThemeProvider>,
   )
 }
 
