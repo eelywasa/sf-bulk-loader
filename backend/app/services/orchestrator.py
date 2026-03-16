@@ -433,7 +433,7 @@ async def _process_partition(
                     exc,
                 )
                 job_rec.status = JobStatus.failed
-                job_rec.error_message = str(exc)
+                job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "") + (f"\nResponse: {exc.body}" if exc.body else "")
                 job_rec.completed_at = datetime.now(timezone.utc)
                 await db.commit()
                 await ws_manager.broadcast(
@@ -475,7 +475,7 @@ async def _process_partition(
                     exc,
                 )
                 job_rec.status = JobStatus.failed
-                job_rec.error_message = str(exc)
+                job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "")
                 job_rec.completed_at = datetime.now(timezone.utc)
                 await db.commit()
                 await ws_manager.broadcast(
@@ -569,7 +569,7 @@ async def _process_partition(
                     exc,
                 )
                 job_rec.status = JobStatus.failed
-                job_rec.error_message = str(exc)
+                job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "")
                 job_rec.completed_at = datetime.now(timezone.utc)
                 await db.commit()
                 await ws_manager.broadcast(
