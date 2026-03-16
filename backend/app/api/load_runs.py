@@ -1,13 +1,20 @@
 """Load Runs API — list, inspect, abort, and summarise load run executions."""
 
+import io
 import logging
+import os
+import pathlib
+import zipfile
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.config import settings
 
 from app.database import get_db
 from app.models.job import JobRecord, JobStatus
@@ -155,4 +162,58 @@ async def get_run_summary(run_id: str, db: AsyncSession = Depends(get_db)) -> Ru
         total_success=grand_success,
         total_errors=grand_errors,
         steps=step_stats,
+    )
+
+
+@router.get("/{run_id}/logs.zip")
+async def download_logs_zip(
+    run_id: str,
+    success: bool = True,
+    errors: bool = True,
+    unprocessed: bool = True,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Stream a ZIP of all selected result CSVs for every job in this run.
+
+    Files are organised as ``{step_id}/partition_{n}_{type}.csv`` inside the archive.
+    Only file types whose query parameter is ``true`` are included.
+    Files that were not generated (e.g. no errors) are silently skipped.
+    """
+    await _get_run_or_404(run_id, db)
+
+    result = await db.execute(
+        select(JobRecord).where(JobRecord.load_run_id == run_id)
+    )
+    jobs = list(result.scalars().all())
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for job in jobs:
+            candidates: list[Optional[str]] = []
+            if success:
+                candidates.append(job.success_file_path)
+            if errors:
+                candidates.append(job.error_file_path)
+            if unprocessed:
+                candidates.append(job.unprocessed_file_path)
+
+            for rel_path in candidates:
+                if not rel_path:
+                    continue
+                full_path = os.path.join(settings.output_dir, rel_path)
+                if not os.path.isfile(full_path):
+                    continue
+                # Strip the leading run_id segment so archive paths are
+                # {step_id}/partition_{n}_{type}.csv
+                parts = pathlib.PurePosixPath(rel_path.replace("\\", "/")).parts
+                archive_name = str(pathlib.PurePosixPath(*parts[1:])) if len(parts) > 1 else rel_path
+                zf.write(full_path, archive_name)
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="run_{run_id[:8]}_logs.zip"',
+        },
     )

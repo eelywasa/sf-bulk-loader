@@ -105,6 +105,14 @@ export const runsApi = {
     api.get<JobRecord[]>(
       `/api/runs/${runId}/jobs${buildQs(params as Record<string, string | undefined>)}`,
     ),
+  logsZipUrl: (id: string, opts: { success: boolean; errors: boolean; unprocessed: boolean }) => {
+    const params = new URLSearchParams({
+      success: String(opts.success),
+      errors: String(opts.errors),
+      unprocessed: String(opts.unprocessed),
+    })
+    return `/api/runs/${id}/logs.zip?${params}`
+  },
 }
 
 // ─── Jobs ─────────────────────────────────────────────────────────────────────

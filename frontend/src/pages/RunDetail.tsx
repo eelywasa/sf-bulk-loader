@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -161,6 +161,9 @@ export default function RunDetail() {
   const { success: toastSuccess, error: toastError } = useToast()
 
   const [abortModalOpen, setAbortModalOpen] = useState(false)
+  const [includeSuccess, setIncludeSuccess] = useState(true)
+  const [includeErrors, setIncludeErrors] = useState(true)
+  const [includeUnprocessed, setIncludeUnprocessed] = useState(true)
 
   const { run, jobs, planDetail, isLoading, isError, error, isLive } = useLiveRun(id ?? '')
 
@@ -203,6 +206,26 @@ export default function RunDetail() {
     if (!run?.total_records || run.total_records === 0) return 0
     return Math.round(((run.total_success ?? 0) / run.total_records) * 100)
   }, [run])
+
+  const noneSelected = !includeSuccess && !includeErrors && !includeUnprocessed
+  const hasLogs = jobs.some(
+    (j) => j.success_file_path || j.error_file_path || j.unprocessed_file_path,
+  )
+
+  const handleDownloadLogs = useCallback(() => {
+    if (!id) return
+    const url = runsApi.logsZipUrl(id, {
+      success: includeSuccess,
+      errors: includeErrors,
+      unprocessed: includeUnprocessed,
+    })
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `run_${id.slice(0, 8)}_logs.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }, [id, includeSuccess, includeErrors, includeUnprocessed])
 
   const progressColor = useMemo(() => {
     if (run?.status === 'failed') return 'red' as const
@@ -264,7 +287,7 @@ export default function RunDetail() {
           Runs
         </Link>
         <span>›</span>
-        <span className="text-gray-900 font-mono">{run.id.slice(0, 8)}…</span>
+        <span className="text-gray-900 font-mono">{run.id}</span>
       </nav>
 
       {/* Sticky summary header */}
@@ -273,7 +296,7 @@ export default function RunDetail() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-bold text-gray-900">
               Run{' '}
-              <span className="font-mono text-base">{run.id.slice(0, 8)}…</span>
+              <span className="font-mono text-base">{run.id}</span>
             </h1>
             <Badge variant={run.status} dot>
               {run.status}
@@ -359,6 +382,44 @@ export default function RunDetail() {
             ))}
           </div>
         )}
+      </Card>
+
+      {/* Download Logs */}
+      <Card title="Download Logs">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">Select the log types to include in the ZIP download.</p>
+          <div className="flex flex-wrap gap-6">
+            {(
+              [
+                { id: 'success', label: 'Success Logs', checked: includeSuccess, set: setIncludeSuccess },
+                { id: 'errors', label: 'Error Logs', checked: includeErrors, set: setIncludeErrors },
+                { id: 'unprocessed', label: 'Unprocessed Records', checked: includeUnprocessed, set: setIncludeUnprocessed },
+              ] as const
+            ).map(({ id: cbId, label, checked, set }) => (
+              <label key={cbId} className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => set(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">{label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="secondary"
+              onClick={handleDownloadLogs}
+              disabled={noneSelected || !hasLogs}
+            >
+              ↓ Download ZIP
+            </Button>
+            {!hasLogs && (
+              <span className="text-xs text-gray-400 italic">No log files available yet.</span>
+            )}
+          </div>
+        </div>
       </Card>
 
       {/* Abort confirmation modal */}
