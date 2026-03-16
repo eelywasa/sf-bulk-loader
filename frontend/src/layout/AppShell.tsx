@@ -26,10 +26,10 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: faGaugeHigh, end: true },
+  { path: '/files', label: 'Input Files', icon: faFolderOpen },
   { path: '/connections', label: 'Connections', icon: faPlug },
   { path: '/plans', label: 'Load Plans', icon: faListCheck },
   { path: '/runs', label: 'Runs', icon: faPlay },
-  { path: '/files', label: 'Files', icon: faFolderOpen },
 ]
 
 const themeOptions: { value: Theme; label: string }[] = [
