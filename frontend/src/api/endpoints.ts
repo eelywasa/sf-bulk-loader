@@ -114,6 +114,12 @@ export const jobsApi = {
   successCsvUrl: (id: string) => `/api/jobs/${id}/success-csv`,
   errorCsvUrl: (id: string) => `/api/jobs/${id}/error-csv`,
   unprocessedCsvUrl: (id: string) => `/api/jobs/${id}/unprocessed-csv`,
+  previewSuccessCsv: (id: string, rows = 25) =>
+    api.get<InputFilePreview>(`/api/jobs/${id}/success-csv/preview?rows=${rows}`),
+  previewErrorCsv: (id: string, rows = 25) =>
+    api.get<InputFilePreview>(`/api/jobs/${id}/error-csv/preview?rows=${rows}`),
+  previewUnprocessedCsv: (id: string, rows = 25) =>
+    api.get<InputFilePreview>(`/api/jobs/${id}/unprocessed-csv/preview?rows=${rows}`),
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────

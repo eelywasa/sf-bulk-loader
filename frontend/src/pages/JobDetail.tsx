@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { jobsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
-import type { JobStatus } from '../api/types'
+import type { JobStatus, InputFilePreview } from '../api/types'
 import { Badge, Button, Card, Tabs } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
 
@@ -42,30 +42,91 @@ function MetaField({ label, children }: { label: string; children: ReactNode }) 
   )
 }
 
-interface DownloadRowProps {
+interface LogSectionProps {
   label: string
   description: string
-  href: string
+  downloadHref: string
   available: boolean
+  preview: InputFilePreview | undefined
+  isLoading: boolean
 }
 
-function DownloadRow({ label, description, href, available }: DownloadRowProps) {
+function LogSection({ label, description, downloadHref, available, preview, isLoading }: LogSectionProps) {
   return (
-    <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-100 bg-gray-50">
-      <div>
-        <p className="text-sm font-medium text-gray-900">{label}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+        <div>
+          <p className="text-sm font-medium text-gray-900">{label}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+        </div>
+        {available ? (
+          <a
+            href={downloadHref}
+            download
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            ↓ Download
+          </a>
+        ) : (
+          <span className="shrink-0 text-sm text-gray-400 italic">Not available</span>
+        )}
       </div>
-      {available ? (
-        <a
-          href={href}
-          download
-          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-        >
-          ↓ Download
-        </a>
+
+      {/* Preview */}
+      {!available ? (
+        <p className="px-4 py-3 text-sm text-gray-400 italic">No file generated for this job.</p>
+      ) : isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <span className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : preview && preview.header.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-xs">
+            <thead className="bg-gray-50">
+              <tr>
+                {preview.header.map((col) => (
+                  <th
+                    key={col}
+                    className="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-100">
+              {preview.rows.length === 0 ? (
+                <tr>
+                  <td colSpan={preview.header.length} className="px-3 py-4 text-center text-gray-400 italic">
+                    No records.
+                  </td>
+                </tr>
+              ) : (
+                preview.rows.map((row, i) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    {preview.header.map((col) => (
+                      <td
+                        key={col}
+                        className="px-3 py-2 text-gray-700 max-w-xs truncate"
+                        title={row[col]}
+                      >
+                        {row[col] ?? ''}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+          {preview.row_count === 25 && (
+            <p className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
+              Showing first 25 rows.
+            </p>
+          )}
+        </div>
       ) : (
-        <span className="shrink-0 text-sm text-gray-400 italic">Not available</span>
+        <p className="px-4 py-3 text-sm text-gray-400 italic">File is empty.</p>
       )}
     </div>
   )
@@ -81,6 +142,24 @@ export default function JobDetail() {
     queryKey: ['job', jobId],
     queryFn: () => jobsApi.get(jobId!),
     enabled: !!jobId,
+  })
+
+  const { data: successPreview, isLoading: successLoading } = useQuery({
+    queryKey: ['job-preview-success', jobId],
+    queryFn: () => jobsApi.previewSuccessCsv(jobId!),
+    enabled: !!jobId && !!job?.success_file_path,
+  })
+
+  const { data: errorPreview, isLoading: errorLoading } = useQuery({
+    queryKey: ['job-preview-error', jobId],
+    queryFn: () => jobsApi.previewErrorCsv(jobId!),
+    enabled: !!jobId && !!job?.error_file_path,
+  })
+
+  const { data: unprocessedPreview, isLoading: unprocessedLoading } = useQuery({
+    queryKey: ['job-preview-unprocessed', jobId],
+    queryFn: () => jobsApi.previewUnprocessedCsv(jobId!),
+    enabled: !!jobId && !!job?.unprocessed_file_path,
   })
 
   if (isLoading) {
@@ -157,27 +236,33 @@ export default function JobDetail() {
     )
   }
 
-  // ── Downloads tab ─────────────────────────────────────────────────────────────
+  // ── Logs tab ──────────────────────────────────────────────────────────────────
 
-  const downloadsContent = job ? (
-    <div className="space-y-3 py-2">
-      <DownloadRow
+  const logsContent = job ? (
+    <div className="space-y-4 py-2">
+      <LogSection
         label="Success CSV"
         description="Records successfully processed by Salesforce."
-        href={jobsApi.successCsvUrl(jobId!)}
+        downloadHref={jobsApi.successCsvUrl(jobId!)}
         available={!!job.success_file_path}
+        preview={successPreview}
+        isLoading={successLoading}
       />
-      <DownloadRow
+      <LogSection
         label="Error CSV"
         description="Records that failed to process with error details."
-        href={jobsApi.errorCsvUrl(jobId!)}
+        downloadHref={jobsApi.errorCsvUrl(jobId!)}
         available={!!job.error_file_path}
+        preview={errorPreview}
+        isLoading={errorLoading}
       />
-      <DownloadRow
+      <LogSection
         label="Unprocessed CSV"
         description="Records not submitted due to job cancellation."
-        href={jobsApi.unprocessedCsvUrl(jobId!)}
+        downloadHref={jobsApi.unprocessedCsvUrl(jobId!)}
         available={!!job.unprocessed_file_path}
+        preview={unprocessedPreview}
+        isLoading={unprocessedLoading}
       />
     </div>
   ) : null
@@ -185,7 +270,7 @@ export default function JobDetail() {
   const tabs = [
     { id: 'overview', label: 'Overview', content: overviewContent },
     { id: 'payload', label: 'Raw SF Payload', content: payloadContent },
-    { id: 'downloads', label: 'Downloads', content: downloadsContent },
+    { id: 'logs', label: 'Logs', content: logsContent },
   ]
 
   return (
