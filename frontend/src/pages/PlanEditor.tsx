@@ -2,17 +2,20 @@ import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Button, Card, Modal, Badge } from '../components/ui'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faFolder, faChevronRight, faFile } from '@fortawesome/free-solid-svg-icons'
+import { Button, Card, Modal, Badge, ComboInput } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
 import {
   plansApi,
   stepsApi,
   connectionsApi,
+  filesApi,
   type LoadPlanCreate,
   type LoadStepCreate,
 } from '../api/endpoints'
 import { ApiError } from '../api/client'
-import type { LoadStep, StepPreviewResponse, ApiValidationError } from '../api/types'
+import type { LoadStep, StepPreviewResponse, ApiValidationError, InputDirectoryEntry } from '../api/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,6 +104,102 @@ type PreviewEntry =
   | { status: 'success'; data: StepPreviewResponse }
   | { status: 'error'; message: string }
 
+// ─── File picker ──────────────────────────────────────────────────────────────
+
+interface FilePickerProps {
+  onSelect: (path: string) => void
+  onClose: () => void
+}
+
+function FilePicker({ onSelect, onClose }: FilePickerProps) {
+  const [currentPath, setCurrentPath] = useState('')
+  const segments = currentPath ? currentPath.split('/').filter(Boolean) : []
+
+  const { data: entries = [], isLoading } = useQuery({
+    queryKey: ['files', 'input', currentPath],
+    queryFn: () => filesApi.listInput(currentPath),
+  })
+
+  function navigate(path: string) {
+    setCurrentPath(path)
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-hidden">
+      {/* Breadcrumb */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <nav aria-label="File picker breadcrumb" className="flex items-center gap-1 text-xs flex-wrap min-w-0">
+          <button
+            type="button"
+            onClick={() => navigate('')}
+            className={`transition-colors ${segments.length === 0 ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300'}`}
+          >
+            Input Files
+          </button>
+          {segments.map((seg, i) => {
+            const segPath = segments.slice(0, i + 1).join('/')
+            const isLast = i === segments.length - 1
+            return (
+              <span key={segPath} className="flex items-center gap-1">
+                <FontAwesomeIcon icon={faChevronRight} className="text-gray-400 dark:text-gray-500 text-[10px]" />
+                {isLast ? (
+                  <span className="font-semibold text-gray-900 dark:text-gray-100 truncate max-w-[8rem]">{seg}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => navigate(segPath)}
+                    className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors truncate max-w-[8rem]"
+                  >
+                    {seg}
+                  </button>
+                )}
+              </span>
+            )
+          })}
+        </nav>
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-2 shrink-0 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Entry list */}
+      <ul className="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+        {isLoading && (
+          <li className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500 italic">Loading…</li>
+        )}
+        {!isLoading && entries.length === 0 && (
+          <li className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500 italic">No CSV files found here.</li>
+        )}
+        {entries.map((entry: InputDirectoryEntry) => (
+          <li key={entry.path}>
+            <button
+              type="button"
+              onClick={() => entry.kind === 'directory' ? navigate(entry.path) : onSelect(entry.path)}
+              className="w-full text-left px-3 py-2 flex items-center gap-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <FontAwesomeIcon
+                icon={entry.kind === 'directory' ? faFolder : faFile}
+                className={entry.kind === 'directory' ? 'text-amber-400 shrink-0' : 'text-gray-400 dark:text-gray-500 shrink-0'}
+                aria-hidden="true"
+              />
+              <span className="truncate text-gray-900 dark:text-gray-100">{entry.name}</span>
+              {entry.kind === 'file' && entry.row_count != null && (
+                <span className="ml-auto shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                  {entry.row_count.toLocaleString()} rows
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PlanEditor() {
@@ -122,6 +221,25 @@ export default function PlanEditor() {
   const [stepForm, setStepForm] = useState<StepFormData>(EMPTY_STEP_FORM)
   const [stepFormErrors, setStepFormErrors] = useState<string[]>([])
   const [deleteStepTarget, setDeleteStepTarget] = useState<LoadStep | null>(null)
+
+  // ── File picker + column header state ──────────────────────────────────────
+
+  const [showFilePicker, setShowFilePicker] = useState(false)
+
+  const patternIsLiteral =
+    stepModalOpen &&
+    stepForm.operation === 'upsert' &&
+    stepForm.csv_file_pattern.length > 0 &&
+    !stepForm.csv_file_pattern.includes('*') &&
+    !stepForm.csv_file_pattern.includes('?')
+
+  const { data: patternPreview, isLoading: patternPreviewLoading } = useQuery({
+    queryKey: ['files', 'preview-headers', stepForm.csv_file_pattern],
+    queryFn: () => filesApi.previewInput(stepForm.csv_file_pattern, 1),
+    enabled: patternIsLiteral,
+  })
+
+  const columnHeaders: string[] = patternPreview?.header ?? []
 
   // ── Preview state ───────────────────────────────────────────────────────────
 
@@ -263,6 +381,7 @@ export default function PlanEditor() {
     setEditingStep(null)
     setStepForm(EMPTY_STEP_FORM)
     setStepFormErrors([])
+    setShowFilePicker(false)
     setStepModalOpen(true)
   }
 
@@ -277,6 +396,7 @@ export default function PlanEditor() {
       assignment_rule_id: step.assignment_rule_id ?? '',
     })
     setStepFormErrors([])
+    setShowFilePicker(false)
     setStepModalOpen(true)
   }
 
@@ -285,6 +405,7 @@ export default function PlanEditor() {
     setEditingStep(null)
     setStepForm(EMPTY_STEP_FORM)
     setStepFormErrors([])
+    setShowFilePicker(false)
   }
 
   function setStepField<K extends keyof StepFormData>(key: K, value: StepFormData[K]) {
@@ -777,15 +898,37 @@ export default function PlanEditor() {
             <label htmlFor="step-pattern" className={LABEL_CLASS}>
               CSV File Pattern <span className="text-red-500">*</span>
             </label>
-            <input
-              id="step-pattern"
-              type="text"
-              required
-              value={stepForm.csv_file_pattern}
-              onChange={(e) => setStepField('csv_file_pattern', e.target.value)}
-              placeholder="accounts_*.csv"
-              className={clsx(INPUT_CLASS, 'font-mono')}
-            />
+            <div className="flex gap-2">
+              <input
+                id="step-pattern"
+                type="text"
+                required
+                value={stepForm.csv_file_pattern}
+                onChange={(e) => {
+                  setStepField('csv_file_pattern', e.target.value)
+                  setShowFilePicker(false)
+                }}
+                placeholder="accounts_*.csv"
+                className={clsx(INPUT_CLASS, 'font-mono flex-1')}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowFilePicker((v) => !v)}
+              >
+                Browse
+              </Button>
+            </div>
+            {showFilePicker && (
+              <FilePicker
+                onSelect={(path) => {
+                  setStepField('csv_file_pattern', path)
+                  setShowFilePicker(false)
+                }}
+                onClose={() => setShowFilePicker(false)}
+              />
+            )}
           </div>
 
           {/* External ID — shown only for upsert */}
@@ -794,14 +937,20 @@ export default function PlanEditor() {
               <label htmlFor="step-ext-id" className={LABEL_CLASS}>
                 External ID Field <span className="text-red-500">*</span>
               </label>
-              <input
+              <ComboInput
                 id="step-ext-id"
-                type="text"
                 value={stepForm.external_id_field}
-                onChange={(e) => setStepField('external_id_field', e.target.value)}
+                onChange={(v) => setStepField('external_id_field', v)}
+                options={columnHeaders}
+                loading={patternPreviewLoading && patternIsLiteral}
                 placeholder="ExternalId__c"
-                className={INPUT_CLASS}
+                inputClassName={INPUT_CLASS}
               />
+              {!patternIsLiteral && stepForm.csv_file_pattern.length > 0 && (
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Enter a literal file path (no wildcards) to load column suggestions.
+                </p>
+              )}
             </div>
           )}
 

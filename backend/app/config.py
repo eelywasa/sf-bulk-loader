@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     encryption_key: str = ""
 
     # Database
-    database_url: str = "sqlite+aiosqlite:///data/db/bulk_loader.db"
+    database_url: str = "sqlite+aiosqlite:////data/db/bulk_loader.db"
 
     # Salesforce defaults
     sf_api_version: str = "v62.0"

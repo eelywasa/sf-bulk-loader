@@ -24,3 +24,6 @@ export type { ToastItem, ToastType } from './Toast'
 
 export { EmptyState } from './EmptyState'
 export type { EmptyStateProps } from './EmptyState'
+
+export { ComboInput } from './ComboInput'
+export type { ComboInputProps } from './ComboInput'

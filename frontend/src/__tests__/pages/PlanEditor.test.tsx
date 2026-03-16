@@ -26,9 +26,13 @@ vi.mock('../../api/endpoints', () => ({
   connectionsApi: {
     list: vi.fn(),
   },
+  filesApi: {
+    listInput: vi.fn(),
+    previewInput: vi.fn(),
+  },
 }))
 
-import { plansApi, stepsApi, connectionsApi } from '../../api/endpoints'
+import { plansApi, stepsApi, connectionsApi, filesApi } from '../../api/endpoints'
 
 // ─── Test fixtures ─────────────────────────────────────────────────────────────
 
@@ -136,6 +140,13 @@ describe('PlanEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(connectionsApi.list).mockResolvedValue([conn1])
+    vi.mocked(filesApi.listInput).mockResolvedValue([])
+    vi.mocked(filesApi.previewInput).mockResolvedValue({
+      filename: '',
+      header: [],
+      rows: [],
+      row_count: 0,
+    })
   })
 
   // ── New plan mode ──────────────────────────────────────────────────────────
@@ -757,5 +768,176 @@ describe('PlanEditor', () => {
     await waitFor(() => {
       expect(screen.getByTestId('run-detail-page')).toBeInTheDocument()
     })
+  })
+
+  // ── File picker ───────────────────────────────────────────────────────────
+
+  it('shows a Browse button in the step form', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    expect(screen.getByRole('button', { name: 'Browse' })).toBeInTheDocument()
+  })
+
+  it('shows the file picker panel when Browse is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput).mockResolvedValue([
+      { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 1024, row_count: 50 },
+    ])
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    expect(screen.getByRole('navigation', { name: 'File picker breadcrumb' })).toBeInTheDocument()
+  })
+
+  it('lists CSV files in the picker', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput).mockResolvedValue([
+      { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 1024, row_count: 50 },
+      { name: 'contacts.csv', kind: 'file', path: 'contacts.csv', size_bytes: 512, row_count: 20 },
+    ])
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() => {
+      expect(screen.getByText('accounts.csv')).toBeInTheDocument()
+      expect(screen.getByText('contacts.csv')).toBeInTheDocument()
+    })
+  })
+
+  it('selects a file from the picker and sets the pattern field', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput).mockResolvedValue([
+      { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 1024, row_count: 50 },
+    ])
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    expect(screen.getByDisplayValue('accounts.csv')).toBeInTheDocument()
+  })
+
+  it('closes the file picker after a file is selected', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput).mockResolvedValue([
+      { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 1024, row_count: 50 },
+    ])
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    expect(screen.queryByRole('navigation', { name: 'File picker breadcrumb' })).not.toBeInTheDocument()
+  })
+
+  it('navigates into a subdirectory in the picker', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput)
+      .mockResolvedValueOnce([
+        { name: '2026', kind: 'directory', path: '2026', size_bytes: null, row_count: null },
+      ])
+      .mockResolvedValueOnce([
+        { name: 'accounts.csv', kind: 'file', path: '2026/accounts.csv', size_bytes: 512, row_count: 10 },
+      ])
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() => screen.getByText('2026'))
+    await user.click(screen.getByText('2026'))
+    await waitFor(() => expect(filesApi.listInput).toHaveBeenCalledWith('2026'))
+  })
+
+  it('closes the picker when Close is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput).mockResolvedValue([])
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('navigation', { name: 'File picker breadcrumb' })).not.toBeInTheDocument()
+  })
+
+  // ── External ID column dropdown ───────────────────────────────────────────
+
+  it('shows column dropdown toggle in the External ID field when operation is upsert', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.previewInput).mockResolvedValue({
+      filename: 'accounts.csv',
+      header: ['Name', 'ExternalId__c'],
+      rows: [],
+      row_count: 0,
+    })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
+    expect(screen.getByRole('button', { name: 'Show options' })).toBeInTheDocument()
+  })
+
+  it('shows column headers from preview when pattern is a literal file path', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.previewInput).mockResolvedValue({
+      filename: 'accounts.csv',
+      header: ['Name', 'ExternalId__c', 'BillingCity'],
+      rows: [],
+      row_count: 0,
+    })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
+    await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts.csv')
+    await user.click(screen.getByRole('button', { name: 'Show options' }))
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'ExternalId__c' })).toBeInTheDocument()
+    })
+  })
+
+  it('selecting a column header fills the External ID field', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.previewInput).mockResolvedValue({
+      filename: 'accounts.csv',
+      header: ['Name', 'ExternalId__c'],
+      rows: [],
+      row_count: 0,
+    })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
+    await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts.csv')
+    await user.click(screen.getByRole('button', { name: 'Show options' }))
+    await waitFor(() => screen.getByRole('option', { name: 'ExternalId__c' }))
+    await user.click(screen.getByRole('option', { name: 'ExternalId__c' }))
+    expect(screen.getByDisplayValue('ExternalId__c')).toBeInTheDocument()
+  })
+
+  it('shows hint when pattern contains wildcards', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
+    await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts_*.csv')
+    expect(screen.getByText(/Enter a literal file path/)).toBeInTheDocument()
   })
 })
