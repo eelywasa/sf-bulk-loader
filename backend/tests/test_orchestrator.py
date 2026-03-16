@@ -188,7 +188,7 @@ def _make_bulk_client_mock(
     mock.create_job = AsyncMock(return_value=sf_job_id)
     mock.upload_csv = AsyncMock(return_value=None)
     mock.close_job = AsyncMock(return_value=None)
-    mock.poll_job_once = AsyncMock(return_value=(terminal_state, 0, 0))
+    mock.poll_job_once = AsyncMock(return_value=(terminal_state, 0, 0, {"state": terminal_state}))
     mock.get_success_results = AsyncMock(return_value=success_csv)
     mock.get_failed_results = AsyncMock(return_value=error_csv)
     mock.get_unprocessed_results = AsyncMock(return_value=unprocessed_csv)
@@ -272,9 +272,9 @@ async def test_multi_step_run_executes_in_sequence(db: AsyncSession, tmp_path):
 
     execution_order: list[str] = []
 
-    async def fake_poll_once(sf_job_id: str) -> tuple[str, int, int]:
+    async def fake_poll_once(sf_job_id: str) -> tuple[str, int, int, dict]:
         execution_order.append(sf_job_id)
-        return ("JobComplete", 0, 0)
+        return ("JobComplete", 0, 0, {"state": "JobComplete"})
 
     bulk_mock = _make_bulk_client_mock()
     bulk_mock.poll_job_once = fake_poll_once
@@ -443,9 +443,9 @@ async def test_external_abort_stops_before_next_step(db: AsyncSession, tmp_path)
 
     # After step1 processes, mark run as aborted externally.
     step1_processed = asyncio.Event()
-    original_poll_once = AsyncMock(return_value=("JobComplete", 0, 0))
+    original_poll_once = AsyncMock(return_value=("JobComplete", 0, 0, {"state": "JobComplete"}))
 
-    async def poll_once_and_signal(sf_job_id: str) -> tuple[str, int, int]:
+    async def poll_once_and_signal(sf_job_id: str) -> tuple[str, int, int, dict]:
         result = await original_poll_once(sf_job_id)
         step1_processed.set()
         # Simulate external abort between steps by modifying the run in DB.
@@ -818,8 +818,8 @@ async def test_mid_poll_progress_persisted(db: AsyncSession, tmp_path):
 
     # poll_job_once: first call returns InProgress with 50 processed, second returns terminal.
     poll_responses = [
-        ("InProgress", 50, 2),
-        ("JobComplete", 100, 2),
+        ("InProgress", 50, 2, {"state": "InProgress", "numberRecordsProcessed": 50}),
+        ("JobComplete", 100, 2, {"state": "JobComplete", "numberRecordsProcessed": 100}),
     ]
     bulk_mock = _make_bulk_client_mock(success_csv=CSV_2_ROWS, error_csv=CSV_HEADER)
     bulk_mock.poll_job_once = AsyncMock(side_effect=poll_responses)

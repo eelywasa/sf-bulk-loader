@@ -518,7 +518,7 @@ async def _process_partition(
                 last_processed = -1  # sentinel so first poll always writes
 
                 while True:
-                    state, processed, failed = await bulk_client.poll_job_once(sf_job_id)
+                    state, processed, failed, sf_body = await bulk_client.poll_job_once(sf_job_id)
 
                     if processed != last_processed:
                         last_processed = processed
@@ -542,6 +542,7 @@ async def _process_partition(
 
                     if state in _TERMINAL_STATES:
                         terminal_state = state
+                        job_rec.sf_api_response = json.dumps(sf_body)
                         break
 
                     elapsed = asyncio.get_event_loop().time() - loop_start

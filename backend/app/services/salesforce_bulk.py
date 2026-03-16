@@ -407,14 +407,15 @@ class SalesforceBulkClient:
             await asyncio.sleep(interval)
             interval = min(interval * 2.0, max_interval)
 
-    async def poll_job_once(self, sf_job_id: str) -> tuple[str, int, int]:
-        """Single status poll. Returns (state, records_processed, records_failed).
+    async def poll_job_once(self, sf_job_id: str) -> tuple[str, int, int, dict]:
+        """Single status poll.
 
         Args:
             sf_job_id: The Salesforce job ID.
 
         Returns:
-            A 3-tuple ``(state, records_processed, records_failed)``.
+            A 4-tuple ``(state, records_processed, records_failed, body)``
+            where *body* is the full parsed JSON response from Salesforce.
 
         Raises:
             BulkAPIError: On non-200 response.
@@ -431,6 +432,7 @@ class SalesforceBulkClient:
             body.get("state", ""),
             body.get("numberRecordsProcessed", 0),
             body.get("numberRecordsFailed", 0),
+            body,
         )
 
     async def get_success_results(self, sf_job_id: str) -> bytes:

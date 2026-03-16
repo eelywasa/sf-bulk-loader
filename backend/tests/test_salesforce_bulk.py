@@ -797,35 +797,29 @@ class TestPollJobOnce:
     async def test_returns_state_and_counts(
         self, bulk_client: SalesforceBulkClient, mock_http: AsyncMock
     ) -> None:
-        mock_http.request = AsyncMock(
-            return_value=make_response(
-                200,
-                {"state": "InProgress", "numberRecordsProcessed": 50, "numberRecordsFailed": 2},
-            )
-        )
+        payload = {"state": "InProgress", "numberRecordsProcessed": 50, "numberRecordsFailed": 2}
+        mock_http.request = AsyncMock(return_value=make_response(200, payload))
 
-        state, processed, failed = await bulk_client.poll_job_once(JOB_ID)
+        state, processed, failed, body = await bulk_client.poll_job_once(JOB_ID)
 
         assert state == "InProgress"
         assert processed == 50
         assert failed == 2
+        assert body == payload
 
     @pytest.mark.asyncio
     async def test_terminal_state_returned(
         self, bulk_client: SalesforceBulkClient, mock_http: AsyncMock
     ) -> None:
-        mock_http.request = AsyncMock(
-            return_value=make_response(
-                200,
-                {"state": "JobComplete", "numberRecordsProcessed": 100, "numberRecordsFailed": 0},
-            )
-        )
+        payload = {"state": "JobComplete", "numberRecordsProcessed": 100, "numberRecordsFailed": 0}
+        mock_http.request = AsyncMock(return_value=make_response(200, payload))
 
-        state, processed, failed = await bulk_client.poll_job_once(JOB_ID)
+        state, processed, failed, body = await bulk_client.poll_job_once(JOB_ID)
 
         assert state == "JobComplete"
         assert processed == 100
         assert failed == 0
+        assert body == payload
 
     @pytest.mark.asyncio
     async def test_non_200_raises(
