@@ -29,6 +29,7 @@ export const connectionsApi = {
     api.put<Connection>(`/api/connections/${id}`, data),
   delete: (id: string) => api.delete(`/api/connections/${id}`),
   test: (id: string) => api.post<ConnectionTestResponse>(`/api/connections/${id}/test`),
+  listObjects: (id: string) => api.get<string[]>(`/api/connections/${id}/objects`),
 }
 
 // ─── Load Plans ───────────────────────────────────────────────────────────────

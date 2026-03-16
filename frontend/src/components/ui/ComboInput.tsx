@@ -12,6 +12,7 @@ export interface ComboInputProps {
   placeholder?: string
   className?: string
   inputClassName?: string
+  loadingMessage?: string
 }
 
 export function ComboInput({
@@ -23,11 +24,17 @@ export function ComboInput({
   placeholder,
   className,
   inputClassName,
+  loadingMessage = 'Loading columns…',
 }: ComboInputProps) {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
   const listId = useId()
+
+  // Filter options by the current typed value (case-insensitive substring)
+  const filtered = value
+    ? options.filter((o) => o.toLowerCase().includes(value.toLowerCase()))
+    : options
 
   // Close on outside click
   useEffect(() => {
@@ -41,14 +48,20 @@ export function ComboInput({
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [])
 
-  // Reset active index when options change
+  // Reset active index when options prop changes
   useEffect(() => {
     setActiveIndex(-1)
   }, [options])
 
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    onChange(e.target.value)
+    setActiveIndex(-1)
+    if (e.target.value && options.length > 0) setOpen(true)
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (!open) {
-      if (e.key === 'ArrowDown' && options.length > 0) {
+      if (e.key === 'ArrowDown' && filtered.length > 0) {
         setOpen(true)
         setActiveIndex(0)
         e.preventDefault()
@@ -57,7 +70,7 @@ export function ComboInput({
     }
     switch (e.key) {
       case 'ArrowDown':
-        setActiveIndex((i) => Math.min(i + 1, options.length - 1))
+        setActiveIndex((i) => Math.min(i + 1, filtered.length - 1))
         e.preventDefault()
         break
       case 'ArrowUp':
@@ -65,8 +78,8 @@ export function ComboInput({
         e.preventDefault()
         break
       case 'Enter':
-        if (activeIndex >= 0 && activeIndex < options.length) {
-          onChange(options[activeIndex])
+        if (activeIndex >= 0 && activeIndex < filtered.length) {
+          onChange(filtered[activeIndex])
           setOpen(false)
           setActiveIndex(-1)
           e.preventDefault()
@@ -86,7 +99,7 @@ export function ComboInput({
     setActiveIndex(-1)
   }
 
-  const showDropdown = open && (loading || options.length > 0)
+  const showDropdown = open && (loading || filtered.length > 0)
 
   return (
     <div ref={containerRef} className={clsx('relative', className)}>
@@ -95,7 +108,7 @@ export function ComboInput({
           id={id}
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           autoComplete="off"
@@ -132,10 +145,10 @@ export function ComboInput({
         >
           {loading ? (
             <li className="px-3 py-2 text-gray-400 dark:text-gray-500 italic">
-              Loading columns…
+              {loadingMessage}
             </li>
           ) : (
-            options.map((opt, i) => (
+            filtered.map((opt, i) => (
               <li
                 key={opt}
                 id={`${listId}-option-${i}`}

@@ -40,7 +40,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Connections' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Load Plans' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Runs' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Files' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Input Files' })).toBeInTheDocument()
   })
 
   it('renders the outlet content for the current route', () => {

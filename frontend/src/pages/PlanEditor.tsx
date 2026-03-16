@@ -263,6 +263,14 @@ export default function PlanEditor() {
     queryFn: connectionsApi.list,
   })
 
+  const connectionId = form.connection_id || plan?.connection_id || ''
+  const { data: sfObjects = [], isLoading: sfObjectsLoading } = useQuery({
+    queryKey: ['connections', connectionId, 'objects'],
+    queryFn: () => connectionsApi.listObjects(connectionId),
+    enabled: stepModalOpen && connectionId !== '',
+    staleTime: 5 * 60 * 1000, // cache for 5 minutes — object list rarely changes
+  })
+
   // Sync form with loaded plan data
   useEffect(() => {
     if (plan) {
@@ -863,15 +871,21 @@ export default function PlanEditor() {
             <label htmlFor="step-object" className={LABEL_CLASS}>
               Salesforce Object <span className="text-red-500">*</span>
             </label>
-            <input
+            <ComboInput
               id="step-object"
-              type="text"
-              required
               value={stepForm.object_name}
-              onChange={(e) => setStepField('object_name', e.target.value)}
+              onChange={(v) => setStepField('object_name', v)}
+              options={sfObjects}
+              loading={sfObjectsLoading}
+              loadingMessage="Loading objects…"
               placeholder="Account"
-              className={INPUT_CLASS}
+              inputClassName={INPUT_CLASS}
             />
+            {connectionId === '' && (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Select a connection on the plan to load object suggestions.
+              </p>
+            )}
           </div>
 
           {/* Operation */}

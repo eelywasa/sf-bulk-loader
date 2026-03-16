@@ -25,6 +25,7 @@ vi.mock('../../api/endpoints', () => ({
   },
   connectionsApi: {
     list: vi.fn(),
+    listObjects: vi.fn(),
   },
   filesApi: {
     listInput: vi.fn(),
@@ -140,6 +141,7 @@ describe('PlanEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(connectionsApi.list).mockResolvedValue([conn1])
+    vi.mocked(connectionsApi.listObjects).mockResolvedValue(['Account', 'Contact', 'Opportunity'])
     vi.mocked(filesApi.listInput).mockResolvedValue([])
     vi.mocked(filesApi.previewInput).mockResolvedValue({
       filename: '',
@@ -770,6 +772,51 @@ describe('PlanEditor', () => {
     })
   })
 
+  // ── Object autocomplete ───────────────────────────────────────────────────
+
+  it('shows object name suggestions from the connected org', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    // Open the object field dropdown
+    await user.click(screen.getAllByRole('button', { name: 'Show options' })[0])
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Account' })).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: 'Contact' })).toBeInTheDocument()
+    })
+  })
+
+  it('filters object suggestions as user types', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    await waitFor(() => expect(connectionsApi.listObjects).toHaveBeenCalled())
+    const objectInput = screen.getByLabelText(/Salesforce Object/)
+    await user.type(objectInput, 'Con')
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Contact' })).toBeInTheDocument()
+      expect(screen.queryByRole('option', { name: 'Account' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('selecting an object suggestion fills the field', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.click(screen.getAllByRole('button', { name: 'Show options' })[0])
+    await waitFor(() => screen.getByRole('option', { name: 'Account' }))
+    await user.click(screen.getByRole('option', { name: 'Account' }))
+    expect(screen.getByDisplayValue('Account')).toBeInTheDocument()
+  })
+
   // ── File picker ───────────────────────────────────────────────────────────
 
   it('shows a Browse button in the step form', async () => {
@@ -887,7 +934,8 @@ describe('PlanEditor', () => {
     await waitFor(() => screen.getByText(/No steps yet/))
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
     await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
-    expect(screen.getByRole('button', { name: 'Show options' })).toBeInTheDocument()
+    // Object field + External ID field each have a "Show options" button
+    expect(screen.getAllByRole('button', { name: 'Show options' })).toHaveLength(2)
   })
 
   it('shows column headers from preview when pattern is a literal file path', async () => {
@@ -904,7 +952,9 @@ describe('PlanEditor', () => {
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
     await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
     await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts.csv')
-    await user.click(screen.getByRole('button', { name: 'Show options' }))
+    // The second "Show options" button belongs to the External ID ComboInput
+    const showOptionsBtns = screen.getAllByRole('button', { name: 'Show options' })
+    await user.click(showOptionsBtns[showOptionsBtns.length - 1])
     await waitFor(() => {
       expect(screen.getByRole('option', { name: 'ExternalId__c' })).toBeInTheDocument()
     })
@@ -924,7 +974,8 @@ describe('PlanEditor', () => {
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
     await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
     await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts.csv')
-    await user.click(screen.getByRole('button', { name: 'Show options' }))
+    const showOptionsBtns = screen.getAllByRole('button', { name: 'Show options' })
+    await user.click(showOptionsBtns[showOptionsBtns.length - 1])
     await waitFor(() => screen.getByRole('option', { name: 'ExternalId__c' }))
     await user.click(screen.getByRole('option', { name: 'ExternalId__c' }))
     expect(screen.getByDisplayValue('ExternalId__c')).toBeInTheDocument()

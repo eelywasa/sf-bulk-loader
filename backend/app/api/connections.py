@@ -89,6 +89,34 @@ async def delete_connection(connection_id: str, db: AsyncSession = Depends(get_d
     await db.commit()
 
 
+@router.get("/{connection_id}/objects", response_model=List[str])
+async def list_connection_objects(
+    connection_id: str, db: AsyncSession = Depends(get_db)
+) -> List[str]:
+    """Return sorted SObject API names that can be used as load targets."""
+    conn = await _get_or_404(connection_id, db)
+    try:
+        token = await get_access_token(db, conn)
+        url = f"{conn.instance_url.rstrip('/')}/services/data/{settings.sf_api_version}/sobjects/"
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.get(url, headers={"Authorization": f"Bearer {token}"})
+        resp.raise_for_status()
+        sobjects = resp.json().get("sobjects", [])
+        return sorted(
+            obj["name"]
+            for obj in sobjects
+            if obj.get("createable") or obj.get("updateable") or obj.get("deletable")
+        )
+    except AuthError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Failed to list objects for connection %s", connection_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Salesforce API error: {exc}",
+        )
+
+
 @router.post("/{connection_id}/test", response_model=ConnectionTestResponse)
 async def test_connection(connection_id: str, db: AsyncSession = Depends(get_db)) -> ConnectionTestResponse:
     """Attempt authentication and a lightweight Salesforce API call to verify credentials."""
