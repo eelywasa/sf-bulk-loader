@@ -41,6 +41,7 @@ class JobRecord(Base):
     )
     records_processed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     records_failed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    total_records: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Relative paths (relative to OUTPUT_DIR)
     success_file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     error_file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)

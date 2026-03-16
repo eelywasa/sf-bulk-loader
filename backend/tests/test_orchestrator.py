@@ -36,7 +36,6 @@ from app.models.load_step import LoadStep, Operation
 from app.services.orchestrator import (
     _count_csv_rows,
     _execute_run,
-    _poll_with_timeout,
 )
 
 # ── In-process test database ──────────────────────────────────────────────────
@@ -189,7 +188,7 @@ def _make_bulk_client_mock(
     mock.create_job = AsyncMock(return_value=sf_job_id)
     mock.upload_csv = AsyncMock(return_value=None)
     mock.close_job = AsyncMock(return_value=None)
-    mock.poll_job = AsyncMock(return_value=terminal_state)
+    mock.poll_job_once = AsyncMock(return_value=(terminal_state, 0, 0))
     mock.get_success_results = AsyncMock(return_value=success_csv)
     mock.get_failed_results = AsyncMock(return_value=error_csv)
     mock.get_unprocessed_results = AsyncMock(return_value=unprocessed_csv)
@@ -223,55 +222,6 @@ def test_count_csv_rows_quoted_newline():
 
 def test_count_csv_rows_no_trailing_newline():
     assert _count_csv_rows(b"Name,Id\nAlice,1") == 1
-
-
-# ── Unit tests: _poll_with_timeout ────────────────────────────────────────────
-
-
-async def test_poll_with_timeout_returns_on_success():
-    mock = MagicMock()
-    mock.poll_job = AsyncMock(return_value="JobComplete")
-    result = await _poll_with_timeout(
-        bulk_client=mock,
-        sf_job_id="JOB1",
-        run_id="RUN1",
-        step_id="STEP1",
-        partition_index=0,
-    )
-    assert result == "JobComplete"
-    mock.poll_job.assert_awaited_once_with("JOB1")
-
-
-async def test_poll_with_timeout_warns_and_continues():
-    """When wait_for times out, a warning is logged and polling resumes without timeout."""
-    mock = MagicMock()
-    # poll_job is called twice: first attempt (will be timed out), second succeeds.
-    mock.poll_job = AsyncMock(return_value="JobComplete")
-
-    wait_for_call_count = 0
-    real_wait_for = asyncio.wait_for
-
-    async def patched_wait_for(coro, timeout=None, **kwargs):
-        nonlocal wait_for_call_count
-        wait_for_call_count += 1
-        if wait_for_call_count == 1:
-            # Discard the coroutine cleanly and simulate a timeout.
-            coro.close()
-            raise asyncio.TimeoutError()
-        return await real_wait_for(coro, timeout=timeout, **kwargs)
-
-    with patch("app.services.orchestrator.asyncio.wait_for", new=patched_wait_for):
-        result = await _poll_with_timeout(
-            bulk_client=mock,
-            sf_job_id="JOB1",
-            run_id="RUN1",
-            step_id="STEP1",
-            partition_index=0,
-        )
-
-    assert result == "JobComplete"
-    # poll_job called twice: once (coroutine closed on timeout), once in fallback.
-    assert mock.poll_job.call_count == 2
 
 
 # ── Integration-style orchestrator tests ──────────────────────────────────────
@@ -322,12 +272,12 @@ async def test_multi_step_run_executes_in_sequence(db: AsyncSession, tmp_path):
 
     execution_order: list[str] = []
 
-    async def fake_poll(sf_job_id: str) -> str:
+    async def fake_poll_once(sf_job_id: str) -> tuple[str, int, int]:
         execution_order.append(sf_job_id)
-        return "JobComplete"
+        return ("JobComplete", 0, 0)
 
     bulk_mock = _make_bulk_client_mock()
-    bulk_mock.poll_job = fake_poll
+    bulk_mock.poll_job_once = fake_poll_once
     bulk_mock.create_job = AsyncMock(side_effect=["JOB_ACCT", "JOB_CONT"])
     db_factory = make_db_factory(db)
 
@@ -493,10 +443,10 @@ async def test_external_abort_stops_before_next_step(db: AsyncSession, tmp_path)
 
     # After step1 processes, mark run as aborted externally.
     step1_processed = asyncio.Event()
-    original_poll = AsyncMock(return_value="JobComplete")
+    original_poll_once = AsyncMock(return_value=("JobComplete", 0, 0))
 
-    async def poll_and_signal(sf_job_id: str) -> str:
-        result = await original_poll(sf_job_id)
+    async def poll_once_and_signal(sf_job_id: str) -> tuple[str, int, int]:
+        result = await original_poll_once(sf_job_id)
         step1_processed.set()
         # Simulate external abort between steps by modifying the run in DB.
         async with _SessionFactory() as ext_db:
@@ -506,7 +456,7 @@ async def test_external_abort_stops_before_next_step(db: AsyncSession, tmp_path)
         return result
 
     bulk_mock = _make_bulk_client_mock()
-    bulk_mock.poll_job = poll_and_signal
+    bulk_mock.poll_job_once = poll_once_and_signal
     db_factory = make_db_factory(db)
 
     with (
@@ -830,3 +780,79 @@ async def test_pending_jobs_aborted_when_run_aborted_mid_step(tmp_path):
         run = result.scalar_one()
 
     assert run.status == RunStatus.aborted
+
+
+async def test_total_records_set_at_creation(db: AsyncSession, tmp_path):
+    """total_records on JobRecord equals the data row count of the CSV partition."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    bulk_mock = _make_bulk_client_mock(success_csv=CSV_2_ROWS, error_csv=CSV_HEADER)
+    db_factory = make_db_factory(db)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.discover_files", return_value=["accounts.csv"]),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    result = await db.execute(select(JobRecord).where(JobRecord.load_run_id == run.id))
+    jobs = list(result.scalars().all())
+    assert len(jobs) == 1
+    # CSV_2_ROWS has 2 data rows (header + 2 rows).
+    assert jobs[0].total_records == 2
+
+
+async def test_mid_poll_progress_persisted(db: AsyncSession, tmp_path):
+    """poll_job_once mid-run updates are written to DB and broadcast over WebSocket."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    # poll_job_once: first call returns InProgress with 50 processed, second returns terminal.
+    poll_responses = [
+        ("InProgress", 50, 2),
+        ("JobComplete", 100, 2),
+    ]
+    bulk_mock = _make_bulk_client_mock(success_csv=CSV_2_ROWS, error_csv=CSV_HEADER)
+    bulk_mock.poll_job_once = AsyncMock(side_effect=poll_responses)
+    db_factory = make_db_factory(db)
+
+    broadcast_events: list[dict] = []
+
+    async def capture_broadcast(run_id, event):
+        broadcast_events.append(event)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.discover_files", return_value=["accounts.csv"]),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", side_effect=capture_broadcast),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    # A mid-poll job_status_change event with records_processed=50 should have been broadcast.
+    in_progress_events = [
+        e for e in broadcast_events
+        if e.get("event") == "job_status_change" and e.get("status") == "in_progress"
+    ]
+    assert any(e.get("records_processed") == 50 for e in in_progress_events), (
+        f"Expected in_progress broadcast with records_processed=50; got: {in_progress_events}"
+    )
+
+    # Final DB state: records from downloaded result CSVs (authoritative counts).
+    result = await db.execute(select(JobRecord).where(JobRecord.load_run_id == run.id))
+    jobs = list(result.scalars().all())
+    assert len(jobs) == 1
+    # After _download_results, records_processed comes from the CSV files (CSV_2_ROWS = 2 rows).
+    assert jobs[0].records_processed == 2

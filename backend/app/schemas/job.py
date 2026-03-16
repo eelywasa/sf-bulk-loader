@@ -15,6 +15,7 @@ class JobResponse(BaseModel):
     status: JobStatus
     records_processed: Optional[int] = None
     records_failed: Optional[int] = None
+    total_records: Optional[int] = None
     success_file_path: Optional[str] = None
     error_file_path: Optional[str] = None
     unprocessed_file_path: Optional[str] = None

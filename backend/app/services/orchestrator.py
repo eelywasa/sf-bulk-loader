@@ -55,7 +55,7 @@ from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
 from app.services.csv_processor import discover_files, partition_csv
 from app.services.salesforce_auth import get_access_token
-from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
+from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient, _TERMINAL_STATES
 from app.utils.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -322,12 +322,13 @@ async def _execute_step(
 
     # ── 3. Create JobRecord rows ──────────────────────────────────────────────
     job_records: list[JobRecord] = []
-    for partition_index, _ in partitions:
+    for partition_index, csv_data in partitions:
         jr = JobRecord(
             load_run_id=run_id,
             load_step_id=step.id,
             partition_index=partition_index,
             status=JobStatus.pending,
+            total_records=_count_csv_rows(csv_data),
         )
         db.add(jr)
         job_records.append(jr)
@@ -504,18 +505,61 @@ async def _process_partition(
                 },
             )
 
-            # ── Poll job ──────────────────────────────────────────────────────
+            # ── Poll job with mid-run progress updates ────────────────────────
             job_rec.status = JobStatus.in_progress
             await db.commit()
 
             try:
-                terminal_state = await _poll_with_timeout(
-                    bulk_client=bulk_client,
-                    sf_job_id=sf_job_id,
-                    run_id=run_id,
-                    step_id=step.id,
-                    partition_index=job_rec.partition_index,
-                )
+                interval = float(settings.sf_poll_interval_initial)
+                max_interval = float(settings.sf_poll_interval_max)
+                timeout_s = settings.sf_job_timeout_minutes * 60
+                loop_start = asyncio.get_event_loop().time()
+                timeout_warned = False
+                last_processed = -1  # sentinel so first poll always writes
+
+                while True:
+                    state, processed, failed = await bulk_client.poll_job_once(sf_job_id)
+
+                    if processed != last_processed:
+                        last_processed = processed
+                        job_rec.records_processed = processed
+                        job_rec.records_failed = failed
+                        await db.commit()
+                        await ws_manager.broadcast(
+                            run_id,
+                            {
+                                "event": "job_status_change",
+                                "run_id": run_id,
+                                "step_id": step.id,
+                                "job_id": job_record_id,
+                                "sf_job_id": sf_job_id,
+                                "status": JobStatus.in_progress.value,
+                                "records_processed": processed,
+                                "records_failed": failed,
+                                "total_records": job_rec.total_records,
+                            },
+                        )
+
+                    if state in _TERMINAL_STATES:
+                        terminal_state = state
+                        break
+
+                    elapsed = asyncio.get_event_loop().time() - loop_start
+                    if not timeout_warned and elapsed >= timeout_s:
+                        logger.warning(
+                            "Run %s step %s partition %d: job %s still in progress "
+                            "after %d min — continuing to poll (spec §9.1)",
+                            run_id,
+                            step.id,
+                            job_rec.partition_index,
+                            sf_job_id,
+                            settings.sf_job_timeout_minutes,
+                        )
+                        timeout_warned = True
+
+                    await asyncio.sleep(interval)
+                    interval = min(interval * 2.0, max_interval)
+
             except BulkAPIError as exc:
                 logger.error(
                     "Run %s step %s partition %d: polling failed: %s",
@@ -586,49 +630,6 @@ async def _process_partition(
                 records_failed,
             )
             return records_processed - records_failed, records_failed
-
-
-# ── Polling helper ────────────────────────────────────────────────────────────
-
-
-async def _poll_with_timeout(
-    *,
-    bulk_client: SalesforceBulkClient,
-    sf_job_id: str,
-    run_id: str,
-    step_id: str,
-    partition_index: int,
-) -> str:
-    """Poll a Bulk API job, emitting a warning if the timeout is exceeded.
-
-    Per spec §9.1: if the job is still ``InProgress`` after
-    ``SF_JOB_TIMEOUT_MINUTES``, log a warning and *continue* polling — do
-    not abort the job.
-
-    Returns:
-        Terminal Salesforce state string (``"JobComplete"``, ``"Failed"``, or
-        ``"Aborted"``).
-
-    Raises:
-        BulkAPIError: If polling fails permanently.
-    """
-    timeout_s = settings.sf_job_timeout_minutes * 60
-    try:
-        return await asyncio.wait_for(
-            bulk_client.poll_job(sf_job_id), timeout=float(timeout_s)
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Run %s step %s partition %d: job %s still in progress after %d min "
-            "— continuing to poll (spec §9.1)",
-            run_id,
-            step_id,
-            partition_index,
-            sf_job_id,
-            settings.sf_job_timeout_minutes,
-        )
-        # Continue polling without a second timeout (spec: log warning and continue).
-        return await bulk_client.poll_job(sf_job_id)
 
 
 # ── Results download helper ───────────────────────────────────────────────────

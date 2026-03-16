@@ -407,6 +407,32 @@ class SalesforceBulkClient:
             await asyncio.sleep(interval)
             interval = min(interval * 2.0, max_interval)
 
+    async def poll_job_once(self, sf_job_id: str) -> tuple[str, int, int]:
+        """Single status poll. Returns (state, records_processed, records_failed).
+
+        Args:
+            sf_job_id: The Salesforce job ID.
+
+        Returns:
+            A 3-tuple ``(state, records_processed, records_failed)``.
+
+        Raises:
+            BulkAPIError: On non-200 response.
+        """
+        response = await self._request("GET", self._job_url(sf_job_id))
+        if response.status_code != 200:
+            raise BulkAPIError(
+                f"poll_job_once failed for {sf_job_id}: HTTP {response.status_code}",
+                status_code=response.status_code,
+                body=response.text,
+            )
+        body = response.json()
+        return (
+            body.get("state", ""),
+            body.get("numberRecordsProcessed", 0),
+            body.get("numberRecordsFailed", 0),
+        )
+
     async def get_success_results(self, sf_job_id: str) -> bytes:
         """Download the successful records CSV for a completed job.
 

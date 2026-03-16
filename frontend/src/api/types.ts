@@ -123,6 +123,7 @@ export interface JobRecord {
   status: JobStatus
   records_processed?: number | null
   records_failed?: number | null
+  total_records?: number | null
   success_file_path?: string | null
   error_file_path?: string | null
   unprocessed_file_path?: string | null
