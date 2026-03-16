@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../../components/ui/Toast'
 import FilesPage, { formatFileSize } from '../../pages/FilesPage'
-import type { InputFileInfo, InputFilePreview } from '../../api/types'
+import type { InputDirectoryEntry, InputFilePreview } from '../../api/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -20,10 +20,15 @@ import { filesApi } from '../../api/endpoints'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-const fileList: InputFileInfo[] = [
-  { filename: 'accounts.csv', size_bytes: 2048 },
-  { filename: 'contacts.csv', size_bytes: 1048576 },
-  { filename: 'opportunities.csv', size_bytes: 5242880 },
+const fileList: InputDirectoryEntry[] = [
+  { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 2048, row_count: 100 },
+  { name: 'contacts.csv', kind: 'file', path: 'contacts.csv', size_bytes: 1048576, row_count: 500 },
+  { name: 'opportunities.csv', kind: 'file', path: 'opportunities.csv', size_bytes: 5242880, row_count: 2000 },
+]
+
+const mixedList: InputDirectoryEntry[] = [
+  { name: '2026', kind: 'directory', path: '2026', size_bytes: null, row_count: null },
+  { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 2048, row_count: 100 },
 ]
 
 const accountsPreview: InputFilePreview = {
@@ -187,13 +192,13 @@ describe('FilesPage', () => {
     })
   })
 
-  it('shows file sizes in the list', async () => {
+  it('shows file sizes and row counts in the list', async () => {
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByText('2.0 KB')).toBeInTheDocument()
-      expect(screen.getByText('1.0 MB')).toBeInTheDocument()
-      expect(screen.getByText('5.0 MB')).toBeInTheDocument()
+      expect(screen.getByText('2.0 KB · 100 rows')).toBeInTheDocument()
+      expect(screen.getByText('1.0 MB · 500 rows')).toBeInTheDocument()
+      expect(screen.getByText('5.0 MB · 2,000 rows')).toBeInTheDocument()
     })
   })
 
@@ -366,20 +371,23 @@ describe('FilesPage', () => {
 
   it('wraps the preview table in an overflow-x-auto container', async () => {
     const user = userEvent.setup()
-    vi.mocked(filesApi.listInput).mockResolvedValue([{ filename: 'wide.csv', size_bytes: 1024 }])
+    vi.mocked(filesApi.listInput).mockResolvedValue([
+      { name: 'wide.csv', kind: 'file', path: 'wide.csv', size_bytes: 1024, row_count: 1 },
+    ])
     vi.mocked(filesApi.previewInput).mockResolvedValue(widePreview)
     renderFilesPage()
     await waitFor(() => screen.getByText('wide.csv'))
     await user.click(screen.getByText('wide.csv'))
     await waitFor(() => screen.getByRole('table'))
     const table = screen.getByRole('table')
-    // The scroll wrapper is the parent div with overflow-x-auto
     expect(table.parentElement).toHaveClass('overflow-x-auto')
   })
 
   it('renders all 20 column headers for wide file', async () => {
     const user = userEvent.setup()
-    vi.mocked(filesApi.listInput).mockResolvedValue([{ filename: 'wide.csv', size_bytes: 1024 }])
+    vi.mocked(filesApi.listInput).mockResolvedValue([
+      { name: 'wide.csv', kind: 'file', path: 'wide.csv', size_bytes: 1024, row_count: 1 },
+    ])
     vi.mocked(filesApi.previewInput).mockResolvedValue(widePreview)
     renderFilesPage()
     await waitFor(() => screen.getByText('wide.csv'))
@@ -437,15 +445,109 @@ describe('FilesPage', () => {
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
 
-    // Select first file
     await user.click(screen.getByText('accounts.csv'))
     await waitFor(() => screen.getByRole('columnheader', { name: 'Name' }))
 
-    // Select second file
     await user.click(screen.getByText('contacts.csv'))
     await waitFor(() => {
       expect(screen.getByRole('columnheader', { name: 'FirstName' })).toBeInTheDocument()
       expect(screen.getByText('jane@example.com')).toBeInTheDocument()
     })
+  })
+
+  // ── Directory entries ──────────────────────────────────────────────────────
+
+  it('shows directory entries in the file list', async () => {
+    vi.mocked(filesApi.listInput).mockResolvedValue(mixedList)
+    renderFilesPage()
+    await waitFor(() => {
+      expect(screen.getByText('2026')).toBeInTheDocument()
+      expect(screen.getByText('accounts.csv')).toBeInTheDocument()
+    })
+  })
+
+  it('does not show file size or row count for directory entries', async () => {
+    vi.mocked(filesApi.listInput).mockResolvedValue(mixedList)
+    renderFilesPage()
+    await waitFor(() => screen.getByText('2026'))
+    // File entry shows combined metadata; directory entry does not
+    expect(screen.getByText('2.0 KB · 100 rows')).toBeInTheDocument()
+    const dirButton = screen.getByRole('button', { name: /2026/ })
+    expect(dirButton.textContent).not.toMatch(/KB|MB|rows/)
+  })
+
+  it('clicking a directory entry calls listInput with the directory path', async () => {
+    const user = userEvent.setup()
+    vi.mocked(filesApi.listInput).mockResolvedValue(mixedList)
+    renderFilesPage()
+    await waitFor(() => screen.getByText('2026'))
+    await user.click(screen.getByText('2026'))
+    expect(filesApi.listInput).toHaveBeenCalledWith('2026')
+  })
+
+  it('clicking a directory entry clears the selected file', async () => {
+    const user = userEvent.setup()
+    vi.mocked(filesApi.listInput).mockResolvedValue(mixedList)
+    vi.mocked(filesApi.previewInput).mockReturnValue(new Promise(() => {}))
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    expect(screen.queryByText('No file selected')).not.toBeInTheDocument()
+    await user.click(screen.getByText('2026'))
+    await waitFor(() => {
+      expect(screen.getByText('No file selected')).toBeInTheDocument()
+    })
+  })
+
+  // ── Breadcrumb ─────────────────────────────────────────────────────────────
+
+  it('renders the breadcrumb root "Input Files" link', async () => {
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    expect(screen.getByRole('button', { name: 'Input Files' })).toBeInTheDocument()
+  })
+
+  it('clicking breadcrumb root navigates back to root', async () => {
+    const user = userEvent.setup()
+    vi.mocked(filesApi.listInput).mockResolvedValue(mixedList)
+    renderFilesPage()
+    await waitFor(() => screen.getByText('2026'))
+    await user.click(screen.getByText('2026'))
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    await user.click(screen.getByRole('button', { name: 'Input Files' }))
+    expect(filesApi.listInput).toHaveBeenCalledWith('')
+  })
+
+  it('shows current directory segment in breadcrumb after navigation', async () => {
+    const user = userEvent.setup()
+    vi.mocked(filesApi.listInput).mockResolvedValue(mixedList)
+    renderFilesPage()
+    await waitFor(() => screen.getByText('2026'))
+    await user.click(screen.getByText('2026'))
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Directory breadcrumb' })).toHaveTextContent(
+        '2026',
+      )
+    })
+  })
+
+  // ── Subdirectory file preview ──────────────────────────────────────────────
+
+  it('calls previewInput with the full relative path for a file in a subdirectory', async () => {
+    const user = userEvent.setup()
+    const subEntries: InputDirectoryEntry[] = [
+      { name: 'accounts.csv', kind: 'file', path: '2026/accounts.csv', size_bytes: 1024, row_count: 50 },
+    ]
+    vi.mocked(filesApi.listInput)
+      .mockResolvedValueOnce(mixedList)
+      .mockResolvedValueOnce(subEntries)
+    vi.mocked(filesApi.previewInput).mockReturnValue(new Promise(() => {}))
+    renderFilesPage()
+    await waitFor(() => screen.getByText('2026'))
+    await user.click(screen.getByText('2026'))
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    expect(filesApi.previewInput).toHaveBeenCalledWith('2026/accounts.csv', 25)
   })
 })

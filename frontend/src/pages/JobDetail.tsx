@@ -204,7 +204,7 @@ export default function JobDetail() {
           <span className="text-gray-900">Job {jobId ? truncateId(jobId) : '…'}</span>
         </nav>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">Job Detail</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Job Detail</h1>
           {job && (
             <Badge variant={jobStatusVariant(job.status)} dot>
               {job.status}

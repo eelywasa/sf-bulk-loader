@@ -4,9 +4,12 @@ import asyncio
 import csv
 import logging
 import os
-from typing import Any, Dict, List
+import pathlib
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,46 +26,93 @@ ws_router = APIRouter(tags=["websocket"])
 # ── File endpoints ─────────────────────────────────────────────────────────────
 
 
-def _safe_filename(filename: str) -> str:
-    """Strip path separators to prevent directory traversal."""
-    return os.path.basename(filename)
+class EntryKind(str, Enum):
+    file = "file"
+    directory = "directory"
 
 
-@router.get("/api/files/input", response_model=List[Dict[str, Any]])
-async def list_input_files() -> List[Dict[str, Any]]:
-    """List CSV files available in the input directory."""
+class InputDirectoryEntry(BaseModel):
+    name: str
+    kind: EntryKind
+    path: str
+    size_bytes: Optional[int] = None
+    row_count: Optional[int] = None
+
+
+def _safe_relative_path(rel_path: str, base_dir: str) -> Optional[pathlib.Path]:
+    """Validate that rel_path stays inside base_dir; return resolved Path or None."""
+    base = pathlib.Path(base_dir).resolve()
+    parts = pathlib.PurePosixPath(rel_path.replace("\\", "/")).parts
+    if ".." in parts:
+        return None
+    candidate = (base / rel_path).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        return None
+    return candidate
+
+
+@router.get("/api/files/input", response_model=List[InputDirectoryEntry])
+async def list_input_files(
+    path: str = Query(default="", description="Relative subdirectory path to list"),
+) -> List[InputDirectoryEntry]:
+    """List CSV files and subdirectories at the given path within the input directory."""
     input_dir = settings.input_dir
     if not os.path.isdir(input_dir):
         return []
-    files = []
-    for name in sorted(os.listdir(input_dir)):
-        if not name.lower().endswith(".csv"):
-            continue
-        full = os.path.join(input_dir, name)
-        try:
-            size = os.path.getsize(full)
-        except OSError:
-            size = 0
-        files.append({"filename": name, "size_bytes": size})
-    return files
+
+    if path:
+        target = _safe_relative_path(path, input_dir)
+        if target is None or not target.is_dir():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
+    else:
+        target = pathlib.Path(input_dir).resolve()
+
+    dirs: List[InputDirectoryEntry] = []
+    files: List[InputDirectoryEntry] = []
+
+    try:
+        with os.scandir(target) as it:
+            for entry in sorted(it, key=lambda e: e.name):
+                if entry.name.startswith("."):
+                    continue
+                rel = os.path.join(path, entry.name) if path else entry.name
+                if entry.is_dir(follow_symlinks=False):
+                    dirs.append(InputDirectoryEntry(name=entry.name, kind=EntryKind.directory, path=rel))
+                elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(".csv"):
+                    try:
+                        size = entry.stat().st_size
+                    except OSError:
+                        size = 0
+                    row_count: Optional[int] = None
+                    try:
+                        with open(entry.path, encoding="utf-8-sig", errors="replace") as fh:
+                            row_count = max(0, sum(1 for _ in fh) - 1)
+                    except OSError:
+                        pass
+                    files.append(InputDirectoryEntry(name=entry.name, kind=EntryKind.file, path=rel, size_bytes=size, row_count=row_count))
+    except OSError:
+        return []
+
+    return dirs + files
 
 
-@router.get("/api/files/input/{filename}/preview")
+@router.get("/api/files/input/{file_path:path}/preview")
 async def preview_input_file(
-    filename: str,
+    file_path: str,
     rows: int = Query(default=10, ge=1, le=1000),
 ) -> Dict[str, Any]:
     """Return the first *rows* data rows (plus header) of a CSV file."""
-    safe_name = _safe_filename(filename)
-    if safe_name != filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+    resolved = _safe_relative_path(file_path, settings.input_dir)
+    if resolved is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
 
-    filepath = os.path.join(settings.input_dir, safe_name)
-    if not os.path.isfile(filepath):
+    if not resolved.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     try:
-        with open(filepath, newline="", encoding="utf-8-sig") as fh:
+        with open(resolved, newline="", encoding="utf-8-sig") as fh:
             reader = csv.DictReader(fh)
             header = reader.fieldnames or []
             preview_rows = [row for _, row in zip(range(rows), reader)]
@@ -73,7 +123,7 @@ async def preview_input_file(
         ) from exc
 
     return {
-        "filename": safe_name,
+        "filename": file_path,
         "header": list(header),
         "rows": preview_rows,
         "row_count": len(preview_rows),

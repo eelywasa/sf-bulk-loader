@@ -283,11 +283,25 @@ describe('jobsApi', () => {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 describe('filesApi', () => {
-  it('listInput → GET /api/files/input', async () => {
-    vi.mocked(fetch).mockResolvedValue(mockJson([{ filename: 'accounts.csv', size_bytes: 1024 }]))
+  it('listInput with no arg → GET /api/files/input', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson([]))
     await filesApi.listInput()
     const { url } = captureLastFetch()
     expect(url).toBe('/api/files/input')
+  })
+
+  it('listInput with path → GET /api/files/input?path=subdir', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson([]))
+    await filesApi.listInput('subdir')
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/files/input?path=subdir')
+  })
+
+  it('listInput encodes path with special characters', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson([]))
+    await filesApi.listInput('my folder')
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/files/input?path=my%20folder')
   })
 
   it('previewInput → GET /api/files/input/{filename}/preview?rows=25', async () => {
@@ -304,6 +318,13 @@ describe('filesApi', () => {
     await filesApi.previewInput('my file.csv')
     const { url } = captureLastFetch()
     expect(url).toBe('/api/files/input/my%20file.csv/preview?rows=25')
+  })
+
+  it('previewInput with subdirectory path encodes each segment', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({ filename: 'sub/my file.csv', header: [], rows: [], row_count: 0 }))
+    await filesApi.previewInput('sub/my file.csv')
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/files/input/sub/my%20file.csv/preview?rows=25')
   })
 
   it('previewInput respects custom rows param', async () => {

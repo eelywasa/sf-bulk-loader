@@ -304,8 +304,8 @@ export default function Connections() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Connections</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Connections</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Manage Salesforce org connections (JWT Bearer auth).
           </p>
         </div>

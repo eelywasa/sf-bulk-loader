@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faFolder, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { filesApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
+import type { InputDirectoryEntry } from '../api/types'
 import { Card, EmptyState } from '../components/ui'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -12,34 +15,105 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// ─── Breadcrumb ───────────────────────────────────────────────────────────────
+
+interface BreadcrumbProps {
+  currentPath: string
+  onNavigate: (path: string) => void
+}
+
+function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
+  const segments = currentPath ? currentPath.split('/').filter(Boolean) : []
+
+  return (
+    <nav aria-label="Directory breadcrumb" className="flex items-center gap-1 text-sm flex-wrap">
+      <button
+        type="button"
+        onClick={() => onNavigate('')}
+        className={`transition-colors ${segments.length === 0 ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300'}`}
+      >
+        Input Files
+      </button>
+      {segments.map((seg, i) => {
+        const segPath = segments.slice(0, i + 1).join('/')
+        const isLast = i === segments.length - 1
+        return (
+          <span key={segPath} className="flex items-center gap-1">
+            <FontAwesomeIcon icon={faChevronRight} className="text-gray-400 dark:text-gray-500 text-xs" />
+            {isLast ? (
+              <span className="font-semibold text-gray-900 dark:text-gray-100">{seg}</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onNavigate(segPath)}
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+              >
+                {seg}
+              </button>
+            )}
+          </span>
+        )
+      })}
+    </nav>
+  )
+}
+
 // ─── File list panel ─────────────────────────────────────────────────────────
 
 interface FileListProps {
-  filenames: Array<{ filename: string; size_bytes: number }>
+  entries: InputDirectoryEntry[]
   selected: string | null
-  onSelect: (filename: string) => void
+  onSelect: (path: string) => void
+  onNavigate: (path: string) => void
 }
 
-function FileList({ filenames, selected, onSelect }: FileListProps) {
+function FileList({ entries, selected, onSelect, onNavigate }: FileListProps) {
   return (
     <Card padding={false}>
       <ul role="listbox" aria-label="Input files" className="divide-y divide-gray-100">
-        {filenames.map((file) => (
-          <li key={file.filename} role="option" aria-selected={selected === file.filename}>
-            <button
-              type="button"
-              onClick={() => onSelect(file.filename)}
-              className={`w-full text-left px-4 py-3 transition-colors ${
-                selected === file.filename
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'hover:bg-gray-50 text-gray-900'
-              }`}
+        {entries.map((entry) => {
+          const isSelected = entry.kind === 'file' && selected === entry.path
+          return (
+            <li
+              key={entry.path}
+              role="option"
+              aria-selected={isSelected}
             >
-              <p className="text-sm font-medium truncate">{file.filename}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{formatFileSize(file.size_bytes)}</p>
-            </button>
-          </li>
-        ))}
+              <button
+                type="button"
+                onClick={() =>
+                  entry.kind === 'directory' ? onNavigate(entry.path) : onSelect(entry.path)
+                }
+                className={`w-full text-left px-4 py-3 transition-colors flex items-center gap-3 ${
+                  isSelected
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'hover:bg-gray-50 text-gray-900'
+                }`}
+              >
+                {entry.kind === 'directory' && (
+                  <FontAwesomeIcon
+                    icon={faFolder}
+                    className="text-amber-400 shrink-0"
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{entry.name}</p>
+                  {entry.kind === 'file' && (entry.size_bytes != null || entry.row_count != null) && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {[
+                        entry.size_bytes != null ? formatFileSize(entry.size_bytes) : null,
+                        entry.row_count != null ? `${entry.row_count.toLocaleString()} rows` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
+                </span>
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </Card>
   )
@@ -140,16 +214,22 @@ function PreviewTable({ filename, header, rows, rowCount }: PreviewTableProps) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FilesPage() {
+  const [currentPath, setCurrentPath] = useState('')
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
 
+  function handleNavigate(path: string) {
+    setCurrentPath(path)
+    setSelectedFile(null)
+  }
+
   const {
-    data: files,
+    data: entries,
     isLoading: filesLoading,
     isError: filesError,
     error: filesErr,
   } = useQuery({
-    queryKey: ['files', 'input'],
-    queryFn: () => filesApi.listInput(),
+    queryKey: ['files', 'input', currentPath],
+    queryFn: () => filesApi.listInput(currentPath),
   })
 
   const {
@@ -184,8 +264,8 @@ export default function FilesPage() {
     return (
       <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Input Files</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Input Files</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Browse and preview CSV files in the input directory.
           </p>
         </div>
@@ -198,15 +278,16 @@ export default function FilesPage() {
 
   // ── Empty state ────────────────────────────────────────────────────────────
 
-  if (!files || files.length === 0) {
+  if (!entries || entries.length === 0) {
     return (
       <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Input Files</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Input Files</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Browse and preview CSV files in the input directory.
           </p>
         </div>
+        <Breadcrumb currentPath={currentPath} onNavigate={handleNavigate} />
         <EmptyState
           title="No input files found"
           description="Place CSV files in the /data/input directory to see them here."
@@ -243,17 +324,20 @@ export default function FilesPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Input Files</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Input Files</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Browse and preview CSV files in the input directory.
         </p>
       </div>
 
+      <Breadcrumb currentPath={currentPath} onNavigate={handleNavigate} />
+
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 items-start">
         <FileList
-          filenames={files}
+          entries={entries}
           selected={selectedFile}
           onSelect={setSelectedFile}
+          onNavigate={handleNavigate}
         />
         <div>{previewPanel}</div>
       </div>

@@ -76,8 +76,8 @@ export default function RunsPage() {
     <div className="p-6 space-y-6">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Runs</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Runs</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           View and monitor load run history.
         </p>
       </div>

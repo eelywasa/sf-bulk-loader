@@ -11,6 +11,7 @@ import type {
   StepPreviewResponse,
   InputFileInfo,
   InputFilePreview,
+  InputDirectoryEntry,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -117,9 +118,12 @@ export const jobsApi = {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 export const filesApi = {
-  listInput: () => api.get<InputFileInfo[]>('/api/files/input'),
-  previewInput: (filename: string, rows = 25) =>
+  listInput: (path = '') =>
+    api.get<InputDirectoryEntry[]>(
+      `/api/files/input${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+    ),
+  previewInput: (filePath: string, rows = 25) =>
     api.get<InputFilePreview>(
-      `/api/files/input/${encodeURIComponent(filename)}/preview?rows=${rows}`,
+      `/api/files/input/${filePath.split('/').map(encodeURIComponent).join('/')}/preview?rows=${rows}`,
     ),
 }

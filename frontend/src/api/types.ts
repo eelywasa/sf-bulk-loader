@@ -150,6 +150,16 @@ export interface InputFileInfo {
   size_bytes: number
 }
 
+export type EntryKind = 'file' | 'directory'
+
+export interface InputDirectoryEntry {
+  name: string
+  kind: EntryKind
+  path: string
+  size_bytes: number | null
+  row_count: number | null
+}
+
 export interface InputFilePreview {
   filename: string
   header: string[]
