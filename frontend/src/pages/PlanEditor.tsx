@@ -422,6 +422,10 @@ export default function PlanEditor() {
 
   function handleSaveStep() {
     setStepFormErrors([])
+    if (stepForm.operation === 'upsert' && !stepForm.external_id_field.trim()) {
+      setStepFormErrors(['External ID Field is required for upsert operations.'])
+      return
+    }
     const data: LoadStepCreate = {
       object_name: stepForm.object_name,
       operation: stepForm.operation,
