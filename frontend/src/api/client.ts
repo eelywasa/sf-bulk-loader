@@ -2,6 +2,22 @@ import type { ApiValidationError } from './types'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
+// ─── Token storage helpers ────────────────────────────────────────────────────
+
+const TOKEN_KEY = 'auth_token'
+
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function storeToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
 // ─── ApiError class ───────────────────────────────────────────────────────────
 
 export class ApiError extends Error {
@@ -45,9 +61,23 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
     headers.set('Content-Type', 'application/json')
   }
 
+  // Inject auth token when present
+  const token = getStoredToken()
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
   const response = await fetch(url, { ...init, headers })
 
   if (!response.ok) {
+    // On 401, clear session and redirect to login if a token was present
+    if (response.status === 401 && token) {
+      clearStoredToken()
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
+
     let detail: string | ApiValidationError[] | undefined
     let message = response.statusText || `HTTP ${response.status}`
 

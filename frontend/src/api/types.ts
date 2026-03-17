@@ -1,3 +1,14 @@
+// ─── Auth ──────────────────────────────────────────────────────────────────────
+
+export interface UserResponse {
+  id: string
+  username: string | null
+  email: string | null
+  display_name: string | null
+  role: string
+  is_active: boolean
+}
+
 // ─── Status enums ─────────────────────────────────────────────────────────────
 
 export type RunStatus =

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ApiError, apiFetch, apiGet, apiPost, apiPut, apiDelete } from '../../api/client'
+import { ApiError, apiFetch, apiGet, apiPost, apiPut, apiDelete, getStoredToken, storeToken, clearStoredToken } from '../../api/client'
 
 // Helper to create a mock Response
 function mockResponse(
@@ -151,6 +151,98 @@ describe('apiFetch', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0]
     const headers = init?.headers as Headers
     expect(headers.get('Content-Type')).toBeNull()
+  })
+})
+
+describe('token storage helpers', () => {
+  beforeEach(() => localStorage.clear())
+  afterEach(() => localStorage.clear())
+
+  it('storeToken writes to localStorage', () => {
+    storeToken('my-token')
+    expect(localStorage.getItem('auth_token')).toBe('my-token')
+  })
+
+  it('getStoredToken returns the stored token', () => {
+    localStorage.setItem('auth_token', 'abc')
+    expect(getStoredToken()).toBe('abc')
+  })
+
+  it('getStoredToken returns null when empty', () => {
+    expect(getStoredToken()).toBeNull()
+  })
+
+  it('clearStoredToken removes the token', () => {
+    localStorage.setItem('auth_token', 'abc')
+    clearStoredToken()
+    expect(localStorage.getItem('auth_token')).toBeNull()
+  })
+})
+
+describe('apiFetch auth injection', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })))
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  it('injects Authorization header when token is stored', async () => {
+    storeToken('valid-token')
+    await apiFetch('/api/test')
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    expect((init?.headers as Headers).get('Authorization')).toBe('Bearer valid-token')
+  })
+
+  it('does not inject Authorization header when no token is stored', async () => {
+    await apiFetch('/api/test')
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    expect((init?.headers as Headers).get('Authorization')).toBeNull()
+  })
+
+  it('does not overwrite an explicit Authorization header', async () => {
+    storeToken('stored-token')
+    await apiFetch('/api/test', { headers: { Authorization: 'Bearer explicit-token' } })
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    expect((init?.headers as Headers).get('Authorization')).toBe('Bearer explicit-token')
+  })
+})
+
+describe('apiFetch 401 handling', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Unauthorized' }), { status: 401 }),
+    ))
+    vi.stubGlobal('location', { href: '', pathname: '/' })
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  it('clears token and redirects to /login on 401 when token was present', async () => {
+    storeToken('expired-token')
+    await expect(apiFetch('/api/test')).rejects.toBeInstanceOf(ApiError)
+    expect(localStorage.getItem('auth_token')).toBeNull()
+    expect(window.location.href).toBe('/login')
+  })
+
+  it('does not redirect on 401 when no token was present', async () => {
+    await expect(apiFetch('/api/test')).rejects.toBeInstanceOf(ApiError)
+    expect(window.location.href).toBe('')
+  })
+
+  it('clears token but does not redirect when already on /login', async () => {
+    storeToken('expired-token')
+    vi.stubGlobal('location', { href: '', pathname: '/login' })
+    await expect(apiFetch('/api/test')).rejects.toBeInstanceOf(ApiError)
+    expect(localStorage.getItem('auth_token')).toBeNull()
+    expect(window.location.href).toBe('')
   })
 })
 

@@ -16,16 +16,23 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # ── Set test environment BEFORE importing any app modules ─────────────────────
 _TEST_ENCRYPTION_KEY = Fernet.generate_key().decode()
 os.environ.setdefault("ENCRYPTION_KEY", _TEST_ENCRYPTION_KEY)
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-pytest-only")
+os.environ.setdefault("ADMIN_USERNAME", "test-admin")
+os.environ.setdefault("ADMIN_PASSWORD", "test-admin-password")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
+import app.database as _db_module  # noqa: E402
+import app.main as _main_module  # noqa: E402
 from app.main import app  # noqa: E402
 import app.services.orchestrator as _orchestrator_module  # noqa: E402
 
 # Override in-process settings so encrypt/decrypt helpers use our key
 settings.encryption_key = _TEST_ENCRYPTION_KEY
+settings.admin_username = "test-admin"
+settings.admin_password = "test-admin-password"
 
 # ── Test database ─────────────────────────────────────────────────────────────
 
@@ -34,6 +41,10 @@ TEST_DB_URL = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
 
 _engine = create_async_engine(TEST_DB_URL, echo=False)
 _TestSession = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+
+# Point the session factories used by lifespan seed and app routes to the test DB
+_db_module.AsyncSessionLocal = _TestSession
+_main_module.AsyncSessionLocal = _TestSession
 
 
 def _run_async(coro):
@@ -79,10 +90,11 @@ def clean_db():
     from app.models.load_plan import LoadPlan
     from app.models.load_run import LoadRun
     from app.models.load_step import LoadStep
+    from app.models.user import User
 
     async def _clean():
         async with _TestSession() as session:
-            for model in [JobRecord, LoadRun, LoadStep, LoadPlan, Connection]:
+            for model in [JobRecord, LoadRun, LoadStep, LoadPlan, Connection, User]:
                 await session.execute(delete(model))
             await session.commit()
 

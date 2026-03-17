@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     default_partition_size: int = 10_000
     max_partition_size: int = 100_000_000
 
+    # Authentication
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_minutes: int = 60
+    admin_username: str | None = None
+    admin_password: str | None = None
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
 

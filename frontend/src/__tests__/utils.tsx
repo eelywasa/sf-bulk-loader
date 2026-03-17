@@ -3,6 +3,7 @@ import { render, type RenderOptions } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../components/ui/Toast'
+import { AuthProvider } from '../context/AuthContext'
 import { ThemeProvider } from '../context/ThemeContext'
 
 function AllProviders({ children }: { children: React.ReactNode }) {
@@ -15,11 +16,13 @@ function AllProviders({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          <MemoryRouter>{children}</MemoryRouter>
-        </ToastProvider>
-      </QueryClientProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <MemoryRouter>{children}</MemoryRouter>
+          </ToastProvider>
+        </QueryClientProvider>
+      </AuthProvider>
     </ThemeProvider>
   )
 }
