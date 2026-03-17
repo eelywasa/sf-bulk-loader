@@ -1,11 +1,32 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, within, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import AppShell from '../../layout/AppShell'
 import { ThemeProvider } from '../../context/ThemeContext'
+import { AuthProvider } from '../../context/AuthContext'
+import * as client from '../../api/client'
+import type { UserResponse } from '../../api/types'
 
-function renderAppShell(initialPath = '/') {
+const MOCK_USER: UserResponse = {
+  id: '1',
+  username: 'alice',
+  email: null,
+  display_name: null,
+  role: 'admin',
+  is_active: true,
+}
+
+const MOCK_USER_DISPLAY: UserResponse = {
+  ...MOCK_USER,
+  display_name: 'Alice Admin',
+}
+
+function renderAppShell(initialPath = '/', mockUser: UserResponse | null = null) {
+  if (mockUser) {
+    localStorage.setItem('auth_token', 'test-token')
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(mockUser)
+  }
   const router = createMemoryRouter(
     [
       {
@@ -23,12 +44,24 @@ function renderAppShell(initialPath = '/') {
   )
   return render(
     <ThemeProvider>
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </ThemeProvider>,
   )
 }
 
 describe('AppShell', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.spyOn(client, 'apiFetch')
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
   it('renders the brand name', () => {
     renderAppShell()
     expect(screen.getByText('Bulk Loader')).toBeInTheDocument()
@@ -126,5 +159,44 @@ describe('AppShell', () => {
     const { container } = renderAppShell()
     const brand = container.querySelector('.px-5.py-4')
     expect(brand?.querySelector('svg')).toBeInTheDocument()
+  })
+
+  it('shows sign out button', () => {
+    renderAppShell()
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+  })
+
+  it('shows username when user is authenticated', async () => {
+    renderAppShell('/', MOCK_USER)
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument()
+    })
+  })
+
+  it('shows display_name when present', async () => {
+    renderAppShell('/', MOCK_USER_DISPLAY)
+    await waitFor(() => {
+      expect(screen.getByText('Alice Admin')).toBeInTheDocument()
+    })
+  })
+
+  it('logout button triggers logout', async () => {
+    const user = userEvent.setup()
+    const mockLocation = { href: '', pathname: '/' }
+    vi.stubGlobal('location', mockLocation)
+
+    renderAppShell('/', MOCK_USER)
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /sign out/i }))
+    })
+
+    expect(localStorage.getItem('auth_token')).toBeNull()
+    expect(mockLocation.href).toBe('/login')
+
+    vi.unstubAllGlobals()
   })
 })

@@ -1,5 +1,7 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import AppShell from './layout/AppShell'
+import ProtectedRoute from './components/ProtectedRoute'
+import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Connections from './pages/Connections'
 import PlansPage from './pages/PlansPage'
@@ -10,8 +12,13 @@ import JobDetail from './pages/JobDetail'
 import FilesPage from './pages/FilesPage'
 
 const router = createBrowserRouter([
+  { path: '/login', element: <Login /> },
   {
-    element: <AppShell />,
+    element: (
+      <ProtectedRoute>
+        <AppShell />
+      </ProtectedRoute>
+    ),
     children: [
       { path: '/', element: <Dashboard /> },
       { path: '/connections', element: <Connections /> },

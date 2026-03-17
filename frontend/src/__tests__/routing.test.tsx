@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../components/ui/Toast'
 import { ThemeProvider } from '../context/ThemeContext'
+import { AuthProvider } from '../context/AuthContext'
+import * as client from '../api/client'
 import AppShell from '../layout/AppShell'
+import Login from '../pages/Login'
 import Dashboard from '../pages/Dashboard'
 import Connections from '../pages/Connections'
 import PlansPage from '../pages/PlansPage'
@@ -13,6 +16,16 @@ import RunsPage from '../pages/RunsPage'
 import RunDetail from '../pages/RunDetail'
 import JobDetail from '../pages/JobDetail'
 import FilesPage from '../pages/FilesPage'
+import type { UserResponse } from '../api/types'
+
+const MOCK_USER: UserResponse = {
+  id: '1',
+  username: 'testuser',
+  email: null,
+  display_name: null,
+  role: 'admin',
+  is_active: true,
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
@@ -21,6 +34,7 @@ const queryClient = new QueryClient({
 function renderRoute(path: string) {
   const router = createMemoryRouter(
     [
+      { path: '/login', element: <Login /> },
       {
         element: <AppShell />,
         children: [
@@ -40,66 +54,102 @@ function renderRoute(path: string) {
 
   return render(
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          <RouterProvider router={router} />
-        </ToastProvider>
-      </QueryClientProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <RouterProvider router={router} />
+          </ToastProvider>
+        </QueryClientProvider>
+      </AuthProvider>
     </ThemeProvider>,
   )
 }
 
 describe('Routing', () => {
-  it('renders Dashboard at /', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.spyOn(client, 'apiFetch').mockResolvedValue(MOCK_USER)
+    localStorage.setItem('auth_token', 'test-token')
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('renders Dashboard at /', async () => {
     renderRoute('/')
-    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    })
   })
 
-  it('renders Connections at /connections', () => {
+  it('renders Connections at /connections', async () => {
     renderRoute('/connections')
-    expect(screen.getByRole('heading', { name: 'Connections' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Connections' })).toBeInTheDocument()
+    })
   })
 
-  it('renders PlansPage at /plans', () => {
+  it('renders PlansPage at /plans', async () => {
     renderRoute('/plans')
-    expect(screen.getByRole('heading', { name: 'Load Plans' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Load Plans' })).toBeInTheDocument()
+    })
   })
 
-  it('renders PlanEditor at /plans/new', () => {
+  it('renders PlanEditor at /plans/new', async () => {
     renderRoute('/plans/new')
-    expect(screen.getByRole('heading', { name: 'New Load Plan' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'New Load Plan' })).toBeInTheDocument()
+    })
   })
 
-  it('renders PlanEditor in edit mode at /plans/some-id', () => {
+  it('renders PlanEditor in edit mode at /plans/some-id', async () => {
     renderRoute('/plans/abc-123')
-    expect(screen.getByRole('heading', { name: 'Edit Load Plan' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Edit Load Plan' })).toBeInTheDocument()
+    })
   })
 
-  it('renders RunsPage at /runs', () => {
+  it('renders RunsPage at /runs', async () => {
     renderRoute('/runs')
-    expect(screen.getByRole('heading', { name: 'Runs' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Runs' })).toBeInTheDocument()
+    })
   })
 
-  it('renders RunDetail at /runs/:id', () => {
+  it('renders RunDetail at /runs/:id', async () => {
     renderRoute('/runs/run-456')
     // RunDetail fetches asynchronously; on initial render it shows a loading indicator
     expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
-  it('renders JobDetail at /runs/:runId/jobs/:jobId', () => {
+  it('renders JobDetail at /runs/:runId/jobs/:jobId', async () => {
     renderRoute('/runs/run-456/jobs/job-789')
     // JobDetail fetches asynchronously; on initial render it shows a loading indicator
     expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
-  it('renders FilesPage at /files', () => {
+  it('renders FilesPage at /files', async () => {
     renderRoute('/files')
     // FilesPage fetches asynchronously; on initial render it shows a loading indicator
     expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
-  it('AppShell nav is present on all routes', () => {
+  it('AppShell nav is present on all routes', async () => {
     renderRoute('/connections')
-    expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument()
+    })
+  })
+
+  it('renders login page at /login', () => {
+    localStorage.clear() // no auth token for login page test
+    vi.restoreAllMocks()
+    renderRoute('/login')
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
+    expect(screen.getByLabelText('Username')).toBeInTheDocument()
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
 })

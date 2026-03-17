@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import clsx from 'clsx'
 import { type Theme, useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/AuthContext'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
@@ -15,6 +16,7 @@ import {
   faChevronDown,
   faChevronRight,
   faCheck,
+  faRightFromBracket,
 } from '@fortawesome/free-solid-svg-icons'
 
 interface NavItem {
@@ -127,6 +129,9 @@ function SettingsMenu() {
 }
 
 export default function AppShell() {
+  const { user, logout } = useAuth()
+  const displayName = user?.display_name ?? user?.username ?? null
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
       {/* Sidebar */}
@@ -174,7 +179,19 @@ export default function AppShell() {
         {/* Top bar */}
         <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between flex-shrink-0">
           <div />
-          <div className="text-xs text-gray-400 dark:text-gray-500">Salesforce Bulk Loader</div>
+          <div className="flex items-center gap-4">
+            {displayName && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">{displayName}</span>
+            )}
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+              aria-label="Sign out"
+            >
+              <FontAwesomeIcon icon={faRightFromBracket} className="w-3.5 h-3.5" />
+              Sign out
+            </button>
+          </div>
         </header>
 
         {/* Page content */}
