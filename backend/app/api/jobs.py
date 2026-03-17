@@ -14,10 +14,11 @@ from app.config import settings
 from app.database import get_db
 from app.models.job import JobRecord, JobStatus
 from app.schemas.job import JobResponse
+from app.services.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["jobs"])
+router = APIRouter(tags=["jobs"], dependencies=[Depends(get_current_user)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

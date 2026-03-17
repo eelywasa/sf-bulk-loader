@@ -300,3 +300,102 @@ def test_seed_admin_fails_without_credentials():
                     await seed_admin(session)
 
     _run_async(_run())
+
+
+# ── Ticket 5: Protected route enforcement ─────────────────────────────────────
+
+
+def test_protected_endpoint_without_token_returns_401(client):
+    """Anonymous requests to protected REST endpoints must be rejected."""
+    assert client.get("/api/connections/").status_code == 401
+    assert client.get("/api/load-plans/").status_code == 401
+    assert client.get("/api/runs/").status_code == 401
+    assert client.get("/api/files/input").status_code == 401
+
+
+def test_health_endpoint_is_public(client):
+    """/api/health must remain accessible without authentication."""
+    assert client.get("/api/health").status_code == 200
+
+
+def test_auth_endpoints_are_public(client):
+    """Auth endpoints must be reachable without a token."""
+    assert client.get("/api/auth/config").status_code == 200
+    assert client.post("/api/auth/logout").status_code == 204
+
+
+# ── Ticket 6: initiated_by from authenticated user ────────────────────────────
+
+
+def test_start_run_sets_initiated_by_from_token(client):
+    """initiated_by on a new LoadRun must reflect the token's username."""
+    from tests.conftest import _TestSession, _run_async
+    from app.models.connection import Connection
+    from app.models.load_plan import LoadPlan
+    from app.services.salesforce_auth import encrypt_private_key
+
+    # Seed a real user and log in
+    _seed_user(client, username="runner", password="pass123")
+    headers = {"Authorization": "Bearer " + client.post(
+        "/api/auth/login", json={"username": "runner", "password": "pass123"}
+    ).json()["access_token"]}
+
+    # Seed a connection and plan directly via DB
+    async def _seed_plan():
+        async with _TestSession() as session:
+            conn = Connection(
+                name="C",
+                instance_url="https://x.salesforce.com",
+                login_url="https://login.salesforce.com",
+                client_id="cid",
+                private_key=encrypt_private_key("-----BEGIN RSA PRIVATE KEY-----\nFAKE\n-----END RSA PRIVATE KEY-----"),
+                username="u@x.com",
+            )
+            session.add(conn)
+            await session.flush()
+            plan = LoadPlan(name="P", connection_id=conn.id)
+            session.add(plan)
+            await session.commit()
+            return plan.id
+
+    plan_id = _run_async(_seed_plan())
+    resp = client.post(f"/api/load-plans/{plan_id}/run", headers=headers)
+    assert resp.status_code == 201
+    assert resp.json()["initiated_by"] == "runner"
+
+
+# ── Ticket 7: WebSocket token enforcement ─────────────────────────────────────
+
+
+def _ws_token() -> str:
+    """Generate a valid JWT for WebSocket authentication in tests."""
+    user = _make_user(username="wsuser")
+    return create_access_token(user)
+
+
+def test_websocket_accepts_valid_token(client):
+    """A connection carrying a valid JWT token is accepted."""
+    token = _ws_token()
+    with client.websocket_connect(f"/ws/runs/test-run?token={token}") as ws:
+        data = ws.receive_json()
+        assert data["event"] == "connected"
+
+
+def test_websocket_rejects_missing_token(client):
+    """A connection without a token receives close code 1008."""
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect("/ws/runs/test-run"):
+            pass
+    assert exc_info.value.code == 1008
+
+
+def test_websocket_rejects_invalid_token(client):
+    """A connection with a malformed token receives close code 1008."""
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect("/ws/runs/test-run?token=not.a.valid.jwt"):
+            pass
+    assert exc_info.value.code == 1008

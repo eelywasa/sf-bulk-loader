@@ -7,10 +7,6 @@ from app.models.load_run import RunStatus
 from app.schemas.job import JobResponse
 
 
-class LoadRunCreate(BaseModel):
-    initiated_by: Optional[str] = "user"
-
-
 class LoadRunResponse(BaseModel):
     id: str
     load_plan_id: str

@@ -14,6 +14,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
+from app.services.auth import get_current_user
 from app.schemas.load_step import (
     FilePreviewInfo,
     LoadStepCreate,
@@ -26,7 +27,7 @@ from app.schemas.load_step import (
 logger = logging.getLogger(__name__)
 
 # Steps are nested under /api/load-plans
-router = APIRouter(prefix="/api/load-plans", tags=["load-steps"])
+router = APIRouter(prefix="/api/load-plans", tags=["load-steps"], dependencies=[Depends(get_current_user)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

@@ -12,18 +12,20 @@ from app.database import get_db
 from app.models.connection import Connection
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
+from app.models.user import User
 from app.schemas.load_plan import (
     LoadPlanCreate,
     LoadPlanListResponse,
     LoadPlanResponse,
     LoadPlanUpdate,
 )
-from app.schemas.load_run import LoadRunCreate, LoadRunResponse
+from app.schemas.load_run import LoadRunResponse
 from app.services import orchestrator
+from app.services.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/load-plans", tags=["load-plans"])
+router = APIRouter(prefix="/api/load-plans", tags=["load-plans"], dependencies=[Depends(get_current_user)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -103,9 +105,9 @@ async def delete_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> 
 @router.post("/{plan_id}/run", response_model=LoadRunResponse, status_code=status.HTTP_201_CREATED)
 async def start_load_run(
     plan_id: str,
-    data: LoadRunCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> LoadRun:
     """Create a new Load Run for a plan and enqueue it for background execution."""
     plan = await db.get(LoadPlan, plan_id)
@@ -115,7 +117,7 @@ async def start_load_run(
     run = LoadRun(
         load_plan_id=plan_id,
         status=RunStatus.pending,
-        initiated_by=data.initiated_by,
+        initiated_by=current_user.username,
     )
     db.add(run)
     await db.commit()
@@ -123,5 +125,5 @@ async def start_load_run(
 
     background_tasks.add_task(orchestrator.execute_run, run.id)
 
-    logger.info("Load run %s created for plan %s (initiated_by=%s)", run.id, plan_id, data.initiated_by)
+    logger.info("Load run %s created for plan %s (initiated_by=%s)", run.id, plan_id, current_user.username)
     return run

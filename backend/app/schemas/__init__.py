@@ -12,7 +12,6 @@ from app.schemas.load_plan import (
     LoadPlanUpdate,
 )
 from app.schemas.load_run import (
-    LoadRunCreate,
     LoadRunDetailResponse,
     LoadRunResponse,
     RunSummaryResponse,
@@ -38,7 +37,6 @@ __all__ = [
     "LoadPlanListResponse",
     "LoadPlanResponse",
     "LoadPlanUpdate",
-    "LoadRunCreate",
     "LoadRunDetailResponse",
     "LoadRunResponse",
     "LoadStepCreate",

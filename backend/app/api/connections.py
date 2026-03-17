@@ -17,11 +17,12 @@ from app.schemas.connection import (
     ConnectionTestResponse,
     ConnectionUpdate,
 )
+from app.services.auth import get_current_user
 from app.services.salesforce_auth import AuthError, decrypt_private_key, encrypt_private_key, get_access_token
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/connections", tags=["connections"])
+router = APIRouter(prefix="/api/connections", tags=["connections"], dependencies=[Depends(get_current_user)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

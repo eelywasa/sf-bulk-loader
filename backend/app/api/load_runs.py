@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 
 from app.database import get_db
+from app.services.auth import get_current_user
 from app.models.job import JobRecord, JobStatus
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
@@ -29,7 +30,7 @@ from app.schemas.load_run import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/runs", tags=["load-runs"])
+router = APIRouter(prefix="/api/runs", tags=["load-runs"], dependencies=[Depends(get_current_user)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

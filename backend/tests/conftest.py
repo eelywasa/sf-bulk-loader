@@ -127,3 +127,44 @@ def client():
         yield c
     _orchestrator_module.execute_run = _original_execute_run
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_client():
+    """Authenticated TestClient with get_current_user overridden.
+
+    Use this fixture for tests that exercise protected endpoints.  The
+    dependency override injects a synthetic active user so tests do not need
+    to seed and log in a real account.
+    """
+    import uuid
+
+    from app.models.user import User
+    from app.services.auth import get_current_user
+
+    _mock_user = User(
+        id=str(uuid.uuid4()),
+        username="test-user",
+        hashed_password="x",
+        role="admin",
+        is_active=True,
+    )
+
+    async def override_get_db():
+        async with _TestSession() as session:
+            yield session
+
+    async def override_get_current_user():
+        return _mock_user
+
+    async def _noop_execute_run(_run_id: str) -> None:  # noqa: RUF029
+        pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    _original_execute_run = _orchestrator_module.execute_run
+    _orchestrator_module.execute_run = _noop_execute_run
+    with TestClient(app, raise_server_exceptions=True) as c:
+        yield c
+    _orchestrator_module.execute_run = _original_execute_run
+    app.dependency_overrides.clear()

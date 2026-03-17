@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.user import User
+from app.services.auth import get_current_user, validate_ws_token
 from app.utils.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,7 @@ def _safe_relative_path(rel_path: str, base_dir: str) -> Optional[pathlib.Path]:
 @router.get("/api/files/input", response_model=List[InputDirectoryEntry])
 async def list_input_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
+    _: User = Depends(get_current_user),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories at the given path within the input directory."""
     input_dir = settings.input_dir
@@ -102,6 +105,7 @@ async def list_input_files(
 async def preview_input_file(
     file_path: str,
     rows: int = Query(default=10, ge=1, le=1000),
+    _: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Return the first *rows* data rows (plus header) of a CSV file."""
     resolved = _safe_relative_path(file_path, settings.input_dir)
@@ -155,14 +159,26 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
 
 
 @ws_router.websocket("/ws/runs/{run_id}")
-async def websocket_run_status(websocket: WebSocket, run_id: str) -> None:
+async def websocket_run_status(
+    websocket: WebSocket, run_id: str, token: Optional[str] = None
+) -> None:
     """Stream real-time status events for an active load run.
 
-    The client receives a ``connected`` event immediately on connection.
+    The client must supply a valid JWT via the ``token`` query parameter:
+    ``/ws/runs/{run_id}?token=<jwt>``.  Connections without a valid token
+    are rejected with close code 1008 (policy violation).
+
+    After authentication, the client receives a ``connected`` event.
     The orchestrator pushes events (job_status_change, step_completed, …)
     via :func:`ws_manager.broadcast`.  A ``ping``/``pong`` keepalive runs
     every 30 s so proxies don't close idle connections.
     """
+    try:
+        validate_ws_token(token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+
     await ws_manager.connect(run_id, websocket)
     try:
         await ws_manager.send_personal(websocket, {"event": "connected", "run_id": run_id})

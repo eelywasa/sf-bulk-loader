@@ -11,8 +11,8 @@ import pytest
 # ── Health check ───────────────────────────────────────────────────────────────
 
 
-def test_health_returns_ok(client):
-    resp = client.get("/api/health")
+def test_health_returns_ok(auth_client):
+    resp = auth_client.get("/api/health")
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
@@ -23,16 +23,16 @@ def test_health_returns_ok(client):
 # ── Input file listing ─────────────────────────────────────────────────────────
 
 
-def test_list_input_files_empty_dir(client):
+def test_list_input_files_empty_dir(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input")
+            resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
-def test_list_input_files_returns_csvs(client):
+def test_list_input_files_returns_csvs(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create two CSVs and a non-CSV file
         for name in ("accounts.csv", "contacts.csv", "readme.txt"):
@@ -40,7 +40,7 @@ def test_list_input_files_returns_csvs(client):
 
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input")
+            resp = auth_client.get("/api/files/input")
 
     assert resp.status_code == 200
     names = [f["name"] for f in resp.json()]
@@ -49,21 +49,21 @@ def test_list_input_files_returns_csvs(client):
     assert "readme.txt" not in names
 
 
-def test_list_input_files_missing_dir_returns_empty(client):
+def test_list_input_files_missing_dir_returns_empty(auth_client):
     with patch("app.api.utility.settings") as mock_settings:
         mock_settings.input_dir = "/path/that/does/not/exist"
-        resp = client.get("/api/files/input")
+        resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
-def test_list_input_files_returns_directory_entries(client):
+def test_list_input_files_returns_directory_entries(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, "subdir"))
         open(os.path.join(tmpdir, "root.csv"), "w").close()
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input")
+            resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     entries = resp.json()
     kinds = {e["name"]: e["kind"] for e in entries}
@@ -71,19 +71,19 @@ def test_list_input_files_returns_directory_entries(client):
     assert kinds["root.csv"] == "file"
 
 
-def test_list_input_files_directories_sorted_before_files(client):
+def test_list_input_files_directories_sorted_before_files(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, "zfolder"))
         open(os.path.join(tmpdir, "accounts.csv"), "w").close()
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input")
+            resp = auth_client.get("/api/files/input")
     entries = resp.json()
     assert entries[0]["kind"] == "directory"
     assert entries[1]["kind"] == "file"
 
 
-def test_list_input_files_with_path_param(client):
+def test_list_input_files_with_path_param(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, "sub"))
         csv_path = os.path.join(tmpdir, "sub", "deep.csv")
@@ -94,7 +94,7 @@ def test_list_input_files_with_path_param(client):
             writer.writerow(["2", "Beta"])
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input?path=sub")
+            resp = auth_client.get("/api/files/input?path=sub")
     assert resp.status_code == 200
     entries = resp.json()
     assert len(entries) == 1
@@ -104,7 +104,7 @@ def test_list_input_files_with_path_param(client):
     assert entries[0]["row_count"] == 2
 
 
-def test_list_input_files_includes_row_count(client):
+def test_list_input_files_includes_row_count(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         csv_path = os.path.join(tmpdir, "accounts.csv")
         with open(csv_path, "w", newline="") as f:
@@ -114,35 +114,35 @@ def test_list_input_files_includes_row_count(client):
                 writer.writerow([f"Acme {i}", "Tech"])
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input")
+            resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     entry = resp.json()[0]
     assert entry["row_count"] == 5
 
 
-def test_list_input_files_path_traversal_returns_400(client):
+def test_list_input_files_path_traversal_returns_400(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input?path=../etc")
+            resp = auth_client.get("/api/files/input?path=../etc")
     assert resp.status_code == 400
 
 
-def test_list_input_files_nonexistent_path_returns_400(client):
+def test_list_input_files_nonexistent_path_returns_400(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input?path=nonexistent")
+            resp = auth_client.get("/api/files/input?path=nonexistent")
     assert resp.status_code == 400
 
 
-def test_list_input_files_hidden_dirs_excluded(client):
+def test_list_input_files_hidden_dirs_excluded(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, ".hidden"))
         open(os.path.join(tmpdir, "visible.csv"), "w").close()
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input")
+            resp = auth_client.get("/api/files/input")
     names = [e["name"] for e in resp.json()]
     assert ".hidden" not in names
     assert "visible.csv" in names
@@ -151,7 +151,7 @@ def test_list_input_files_hidden_dirs_excluded(client):
 # ── File preview ───────────────────────────────────────────────────────────────
 
 
-def test_preview_input_file_returns_rows(client):
+def test_preview_input_file_returns_rows(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         csv_path = os.path.join(tmpdir, "accounts.csv")
         with open(csv_path, "w", newline="") as f:
@@ -162,7 +162,7 @@ def test_preview_input_file_returns_rows(client):
 
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input/accounts.csv/preview?rows=5")
+            resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5")
 
     assert resp.status_code == 200
     body = resp.json()
@@ -172,20 +172,20 @@ def test_preview_input_file_returns_rows(client):
     assert body["row_count"] == 5
 
 
-def test_preview_input_file_not_found_returns_404(client):
+def test_preview_input_file_not_found_returns_404(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input/nonexistent.csv/preview")
+            resp = auth_client.get("/api/files/input/nonexistent.csv/preview")
     assert resp.status_code == 404
 
 
-def test_preview_input_file_path_traversal_returns_400(client):
-    resp = client.get("/api/files/input/../secret.csv/preview")
+def test_preview_input_file_path_traversal_returns_400(auth_client):
+    resp = auth_client.get("/api/files/input/../secret.csv/preview")
     assert resp.status_code in (400, 404)
 
 
-def test_preview_input_file_in_subdirectory(client):
+def test_preview_input_file_in_subdirectory(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         sub = os.path.join(tmpdir, "sub")
         os.makedirs(sub)
@@ -197,7 +197,7 @@ def test_preview_input_file_in_subdirectory(client):
 
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input/sub/deep.csv/preview")
+            resp = auth_client.get("/api/files/input/sub/deep.csv/preview")
 
     assert resp.status_code == 200
     body = resp.json()
@@ -206,28 +206,41 @@ def test_preview_input_file_in_subdirectory(client):
     assert len(body["rows"]) == 1
 
 
-def test_preview_input_file_subdir_traversal_returns_400(client):
+def test_preview_input_file_subdir_traversal_returns_400(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         with patch("app.api.utility.settings") as mock_settings:
             mock_settings.input_dir = tmpdir
-            resp = client.get("/api/files/input/sub/../../etc/passwd/preview")
+            resp = auth_client.get("/api/files/input/sub/../../etc/passwd/preview")
     assert resp.status_code in (400, 404)
 
 
 # ── WebSocket ──────────────────────────────────────────────────────────────────
 
 
+def _ws_token() -> str:
+    """Generate a valid JWT for WebSocket authentication in tests."""
+    import uuid
+
+    from app.models.user import User
+    from app.services.auth import create_access_token
+
+    user = User(id=str(uuid.uuid4()), username="wstest", role="user", is_active=True)
+    return create_access_token(user)
+
+
 def test_websocket_run_status_connects_and_receives_event(client):
+    token = _ws_token()
     run_id = "test-run-123"
-    with client.websocket_connect(f"/ws/runs/{run_id}") as ws:
+    with client.websocket_connect(f"/ws/runs/{run_id}?token={token}") as ws:
         data = ws.receive_json()
         assert data["event"] == "connected"
         assert data["run_id"] == run_id
 
 
 def test_websocket_responds_to_ping(client):
+    token = _ws_token()
     run_id = "ping-test-run"
-    with client.websocket_connect(f"/ws/runs/{run_id}") as ws:
+    with client.websocket_connect(f"/ws/runs/{run_id}?token={token}") as ws:
         # Consume the initial "connected" event
         ws.receive_json()
         ws.send_json({"type": "ping"})
