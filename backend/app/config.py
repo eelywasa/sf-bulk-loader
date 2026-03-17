@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +23,9 @@ class Settings(BaseSettings):
     # Partitioning defaults
     default_partition_size: int = 10_000
     max_partition_size: int = 100_000_000
+
+    # CORS
+    cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
 
     # Paths
     input_dir: str = "/data/input"

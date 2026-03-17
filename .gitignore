@@ -9,3 +9,6 @@ __pycache__/
 
 # Data (DB, input CSVs, output logs)
 data/
+
+# TLS certificates (private keys must never be committed)
+certs/

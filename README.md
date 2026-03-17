@@ -20,8 +20,8 @@ A containerized web application for orchestrating large-scale data loads into Sa
 ## Architecture Overview
 
 ```
-Browser ──▶ nginx (port 3000)
-               │
+Browser ──▶ nginx (port 443, HTTPS)
+               │  (port 80 redirects to HTTPS)
                ├─▶ /api/*   ──▶ FastAPI backend (port 8000)
                ├─▶ /ws/*    ──▶ FastAPI WebSocket
                └─▶ /*       ──▶ React SPA (static files)
@@ -94,7 +94,26 @@ mkdir -p data/input data/output data/db
 
 Place your source CSV files in `data/input/`.
 
-### 5. Build and start the application
+### 5. Provide TLS certificates
+
+nginx serves the application over HTTPS and requires a certificate and private key.
+
+**Option A — Self-signed (internal/dev use):**
+```bash
+mkdir certs
+openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem \
+  -sha256 -days 825 -nodes \
+  -subj "/CN=bulkloader.internal" \
+  -addext "subjectAltName=DNS:bulkloader.internal,IP:your.server.ip"
+```
+Browsers will show a security warning for self-signed certs. Add the cert to your OS/browser trust store to suppress the warning on internal networks.
+
+**Option B — CA-signed cert:**
+Place your certificate chain as `certs/cert.pem` and the unencrypted private key as `certs/key.pem`. The cert file should contain the leaf cert followed by any intermediate certs (full chain PEM format).
+
+docker-compose.yml mounts `./certs` into the nginx container read-only. If the files are absent at startup, nginx will exit with a clear error message.
+
+### 6. Build and start the application
 
 ```bash
 docker compose up --build
@@ -104,11 +123,11 @@ The first build downloads base images and installs dependencies. Subsequent star
 
 | Service | URL |
 |---------|-----|
-| Web UI | http://localhost:3000 |
+| Web UI | https://localhost |
 | API (direct) | http://localhost:8000 |
 | API docs (Swagger) | http://localhost:8000/docs |
 
-### 6. Stop the application
+### 7. Stop the application
 
 ```bash
 docker compose down
@@ -132,9 +151,10 @@ All configuration is provided via environment variables loaded from `.env` by Do
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `APP_ENV` | `production` | `development` or `production`. Controls CORS policy. |
+| `APP_ENV` | `production` | `development` or `production`. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
 | `ENCRYPTION_KEY` | _(required)_ | 32-byte URL-safe base64 key. |
+| `CORS_ORIGINS` | `["http://localhost:3000","https://localhost:3000"]` | JSON array of allowed CORS origins. Set to your HTTPS URL in production. |
 | `DATABASE_URL` | `sqlite+aiosqlite:////data/db/bulk_loader.db` | SQLAlchemy connection string. |
 | `SF_API_VERSION` | `v62.0` | Salesforce REST API version. |
 | `SF_POLL_INTERVAL_INITIAL` | `5` | Starting poll interval (seconds) for Bulk API job status. |
@@ -149,11 +169,12 @@ All configuration is provided via environment variables loaded from `.env` by Do
 
 Docker Compose bind-mounts three host directories into the backend container:
 
-| Host Path | Container Path | Access |
-|-----------|---------------|--------|
-| `./data/input` | `/data/input` | Read-only |
-| `./data/output` | `/data/output` | Read-write |
-| `./data/db` | `/data/db` | Read-write |
+| Host Path | Container Path | Access | Purpose |
+|-----------|---------------|--------|---------|
+| `./data/input` | `/data/input` | Read-only | Source CSVs |
+| `./data/output` | `/data/output` | Read-write | Result files |
+| `./data/db` | `/data/db` | Read-write | SQLite database |
+| `./certs` | `/etc/nginx/certs` | Read-only | TLS certificate and key for nginx HTTPS |
 
 - **`data/input`**: Drop source CSV files here before starting a load run. The application never writes to this directory.
 - **`data/output`**: Success, error, and unprocessed result CSVs are written here after each Salesforce Bulk API job completes.
@@ -200,7 +221,7 @@ After saving, Salesforce may require you to approve the app:
 
 ### Step 4: Configure the connection in the app
 
-1. Open the web UI at http://localhost:3000.
+1. Open the web UI at https://localhost.
 2. Navigate to **Connection Manager**.
 3. Create a new connection:
    - **Name**: a friendly label (e.g., "Production")
@@ -360,6 +381,9 @@ sf-bulk-loader/
 ├── docker-compose.yml          # Compose definition for all services
 ├── .env.example                # Template for required environment variables
 ├── README.md
+├── certs/                      # TLS cert and key (not committed — add to .gitignore)
+│   ├── cert.pem
+│   └── key.pem
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -423,13 +447,14 @@ Check browser console for errors. Common causes:
 - The backend is not running or failed its health check — `docker compose ps` to inspect status.
 - Stale build artifacts — rebuild with `docker compose up --build`.
 
-### Port conflict on 3000 or 8000
+### Port conflict on 80, 443, or 8000
 
-Edit `docker-compose.yml` to change the host-side port:
+Edit `docker-compose.yml` to change the host-side ports:
 
 ```yaml
 ports:
-  - "3001:80"   # frontend now on port 3001
+  - "8443:443"   # frontend HTTPS on port 8443
+  - "8080:80"    # HTTP redirect on port 8080
 ```
 
 ### Viewing logs
