@@ -54,26 +54,33 @@ interface StepPanelProps {
   jobs: JobRecord[]
   runId: string
   defaultExpanded?: boolean
+  isLive: boolean
+  onRetry?: (stepId: string) => void
+  retryPending?: boolean
 }
 
-function StepPanel({ step, jobs, runId, defaultExpanded = false }: StepPanelProps) {
+function StepPanel({ step, jobs, runId, defaultExpanded = false, isLive, onRetry, retryPending }: StepPanelProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const stepStatus = deriveStepStatus(jobs)
 
   const totalProcessed = jobs.reduce((n, j) => n + (j.records_processed ?? 0), 0)
   const totalFailed = jobs.reduce((n, j) => n + (j.records_failed ?? 0), 0)
 
+  const hasRetryableJobs =
+    stepStatus.label === 'failed' ||
+    (stepStatus.label === 'complete' && totalFailed > 0)
+
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       {/* Header (always visible) */}
-      <button
-        type="button"
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        aria-label={`Step ${step.sequence}: ${step.object_name}`}
-      >
-        <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
+        <button
+          type="button"
+          className="flex items-center gap-3 flex-wrap min-w-0 flex-1 text-left hover:bg-gray-100 rounded"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-label={`Step ${step.sequence}: ${step.object_name}`}
+        >
           <span className="text-xs font-mono font-semibold text-gray-500 shrink-0">
             #{step.sequence}
           </span>
@@ -88,9 +95,20 @@ function StepPanel({ step, jobs, runId, defaultExpanded = false }: StepPanelProp
               {totalProcessed} processed · {totalFailed} failed
             </span>
           )}
-        </div>
-        <span className="ml-2 text-gray-400 shrink-0 text-xs">{expanded ? '▲' : '▼'}</span>
-      </button>
+          <span className="ml-2 text-gray-400 shrink-0 text-xs">{expanded ? '▲' : '▼'}</span>
+        </button>
+        {!isLive && hasRetryableJobs && onRetry && (
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={retryPending}
+            disabled={retryPending}
+            onClick={(e) => { e.stopPropagation(); onRetry(step.id) }}
+          >
+            Retry Failed Records
+          </Button>
+        )}
+      </div>
 
       {/* Expanded job list */}
       {expanded && (
@@ -166,6 +184,21 @@ export default function RunDetail() {
   const [includeUnprocessed, setIncludeUnprocessed] = useState(true)
 
   const { run, jobs, planDetail, isLoading, isError, error, isLive } = useLiveRun(id ?? '')
+
+  // ── Retry mutation ──────────────────────────────────────────────────────────
+  const retryMutation = useMutation({
+    mutationFn: ({ stepId }: { stepId: string }) => runsApi.retryStep(id!, stepId),
+    onSuccess: (newRun) => {
+      navigate(`/runs/${newRun.id}`)
+    },
+    onError: (err: unknown) => {
+      if (err instanceof ApiError) {
+        toastError(`Retry failed: ${err.message}`)
+      } else {
+        toastError('Failed to start retry run.')
+      }
+    },
+  })
 
   // ── Abort mutation ──────────────────────────────────────────────────────────
   const abortMutation = useMutation({
@@ -388,6 +421,9 @@ export default function RunDetail() {
                 step={step}
                 jobs={jobsByStep[step.id] ?? []}
                 runId={run.id}
+                isLive={isLive}
+                onRetry={(stepId) => retryMutation.mutate({ stepId })}
+                retryPending={retryMutation.isPending && retryMutation.variables?.stepId === step.id}
               />
             ))}
           </div>

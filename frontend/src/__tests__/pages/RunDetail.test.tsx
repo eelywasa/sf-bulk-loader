@@ -15,6 +15,8 @@ vi.mock('../../api/endpoints', () => ({
     get: vi.fn(),
     jobs: vi.fn(),
     abort: vi.fn(),
+    retryStep: vi.fn(),
+    logsZipUrl: vi.fn(() => '/fake-zip-url'),
   },
   plansApi: {
     get: vi.fn(),
@@ -128,6 +130,30 @@ const jobFailed: JobRecord = {
   started_at: '2024-03-01T10:00:00Z',
   completed_at: '2024-03-01T10:01:00Z',
   error_message: 'Bulk API job creation failed',
+}
+
+const jobAborted: JobRecord = {
+  ...jobComplete,
+  id: 'job-3',
+  status: 'aborted',
+  records_processed: 0,
+  records_failed: 0,
+}
+
+const jobCompleteWithErrors: JobRecord = {
+  ...jobComplete,
+  id: 'job-4',
+  records_processed: 800,
+  records_failed: 200,
+  error_file_path: '/output/errors.csv',
+}
+
+const runAborted: LoadRun = {
+  ...runCompleted,
+  status: 'aborted',
+  total_success: 0,
+  total_errors: 0,
+  error_summary: null,
 }
 
 // ─── Render helper ─────────────────────────────────────────────────────────────
@@ -499,6 +525,63 @@ describe('RunDetail', () => {
     // Collapse
     await user.click(screen.getByLabelText('Step 1: Account'))
     expect(screen.queryByText('Part 0')).not.toBeInTheDocument()
+  })
+
+  // ── Retry Failed Records button ───────────────────────────────────────────────
+
+  it('shows Retry Failed Records for a step whose job has status failed', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runFailed)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobFailed])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry Failed Records' })).toBeInTheDocument()
+    })
+  })
+
+  it('shows Retry Failed Records for a complete step with failed records', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobCompleteWithErrors])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry Failed Records' })).toBeInTheDocument()
+    })
+  })
+
+  it('does not show Retry Failed Records for a complete step with zero failed records', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobComplete])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByText('completed'))
+
+    expect(screen.queryByRole('button', { name: 'Retry Failed Records' })).not.toBeInTheDocument()
+  })
+
+  it('does not show Retry Failed Records for an aborted step', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runAborted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobAborted])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByText('aborted'))
+
+    expect(screen.queryByRole('button', { name: 'Retry Failed Records' })).not.toBeInTheDocument()
+  })
+
+  it('does not show Retry Failed Records while the run is live', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runRunning)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobFailed])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByText('Polling…'))
+
+    expect(screen.queryByRole('button', { name: 'Retry Failed Records' })).not.toBeInTheDocument()
   })
 
   // ── Progress bar ──────────────────────────────────────────────────────────────
