@@ -81,6 +81,168 @@ async def execute_run(run_id: str) -> None:
         await _execute_run(run_id, db, db_factory=AsyncSessionLocal)
 
 
+async def execute_retry_run(run_id: str, step_id: str, partitions: list[bytes]) -> None:
+    """Background entry point: execute a retry run for a single step.
+
+    Processes the supplied pre-built CSV *partitions* (sourced from the error/
+    unprocessed result files of the original run) rather than re-globbing the
+    original CSV files.
+
+    Args:
+        run_id: Primary key of the new :class:`~app.models.load_run.LoadRun`.
+        step_id: Primary key of the :class:`~app.models.load_step.LoadStep` to retry.
+        partitions: Pre-built CSV bytes (one entry per partition) to submit.
+    """
+    async with AsyncSessionLocal() as db:
+        # ── Load run + plan + connection ──────────────────────────────────────
+        result = await db.execute(
+            select(LoadRun)
+            .where(LoadRun.id == run_id)
+            .options(
+                selectinload(LoadRun.load_plan).selectinload(LoadPlan.connection),
+            )
+        )
+        run = result.scalar_one_or_none()
+        if run is None:
+            logger.error("execute_retry_run: LoadRun %s not found", run_id)
+            return
+
+        step_result = await db.execute(select(LoadStep).where(LoadStep.id == step_id))
+        step = step_result.scalar_one_or_none()
+        if step is None:
+            logger.error("execute_retry_run: LoadStep %s not found", step_id)
+            await _mark_run_failed(run_id, db)
+            return
+
+        plan: LoadPlan = run.load_plan
+
+        # ── Mark run as running ───────────────────────────────────────────────
+        run.status = RunStatus.running
+        run.started_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        await ws_manager.broadcast(run_id, {"event": "run_started", "run_id": run_id})
+        logger.info(
+            "Retry run %s started: step=%s partitions=%d",
+            run_id,
+            step_id,
+            len(partitions),
+        )
+
+        # ── Obtain Salesforce access token ────────────────────────────────────
+        try:
+            access_token = await get_access_token(db, plan.connection)
+        except Exception as exc:
+            logger.error("Retry run %s: failed to obtain access token: %s", run_id, exc)
+            await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
+            await ws_manager.broadcast(
+                run_id, {"event": "run_failed", "run_id": run_id, "error": str(exc)}
+            )
+            return
+
+        semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
+
+        # ── Create JobRecord rows ─────────────────────────────────────────────
+        job_records: list[JobRecord] = []
+        for idx, csv_data in enumerate(partitions):
+            jr = JobRecord(
+                load_run_id=run_id,
+                load_step_id=step_id,
+                partition_index=idx,
+                status=JobStatus.pending,
+                total_records=_count_csv_rows(csv_data),
+            )
+            db.add(jr)
+            job_records.append(jr)
+        await db.commit()
+        for jr in job_records:
+            await db.refresh(jr)
+
+        job_record_ids = [jr.id for jr in job_records]
+
+        # ── Process partitions concurrently ───────────────────────────────────
+        async with SalesforceBulkClient(
+            plan.connection.instance_url, access_token
+        ) as bulk_client:
+            tasks = [
+                _process_partition(
+                    run_id=run_id,
+                    step=step,
+                    job_record_id=jr_id,
+                    csv_data=csv_data,
+                    bulk_client=bulk_client,
+                    semaphore=semaphore,
+                    db_factory=AsyncSessionLocal,
+                )
+                for jr_id, csv_data in zip(job_record_ids, partitions)
+            ]
+            gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Transition any stuck intermediate-state jobs to failed
+        await db.execute(
+            update(JobRecord)
+            .where(
+                JobRecord.id.in_(job_record_ids),
+                JobRecord.status.in_([
+                    JobStatus.pending,
+                    JobStatus.uploading,
+                    JobStatus.upload_complete,
+                    JobStatus.in_progress,
+                ]),
+            )
+            .values(status=JobStatus.failed, completed_at=datetime.now(timezone.utc))
+        )
+        await db.commit()
+
+        # ── Aggregate results ─────────────────────────────────────────────────
+        total_success = 0
+        total_errors = 0
+        for i, res in enumerate(gather_results):
+            if isinstance(res, Exception):
+                logger.error(
+                    "Retry run %s partition %d: unhandled exception: %s",
+                    run_id,
+                    i,
+                    res,
+                )
+            elif isinstance(res, tuple):
+                success, errors = res
+                total_success += success
+                total_errors += errors
+
+        total_records = total_success + total_errors
+        final_status = (
+            RunStatus.completed_with_errors if total_errors > 0 else RunStatus.completed
+        )
+
+        run.status = final_status
+        run.completed_at = datetime.now(timezone.utc)
+        run.total_records = total_records
+        run.total_success = total_success
+        run.total_errors = total_errors
+        await db.commit()
+
+        await ws_manager.broadcast(
+            run_id,
+            {
+                "event": "run_completed",
+                "run_id": run_id,
+                "status": final_status.value,
+                "total_records": total_records,
+                "total_success": total_success,
+                "total_errors": total_errors,
+            },
+        )
+        logger.info(
+            "Retry run %s completed (%s): records=%d success=%d errors=%d",
+            run_id,
+            final_status.value,
+            total_records,
+            total_success,
+            total_errors,
+        )
+
+
 # ── Internal orchestration ────────────────────────────────────────────────────
 
 

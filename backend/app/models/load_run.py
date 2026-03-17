@@ -40,6 +40,10 @@ class LoadRun(Base):
     initiated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # JSON string: per-step error summary
     error_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Back-reference to the run this is a retry of (nullable)
+    retry_of_run_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("load_run.id"), nullable=True
+    )
 
     load_plan: Mapped["LoadPlan"] = relationship("LoadPlan", back_populates="load_runs")
     job_records: Mapped[list["JobRecord"]] = relationship("JobRecord", back_populates="load_run")

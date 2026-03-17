@@ -8,7 +8,7 @@ import zipfile
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,14 +19,20 @@ from app.config import settings
 from app.database import get_db
 from app.services.auth import get_current_user
 from app.models.job import JobRecord, JobStatus
+from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
+from app.models.user import User
 from app.schemas.load_run import (
     LoadRunDetailResponse,
     LoadRunResponse,
     RunSummaryResponse,
     RunSummaryStepStats,
 )
+from app.services import orchestrator
+from app.services.csv_processor import build_retry_partitions
+from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
+from app.services.salesforce_auth import get_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -218,3 +224,125 @@ async def download_logs_zip(
             "Content-Disposition": f'attachment; filename="run_{run_id[:8]}_logs.zip"',
         },
     )
+
+
+_TERMINAL_STATUSES = {RunStatus.completed, RunStatus.completed_with_errors, RunStatus.failed, RunStatus.aborted}
+
+
+@router.post(
+    "/{run_id}/retry-step/{step_id}",
+    response_model=LoadRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def retry_step(
+    run_id: str,
+    step_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LoadRun:
+    """Create a new LoadRun that retries only the failed/aborted jobs of one step.
+
+    Sources its CSV data from the error and unprocessed result files of the
+    original failed jobs rather than re-globbing the original CSV files.
+    """
+    # 1. Load original run; 404 if not found
+    original_run = await _get_run_or_404(run_id, db)
+
+    # 2. 409 if run is not in a terminal state
+    if original_run.status not in _TERMINAL_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot retry a run with status '{original_run.status.value}' — run must be in a terminal state.",
+        )
+
+    # 3. Load jobs that have retryable data for this step; 422 if none.
+    # This covers:
+    #   - failed/aborted jobs (Track B: re-submit original partition)
+    #   - job_complete jobs with error/unprocessed result files (Track A: retry failed records)
+    jobs_result = await db.execute(
+        select(JobRecord).where(
+            JobRecord.load_run_id == run_id,
+            JobRecord.load_step_id == step_id,
+        )
+    )
+    all_step_jobs = list(jobs_result.scalars().all())
+    retryable_jobs = [
+        j for j in all_step_jobs
+        if j.status in (JobStatus.failed, JobStatus.aborted)
+        or j.error_file_path is not None
+        or j.unprocessed_file_path is not None
+    ]
+    if not retryable_jobs:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No retryable jobs found for this step.",
+        )
+
+    # Load the step for partition metadata
+    step = await db.get(LoadStep, step_id)
+    if step is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
+
+    # Best-effort abort of any uploading SF jobs that may still be open
+    uploading_jobs = [j for j in retryable_jobs if j.sf_job_id and j.status == JobStatus.aborted]
+    if uploading_jobs:
+        plan_result = await db.execute(
+            select(LoadPlan)
+            .where(LoadPlan.id == original_run.load_plan_id)
+            .options(selectinload(LoadPlan.connection))
+        )
+        plan = plan_result.scalar_one_or_none()
+        if plan is not None:
+            try:
+                access_token = await get_access_token(db, plan.connection)
+                async with SalesforceBulkClient(plan.connection.instance_url, access_token) as bulk_client:
+                    for job in uploading_jobs:
+                        try:
+                            await bulk_client.abort_job(job.sf_job_id)
+                        except BulkAPIError as exc:
+                            logger.warning(
+                                "retry_step: could not abort SF job %s: %s",
+                                job.sf_job_id,
+                                exc,
+                            )
+            except Exception as exc:
+                logger.warning("retry_step: could not obtain token for SF job cleanup: %s", exc)
+
+    # 4. Build partitions from error/unprocessed files
+    partitions = build_retry_partitions(
+        job_records=retryable_jobs,
+        step=step,
+        partition_size=step.partition_size,
+        output_dir=settings.output_dir,
+    )
+
+    # 5. 422 if no retryable records found
+    if not partitions:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No retryable records found in the result files of the failed jobs.",
+        )
+
+    # 6. Create new LoadRun
+    new_run = LoadRun(
+        load_plan_id=original_run.load_plan_id,
+        status=RunStatus.pending,
+        initiated_by=current_user.username,
+        retry_of_run_id=run_id,
+    )
+    db.add(new_run)
+    await db.commit()
+    await db.refresh(new_run)
+
+    # 7. Enqueue background execution
+    background_tasks.add_task(orchestrator.execute_retry_run, new_run.id, step_id, partitions)
+
+    logger.info(
+        "Retry run %s created for original run %s step %s (initiated_by=%s)",
+        new_run.id,
+        run_id,
+        step_id,
+        current_user.username,
+    )
+    return new_run

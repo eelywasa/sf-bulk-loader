@@ -18,6 +18,7 @@ class LoadRunResponse(BaseModel):
     total_errors: Optional[int] = None
     initiated_by: Optional[str] = None
     error_summary: Optional[str] = None
+    retry_of_run_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

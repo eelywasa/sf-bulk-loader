@@ -280,6 +280,122 @@ def partition_csv(
             yield _render_partition(header, buf)
 
 
+# ── Retry partition builder ───────────────────────────────────────────────────
+
+
+def build_retry_partitions(
+    job_records: list,  # list[JobRecord] — typed as list to avoid circular import
+    step: object,  # LoadStep
+    partition_size: int,
+    output_dir: str,
+) -> list[bytes]:
+    """Build CSV partition bytes for retrying failed/aborted jobs of a single step.
+
+    Jobs fall into two tracks:
+
+    **Track A** — job has result files (reached Salesforce):
+    - ``error_file_path``: read, strip ``sf__Id``/``sf__Error`` columns (first two),
+      collect remaining data rows.
+    - ``unprocessed_file_path``: read as-is, collect data rows.
+    - All Track A rows are pooled then re-partitioned at *partition_size*.
+
+    **Track B** — no result files (job never reached Salesforce; stuck in pending/uploading):
+    - The original CSV partition is re-discovered via the step's glob pattern and
+      ``partition_index``, then yielded as-is.
+
+    Args:
+        job_records: Failed/aborted :class:`JobRecord` instances for the step.
+        step: The :class:`LoadStep` that owns these jobs.
+        partition_size: Maximum data rows per output partition.
+        output_dir: Absolute path to the output directory (``settings.output_dir``).
+
+    Returns:
+        List of UTF-8 CSV bytes: Track A re-partitioned chunks followed by
+        Track B original chunks.  Returns ``[]`` if there are no retryable records.
+    """
+    output_base = pathlib.Path(output_dir)
+
+    track_a_header: list[str] | None = None
+    track_a_rows: list[list[str]] = []
+    track_b_chunks: list[bytes] = []
+
+    for job in job_records:
+        has_result_files = job.error_file_path or job.unprocessed_file_path
+
+        if has_result_files:
+            # ── Track A ──────────────────────────────────────────────────────
+            if job.error_file_path:
+                error_path = output_base / job.error_file_path
+                if error_path.is_file():
+                    enc = detect_encoding(error_path)
+                    try:
+                        with error_path.open(encoding=enc, newline="") as fh:
+                            reader = csv.reader(fh)
+                            raw_header = next(reader, None)
+                            if raw_header is not None:
+                                # Strip sf__Id and sf__Error (always first two cols)
+                                data_header = [h.strip() for h in raw_header[2:]]
+                                if track_a_header is None:
+                                    track_a_header = data_header
+                                for row in reader:
+                                    track_a_rows.append(row[2:])
+                    except Exception:
+                        logger.warning(
+                            "build_retry_partitions: could not read error file %s",
+                            error_path,
+                        )
+
+            if job.unprocessed_file_path:
+                unprocessed_path = output_base / job.unprocessed_file_path
+                if unprocessed_path.is_file():
+                    enc = detect_encoding(unprocessed_path)
+                    try:
+                        with unprocessed_path.open(encoding=enc, newline="") as fh:
+                            reader = csv.reader(fh)
+                            raw_header = next(reader, None)
+                            if raw_header is not None:
+                                if track_a_header is None:
+                                    track_a_header = [h.strip() for h in raw_header]
+                                for row in reader:
+                                    track_a_rows.append(row)
+                    except Exception:
+                        logger.warning(
+                            "build_retry_partitions: could not read unprocessed file %s",
+                            unprocessed_path,
+                        )
+        else:
+            # ── Track B ──────────────────────────────────────────────────────
+            target_idx: int = job.partition_index
+            current_idx = 0
+            csv_files = discover_files(step.csv_file_pattern)
+            found = False
+            for csv_file in csv_files:
+                for chunk in partition_csv(csv_file, step.partition_size):
+                    if current_idx == target_idx:
+                        track_b_chunks.append(chunk)
+                        found = True
+                        break
+                    current_idx += 1
+                if found:
+                    break
+            if not found:
+                logger.warning(
+                    "build_retry_partitions: could not locate original partition %d "
+                    "for step pattern %r",
+                    target_idx,
+                    step.csv_file_pattern,
+                )
+
+    # Re-partition pooled Track A rows
+    track_a_chunks: list[bytes] = []
+    if track_a_rows and track_a_header is not None:
+        for i in range(0, len(track_a_rows), partition_size):
+            chunk_rows = track_a_rows[i : i + partition_size]
+            track_a_chunks.append(_render_partition(track_a_header, chunk_rows))
+
+    return track_a_chunks + track_b_chunks
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 

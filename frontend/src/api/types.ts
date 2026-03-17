@@ -127,6 +127,7 @@ export interface LoadRun {
   total_errors?: number | null
   initiated_by?: string | null
   error_summary?: string | null
+  retry_of_run_id?: string | null
 }
 
 // ─── Jobs ──────────────────────────────────────────────────────────────────────

@@ -106,6 +106,8 @@ export const runsApi = {
     api.get<JobRecord[]>(
       `/api/runs/${runId}/jobs${buildQs(params as Record<string, string | undefined>)}`,
     ),
+  retryStep: (runId: string, stepId: string) =>
+    api.post<LoadRun>(`/api/runs/${runId}/retry-step/${stepId}`, {}),
   logsZipUrl: (id: string, opts: { success: boolean; errors: boolean; unprocessed: boolean }) => {
     const params = new URLSearchParams({
       success: String(opts.success),
