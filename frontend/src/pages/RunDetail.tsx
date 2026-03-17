@@ -201,11 +201,21 @@ export default function RunDetail() {
     [planDetail],
   )
 
+  // ── Live aggregates from jobs (used while run is in progress) ───────────────
+  const liveSuccess = useMemo(() => jobs.reduce((n, j) => n + (j.records_processed ?? 0), 0), [jobs])
+  const liveErrors = useMemo(() => jobs.reduce((n, j) => n + (j.records_failed ?? 0), 0), [jobs])
+  const liveTotal = useMemo(() => liveSuccess + liveErrors, [liveSuccess, liveErrors])
+
+  // Prefer run-level totals once finalised, otherwise use live job aggregates
+  const displaySuccess = (run?.total_success != null && !isLive) ? run.total_success : liveSuccess
+  const displayErrors = (run?.total_errors != null && !isLive) ? run.total_errors : liveErrors
+  const displayTotal = (run?.total_records != null && !isLive) ? run.total_records : (liveTotal > 0 ? liveTotal : (run?.total_records ?? null))
+
   // ── Progress calculation ────────────────────────────────────────────────────
   const successPct = useMemo(() => {
-    if (!run?.total_records || run.total_records === 0) return 0
-    return Math.round(((run.total_success ?? 0) / run.total_records) * 100)
-  }, [run])
+    if (!displayTotal || displayTotal === 0) return 0
+    return Math.round((displaySuccess / displayTotal) * 100)
+  }, [displaySuccess, displayTotal])
 
   const noneSelected = !includeSuccess && !includeErrors && !includeUnprocessed
   const hasLogs = jobs.some(
@@ -231,7 +241,7 @@ export default function RunDetail() {
     if (run?.status === 'failed') return 'red' as const
     if (run?.status === 'completed_with_errors') return 'orange' as const
     if (run?.status === 'aborted') return 'orange' as const
-    if ((run?.total_errors ?? 0) > 0) return 'orange' as const
+    if (displayErrors > 0) return 'orange' as const
     return 'green' as const
   }, [run])
 
@@ -322,17 +332,17 @@ export default function RunDetail() {
 
         {/* Stats grid */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Total Records" value={run.total_records ?? '—'} />
-          <Stat label="Successes" value={run.total_success ?? '—'} valueClass="text-green-700" />
-          <Stat label="Errors" value={run.total_errors ?? '—'} valueClass={(run.total_errors ?? 0) > 0 ? 'text-red-700' : undefined} />
+          <Stat label="Total Records" value={displayTotal ?? '—'} />
+          <Stat label="Successes" value={displaySuccess} valueClass="text-green-700" />
+          <Stat label="Errors" value={displayErrors} valueClass={displayErrors > 0 ? 'text-red-700' : undefined} />
           <Stat label="Elapsed" value={formatElapsed(run.started_at, run.completed_at)} />
         </div>
 
         {/* Progress bar (only when we have record counts) */}
-        {(run.total_records ?? 0) > 0 && (
+        {(displayTotal ?? 0) > 0 && (
           <Progress
             value={successPct}
-            label={`${run.total_success ?? 0} / ${run.total_records} records succeeded`}
+            label={`${displaySuccess} / ${displayTotal} records succeeded`}
             showValue
             color={progressColor}
           />

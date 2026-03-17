@@ -154,6 +154,54 @@ def test_delete_plan_cascades_to_steps(auth_client):
     assert auth_client.get(f"/api/load-plans/{plan_id}").status_code == 404
 
 
+# ── Duplicate ──────────────────────────────────────────────────────────────────
+
+_STEP = {
+    "sequence": 1,
+    "object_name": "Account",
+    "operation": "insert",
+    "csv_file_pattern": "accounts*.csv",
+    "partition_size": 5000,
+}
+
+
+def test_duplicate_plan_returns_201(auth_client):
+    conn_id = _create_connection(auth_client)
+    source = _create_plan(auth_client, conn_id)
+    auth_client.post(f"/api/load-plans/{source['id']}/steps", json=_STEP)
+
+    resp = auth_client.post(f"/api/load-plans/{source['id']}/duplicate")
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["id"] != source["id"]
+    assert body["name"] == f"Copy of {source['name']}"
+    assert body["connection_id"] == source["connection_id"]
+    assert len(body["load_steps"]) == 1
+
+
+def test_duplicate_plan_copies_steps(auth_client):
+    conn_id = _create_connection(auth_client)
+    source = _create_plan(auth_client, conn_id)
+    auth_client.post(f"/api/load-plans/{source['id']}/steps", json=_STEP)
+
+    copy = auth_client.post(f"/api/load-plans/{source['id']}/duplicate").json()
+    src_step = auth_client.get(f"/api/load-plans/{source['id']}").json()["load_steps"][0]
+    copy_step = copy["load_steps"][0]
+
+    assert copy_step["id"] != src_step["id"]
+    assert copy_step["load_plan_id"] == copy["id"]
+    assert copy_step["object_name"] == src_step["object_name"]
+    assert copy_step["operation"] == src_step["operation"]
+    assert copy_step["csv_file_pattern"] == src_step["csv_file_pattern"]
+    assert copy_step["partition_size"] == src_step["partition_size"]
+    assert copy_step["sequence"] == src_step["sequence"]
+
+
+def test_duplicate_plan_not_found_returns_404(auth_client):
+    resp = auth_client.post("/api/load-plans/nonexistent/duplicate")
+    assert resp.status_code == 404
+
+
 # ── Start run ──────────────────────────────────────────────────────────────────
 
 

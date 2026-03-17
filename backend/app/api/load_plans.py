@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.connection import Connection
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
+from app.models.load_step import LoadStep
 from app.models.user import User
 from app.schemas.load_plan import (
     LoadPlanCreate,
@@ -100,6 +101,38 @@ async def delete_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
     await db.delete(plan)
     await db.commit()
+
+
+@router.post("/{plan_id}/duplicate", response_model=LoadPlanResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> LoadPlan:
+    """Create a copy of an existing load plan including all its steps."""
+    source = await _get_plan_with_steps(plan_id, db)
+
+    new_plan = LoadPlan(
+        connection_id=source.connection_id,
+        name=f"Copy of {source.name}",
+        description=source.description,
+        abort_on_step_failure=source.abort_on_step_failure,
+        error_threshold_pct=source.error_threshold_pct,
+        max_parallel_jobs=source.max_parallel_jobs,
+    )
+    db.add(new_plan)
+    await db.flush()  # populate new_plan.id before creating steps
+
+    for step in source.load_steps:
+        db.add(LoadStep(
+            load_plan_id=new_plan.id,
+            sequence=step.sequence,
+            object_name=step.object_name,
+            operation=step.operation,
+            external_id_field=step.external_id_field,
+            csv_file_pattern=step.csv_file_pattern,
+            partition_size=step.partition_size,
+            assignment_rule_id=step.assignment_rule_id,
+        ))
+
+    await db.commit()
+    return await _get_plan_with_steps(new_plan.id, db)
 
 
 @router.post("/{plan_id}/run", response_model=LoadRunResponse, status_code=status.HTTP_201_CREATED)

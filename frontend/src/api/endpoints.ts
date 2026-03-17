@@ -50,6 +50,7 @@ export const plansApi = {
   update: (id: string, data: Partial<LoadPlanCreate>) =>
     api.put<LoadPlan>(`/api/load-plans/${id}`, data),
   delete: (id: string) => api.delete(`/api/load-plans/${id}`),
+  duplicate: (id: string) => api.post<LoadPlanDetail>(`/api/load-plans/${id}/duplicate`, {}),
   startRun: (id: string) => api.post<LoadRun>(`/api/load-plans/${id}/run`, {}),
 }
 

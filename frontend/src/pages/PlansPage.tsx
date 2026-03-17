@@ -56,6 +56,17 @@ export default function PlansPage() {
     },
   })
 
+  const duplicateMutation = useMutation({
+    mutationFn: (id: string) => plansApi.duplicate(id),
+    onSuccess: (newPlan) => {
+      queryClient.invalidateQueries({ queryKey: ['plans'] })
+      navigate(`/plans/${newPlan.id}`)
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to duplicate plan')
+    },
+  })
+
   // ── Table columns ───────────────────────────────────────────────────────────
 
   const connectionMap = new Map(connections?.map((c) => [c.id, c]) ?? [])
@@ -103,6 +114,18 @@ export default function PlansPage() {
             }}
           >
             Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={duplicateMutation.isPending && duplicateMutation.variables === p.id}
+            disabled={duplicateMutation.isPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              duplicateMutation.mutate(p.id)
+            }}
+          >
+            Duplicate
           </Button>
           <Button
             size="sm"
