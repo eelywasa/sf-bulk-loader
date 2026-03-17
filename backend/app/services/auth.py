@@ -97,11 +97,33 @@ async def get_current_user(
 # ── WebSocket helper ──────────────────────────────────────────────────────────
 
 
+_PASSWORD_MIN_LENGTH = 12
+_PASSWORD_RULES = (
+    (lambda p: len(p) >= _PASSWORD_MIN_LENGTH, f"at least {_PASSWORD_MIN_LENGTH} characters"),
+    (lambda p: any(c.isupper() for c in p), "at least one uppercase letter"),
+    (lambda p: any(c.islower() for c in p), "at least one lowercase letter"),
+    (lambda p: any(c.isdigit() for c in p), "at least one digit"),
+    (lambda p: any(not c.isalnum() for c in p), "at least one special character"),
+)
+
+
+def _validate_password_strength(password: str) -> None:
+    """Raise ValueError listing all unmet password requirements."""
+    failures = [desc for check, desc in _PASSWORD_RULES if not check(password)]
+    if failures:
+        raise ValueError(
+            "ADMIN_PASSWORD does not meet minimum requirements: "
+            + ", ".join(failures)
+            + "."
+        )
+
+
 async def seed_admin(db: AsyncSession) -> None:
     """Bootstrap the first admin user if no users exist.
 
     Idempotent — does nothing when at least one user is already present.
-    Raises RuntimeError on first boot if the required env vars are absent.
+    Raises RuntimeError on first boot if the required env vars are absent or
+    if ADMIN_PASSWORD does not meet minimum complexity requirements.
     """
     count = await db.scalar(select(func.count()).select_from(User))
     if count and count > 0:
@@ -115,6 +137,11 @@ async def seed_admin(db: AsyncSession) -> None:
             "Set ADMIN_USERNAME and ADMIN_PASSWORD environment variables "
             "to seed the initial admin account on first boot."
         )
+
+    try:
+        _validate_password_strength(password)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
 
     admin = User(
         username=username,

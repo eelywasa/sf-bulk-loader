@@ -18,7 +18,7 @@ _TEST_ENCRYPTION_KEY = Fernet.generate_key().decode()
 os.environ.setdefault("ENCRYPTION_KEY", _TEST_ENCRYPTION_KEY)
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-pytest-only")
 os.environ.setdefault("ADMIN_USERNAME", "test-admin")
-os.environ.setdefault("ADMIN_PASSWORD", "test-admin-password")
+os.environ.setdefault("ADMIN_PASSWORD", "Test-Admin-P4ss!")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -32,7 +32,7 @@ import app.services.orchestrator as _orchestrator_module  # noqa: E402
 # Override in-process settings so encrypt/decrypt helpers use our key
 settings.encryption_key = _TEST_ENCRYPTION_KEY
 settings.admin_username = "test-admin"
-settings.admin_password = "test-admin-password"
+settings.admin_password = "Test-Admin-P4ss!"
 
 # ── Test database ─────────────────────────────────────────────────────────────
 

@@ -302,6 +302,56 @@ def test_seed_admin_fails_without_credentials():
     _run_async(_run())
 
 
+# ── Ticket 12: Bootstrap password complexity ──────────────────────────────────
+
+
+from app.services.auth import _validate_password_strength  # noqa: E402
+
+
+@pytest.mark.parametrize("password,missing_rule", [
+    ("Short1!",         "at least 12 characters"),
+    ("alllowercase1!",  "at least one uppercase letter"),
+    ("ALLUPPERCASE1!",  "at least one lowercase letter"),
+    ("NoDigitsHere!x",  "at least one digit"),
+    ("NoSpecialChar1A", "at least one special character"),
+])
+def test_validate_password_strength_rejects_weak_passwords(password, missing_rule):
+    with pytest.raises(ValueError, match=missing_rule):
+        _validate_password_strength(password)
+
+
+def test_validate_password_strength_accepts_strong_password():
+    _validate_password_strength("Str0ng&Secure#Pass")
+
+
+def test_validate_password_strength_reports_all_failures():
+    """A password that fails multiple rules lists every failure."""
+    with pytest.raises(ValueError) as exc_info:
+        _validate_password_strength("weak")
+    msg = str(exc_info.value)
+    assert "at least 12 characters" in msg
+    assert "at least one uppercase letter" in msg
+    assert "at least one digit" in msg
+    assert "at least one special character" in msg
+
+
+def test_seed_admin_fails_with_weak_password():
+    """seed_admin raises RuntimeError when ADMIN_PASSWORD is too weak."""
+    from unittest.mock import patch
+
+    from tests.conftest import _TestSession, _run_async
+
+    async def _run():
+        with patch("app.services.auth.settings") as mock_settings:
+            mock_settings.admin_username = "admin"
+            mock_settings.admin_password = "weakpassword"
+            async with _TestSession() as session:
+                with pytest.raises(RuntimeError, match="minimum requirements"):
+                    await seed_admin(session)
+
+    _run_async(_run())
+
+
 # ── Ticket 5: Protected route enforcement ─────────────────────────────────────
 
 
