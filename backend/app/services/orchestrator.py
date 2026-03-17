@@ -358,6 +358,25 @@ async def _execute_step(
     # Exception on failure.  Counts come directly from the partition so we
     # don't need to re-query the DB (which would require session expiry tricks).
     gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Any job still in an intermediate state after gather means _process_partition
+    # raised an unexpected (non-BulkAPIError) exception and never cleaned up.
+    # Transition those records to failed so they are never left permanently stuck.
+    await db.execute(
+        update(JobRecord)
+        .where(
+            JobRecord.id.in_(job_record_ids),
+            JobRecord.status.in_([
+                JobStatus.pending,
+                JobStatus.uploading,
+                JobStatus.upload_complete,
+                JobStatus.in_progress,
+            ]),
+        )
+        .values(status=JobStatus.failed, completed_at=datetime.now(timezone.utc))
+    )
+    await db.commit()
+
     total_success = 0
     total_errors = 0
     for i, res in enumerate(gather_results):
