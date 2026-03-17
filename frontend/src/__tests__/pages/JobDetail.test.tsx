@@ -286,13 +286,13 @@ describe('JobDetail', () => {
     })
   })
 
-  // ── Downloads tab ─────────────────────────────────────────────────────────
+  // ── Logs tab ──────────────────────────────────────────────────────────────
 
   it('renders Downloads tab label', async () => {
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Downloads' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Logs' })).toBeInTheDocument()
     })
   })
 
@@ -300,8 +300,8 @@ describe('JobDetail', () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
-    await waitFor(() => screen.getByRole('tab', { name: 'Downloads' }))
-    await user.click(screen.getByRole('tab', { name: 'Downloads' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
       expect(screen.getByText('Success CSV')).toBeVisible()
       expect(screen.getByText('Error CSV')).toBeVisible()
@@ -313,8 +313,8 @@ describe('JobDetail', () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
-    await waitFor(() => screen.getByRole('tab', { name: 'Downloads' }))
-    await user.click(screen.getByRole('tab', { name: 'Downloads' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
       const links = screen.getAllByRole('link', { name: /Download/ })
       expect(links.length).toBeGreaterThanOrEqual(1)
@@ -325,8 +325,8 @@ describe('JobDetail', () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
-    await waitFor(() => screen.getByRole('tab', { name: 'Downloads' }))
-    await user.click(screen.getByRole('tab', { name: 'Downloads' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
       const links = screen.getAllByRole('link', { name: /Download/ })
       const hrefs = links.map((l) => l.getAttribute('href'))
@@ -340,8 +340,8 @@ describe('JobDetail', () => {
     // jobComplete has null unprocessed_file_path — should show one "Not available"
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
-    await waitFor(() => screen.getByRole('tab', { name: 'Downloads' }))
-    await user.click(screen.getByRole('tab', { name: 'Downloads' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
       expect(screen.getByText('Not available')).toBeVisible()
     })
@@ -351,8 +351,8 @@ describe('JobDetail', () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobFailed)
     renderJobDetail()
-    await waitFor(() => screen.getByRole('tab', { name: 'Downloads' }))
-    await user.click(screen.getByRole('tab', { name: 'Downloads' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
       expect(screen.getAllByText('Not available').length).toBe(3)
     })
@@ -362,8 +362,8 @@ describe('JobDetail', () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobFailed)
     renderJobDetail()
-    await waitFor(() => screen.getByRole('tab', { name: 'Downloads' }))
-    await user.click(screen.getByRole('tab', { name: 'Downloads' }))
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
       expect(screen.queryAllByRole('link', { name: /Download/ }).length).toBe(0)
     })
@@ -376,8 +376,8 @@ describe('JobDetail', () => {
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
     await waitFor(() => screen.getByRole('tab', { name: 'Overview' }))
-    // Switch to Downloads
-    await user.click(screen.getByRole('tab', { name: 'Downloads' }))
+    // Switch to Logs
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => screen.getByText('Success CSV'))
     // Switch back to Overview
     await user.click(screen.getByRole('tab', { name: 'Overview' }))

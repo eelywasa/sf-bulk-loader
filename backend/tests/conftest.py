@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
+import app.services.orchestrator as _orchestrator_module  # noqa: E402
 
 # Override in-process settings so encrypt/decrypt helpers use our key
 settings.encryption_key = _TEST_ENCRYPTION_KEY
@@ -90,13 +91,27 @@ def clean_db():
 
 @pytest.fixture
 def client():
-    """Return a synchronous TestClient with the test DB wired in."""
+    """Return a synchronous TestClient with the test DB wired in.
+
+    Patches the orchestrator so that background tasks triggered by the
+    ``/run`` endpoint are no-ops — the run record is created in the DB but
+    the orchestrator does not execute.  This prevents a race where the
+    orchestrator fails immediately (fake key) and changes run status before
+    the test can act.  Orchestrator behaviour is covered by test_orchestrator.py
+    which calls _execute_run directly.
+    """
 
     async def override_get_db():
         async with _TestSession() as session:
             yield session
 
+    async def _noop_execute_run(_run_id: str) -> None:  # noqa: RUF029
+        pass
+
     app.dependency_overrides[get_db] = override_get_db
+    _original_execute_run = _orchestrator_module.execute_run
+    _orchestrator_module.execute_run = _noop_execute_run
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
+    _orchestrator_module.execute_run = _original_execute_run
     app.dependency_overrides.clear()

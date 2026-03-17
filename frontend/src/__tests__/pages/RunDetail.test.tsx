@@ -207,7 +207,7 @@ describe('RunDetail', () => {
     renderRunDetail()
     await waitFor(() => {
       // Both breadcrumb and h1 contain the ID — check at least one appears
-      expect(screen.getAllByText('run-111…').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('run-111').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -289,7 +289,7 @@ describe('RunDetail', () => {
 
     renderRunDetail()
     // wait for run to load (multiple elements with this text — use getAllByText)
-    await waitFor(() => expect(screen.getAllByText('run-111…').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText('run-111').length).toBeGreaterThan(0))
 
     expect(screen.getByRole('link', { name: 'Runs' })).toBeInTheDocument()
   })
