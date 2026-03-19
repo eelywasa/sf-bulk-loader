@@ -151,6 +151,34 @@ or committed to source control.
 
 ---
 
+## 011 — Business rules extracted from routers into domain services (Phase 1.3)
+
+**Decision:** Domain logic that is not HTTP-specific (plan duplication, run creation,
+abort, summary aggregation, logs ZIP assembly, retry step orchestration, step
+reordering) lives in `app/services/load_plan_service.py`,
+`app/services/load_run_service.py`, and `app/services/load_step_service.py`.
+Routers handle only HTTP concerns: parameter parsing, status codes, background
+task enqueueing, and streaming responses.
+
+**Why:** The router files had grown to contain DB orchestration and domain rules
+that were untestable without an HTTP layer. Extracting them makes the logic
+directly unit-testable and keeps each layer's responsibility clear.
+
+**HTTPException in services:** Services raise `HTTPException` directly rather than
+introducing a new domain-exception layer. This matches the existing pattern in
+`app/services/auth.py` and avoids over-engineering for the current scope.
+
+**BackgroundTasks stays in routers:** `BackgroundTasks` is a FastAPI dependency
+that can only be resolved inside route handlers. Services return all data needed
+(e.g. the new `LoadRun` and computed partitions); routers enqueue the task.
+
+**Trade-off:** Services importing FastAPI's `HTTPException` creates a soft coupling
+to the HTTP layer. Acceptable for now — if a non-HTTP consumer (e.g. a CLI or test
+fixture) needs the same logic, the raise can be replaced with a domain exception at
+that point.
+
+---
+
 ## 010 — External IDs for object relationships (no runtime ID mapping)
 
 **Decision:** Child records reference parent records via Salesforce external ID
@@ -167,3 +195,26 @@ Salesforce-recommended approach for data migrations.
 both parent and child records. Insert-only workflows without external IDs cannot
 use this approach. Runtime ID mapping is listed as a future consideration in the
 spec (§13).
+
+---
+
+## 012 — PlanEditor decomposed into feature components and hooks (Phase 2.4)
+
+**Decision:** `frontend/src/pages/PlanEditor.tsx` was split from a 1103-line monolith into:
+
+- `frontend/src/pages/planEditorUtils.ts` — shared types (`PlanFormData`, `StepFormData`, `PreviewEntry`), constants (`OPERATIONS`, `INPUT_CLASS`, `LABEL_CLASS`), and helpers (`extractErrors`, `operationVariant`)
+- `frontend/src/hooks/usePlanEditorState.ts` — all form state, step modal state, file picker state, queries (plan, connections, sfObjects, patternPreview), mutations, derived state, and action handlers
+- `frontend/src/hooks/useStepPreview.ts` — per-step preview state and preflight logic
+- `frontend/src/components/FilePicker.tsx` — file browser component (was inline in PlanEditor)
+- `frontend/src/components/PlanForm.tsx` — plan details card (pure rendering)
+- `frontend/src/components/StepList.tsx` — step table with inline preview results
+- `frontend/src/components/StepEditorModal.tsx` — add/edit step dialog
+- `frontend/src/components/PreflightPreviewModal.tsx` — preflight results grid
+
+`PlanEditor.tsx` is now ~190 lines: route wiring, header, loading/error guards, and component assembly.
+
+**Why:** The single-file approach made each new feature expensive — any change required navigating 1100 lines and risked touching unrelated state. Decomposing by concern (form rendering, step list rendering, modal rendering, state/query management, preview management) makes each unit independently readable and testable.
+
+**Hook boundary rationale:** `usePlanEditorState` owns everything that involves mutations or cross-cutting state (plan form ↔ connection id ↔ sfObjects query, step form ↔ file picker ↔ patternPreview query). `useStepPreview` is kept separate because it has no dependency on mutation state and only needs the plan id.
+
+**No behaviour changes:** This is a pure structural refactor. Existing `PlanEditor.test.tsx` tests continue to pass without modification.
