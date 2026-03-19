@@ -2,10 +2,10 @@
 
 import csv
 import logging
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -14,6 +14,7 @@ from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
 from app.services.auth import get_current_user
 from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding
+from app.services import load_step_service
 from app.schemas.load_step import (
     FilePreviewInfo,
     LoadStepCreate,
@@ -61,11 +62,7 @@ async def add_step(
     await _get_plan_or_404(plan_id, db)
     step_data = data.model_dump()
     if step_data.get("sequence") is None:
-        result = await db.execute(
-            select(func.max(LoadStep.sequence)).where(LoadStep.load_plan_id == plan_id)
-        )
-        max_seq: Optional[int] = result.scalar()
-        step_data["sequence"] = (max_seq or 0) + 1
+        step_data["sequence"] = await load_step_service.next_sequence(db, plan_id)
     step = LoadStep(load_plan_id=plan_id, **step_data)
     db.add(step)
     await db.commit()
@@ -82,27 +79,7 @@ async def reorder_steps(
 ) -> List[LoadStep]:
     """Reassign step sequences based on the ordered list of step IDs provided."""
     await _get_plan_or_404(plan_id, db)
-
-    result = await db.execute(select(LoadStep).where(LoadStep.load_plan_id == plan_id))
-    existing = {step.id: step for step in result.scalars().all()}
-
-    if set(data.step_ids) != set(existing.keys()):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="step_ids must contain exactly the IDs of all steps in this plan",
-        )
-
-    for new_seq, step_id in enumerate(data.step_ids, start=1):
-        existing[step_id].sequence = new_seq
-
-    await db.commit()
-
-    result = await db.execute(
-        select(LoadStep)
-        .where(LoadStep.load_plan_id == plan_id)
-        .order_by(LoadStep.sequence)
-    )
-    return list(result.scalars().all())
+    return await load_step_service.reorder_steps(db, plan_id, data.step_ids)
 
 
 @router.put("/{plan_id}/steps/{step_id}", response_model=LoadStepResponse)
