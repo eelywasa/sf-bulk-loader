@@ -112,8 +112,8 @@ describe('useLiveRun', () => {
       expect(TERMINAL_STATUSES).not.toContain('running')
     })
 
-    it('POLL_INTERVAL_MS is 3000', () => {
-      expect(POLL_INTERVAL_MS).toBe(3_000)
+    it('POLL_INTERVAL_MS is 15000 (WS fallback interval)', () => {
+      expect(POLL_INTERVAL_MS).toBe(15_000)
     })
   })
 
