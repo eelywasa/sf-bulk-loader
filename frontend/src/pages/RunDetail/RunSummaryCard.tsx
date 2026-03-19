@@ -39,7 +39,7 @@ export function RunSummaryCard({
   isWsConnected,
   onAbort,
 }: RunSummaryCardProps) {
-  const liveSuccess = useMemo(() => jobs.reduce((n, j) => n + (j.records_processed ?? 0), 0), [jobs])
+  const liveSuccess = useMemo(() => jobs.reduce((n, j) => n + (j.records_successful ?? 0), 0), [jobs])
   const liveErrors = useMemo(() => jobs.reduce((n, j) => n + (j.records_failed ?? 0), 0), [jobs])
   const liveTotal = liveSuccess + liveErrors
 
@@ -121,7 +121,9 @@ export function RunSummaryCard({
       </div>
 
       {run.error_summary && (
-        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-1.5">{run.error_summary}</p>
+        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-1.5">
+          {run.error_summary.auth_error ?? 'An error occurred during execution.'}
+        </p>
       )}
     </div>
   )

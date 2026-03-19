@@ -78,6 +78,7 @@ const runCompleted: LoadRun = {
   total_errors: 0,
   initiated_by: 'admin',
   error_summary: null,
+  is_retry: false,
 }
 
 const runRunning: LoadRun = {
@@ -93,7 +94,7 @@ const runFailed: LoadRun = {
   status: 'failed',
   total_success: 0,
   total_errors: 1500,
-  error_summary: 'Step 1 exceeded error threshold',
+  error_summary: { auth_error: 'Step 1 exceeded error threshold' },
 }
 
 const jobComplete: JobRecord = {

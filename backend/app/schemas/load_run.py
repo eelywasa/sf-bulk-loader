@@ -1,10 +1,19 @@
+import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field, field_validator
 
 from app.models.load_run import RunStatus
 from app.schemas.job import JobResponse
+
+
+class RunErrorSummary(BaseModel):
+    """Typed structure for run-level error context stored in LoadRun.error_summary."""
+
+    auth_error: Optional[str] = None
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class LoadRunResponse(BaseModel):
@@ -17,10 +26,27 @@ class LoadRunResponse(BaseModel):
     total_success: Optional[int] = None
     total_errors: Optional[int] = None
     initiated_by: Optional[str] = None
-    error_summary: Optional[str] = None
+    error_summary: Optional[RunErrorSummary] = None
     retry_of_run_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("error_summary", mode="before")
+    @classmethod
+    def _parse_error_summary(cls, v: Any) -> Any:
+        """Parse JSON string from the DB column into a dict for Pydantic to validate."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
+        return v
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_retry(self) -> bool:
+        """True when this run was created as a step retry of another run."""
+        return self.retry_of_run_id is not None
 
 
 class LoadRunDetailResponse(LoadRunResponse):
@@ -29,20 +55,3 @@ class LoadRunDetailResponse(LoadRunResponse):
     jobs: List[JobResponse] = []
 
 
-class RunSummaryStepStats(BaseModel):
-    step_id: str
-    object_name: str
-    sequence: int
-    total_records: int
-    total_success: int
-    total_errors: int
-    job_count: int
-
-
-class RunSummaryResponse(BaseModel):
-    run_id: str
-    status: RunStatus
-    total_records: int
-    total_success: int
-    total_errors: int
-    steps: List[RunSummaryStepStats]

@@ -46,6 +46,7 @@ const run1: LoadRun = {
   total_errors: 5,
   initiated_by: 'admin',
   error_summary: null,
+  is_retry: false,
 }
 
 const run2: LoadRun = {
@@ -59,6 +60,7 @@ const run2: LoadRun = {
   total_errors: 0,
   initiated_by: 'scheduler',
   error_summary: null,
+  is_retry: false,
 }
 
 const run3: LoadRun = {
@@ -71,7 +73,8 @@ const run3: LoadRun = {
   total_success: 0,
   total_errors: 300,
   initiated_by: null,
-  error_summary: 'Step 1 failed: CSV file not found',
+  error_summary: { auth_error: 'Step 1 failed: CSV file not found' },
+  is_retry: false,
 }
 
 // ─── Render helper ─────────────────────────────────────────────────────────────

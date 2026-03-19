@@ -1,4 +1,4 @@
-"""Load Run domain services — abort, summary, logs ZIP, and retry step preparation."""
+"""Load Run domain services — abort, logs ZIP, and retry step preparation."""
 
 import io
 import logging
@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,7 +18,6 @@ from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
-from app.schemas.load_run import RunSummaryResponse, RunSummaryStepStats
 from app.services.csv_processor import build_retry_partitions
 from app.services.salesforce_auth import get_access_token
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
@@ -55,63 +54,6 @@ async def abort_run(db: AsyncSession, run_id: str) -> LoadRun:
     await db.commit()
     await db.refresh(run)
     return run
-
-
-async def get_run_summary(db: AsyncSession, run_id: str) -> RunSummaryResponse:
-    """Return aggregated success/error counts grouped by load step. Raises 404."""
-    run = await db.get(LoadRun, run_id)
-    if run is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-
-    rows = (
-        await db.execute(
-            select(
-                LoadStep.id.label("step_id"),
-                LoadStep.object_name,
-                LoadStep.sequence,
-                func.count(JobRecord.id).label("job_count"),
-                func.coalesce(func.sum(JobRecord.records_processed), 0).label("total_processed"),
-                func.coalesce(func.sum(JobRecord.records_failed), 0).label("total_failed"),
-            )
-            .join(JobRecord, JobRecord.load_step_id == LoadStep.id)
-            .where(JobRecord.load_run_id == run_id)
-            .group_by(LoadStep.id, LoadStep.object_name, LoadStep.sequence)
-            .order_by(LoadStep.sequence)
-        )
-    ).all()
-
-    step_stats: list[RunSummaryStepStats] = []
-    grand_records = 0
-    grand_success = 0
-    grand_errors = 0
-
-    for row in rows:
-        total_processed = int(row.total_processed)
-        total_failed = int(row.total_failed)
-        total_success = total_processed - total_failed
-        step_stats.append(
-            RunSummaryStepStats(
-                step_id=row.step_id,
-                object_name=row.object_name,
-                sequence=row.sequence,
-                total_records=total_processed,
-                total_success=total_success,
-                total_errors=total_failed,
-                job_count=row.job_count,
-            )
-        )
-        grand_records += total_processed
-        grand_success += total_success
-        grand_errors += total_failed
-
-    return RunSummaryResponse(
-        run_id=run_id,
-        status=run.status,
-        total_records=grand_records,
-        total_success=grand_success,
-        total_errors=grand_errors,
-        steps=step_stats,
-    )
 
 
 async def build_logs_zip(

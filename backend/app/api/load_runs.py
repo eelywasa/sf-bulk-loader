@@ -17,7 +17,6 @@ from app.models.user import User
 from app.schemas.load_run import (
     LoadRunDetailResponse,
     LoadRunResponse,
-    RunSummaryResponse,
 )
 from app.services import orchestrator
 from app.services import load_run_service
@@ -79,12 +78,6 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> LoadRun:
 async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)) -> LoadRun:
     """Abort a pending or running load. In-progress jobs are marked aborted."""
     return await load_run_service.abort_run(db, run_id)
-
-
-@router.get("/{run_id}/summary", response_model=RunSummaryResponse)
-async def get_run_summary(run_id: str, db: AsyncSession = Depends(get_db)) -> RunSummaryResponse:
-    """Return aggregated success/error counts grouped by load step."""
-    return await load_run_service.get_run_summary(db, run_id)
 
 
 @router.get("/{run_id}/logs.zip")

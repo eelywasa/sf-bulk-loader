@@ -756,6 +756,7 @@ describe('PlanEditor', () => {
       total_errors: null,
       initiated_by: null,
       error_summary: null,
+      is_retry: false,
     })
 
     renderEditor('plan-1')

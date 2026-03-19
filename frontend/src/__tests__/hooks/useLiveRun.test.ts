@@ -32,6 +32,7 @@ const runPending: LoadRun = {
   total_errors: null,
   initiated_by: null,
   error_summary: null,
+  is_retry: false,
 }
 
 const runRunning: LoadRun = { ...runPending, status: 'running', started_at: '2024-03-01T10:00:00Z' }

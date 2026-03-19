@@ -116,6 +116,10 @@ export interface LoadPlanDetail extends LoadPlan {
 
 // ─── Runs ──────────────────────────────────────────────────────────────────────
 
+export interface RunErrorSummary {
+  auth_error?: string | null
+}
+
 export interface LoadRun {
   id: string
   load_plan_id: string
@@ -126,8 +130,9 @@ export interface LoadRun {
   total_success?: number | null
   total_errors?: number | null
   initiated_by?: string | null
-  error_summary?: string | null
+  error_summary?: RunErrorSummary | null
   retry_of_run_id?: string | null
+  is_retry: boolean
 }
 
 // ─── Jobs ──────────────────────────────────────────────────────────────────────
@@ -141,6 +146,7 @@ export interface JobRecord {
   status: JobStatus
   records_processed?: number | null
   records_failed?: number | null
+  records_successful?: number | null
   total_records?: number | null
   success_file_path?: string | null
   error_file_path?: string | null

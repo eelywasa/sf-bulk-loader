@@ -14,8 +14,7 @@ from app.schemas.load_plan import (
 from app.schemas.load_run import (
     LoadRunDetailResponse,
     LoadRunResponse,
-    RunSummaryResponse,
-    RunSummaryStepStats,
+    RunErrorSummary,
 )
 from app.schemas.load_step import (
     FilePreviewInfo,
@@ -42,8 +41,7 @@ __all__ = [
     "LoadStepCreate",
     "LoadStepResponse",
     "LoadStepUpdate",
-    "RunSummaryResponse",
-    "RunSummaryStepStats",
+    "RunErrorSummary",
     "StepPreviewResponse",
     "StepReorderRequest",
 ]

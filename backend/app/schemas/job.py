@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.models.job import JobStatus
 
@@ -25,3 +25,15 @@ class JobResponse(BaseModel):
     error_message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def records_successful(self) -> Optional[int]:
+        """Success count: records_processed (total) minus records_failed.
+
+        None when either component is not yet available (e.g. during in-progress polling
+        before result files are downloaded).
+        """
+        if self.records_processed is None or self.records_failed is None:
+            return None
+        return self.records_processed - self.records_failed
