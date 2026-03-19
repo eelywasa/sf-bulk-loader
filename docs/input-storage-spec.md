@@ -87,7 +87,12 @@ Suggested interface:
 - `preview_file(path: str, rows: int) -> InputPreview`
 - `discover_files(pattern: str) -> list[InputObject]`
 - `open_text(path: str)` or `open_binary(path: str)`
-- `iter_csv_partitions(path: str, partition_size: int)` or equivalent provider-neutral helper
+
+Note: `iter_csv_partitions` / CSV partitioning is **not** part of the storage interface.
+Partitioning stays in `csv_processor.partition_csv`, which will accept provider-neutral
+file handles after Ticket 9.  The storage interface provides `open_text`/`open_binary`
+so that `csv_processor` can remain provider-neutral without exposing CSV logic through
+the storage layer.
 
 Implementations:
 
@@ -590,20 +595,21 @@ Goal: remove direct provider assumptions from file-browsing consumers.
 
 Scope:
 
-- add a provider-neutral storage service module
-- implement local provider adapter
-- implement S3 provider adapter
-- add source-resolution helpers for `local` and DB-backed sources
-- add unit tests for provider resolution and path normalization
+- ~~add a provider-neutral storage service module~~ **done in Phase 1.2 refactoring** (`backend/app/services/input_storage.py`)
+- ~~implement local provider adapter~~ **done in Phase 1.2 refactoring** (`LocalInputStorage`)
+- implement S3 provider adapter (`S3InputStorage`)
+- add `get_storage(source: str, db) -> BaseInputStorage` resolver for `local` and DB-backed sources
+- add unit tests for S3 provider and resolver
 
 Notes:
 
-- centralize local path-safety checks here rather than duplicating them across routes
+- `LocalInputStorage`, shared DTOs (`InputEntry`, `InputPreview`), and `detect_encoding` already exist
+- the abstract base class / Protocol can be formalised in this ticket if not done in Phase 1.2
 - keep the abstraction small and oriented around actual app use cases
 
 Dependencies:
 
-- Ticket 2
+- Ticket 2 (resolver needs DB-backed input connections; local provider has no dependency)
 
 Exit criteria:
 
@@ -615,15 +621,15 @@ Goal: support browsing and previewing local and remote sources through the exist
 
 Scope:
 
-- update `/api/files/input` to accept `source`
-- update preview endpoint to accept `source`
-- route both endpoints through the storage abstraction
+- ~~route both endpoints through the storage abstraction~~ **done in Phase 1.2 refactoring** (both endpoints already delegate to `LocalInputStorage`)
+- add `source` query parameter to `/api/files/input` and the preview endpoint
+- add resolver dispatch: `source=local` → `LocalInputStorage`, `source=<id>` → `S3InputStorage`
 - update backend tests for source-aware list/preview behavior
 
 Notes:
 
-- preserve local behavior when `source=local`
-- decide whether omitted `source` defaults to `local` for backward compatibility
+- preserve local behavior when `source=local` or `source` is omitted
+- the routing-through-abstraction work is complete; this ticket adds the source-selector
 
 Dependencies:
 
@@ -734,13 +740,15 @@ Goal: decouple CSV parsing and partitioning from local filesystem paths.
 
 Scope:
 
-- split provider-specific discovery/opening from CSV logic
-- adapt partitioning utilities to operate on provider-neutral input handles or streams
+- ~~split provider-specific discovery/opening from CSV logic~~ **done in Phase 1.2 refactoring** (`csv_processor.discover_files` is now a thin wrapper over `LocalInputStorage`)
+- adapt `partition_csv` to accept provider-neutral input handles or streams (rather than a local `pathlib.Path`)
 - preserve current encoding normalization and partition semantics
 - add/update unit tests
 
 Notes:
 
+- file discovery from `csv_processor` is already redirected to the storage abstraction
+- remaining work: make `partition_csv` accept an open file handle or stream so that remote providers can supply content without a local path
 - this ticket is internal refactoring but required before remote execution can be reliable
 
 Dependencies:

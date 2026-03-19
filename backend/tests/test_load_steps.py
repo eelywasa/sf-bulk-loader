@@ -223,3 +223,38 @@ def test_preview_step_not_found_returns_404(auth_client):
     pid = _plan_id(auth_client, _conn_id(auth_client))
     resp = auth_client.post(f"/api/load-plans/{pid}/steps/bad-step/preview")
     assert resp.status_code == 404
+
+
+def test_preview_step_traversal_pattern_returns_400(auth_client):
+    """A step pattern containing '..' must be rejected with 400."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid, {"csv_file_pattern": "../../etc/passwd"})["id"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("app.api.load_steps.settings") as mock_settings:
+            mock_settings.input_dir = tmpdir
+            resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
+    assert resp.status_code == 400
+
+
+def test_preview_step_cp1252_file_returns_correct_row_count(auth_client):
+    """Row count for a cp1252-encoded file must be reported correctly."""
+    import csv as _csv
+
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid, {"csv_file_pattern": "cp1252_data.csv"})["id"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = os.path.join(tmpdir, "cp1252_data.csv")
+        # Write header + 3 rows with a cp1252-specific byte in values
+        with open(csv_path, "wb") as f:
+            f.write(b"Name,Value\nCaf\x80,1\nCaf\x80,2\nCaf\x80,3\n")
+
+        with patch("app.api.load_steps.settings") as mock_settings:
+            mock_settings.input_dir = tmpdir
+            resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_rows"] == 3

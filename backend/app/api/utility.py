@@ -1,9 +1,7 @@
 """Utility API — file listing/preview, health check, and WebSocket run status."""
 
 import asyncio
-import csv
 import logging
-import os
 import pathlib
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -17,6 +15,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.services.auth import get_current_user, validate_ws_token
+from app.services.input_storage import InputStorageError, LocalInputStorage
 from app.utils.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -41,64 +40,31 @@ class InputDirectoryEntry(BaseModel):
     row_count: Optional[int] = None
 
 
-def _safe_relative_path(rel_path: str, base_dir: str) -> Optional[pathlib.Path]:
-    """Validate that rel_path stays inside base_dir; return resolved Path or None."""
-    base = pathlib.Path(base_dir).resolve()
-    parts = pathlib.PurePosixPath(rel_path.replace("\\", "/")).parts
-    if ".." in parts:
-        return None
-    candidate = (base / rel_path).resolve()
-    try:
-        candidate.relative_to(base)
-    except ValueError:
-        return None
-    return candidate
-
-
 @router.get("/api/files/input", response_model=List[InputDirectoryEntry])
 async def list_input_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
     _: User = Depends(get_current_user),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories at the given path within the input directory."""
-    input_dir = settings.input_dir
-    if not os.path.isdir(input_dir):
+    if not pathlib.Path(settings.input_dir).is_dir():
         return []
 
-    if path:
-        target = _safe_relative_path(path, input_dir)
-        if target is None or not target.is_dir():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
-    else:
-        target = pathlib.Path(input_dir).resolve()
-
-    dirs: List[InputDirectoryEntry] = []
-    files: List[InputDirectoryEntry] = []
-
+    storage = LocalInputStorage(settings.input_dir)
     try:
-        with os.scandir(target) as it:
-            for entry in sorted(it, key=lambda e: e.name):
-                if entry.name.startswith("."):
-                    continue
-                rel = os.path.join(path, entry.name) if path else entry.name
-                if entry.is_dir(follow_symlinks=False):
-                    dirs.append(InputDirectoryEntry(name=entry.name, kind=EntryKind.directory, path=rel))
-                elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(".csv"):
-                    try:
-                        size = entry.stat().st_size
-                    except OSError:
-                        size = 0
-                    row_count: Optional[int] = None
-                    try:
-                        with open(entry.path, encoding="utf-8-sig", errors="replace") as fh:
-                            row_count = max(0, sum(1 for _ in fh) - 1)
-                    except OSError:
-                        pass
-                    files.append(InputDirectoryEntry(name=entry.name, kind=EntryKind.file, path=rel, size_bytes=size, row_count=row_count))
-    except OSError:
-        return []
+        entries = storage.list_entries(path)
+    except InputStorageError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
 
-    return dirs + files
+    return [
+        InputDirectoryEntry(
+            name=e.name,
+            kind=EntryKind(e.kind),
+            path=e.path,
+            size_bytes=e.size_bytes,
+            row_count=e.row_count,
+        )
+        for e in entries
+    ]
 
 
 @router.get("/api/files/input/{file_path:path}/preview")
@@ -108,18 +74,13 @@ async def preview_input_file(
     _: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Return the first *rows* data rows (plus header) of a CSV file."""
-    resolved = _safe_relative_path(file_path, settings.input_dir)
-    if resolved is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
-
-    if not resolved.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-
+    storage = LocalInputStorage(settings.input_dir)
     try:
-        with open(resolved, newline="", encoding="utf-8-sig") as fh:
-            reader = csv.DictReader(fh)
-            header = reader.fieldnames or []
-            preview_rows = [row for _, row in zip(range(rows), reader)]
+        preview = storage.preview_file(file_path, rows)
+    except InputStorageError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     except OSError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -127,10 +88,10 @@ async def preview_input_file(
         ) from exc
 
     return {
-        "filename": file_path,
-        "header": list(header),
-        "rows": preview_rows,
-        "row_count": len(preview_rows),
+        "filename": preview.filename,
+        "header": preview.header,
+        "rows": preview.rows,
+        "row_count": preview.row_count,
     }
 
 

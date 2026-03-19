@@ -30,16 +30,9 @@ from dataclasses import dataclass, field
 from typing import Iterator, Optional, Sequence
 
 from app.config import settings
+from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding  # noqa: F401 — re-export
 
 logger = logging.getLogger(__name__)
-
-# Encodings attempted during detection, in priority order.
-# ``utf-8-sig`` handles UTF-8 with and without BOM and is tried first.
-# ``cp1252`` (Windows-1252) is tried before ``latin-1`` because it is the
-# most common non-UTF-8 encoding in practice.
-# ``latin-1`` is last because it accepts every byte value and never raises,
-# making it the universal fallback.
-_ENCODING_CANDIDATES: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
 
 
 # ── Exceptions ───────────────────────────────────────────────────────────────
@@ -65,35 +58,6 @@ class CSVValidationResult:
         return not self.warnings
 
 
-# ── Encoding detection ────────────────────────────────────────────────────────
-
-
-def detect_encoding(file_path: pathlib.Path, sample_size: int = 65536) -> str:
-    """Return the most likely text encoding for *file_path*.
-
-    Reads the first *sample_size* bytes (default 64 KiB) and tries each
-    encoding in :data:`_ENCODING_CANDIDATES` until one succeeds without a
-    :exc:`UnicodeDecodeError`.  ``latin-1`` always succeeds and acts as the
-    universal fallback.
-
-    Args:
-        file_path: Path to the file to inspect.
-        sample_size: Number of bytes to sample.
-
-    Returns:
-        Encoding name suitable for ``open()`` / ``bytes.decode()``.
-    """
-    raw = file_path.read_bytes()[:sample_size]
-    for enc in _ENCODING_CANDIDATES:
-        try:
-            raw.decode(enc)
-            logger.debug("Detected encoding %s for %s", enc, file_path.name)
-            return enc
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return "latin-1"  # pragma: no cover — latin-1 never raises
-
-
 # ── File discovery ────────────────────────────────────────────────────────────
 
 
@@ -103,10 +67,8 @@ def discover_files(
 ) -> list[pathlib.Path]:
     """Return CSV files inside *input_dir* that match *glob_pattern*.
 
-    The pattern is evaluated via :meth:`pathlib.Path.glob` relative to
-    *input_dir*.  Patterns containing ``..`` are rejected before any filesystem
-    access to prevent path traversal (spec §11).  Every matched candidate is
-    also validated to ensure its resolved path stays inside *input_dir*.
+    Delegates to :class:`~app.services.input_storage.LocalInputStorage` which
+    is the single source of truth for traversal-safe file discovery.
 
     Args:
         glob_pattern: Glob pattern relative to *input_dir*
@@ -121,36 +83,11 @@ def discover_files(
         CSVProcessorError: If *glob_pattern* contains the ``..``
             path-traversal sequence.
     """
-    # Normalise to forward-slash parts for the traversal check.
-    normalised = glob_pattern.replace("\\", "/")
-    if any(part == ".." for part in normalised.split("/")):
-        raise CSVProcessorError(
-            f"Glob pattern {glob_pattern!r} contains path traversal sequence '..'"
-        )
-
-    base = pathlib.Path(input_dir or settings.input_dir).resolve()
-    matched: list[pathlib.Path] = []
-
-    for candidate in sorted(base.glob(glob_pattern)):
-        if not candidate.is_file():
-            continue
-        # Belt-and-suspenders: confirm resolved path remains inside base.
-        try:
-            candidate.resolve().relative_to(base)
-        except ValueError:
-            logger.warning(
-                "Skipping %s: resolved path escapes the input directory", candidate
-            )
-            continue
-        matched.append(candidate)
-
-    logger.info(
-        "discover_files: pattern=%r dir=%s matched %d file(s)",
-        glob_pattern,
-        base,
-        len(matched),
-    )
-    return matched
+    storage = LocalInputStorage(input_dir or settings.input_dir)
+    try:
+        return storage.discover_files(glob_pattern)
+    except InputStorageError as exc:
+        raise CSVProcessorError(str(exc)) from exc
 
 
 # ── Header validation ─────────────────────────────────────────────────────────

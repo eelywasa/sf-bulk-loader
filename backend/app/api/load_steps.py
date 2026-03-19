@@ -1,9 +1,7 @@
 """Load Steps API — manage steps within a load plan."""
 
 import csv
-import glob
 import logging
-import os
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +13,7 @@ from app.database import get_db
 from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
 from app.services.auth import get_current_user
+from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding
 from app.schemas.load_step import (
     FilePreviewInfo,
     LoadStepCreate,
@@ -141,23 +140,29 @@ async def preview_step(
     """Discover CSV files matching the step's pattern and return row counts."""
     step = await _get_step_or_404(plan_id, step_id, db)
 
-    pattern = os.path.join(settings.input_dir, step.csv_file_pattern)
-    matched_paths = sorted(glob.glob(pattern))
+    storage = LocalInputStorage(settings.input_dir)
+    try:
+        matched_paths = storage.discover_files(step.csv_file_pattern)
+    except InputStorageError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file pattern: contains path traversal sequence",
+        )
 
     file_infos: List[FilePreviewInfo] = []
     total_rows = 0
 
     for filepath in matched_paths:
-        filename = os.path.basename(filepath)
         row_count = 0
         try:
-            with open(filepath, newline="", encoding="utf-8-sig") as fh:
+            enc = detect_encoding(filepath)
+            with open(filepath, newline="", encoding=enc) as fh:
                 reader = csv.reader(fh)
                 next(reader, None)  # skip header
                 row_count = sum(1 for _ in reader)
         except OSError as exc:
             logger.warning("Could not read %s for preview: %s", filepath, exc)
-        file_infos.append(FilePreviewInfo(filename=filename, row_count=row_count))
+        file_infos.append(FilePreviewInfo(filename=filepath.name, row_count=row_count))
         total_rows += row_count
 
     return StepPreviewResponse(
