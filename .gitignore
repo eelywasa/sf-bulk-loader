@@ -12,3 +12,10 @@ data/
 
 # TLS certificates (private keys must never be committed)
 certs/
+
+# OS
+.DS_Store
+
+# Local test databases and scratch files
+backend/test_*.db
+runs.html
