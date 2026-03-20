@@ -12,6 +12,7 @@ structlog>=24.1.0
 aiosqlite>=0.20.0
 aiofiles>=23.0.0
 websockets>=12.0
+boto3>=1.34.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 anyio>=4.3.0

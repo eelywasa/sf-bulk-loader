@@ -16,13 +16,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
 from jose import jwt
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.connection import Connection
+from app.utils.encryption import EncryptionError, decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -49,48 +49,23 @@ class AuthError(Exception):
     """Raised when a Salesforce authentication step fails."""
 
 
-# ── Fernet key/encryption helpers ─────────────────────────────────────────────
+# ── Encryption helpers (backward-compat wrappers over shared utility) ─────────
 
-
-def _get_fernet() -> Fernet:
-    """Return a Fernet instance backed by the ENCRYPTION_KEY env var."""
-    key = settings.encryption_key
-    if not key:
-        raise AuthError("ENCRYPTION_KEY environment variable is not set")
-    key_bytes = key.encode() if isinstance(key, str) else key
-    return Fernet(key_bytes)
-
-
+# Keep the old names and error type so existing callers don't break.
 def encrypt_private_key(pem: str) -> str:
-    """Fernet-encrypt a PEM-encoded RSA private key for DB storage.
-
-    Args:
-        pem: UTF-8 PEM string (``-----BEGIN RSA PRIVATE KEY-----`` …).
-
-    Returns:
-        URL-safe base64 Fernet token (UTF-8 string) suitable for TEXT columns.
-    """
-    return _get_fernet().encrypt(pem.encode()).decode()
+    """Encrypt a PEM private key; raises AuthError on failure."""
+    try:
+        return encrypt_secret(pem)
+    except EncryptionError as exc:
+        raise AuthError(str(exc)) from exc
 
 
 def decrypt_private_key(encrypted: str) -> str:
-    """Decrypt a Fernet-encrypted private key back to its original PEM form.
-
-    Args:
-        encrypted: Value previously produced by :func:`encrypt_private_key`.
-
-    Returns:
-        UTF-8 PEM string ready to be passed to :mod:`jose`.
-
-    Raises:
-        AuthError: If decryption fails (wrong key, tampered token, etc.).
-    """
+    """Decrypt a Fernet-encrypted private key; raises AuthError on failure."""
     try:
-        return _get_fernet().decrypt(encrypted.encode()).decode()
-    except InvalidToken as exc:
-        raise AuthError(
-            "Failed to decrypt private key — verify ENCRYPTION_KEY is correct"
-        ) from exc
+        return decrypt_secret(encrypted)
+    except EncryptionError as exc:
+        raise AuthError(str(exc)) from exc
 
 
 # ── JWT construction ──────────────────────────────────────────────────────────
@@ -229,7 +204,10 @@ async def get_access_token(
         "Acquiring new Salesforce access token for connection %s", connection.id
     )
 
-    private_key_pem = decrypt_private_key(connection.private_key)
+    try:
+        private_key_pem = decrypt_private_key(connection.private_key)
+    except EncryptionError as exc:
+        raise AuthError(str(exc)) from exc
     assertion = _build_jwt(connection, private_key_pem)
 
     if http_client is not None:

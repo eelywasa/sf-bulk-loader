@@ -85,7 +85,7 @@ def mock_connection(rsa_key_pair, fernet_key) -> MagicMock:
 class TestEncryptDecrypt:
     def test_roundtrip(self, fernet_key):
         pem = "-----BEGIN RSA PRIVATE KEY-----\nFAKEDATA\n-----END RSA PRIVATE KEY-----"
-        with patch("app.services.salesforce_auth.settings") as s:
+        with patch("app.utils.encryption.settings") as s:
             s.encryption_key = fernet_key
             encrypted = encrypt_private_key(pem)
             recovered = decrypt_private_key(encrypted)
@@ -93,7 +93,7 @@ class TestEncryptDecrypt:
 
     def test_encrypted_differs_from_plaintext(self, fernet_key):
         pem = "SOME_KEY_DATA"
-        with patch("app.services.salesforce_auth.settings") as s:
+        with patch("app.utils.encryption.settings") as s:
             s.encryption_key = fernet_key
             encrypted = encrypt_private_key(pem)
         assert encrypted != pem
@@ -101,17 +101,17 @@ class TestEncryptDecrypt:
     def test_decrypt_wrong_key_raises_auth_error(self, fernet_key):
         pem = "SOME_KEY_DATA"
         wrong_key = Fernet.generate_key().decode()
-        with patch("app.services.salesforce_auth.settings") as s:
+        with patch("app.utils.encryption.settings") as s:
             s.encryption_key = fernet_key
             encrypted = encrypt_private_key(pem)
 
-        with patch("app.services.salesforce_auth.settings") as s:
+        with patch("app.utils.encryption.settings") as s:
             s.encryption_key = wrong_key
-            with pytest.raises(AuthError, match="decrypt private key"):
+            with pytest.raises(AuthError, match="decrypt"):
                 decrypt_private_key(encrypted)
 
     def test_missing_encryption_key_raises(self):
-        with patch("app.services.salesforce_auth.settings") as s:
+        with patch("app.utils.encryption.settings") as s:
             s.encryption_key = ""
             with pytest.raises(AuthError, match="ENCRYPTION_KEY"):
                 encrypt_private_key("anything")

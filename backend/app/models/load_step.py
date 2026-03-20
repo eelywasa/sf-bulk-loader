@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.input_connection import InputConnection
     from app.models.job import JobRecord
     from app.models.load_plan import LoadPlan
 
@@ -37,6 +38,9 @@ class LoadStep(Base):
     csv_file_pattern: Mapped[str] = mapped_column(String(512), nullable=False)
     partition_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10_000)
     assignment_rule_id: Mapped[Optional[str]] = mapped_column(String(18), nullable=True)
+    input_connection_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("input_connection.id", ondelete="RESTRICT"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=func.now(), onupdate=func.now()
@@ -44,3 +48,4 @@ class LoadStep(Base):
 
     load_plan: Mapped["LoadPlan"] = relationship("LoadPlan", back_populates="load_steps")
     job_records: Mapped[list["JobRecord"]] = relationship("JobRecord", back_populates="load_step")
+    input_connection: Mapped[Optional["InputConnection"]] = relationship("InputConnection")

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.connections import router as connections_router
+from app.api.input_connections import router as input_connections_router
 from app.api.jobs import router as jobs_router
 from app.api.load_plans import router as load_plans_router
 from app.api.load_runs import router as load_runs_router
@@ -44,6 +45,7 @@ app.add_middleware(
 # REST routers — each owns its own prefix
 app.include_router(auth_router)
 app.include_router(connections_router)
+app.include_router(input_connections_router)
 app.include_router(load_plans_router)
 app.include_router(load_steps_router)
 app.include_router(load_runs_router)

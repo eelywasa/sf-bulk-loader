@@ -14,6 +14,7 @@ class LoadStepBase(BaseModel):
     csv_file_pattern: str
     partition_size: int = 10_000
     assignment_rule_id: Optional[str] = None
+    input_connection_id: Optional[str] = None
 
 
 class LoadStepCreate(LoadStepBase):
@@ -28,6 +29,7 @@ class LoadStepUpdate(BaseModel):
     csv_file_pattern: Optional[str] = None
     partition_size: Optional[int] = None
     assignment_rule_id: Optional[str] = None
+    input_connection_id: Optional[str] = None
 
 
 class LoadStepResponse(LoadStepBase):

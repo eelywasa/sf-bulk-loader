@@ -8,9 +8,11 @@ before any app code is imported.
 
 import asyncio
 import os
+import sqlite3
 
 import pytest
 from cryptography.fernet import Fernet
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ── Set test environment BEFORE importing any app modules ─────────────────────
@@ -41,6 +43,13 @@ TEST_DB_URL = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
 
 _engine = create_async_engine(TEST_DB_URL, echo=False)
 _TestSession = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@event.listens_for(_engine.sync_engine, "connect")
+def _set_sqlite_pragmas(dbapi_connection: object, _record: object) -> None:
+    cursor = dbapi_connection.cursor()  # type: ignore[union-attr]
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 # Point the session factories used by lifespan seed and app routes to the test DB
 _db_module.AsyncSessionLocal = _TestSession
@@ -86,6 +95,7 @@ def clean_db():
     from sqlalchemy import delete
 
     from app.models.connection import Connection
+    from app.models.input_connection import InputConnection
     from app.models.job import JobRecord
     from app.models.load_plan import LoadPlan
     from app.models.load_run import LoadRun
@@ -94,7 +104,7 @@ def clean_db():
 
     async def _clean():
         async with _TestSession() as session:
-            for model in [JobRecord, LoadRun, LoadStep, LoadPlan, Connection, User]:
+            for model in [JobRecord, LoadRun, LoadStep, LoadPlan, Connection, InputConnection, User]:
                 await session.execute(delete(model))
             await session.commit()
 
