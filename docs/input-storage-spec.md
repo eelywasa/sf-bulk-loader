@@ -666,6 +666,15 @@ Scope:
 
 Notes:
 
+- completed elsewhere and not part of the remaining Ticket 5 scope:
+  - backend `input_connection` model, migration, schemas, CRUD routes, and `POST /test`
+  - storage abstraction and source-aware files API
+- Ticket 7 may add minimal frontend plumbing here first:
+  - shared input-connection frontend types
+  - `inputConnectionsApi.list()` for selector-driven UIs
+- Ticket 5 still owns the dedicated `Connections` page work for input connections:
+  - list section alongside Salesforce connections
+  - create/edit/delete/test UI flows for S3 input connections
 - do not replace the Salesforce form with a generic polymorphic form unless that becomes necessary later
 
 Dependencies:

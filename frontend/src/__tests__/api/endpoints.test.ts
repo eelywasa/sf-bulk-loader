@@ -8,7 +8,16 @@
  * fetch is stubbed at the global level; no network calls are made.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { connectionsApi, plansApi, stepsApi, runsApi, jobsApi, filesApi, healthApi } from '../../api/endpoints'
+import {
+  connectionsApi,
+  inputConnectionsApi,
+  plansApi,
+  stepsApi,
+  runsApi,
+  jobsApi,
+  filesApi,
+  healthApi,
+} from '../../api/endpoints'
 
 function mockJson(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -83,6 +92,19 @@ describe('connectionsApi', () => {
     expect(url).toBe('/api/connections/c1/test')
     expect(init.method).toBe('POST')
     expect(result).toEqual(testResp)
+  })
+})
+
+describe('inputConnectionsApi', () => {
+  const inputConnection = { id: 'ic1', name: 'S3 Source', provider: 's3' }
+
+  it('list → GET /api/input-connections/', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson([inputConnection]))
+    const result = await inputConnectionsApi.list()
+    const { url, init } = captureLastFetch()
+    expect(url).toBe('/api/input-connections/')
+    expect(init.method).toBe('GET')
+    expect(result).toEqual([inputConnection])
   })
 })
 
@@ -280,8 +302,6 @@ describe('jobsApi', () => {
   })
 })
 
-// ─── Files ────────────────────────────────────────────────────────────────────
-
 describe('filesApi', () => {
   it('listInput with no arg → GET /api/files/input', async () => {
     vi.mocked(fetch).mockResolvedValue(mockJson([]))
@@ -301,7 +321,29 @@ describe('filesApi', () => {
     vi.mocked(fetch).mockResolvedValue(mockJson([]))
     await filesApi.listInput('my folder')
     const { url } = captureLastFetch()
-    expect(url).toBe('/api/files/input?path=my%20folder')
+    expect(url).toBe('/api/files/input?path=my+folder')
+  })
+
+  it('listInput omits source for local', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson([]))
+    await filesApi.listInput('nested')
+    const { url, init } = captureLastFetch()
+    expect(url).toBe('/api/files/input?path=nested')
+    expect(init.method).toBe('GET')
+  })
+
+  it('listInput includes source for remote sources', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson([]))
+    await filesApi.listInput('nested', 'ic-1')
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/files/input?path=nested&source=ic-1')
+  })
+
+  it('previewInput omits source for local', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({}))
+    await filesApi.previewInput('accounts.csv', 25)
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/files/input/accounts.csv/preview?rows=25')
   })
 
   it('previewInput → GET /api/files/input/{filename}/preview?rows=25', async () => {
@@ -314,24 +356,37 @@ describe('filesApi', () => {
   })
 
   it('previewInput encodes filename with spaces', async () => {
-    vi.mocked(fetch).mockResolvedValue(mockJson({ filename: 'my file.csv', header: [], rows: [], row_count: 0 }))
+    vi.mocked(fetch).mockResolvedValue(
+      mockJson({ filename: 'my file.csv', header: [], rows: [], row_count: 0 }),
+    )
     await filesApi.previewInput('my file.csv')
     const { url } = captureLastFetch()
     expect(url).toBe('/api/files/input/my%20file.csv/preview?rows=25')
   })
 
   it('previewInput with subdirectory path encodes each segment', async () => {
-    vi.mocked(fetch).mockResolvedValue(mockJson({ filename: 'sub/my file.csv', header: [], rows: [], row_count: 0 }))
+    vi.mocked(fetch).mockResolvedValue(
+      mockJson({ filename: 'sub/my file.csv', header: [], rows: [], row_count: 0 }),
+    )
     await filesApi.previewInput('sub/my file.csv')
     const { url } = captureLastFetch()
     expect(url).toBe('/api/files/input/sub/my%20file.csv/preview?rows=25')
   })
 
   it('previewInput respects custom rows param', async () => {
-    vi.mocked(fetch).mockResolvedValue(mockJson({ filename: 'f.csv', header: [], rows: [], row_count: 0 }))
+    vi.mocked(fetch).mockResolvedValue(
+      mockJson({ filename: 'f.csv', header: [], rows: [], row_count: 0 }),
+    )
     await filesApi.previewInput('f.csv', 50)
     const { url } = captureLastFetch()
     expect(url).toContain('rows=50')
+  })
+
+  it('previewInput includes source for remote sources', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({}))
+    await filesApi.previewInput('folder/accounts.csv', 10, 'ic-1')
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/files/input/folder/accounts.csv/preview?rows=10&source=ic-1')
   })
 })
 

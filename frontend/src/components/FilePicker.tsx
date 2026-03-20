@@ -1,22 +1,33 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFolder, faChevronRight, faFile } from '@fortawesome/free-solid-svg-icons'
 import { filesApi } from '../api/endpoints'
+import { ApiError } from '../api/client'
 import type { InputDirectoryEntry } from '../api/types'
 
 interface FilePickerProps {
+  source: string
   onSelect: (path: string) => void
   onClose: () => void
 }
 
-export default function FilePicker({ onSelect, onClose }: FilePickerProps) {
+export default function FilePicker({ source, onSelect, onClose }: FilePickerProps) {
   const [currentPath, setCurrentPath] = useState('')
   const segments = currentPath ? currentPath.split('/').filter(Boolean) : []
 
-  const { data: entries = [], isLoading } = useQuery({
-    queryKey: ['files', 'input', currentPath],
-    queryFn: () => filesApi.listInput(currentPath),
+  useEffect(() => {
+    setCurrentPath('')
+  }, [source])
+
+  const {
+    data: entries = [],
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['files', 'input', source, currentPath],
+    queryFn: () => filesApi.listInput(currentPath, source),
   })
 
   function navigate(path: string) {
@@ -70,10 +81,15 @@ export default function FilePicker({ onSelect, onClose }: FilePickerProps) {
         {isLoading && (
           <li className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500 italic">Loading…</li>
         )}
-        {!isLoading && entries.length === 0 && (
+        {isError && (
+          <li className="px-3 py-3 text-xs text-red-600 dark:text-red-400">
+            {error instanceof ApiError ? error.message : 'Could not load files for this source.'}
+          </li>
+        )}
+        {!isLoading && !isError && entries.length === 0 && (
           <li className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500 italic">No CSV files found here.</li>
         )}
-        {entries.map((entry: InputDirectoryEntry) => (
+        {!isError && entries.map((entry: InputDirectoryEntry) => (
           <li key={entry.path}>
             <button
               type="button"

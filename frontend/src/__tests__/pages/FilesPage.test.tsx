@@ -21,14 +21,14 @@ import { filesApi } from '../../api/endpoints'
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const fileList: InputDirectoryEntry[] = [
-  { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 2048, row_count: 100 },
-  { name: 'contacts.csv', kind: 'file', path: 'contacts.csv', size_bytes: 1048576, row_count: 500 },
-  { name: 'opportunities.csv', kind: 'file', path: 'opportunities.csv', size_bytes: 5242880, row_count: 2000 },
+  { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 2048, row_count: 100, source: 'local', provider: 'local' },
+  { name: 'contacts.csv', kind: 'file', path: 'contacts.csv', size_bytes: 1048576, row_count: 500, source: 'local', provider: 'local' },
+  { name: 'opportunities.csv', kind: 'file', path: 'opportunities.csv', size_bytes: 5242880, row_count: 2000, source: 'local', provider: 'local' },
 ]
 
 const mixedList: InputDirectoryEntry[] = [
-  { name: '2026', kind: 'directory', path: '2026', size_bytes: null, row_count: null },
-  { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 2048, row_count: 100 },
+  { name: '2026', kind: 'directory', path: '2026', size_bytes: null, row_count: null, source: 'local', provider: 'local' },
+  { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 2048, row_count: 100, source: 'local', provider: 'local' },
 ]
 
 const accountsPreview: InputFilePreview = {
@@ -236,7 +236,7 @@ describe('FilesPage', () => {
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
-    expect(filesApi.previewInput).toHaveBeenCalledWith('accounts.csv', 25)
+    expect(filesApi.previewInput).toHaveBeenCalledWith('accounts.csv', 25, 'local')
   })
 
   it('shows loading indicator while preview is fetching', async () => {
@@ -372,7 +372,7 @@ describe('FilesPage', () => {
   it('wraps the preview table in an overflow-x-auto container', async () => {
     const user = userEvent.setup()
     vi.mocked(filesApi.listInput).mockResolvedValue([
-      { name: 'wide.csv', kind: 'file', path: 'wide.csv', size_bytes: 1024, row_count: 1 },
+      { name: 'wide.csv', kind: 'file', path: 'wide.csv', size_bytes: 1024, row_count: 1, source: 'local', provider: 'local' },
     ])
     vi.mocked(filesApi.previewInput).mockResolvedValue(widePreview)
     renderFilesPage()
@@ -386,7 +386,7 @@ describe('FilesPage', () => {
   it('renders all 20 column headers for wide file', async () => {
     const user = userEvent.setup()
     vi.mocked(filesApi.listInput).mockResolvedValue([
-      { name: 'wide.csv', kind: 'file', path: 'wide.csv', size_bytes: 1024, row_count: 1 },
+      { name: 'wide.csv', kind: 'file', path: 'wide.csv', size_bytes: 1024, row_count: 1, source: 'local', provider: 'local' },
     ])
     vi.mocked(filesApi.previewInput).mockResolvedValue(widePreview)
     renderFilesPage()
@@ -482,7 +482,7 @@ describe('FilesPage', () => {
     renderFilesPage()
     await waitFor(() => screen.getByText('2026'))
     await user.click(screen.getByText('2026'))
-    expect(filesApi.listInput).toHaveBeenCalledWith('2026')
+    expect(filesApi.listInput).toHaveBeenCalledWith('2026', 'local')
   })
 
   it('clicking a directory entry clears the selected file', async () => {
@@ -516,7 +516,7 @@ describe('FilesPage', () => {
     await user.click(screen.getByText('2026'))
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     await user.click(screen.getByRole('button', { name: 'Input Files' }))
-    expect(filesApi.listInput).toHaveBeenCalledWith('')
+    expect(filesApi.listInput).toHaveBeenCalledWith('', 'local')
   })
 
   it('shows current directory segment in breadcrumb after navigation', async () => {
@@ -548,6 +548,6 @@ describe('FilesPage', () => {
     await user.click(screen.getByText('2026'))
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
-    expect(filesApi.previewInput).toHaveBeenCalledWith('2026/accounts.csv', 25)
+    expect(filesApi.previewInput).toHaveBeenCalledWith('2026/accounts.csv', 25, 'local')
   })
 })

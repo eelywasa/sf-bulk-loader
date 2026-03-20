@@ -29,6 +29,7 @@ export default function PlanEditor() {
     openStepModal,
     closeStepModal,
     setStepField,
+    handleInputSourceChange,
     handleSaveStep,
     isSavingStep,
     patternIsLiteral,
@@ -39,6 +40,7 @@ export default function PlanEditor() {
     planLoading,
     planError,
     connections,
+    inputConnections,
     sfObjects,
     sfObjectsLoading,
     sortedSteps,
@@ -161,8 +163,10 @@ export default function PlanEditor() {
             patternPreviewLoading={patternPreviewLoading}
             showFilePicker={showFilePicker}
             connectionId={connectionId}
+            inputConnections={inputConnections}
             isSaving={isSavingStep}
             onChange={setStepField}
+            onInputSourceChange={handleInputSourceChange}
             onToggleFilePicker={() => setShowFilePicker((v) => !v)}
             onFileSelect={(path) => {
               setStepField('csv_file_pattern', path)

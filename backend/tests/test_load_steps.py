@@ -2,9 +2,10 @@
 
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-import pytest
+from botocore.exceptions import ClientError
+from app.services.input_storage import InputConnectionNotFoundError
 
 _CONN = {
     "name": "Test Org",
@@ -41,6 +42,72 @@ def _add_step(auth_client, plan_id: str, overrides=None) -> dict:
     return auth_client.post(f"/api/load-plans/{plan_id}/steps", json=payload).json()
 
 
+class _FakeS3Body:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+
+class _FakePaginator:
+    def __init__(self, pages):
+        self._pages = pages
+
+    def paginate(self, **_kwargs):
+        return list(self._pages)
+
+
+class _FakeS3Client:
+    def __init__(self, *, object_map=None, pages=None, get_error=None) -> None:
+        self._object_map = object_map or {}
+        self._pages = pages or []
+        self._get_error = get_error
+
+    def get_paginator(self, _name):
+        return _FakePaginator(self._pages)
+
+    def get_object(self, *, Bucket, Key):
+        if self._get_error is not None:
+            raise self._get_error
+        if Key not in self._object_map:
+            error = {"Error": {"Code": "NoSuchKey", "Message": f"{Key} missing"}}
+            raise ClientError(error, "GetObject")
+        return {"Body": _FakeS3Body(self._object_map[Key])}
+
+
+class _DiscoveryErrorPaginator:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def paginate(self, **_kwargs):
+        raise self._error
+
+
+class _DiscoveryErrorClient(_FakeS3Client):
+    def __init__(self, error: Exception) -> None:
+        super().__init__()
+        self._error = error
+
+    def get_paginator(self, _name):
+        return _DiscoveryErrorPaginator(self._error)
+
+
+def _create_input_connection(auth_client) -> str:
+    payload = {
+        "name": "My S3 Bucket",
+        "provider": "s3",
+        "bucket": "my-bucket",
+        "root_prefix": "data/",
+        "region": "eu-west-2",
+        "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+        "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    }
+    resp = auth_client.post("/api/input-connections/", json=payload)
+    assert resp.status_code == 201
+    return resp.json()["id"]
+
+
 # ── Add step ───────────────────────────────────────────────────────────────────
 
 
@@ -72,6 +139,20 @@ def test_add_step_invalid_operation_returns_422(auth_client):
     bad = {**_STEP, "operation": "merge"}
     resp = auth_client.post(f"/api/load-plans/{pid}/steps", json=bad)
     assert resp.status_code == 422
+
+
+def test_add_step_with_input_connection_id_stores_and_returns_it(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    input_connection_id = _create_input_connection(auth_client)
+
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={**_STEP, "input_connection_id": input_connection_id},
+    )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["input_connection_id"] == input_connection_id
 
 
 # ── Auto-sequence ──────────────────────────────────────────────────────────────
@@ -126,6 +207,40 @@ def test_update_step_wrong_plan_returns_404(auth_client):
     # Try updating the step under the wrong plan
     resp = auth_client.put(f"/api/load-plans/{pid2}/steps/{step_id}", json={"sequence": 2})
     assert resp.status_code == 404
+
+
+def test_update_step_sets_input_connection_id(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    input_connection_id = _create_input_connection(auth_client)
+    step_id = _add_step(auth_client, pid)["id"]
+
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{step_id}",
+        json={"input_connection_id": input_connection_id},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["input_connection_id"] == input_connection_id
+
+
+def test_update_step_clears_input_connection_id(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    input_connection_id = _create_input_connection(auth_client)
+    step_id = _add_step(
+        auth_client,
+        pid,
+        {"input_connection_id": input_connection_id},
+    )["id"]
+
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{step_id}",
+        json={"input_connection_id": None},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["input_connection_id"] is None
 
 
 # ── Delete step ────────────────────────────────────────────────────────────────
@@ -194,8 +309,7 @@ def test_preview_step_returns_matched_files(auth_client):
             with open(path, "w") as f:
                 f.write("Name,Email\nAlice,a@b.com\nBob,b@b.com\n")
 
-        with patch("app.api.load_steps.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
 
     assert resp.status_code == 200
@@ -209,8 +323,7 @@ def test_preview_step_no_files_returns_empty(auth_client):
     step_id = _add_step(auth_client, pid, {"csv_file_pattern": "nonexistent_*.csv"})["id"]
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.load_steps.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
 
     assert resp.status_code == 200
@@ -231,8 +344,7 @@ def test_preview_step_traversal_pattern_returns_400(auth_client):
     step_id = _add_step(auth_client, pid, {"csv_file_pattern": "../../etc/passwd"})["id"]
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.load_steps.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
 
     assert resp.status_code == 400
@@ -251,10 +363,114 @@ def test_preview_step_cp1252_file_returns_correct_row_count(auth_client):
         with open(csv_path, "wb") as f:
             f.write(b"Name,Value\nCaf\x80,1\nCaf\x80,2\nCaf\x80,3\n")
 
-        with patch("app.api.load_steps.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["total_rows"] == 3
+
+
+def test_preview_step_remote_source_returns_matched_files(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    input_connection_id = _create_input_connection(auth_client)
+    step_id = _add_step(
+        auth_client,
+        pid,
+        {"csv_file_pattern": "accounts/*.csv", "input_connection_id": input_connection_id},
+    )["id"]
+
+    client = _FakeS3Client(
+        object_map={
+            "data/accounts/file_1.csv": b"Name\nAlice\nBob\n",
+            "data/accounts/file_2.csv": b"Name\nCarol\n",
+        },
+        pages=[
+            {
+                "Contents": [
+                    {"Key": "data/accounts/file_1.csv"},
+                    {"Key": "data/accounts/file_2.csv"},
+                ]
+            }
+        ],
+    )
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_rows"] == 3
+    assert body["matched_files"] == [
+        {"filename": "file_1.csv", "row_count": 2},
+        {"filename": "file_2.csv", "row_count": 1},
+    ]
+
+
+def test_preview_step_remote_missing_input_connection_returns_404(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    input_connection_id = _create_input_connection(auth_client)
+    step_id = _add_step(
+        auth_client,
+        pid,
+        {"csv_file_pattern": "*.csv", "input_connection_id": input_connection_id},
+    )["id"]
+
+    with patch(
+        "app.api.load_steps.get_storage",
+        new=AsyncMock(side_effect=InputConnectionNotFoundError("Input connection not found: missing")),
+    ):
+        resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
+    assert resp.status_code == 404
+
+
+def test_preview_step_remote_discovery_error_returns_400(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    input_connection_id = _create_input_connection(auth_client)
+    step_id = _add_step(
+        auth_client,
+        pid,
+        {"csv_file_pattern": "**/*.csv", "input_connection_id": input_connection_id},
+    )["id"]
+
+    error = ClientError({"Error": {"Code": "AccessDenied", "Message": "Denied"}}, "ListObjectsV2")
+    client = _DiscoveryErrorClient(error)
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
+    assert resp.status_code == 400
+
+
+def test_preview_step_remote_file_read_error_returns_zero_row_count(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    input_connection_id = _create_input_connection(auth_client)
+    step_id = _add_step(
+        auth_client,
+        pid,
+        {"csv_file_pattern": "accounts/*.csv", "input_connection_id": input_connection_id},
+    )["id"]
+
+    client = _FakeS3Client(
+        object_map={"data/accounts/good.csv": b"Name\nAlice\n"},
+        pages=[
+            {
+                "Contents": [
+                    {"Key": "data/accounts/good.csv"},
+                    {"Key": "data/accounts/missing.csv"},
+                ]
+            }
+        ],
+    )
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_rows"] == 1
+    assert body["matched_files"] == [
+        {"filename": "good.csv", "row_count": 1},
+        {"filename": "missing.csv", "row_count": 0},
+    ]

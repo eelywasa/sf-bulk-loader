@@ -27,13 +27,16 @@ vi.mock('../../api/endpoints', () => ({
     list: vi.fn(),
     listObjects: vi.fn(),
   },
+  inputConnectionsApi: {
+    list: vi.fn(),
+  },
   filesApi: {
     listInput: vi.fn(),
     previewInput: vi.fn(),
   },
 }))
 
-import { plansApi, stepsApi, connectionsApi, filesApi } from '../../api/endpoints'
+import { plansApi, stepsApi, connectionsApi, inputConnectionsApi, filesApi } from '../../api/endpoints'
 
 // ─── Test fixtures ─────────────────────────────────────────────────────────────
 
@@ -59,6 +62,7 @@ const step1 = {
   partition_size: 10000,
   external_id_field: null,
   assignment_rule_id: null,
+  input_connection_id: null,
   created_at: '2024-03-01T00:00:00Z',
   updated_at: '2024-03-01T00:00:00Z',
 }
@@ -73,8 +77,27 @@ const step2 = {
   partition_size: 5000,
   external_id_field: 'ExternalId__c',
   assignment_rule_id: null,
+  input_connection_id: null,
   created_at: '2024-03-01T00:00:00Z',
   updated_at: '2024-03-01T00:00:00Z',
+}
+
+const inputConnection1 = {
+  id: 'ic-1',
+  name: 'S3 Source',
+  provider: 's3',
+  bucket: 'bucket-a',
+  root_prefix: 'imports/',
+  region: 'eu-west-2',
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+}
+
+const remoteStep = {
+  ...step1,
+  id: 'step-remote',
+  csv_file_pattern: 'remote/accounts.csv',
+  input_connection_id: 'ic-1',
 }
 
 const plan1 = {
@@ -142,6 +165,7 @@ describe('PlanEditor', () => {
     vi.clearAllMocks()
     vi.mocked(connectionsApi.list).mockResolvedValue([conn1])
     vi.mocked(connectionsApi.listObjects).mockResolvedValue(['Account', 'Contact', 'Opportunity'])
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([inputConnection1])
     vi.mocked(filesApi.listInput).mockResolvedValue([])
     vi.mocked(filesApi.previewInput).mockResolvedValue({
       filename: '',
@@ -183,6 +207,7 @@ describe('PlanEditor', () => {
   it('creates a new plan and navigates to the edit page', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.create).mockResolvedValue(newPlanResponse)
+    vi.mocked(plansApi.get).mockResolvedValue({ ...newPlanResponse, load_steps: [] })
 
     renderEditor('new')
 
@@ -408,8 +433,107 @@ describe('PlanEditor', () => {
           object_name: 'Account',
           csv_file_pattern: 'accounts_*.csv',
           operation: 'insert',
+          input_connection_id: null,
         }),
       )
+    })
+  })
+
+  it('shows input source options in the step modal', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    expect(screen.getByLabelText(/Input Source/)).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Local files' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'S3 Source' })).toBeInTheDocument()
+  })
+
+  it('preselects the remote input source when editing a remote-backed step', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue({ ...plan1, load_steps: [remoteStep] })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    expect(screen.getByLabelText(/Input Source/)).toHaveValue('ic-1')
+    expect(screen.getByDisplayValue('remote/accounts.csv')).toBeInTheDocument()
+  })
+
+  it('clears the pattern when the input source changes', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    const patternInput = screen.getByLabelText(/CSV File Pattern/)
+    await user.type(patternInput, 'accounts.csv')
+    await user.selectOptions(screen.getByLabelText(/Input Source/), 'ic-1')
+
+    expect(patternInput).toHaveValue('')
+  })
+
+  it('uses the selected source for file browsing and header preview', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput).mockResolvedValue([
+      {
+        name: 'accounts.csv',
+        kind: 'file',
+        path: 'accounts.csv',
+        size_bytes: 100,
+        row_count: null,
+        source: 'ic-1',
+        provider: 's3',
+      },
+    ])
+    vi.mocked(filesApi.previewInput).mockResolvedValue({
+      filename: 'accounts.csv',
+      header: ['ExternalId__c'],
+      rows: [{ ExternalId__c: 'A-1' }],
+      row_count: 1,
+      source: 'ic-1',
+      provider: 's3',
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Input Source/), 'ic-1')
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    await waitFor(() => {
+      expect(filesApi.listInput).toHaveBeenCalledWith('', 'ic-1')
+    })
+
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
+    await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts.csv')
+
+    await waitFor(() => {
+      expect(filesApi.previewInput).toHaveBeenCalledWith('accounts.csv', 1, 'ic-1')
+    })
+  })
+
+  it('shows a file picker error when source listing fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(filesApi.listInput).mockRejectedValue(new Error('Access denied'))
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Input Source/), 'ic-1')
+    await user.click(screen.getByRole('button', { name: 'Browse' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Could not load files for this source.')).toBeInTheDocument()
     })
   })
 
@@ -905,7 +1029,7 @@ describe('PlanEditor', () => {
     await user.click(screen.getByRole('button', { name: 'Browse' }))
     await waitFor(() => screen.getByText('2026'))
     await user.click(screen.getByText('2026'))
-    await waitFor(() => expect(filesApi.listInput).toHaveBeenCalledWith('2026'))
+    await waitFor(() => expect(filesApi.listInput).toHaveBeenLastCalledWith('2026', 'local'))
   })
 
   it('closes the picker when Close is clicked', async () => {

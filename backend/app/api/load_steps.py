@@ -9,12 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
 from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
 from app.services.auth import get_current_user
-from app.services.input_storage import InputStorageError, LocalInputStorage
+from app.services.input_storage import (
+    InputConnectionNotFoundError,
+    InputStorageError,
+    UnsupportedInputProviderError,
+    get_storage,
+)
 from app.services import load_step_service
 from app.schemas.load_step import (
     FilePreviewInfo,
@@ -118,14 +122,22 @@ async def preview_step(
     """Discover CSV files matching the step's pattern and return row counts."""
     step = await _get_step_or_404(plan_id, step_id, db)
 
-    storage = LocalInputStorage(settings.input_dir)
+    try:
+        storage = await get_storage(step.input_connection_id or "local", db)
+    except InputConnectionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except UnsupportedInputProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     try:
         matched_paths = storage.discover_files(step.csv_file_pattern)
-    except InputStorageError:
+    except InputStorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file pattern: contains path traversal sequence",
-        )
+            detail=str(exc),
+        ) from exc
 
     file_infos: List[FilePreviewInfo] = []
     total_rows = 0
@@ -137,7 +149,7 @@ async def preview_step(
                 reader = csv.reader(fh)
                 next(reader, None)  # skip header
                 row_count = sum(1 for _ in reader)
-        except OSError as exc:
+        except (FileNotFoundError, InputStorageError, OSError) as exc:
             logger.warning("Could not read %s for preview: %s", filepath, exc)
         file_infos.append(
             FilePreviewInfo(filename=pathlib.PurePosixPath(filepath).name, row_count=row_count)

@@ -82,6 +82,22 @@ export interface ConnectionTestResponse {
   instance_url?: string | null
 }
 
+export interface InputConnection {
+  id: string
+  name: string
+  provider: string
+  bucket: string
+  root_prefix?: string | null
+  region?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InputConnectionTestResponse {
+  success: boolean
+  message: string
+}
+
 // ─── Load Plans + Steps ────────────────────────────────────────────────────────
 
 export interface LoadStep {
@@ -94,6 +110,7 @@ export interface LoadStep {
   csv_file_pattern: string
   partition_size: number
   assignment_rule_id?: string | null
+  input_connection_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -183,6 +200,8 @@ export interface InputDirectoryEntry {
   path: string
   size_bytes: number | null
   row_count: number | null
+  source?: string
+  provider?: string
 }
 
 export interface InputFilePreview {
@@ -190,4 +209,6 @@ export interface InputFilePreview {
   header: string[]
   rows: Record<string, string>[]
   row_count: number
+  source?: string
+  provider?: string
 }

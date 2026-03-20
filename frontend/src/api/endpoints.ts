@@ -3,6 +3,8 @@ import type {
   Connection,
   ConnectionCreate,
   ConnectionTestResponse,
+  InputConnection,
+  InputConnectionTestResponse,
   LoadPlan,
   LoadPlanDetail,
   LoadStep,
@@ -30,6 +32,11 @@ export const connectionsApi = {
   delete: (id: string) => api.delete(`/api/connections/${id}`),
   test: (id: string) => api.post<ConnectionTestResponse>(`/api/connections/${id}/test`),
   listObjects: (id: string) => api.get<string[]>(`/api/connections/${id}/objects`),
+}
+
+export const inputConnectionsApi = {
+  list: () => api.get<InputConnection[]>('/api/input-connections/'),
+  test: (id: string) => api.post<InputConnectionTestResponse>(`/api/input-connections/${id}/test`),
 }
 
 // ─── Load Plans ───────────────────────────────────────────────────────────────
@@ -63,6 +70,7 @@ export interface LoadStepCreate {
   partition_size?: number
   external_id_field?: string | null
   assignment_rule_id?: string | null
+  input_connection_id?: string | null
   sequence?: number
 }
 
@@ -136,12 +144,18 @@ export const jobsApi = {
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 export const filesApi = {
-  listInput: (path = '') =>
-    api.get<InputDirectoryEntry[]>(
-      `/api/files/input${path ? `?path=${encodeURIComponent(path)}` : ''}`,
-    ),
-  previewInput: (filePath: string, rows = 25) =>
-    api.get<InputFilePreview>(
-      `/api/files/input/${filePath.split('/').map(encodeURIComponent).join('/')}/preview?rows=${rows}`,
-    ),
+  listInput: (path = '', source = 'local') => {
+    const params = new URLSearchParams()
+    if (path) params.set('path', path)
+    if (source !== 'local') params.set('source', source)
+    const qs = params.toString()
+    return api.get<InputDirectoryEntry[]>(`/api/files/input${qs ? `?${qs}` : ''}`)
+  },
+  previewInput: (filePath: string, rows = 25, source = 'local') => {
+    const params = new URLSearchParams({ rows: String(rows) })
+    if (source !== 'local') params.set('source', source)
+    return api.get<InputFilePreview>(
+      `/api/files/input/${filePath.split('/').map(encodeURIComponent).join('/')}/preview?${params.toString()}`,
+    )
+  },
 }

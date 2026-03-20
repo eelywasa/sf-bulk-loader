@@ -6,6 +6,7 @@ import {
   plansApi,
   stepsApi,
   connectionsApi,
+  inputConnectionsApi,
   filesApi,
   type LoadPlanCreate,
   type LoadStepCreate,
@@ -68,7 +69,14 @@ export function usePlanEditorState(id: string | undefined) {
     queryFn: connectionsApi.list,
   })
 
+  const { data: inputConnections = [] } = useQuery({
+    queryKey: ['input-connections'],
+    queryFn: inputConnectionsApi.list,
+    enabled: stepModalOpen,
+  })
+
   const connectionId = form.connection_id || plan?.connection_id || ''
+  const stepSource = stepForm.input_connection_id || 'local'
 
   const { data: sfObjects = [], isLoading: sfObjectsLoading } = useQuery({
     queryKey: ['connections', connectionId, 'objects'],
@@ -78,8 +86,8 @@ export function usePlanEditorState(id: string | undefined) {
   })
 
   const { data: patternPreview, isLoading: patternPreviewLoading } = useQuery({
-    queryKey: ['files', 'preview-headers', stepForm.csv_file_pattern],
-    queryFn: () => filesApi.previewInput(stepForm.csv_file_pattern, 1),
+    queryKey: ['files', 'preview-headers', stepSource, stepForm.csv_file_pattern],
+    queryFn: () => filesApi.previewInput(stepForm.csv_file_pattern, 1, stepSource),
     enabled: patternIsLiteral,
   })
 
@@ -209,6 +217,7 @@ export function usePlanEditorState(id: string | undefined) {
         partition_size: String(step.partition_size),
         external_id_field: step.external_id_field ?? '',
         assignment_rule_id: step.assignment_rule_id ?? '',
+        input_connection_id: step.input_connection_id ?? '',
       })
     } else {
       setEditingStep(null)
@@ -231,6 +240,17 @@ export function usePlanEditorState(id: string | undefined) {
     setStepForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  function handleInputSourceChange(value: string) {
+    queryClient.removeQueries({ queryKey: ['files', 'preview-headers'] })
+    setStepForm((prev) => ({
+      ...prev,
+      input_connection_id: value,
+      csv_file_pattern: '',
+      external_id_field: '',
+    }))
+    setShowFilePicker(false)
+  }
+
   function handleSaveStep() {
     setStepFormErrors([])
     if (stepForm.operation === 'upsert' && !stepForm.external_id_field.trim()) {
@@ -244,6 +264,7 @@ export function usePlanEditorState(id: string | undefined) {
       partition_size: Number(stepForm.partition_size),
       external_id_field: stepForm.external_id_field || null,
       assignment_rule_id: stepForm.assignment_rule_id || null,
+      input_connection_id: stepForm.input_connection_id || null,
     }
     if (editingStep) {
       updateStepMutation.mutate({ stepId: editingStep.id, data })
@@ -292,6 +313,7 @@ export function usePlanEditorState(id: string | undefined) {
     openStepModal,
     closeStepModal,
     setStepField,
+    handleInputSourceChange,
     handleSaveStep,
     isSavingStep,
     // File picker / column headers
@@ -304,6 +326,7 @@ export function usePlanEditorState(id: string | undefined) {
     planLoading,
     planError,
     connections,
+    inputConnections,
     sfObjects,
     sfObjectsLoading,
     // Step order / reorder

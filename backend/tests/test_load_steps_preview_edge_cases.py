@@ -47,8 +47,7 @@ def _add_step(auth_client, plan_id: str, pattern: str = "*.csv") -> str:
 
 
 def _preview(auth_client, plan_id: str, step_id: str, input_dir: str) -> dict:
-    with patch("app.api.load_steps.settings") as mock_s:
-        mock_s.input_dir = input_dir
+    with patch("app.services.input_storage.settings.input_dir", input_dir):
         resp = auth_client.post(f"/api/load-plans/{plan_id}/steps/{step_id}/preview")
     return resp
 

@@ -216,6 +216,7 @@ function PreviewTable({ filename, header, rows, rowCount }: PreviewTableProps) {
 export default function FilesPage() {
   const [currentPath, setCurrentPath] = useState('')
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const source = 'local'
 
   function handleNavigate(path: string) {
     setCurrentPath(path)
@@ -228,8 +229,8 @@ export default function FilesPage() {
     isError: filesError,
     error: filesErr,
   } = useQuery({
-    queryKey: ['files', 'input', currentPath],
-    queryFn: () => filesApi.listInput(currentPath),
+    queryKey: ['files', 'input', source, currentPath],
+    queryFn: () => filesApi.listInput(currentPath, source),
   })
 
   const {
@@ -238,8 +239,8 @@ export default function FilesPage() {
     isError: previewError,
     error: previewErr,
   } = useQuery({
-    queryKey: ['files', 'preview', selectedFile],
-    queryFn: () => filesApi.previewInput(selectedFile!, 25),
+    queryKey: ['files', 'preview', source, selectedFile],
+    queryFn: () => filesApi.previewInput(selectedFile!, 25, source),
     enabled: !!selectedFile,
   })
 

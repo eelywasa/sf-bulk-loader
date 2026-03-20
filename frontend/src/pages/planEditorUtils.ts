@@ -28,6 +28,7 @@ export interface StepFormData {
   partition_size: string
   external_id_field: string
   assignment_rule_id: string
+  input_connection_id: string
 }
 
 export const EMPTY_STEP_FORM: StepFormData = {
@@ -37,6 +38,7 @@ export const EMPTY_STEP_FORM: StepFormData = {
   partition_size: '10000',
   external_id_field: '',
   assignment_rule_id: '',
+  input_connection_id: '',
 }
 
 // ─── Preview state ────────────────────────────────────────────────────────────

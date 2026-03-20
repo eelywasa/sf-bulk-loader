@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { Button, Modal, ComboInput } from './ui'
 import FilePicker from './FilePicker'
-import type { LoadStep } from '../api/types'
+import type { InputConnection, LoadStep } from '../api/types'
 import { OPERATIONS, INPUT_CLASS, LABEL_CLASS, type StepFormData } from '../pages/planEditorUtils'
 
 interface StepEditorModalProps {
@@ -16,8 +16,10 @@ interface StepEditorModalProps {
   patternPreviewLoading: boolean
   showFilePicker: boolean
   connectionId: string
+  inputConnections: InputConnection[]
   isSaving: boolean
   onChange: <K extends keyof StepFormData>(field: K, value: StepFormData[K]) => void
+  onInputSourceChange: (value: string) => void
   onToggleFilePicker: () => void
   onFileSelect: (path: string) => void
   onSave: () => void
@@ -36,8 +38,10 @@ export default function StepEditorModal({
   patternPreviewLoading,
   showFilePicker,
   connectionId,
+  inputConnections,
   isSaving,
   onChange,
+  onInputSourceChange,
   onToggleFilePicker,
   onFileSelect,
   onSave,
@@ -121,6 +125,25 @@ export default function StepEditorModal({
 
         {/* CSV file pattern */}
         <div>
+          <label htmlFor="step-input-source" className={LABEL_CLASS}>
+            Input Source
+          </label>
+          <select
+            id="step-input-source"
+            value={stepForm.input_connection_id}
+            onChange={(e) => onInputSourceChange(e.target.value)}
+            className={INPUT_CLASS}
+          >
+            <option value="">Local files</option>
+            {inputConnections.map((inputConnection) => (
+              <option key={inputConnection.id} value={inputConnection.id}>
+                {inputConnection.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
           <label htmlFor="step-pattern" className={LABEL_CLASS}>
             CSV File Pattern <span className="text-red-500">*</span>
           </label>
@@ -143,6 +166,7 @@ export default function StepEditorModal({
           </div>
           {showFilePicker && (
             <FilePicker
+              source={stepForm.input_connection_id || 'local'}
               onSelect={(path) => {
                 onFileSelect(path)
               }}
