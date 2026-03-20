@@ -11,6 +11,8 @@ Docker deployment.
 The full specification is in `salesforce-bulk-loader-spec.md`. Always refer to it for architectural decisions, data model, API design, and build order.
 For the UI extra guidance can be found in `frontend-claude-runbook.md`. Treat it as an authority — if other docs conflict, follow the runbook.
 
+When all tickets in a spec file have been fully implemented, move the file to `docs/implemented/` to keep the active docs folder uncluttered.
+
 ## Tech Stack
 - Backend: Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, httpx
 - Database: SQLite with WAL mode, accessed via aiosqlite
