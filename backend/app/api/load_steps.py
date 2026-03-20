@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import pathlib
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,7 +14,7 @@ from app.database import get_db
 from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
 from app.services.auth import get_current_user
-from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding
+from app.services.input_storage import InputStorageError, LocalInputStorage
 from app.services import load_step_service
 from app.schemas.load_step import (
     FilePreviewInfo,
@@ -132,14 +133,15 @@ async def preview_step(
     for filepath in matched_paths:
         row_count = 0
         try:
-            enc = detect_encoding(filepath)
-            with open(filepath, newline="", encoding=enc) as fh:
+            with storage.open_text(filepath) as fh:
                 reader = csv.reader(fh)
                 next(reader, None)  # skip header
                 row_count = sum(1 for _ in reader)
         except OSError as exc:
             logger.warning("Could not read %s for preview: %s", filepath, exc)
-        file_infos.append(FilePreviewInfo(filename=filepath.name, row_count=row_count))
+        file_infos.append(
+            FilePreviewInfo(filename=pathlib.PurePosixPath(filepath).name, row_count=row_count)
+        )
         total_rows += row_count
 
     return StepPreviewResponse(

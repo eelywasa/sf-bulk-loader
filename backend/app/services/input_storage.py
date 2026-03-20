@@ -11,12 +11,21 @@ so that a remote provider (e.g. ``S3InputStorage``) can be added alongside
 
 from __future__ import annotations
 
+import boto3
+import botocore.exceptions
 import csv
+import io
 import logging
 import os
 import pathlib
 from dataclasses import dataclass
-from typing import IO, Optional
+from typing import IO, Optional, Protocol
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.models.input_connection import InputConnection
+from app.utils.encryption import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +68,31 @@ class InputPreview:
     row_count: int  # number of preview rows returned (≤ requested limit)
 
 
+class BaseInputStorage(Protocol):
+    """Provider-neutral storage contract used by file-browsing consumers."""
+
+    def list_entries(self, path: str = "") -> list[InputEntry]: ...
+
+    def preview_file(self, path: str, rows: int) -> InputPreview: ...
+
+    def discover_files(self, glob_pattern: str) -> list[str]: ...
+
+    def open_text(self, path: str) -> IO[str]: ...
+
+
 # ── Encoding detection ────────────────────────────────────────────────────────
+
+
+def detect_encoding_from_bytes(raw: bytes) -> str:
+    """Return the most likely text encoding for *raw* bytes."""
+    sample = raw[:65536]
+    for enc in _ENCODING_CANDIDATES:
+        try:
+            sample.decode(enc)
+            return enc
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return "latin-1"  # pragma: no cover — latin-1 never raises
 
 
 def detect_encoding(file_path: pathlib.Path, sample_size: int = 65536) -> str:
@@ -76,15 +109,69 @@ def detect_encoding(file_path: pathlib.Path, sample_size: int = 65536) -> str:
     Returns:
         Encoding name suitable for ``open()`` / ``bytes.decode()``.
     """
-    raw = file_path.read_bytes()[:sample_size]
-    for enc in _ENCODING_CANDIDATES:
-        try:
-            raw.decode(enc)
-            logger.debug("Detected encoding %s for %s", enc, file_path.name)
-            return enc
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return "latin-1"  # pragma: no cover — latin-1 never raises
+    enc = detect_encoding_from_bytes(file_path.read_bytes()[:sample_size])
+    logger.debug("Detected encoding %s for %s", enc, file_path.name)
+    return enc
+
+
+# ── Shared path helpers ───────────────────────────────────────────────────────
+
+
+def _normalise_relative_path(path: str) -> str:
+    """Return a provider-neutral relative path or raise InputStorageError."""
+    normalised = path.replace("\\", "/").strip("/")
+    if normalised in ("", "."):
+        return ""
+    pure = pathlib.PurePosixPath(normalised)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise InputStorageError(f"Invalid path: {path!r}")
+    return str(pure)
+
+
+def _validate_glob_pattern(glob_pattern: str) -> str:
+    """Return a provider-neutral glob pattern or raise InputStorageError."""
+    normalised = glob_pattern.replace("\\", "/").strip("/")
+    pure = pathlib.PurePosixPath(normalised)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise InputStorageError(
+            f"Pattern {glob_pattern!r} contains path traversal sequence '..'"
+        )
+    return str(pure)
+
+
+def _matches_glob(path: str, glob_pattern: str) -> bool:
+    """Match *path* against *glob_pattern* using pathlib-style semantics."""
+    pure = pathlib.PurePosixPath(path)
+    if pure.match(glob_pattern):
+        return True
+    if glob_pattern.startswith("**/"):
+        return pure.match(glob_pattern[3:])
+    return False
+
+
+def _normalise_root_prefix(root_prefix: Optional[str]) -> str:
+    """Return an S3 root prefix with trailing slash or an empty string."""
+    if not root_prefix:
+        return ""
+    prefix = root_prefix.replace("\\", "/").strip("/")
+    return f"{prefix}/" if prefix else ""
+
+
+def _relative_key(key: str, root_prefix: str) -> str:
+    """Return *key* relative to *root_prefix*."""
+    return key[len(root_prefix) :] if key.startswith(root_prefix) else key
+
+
+def _join_s3_key(root_prefix: str, rel_path: str) -> str:
+    """Join root prefix and source-relative path into a full S3 object key."""
+    return f"{root_prefix}{rel_path}" if rel_path else root_prefix
+
+
+def _sort_entries(entries: list[InputEntry]) -> list[InputEntry]:
+    """Return entries with directories first, then files, each sorted by name."""
+    dirs = sorted((e for e in entries if e.kind == "directory"), key=lambda e: e.name)
+    files = sorted((e for e in entries if e.kind == "file"), key=lambda e: e.name)
+    return dirs + files
 
 
 # ── Local storage implementation ──────────────────────────────────────────────
@@ -118,11 +205,11 @@ class LocalInputStorage:
         - No ``".."`` component in the normalised path.
         - Resolved absolute path is inside :attr:`_base`.
         """
-        normalised = rel_path.replace("\\", "/")
-        parts = pathlib.PurePosixPath(normalised).parts
-        if ".." in parts:
+        try:
+            safe_rel_path = _normalise_relative_path(rel_path)
+        except InputStorageError:
             return None
-        candidate = (self._base / rel_path).resolve()
+        candidate = (self._base / safe_rel_path).resolve()
         try:
             candidate.relative_to(self._base)
         except ValueError:
@@ -157,8 +244,7 @@ class LocalInputStorage:
                 return []
             target = self._base
 
-        dirs: list[InputEntry] = []
-        files: list[InputEntry] = []
+        entries: list[InputEntry] = []
 
         try:
             with os.scandir(target) as it:
@@ -166,8 +252,9 @@ class LocalInputStorage:
                     if entry.name.startswith("."):
                         continue
                     rel = os.path.join(path, entry.name) if path else entry.name
+                    rel = rel.replace("\\", "/")
                     if entry.is_dir(follow_symlinks=False):
-                        dirs.append(
+                        entries.append(
                             InputEntry(
                                 name=entry.name,
                                 kind="directory",
@@ -187,7 +274,7 @@ class LocalInputStorage:
                                 row_count = max(0, sum(1 for _ in fh) - 1)
                         except OSError:
                             pass
-                        files.append(
+                        entries.append(
                             InputEntry(
                                 name=entry.name,
                                 kind="file",
@@ -199,7 +286,7 @@ class LocalInputStorage:
         except OSError:
             return []
 
-        return dirs + files
+        return _sort_entries(entries)
 
     def preview_file(self, path: str, rows: int) -> InputPreview:
         """Return the first *rows* data rows (plus header) of a CSV file.
@@ -238,8 +325,8 @@ class LocalInputStorage:
             row_count=len(preview_rows),
         )
 
-    def discover_files(self, glob_pattern: str) -> list[pathlib.Path]:
-        """Return files inside the base directory that match *glob_pattern*.
+    def discover_files(self, glob_pattern: str) -> list[str]:
+        """Return source-relative files inside the base directory that match *glob_pattern*.
 
         Two-layer traversal protection is applied:
 
@@ -252,19 +339,15 @@ class LocalInputStorage:
                 (e.g. ``"accounts_*.csv"`` or ``"subdir/**/*.csv"``).
 
         Returns:
-            Sorted list of :class:`~pathlib.Path` objects for regular files only.
+            Sorted list of source-relative paths for regular files only.
 
         Raises:
             :exc:`InputStorageError`: If *glob_pattern* contains ``".."``.
         """
-        normalised = glob_pattern.replace("\\", "/")
-        if any(part == ".." for part in normalised.split("/")):
-            raise InputStorageError(
-                f"Pattern {glob_pattern!r} contains path traversal sequence '..'"
-            )
+        safe_pattern = _validate_glob_pattern(glob_pattern)
 
-        matched: list[pathlib.Path] = []
-        for candidate in sorted(self._base.glob(glob_pattern)):
+        matched: list[str] = []
+        for candidate in sorted(self._base.glob(safe_pattern)):
             if not candidate.is_file():
                 continue
             try:
@@ -275,11 +358,11 @@ class LocalInputStorage:
                     candidate,
                 )
                 continue
-            matched.append(candidate)
+            matched.append(candidate.relative_to(self._base).as_posix())
 
         logger.info(
             "discover_files: pattern=%r dir=%s matched %d file(s)",
-            glob_pattern,
+            safe_pattern,
             self._base,
             len(matched),
         )
@@ -308,3 +391,159 @@ class LocalInputStorage:
             raise FileNotFoundError(f"File not found: {path!r}")
         enc = detect_encoding(resolved)
         return open(resolved, encoding=enc, newline="")
+
+
+class S3InputStorage:
+    """S3-backed input storage rooted at a bucket and optional prefix."""
+
+    def __init__(
+        self,
+        *,
+        bucket: str,
+        root_prefix: Optional[str],
+        region: Optional[str],
+        access_key_id: str,
+        secret_access_key: str,
+        session_token: Optional[str] = None,
+    ) -> None:
+        self._bucket = bucket
+        self._root_prefix = _normalise_root_prefix(root_prefix)
+        client_kwargs = {
+            "service_name": "s3",
+            "aws_access_key_id": access_key_id,
+            "aws_secret_access_key": secret_access_key,
+            "region_name": region,
+        }
+        if session_token:
+            client_kwargs["aws_session_token"] = session_token
+        self._client = boto3.client(**client_kwargs)
+
+    def _safe_relative_path(self, path: str) -> str:
+        return _normalise_relative_path(path)
+
+    def _get_object_bytes(self, path: str) -> bytes:
+        rel_path = self._safe_relative_path(path)
+        key = _join_s3_key(self._root_prefix, rel_path)
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=key)
+        except botocore.exceptions.ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code")
+            if code in {"NoSuchKey", "404"}:
+                raise FileNotFoundError(f"File not found: {path!r}") from exc
+            raise InputStorageError(f"Could not read S3 object {path!r}: {exc}") from exc
+        return response["Body"].read()
+
+    def list_entries(self, path: str = "") -> list[InputEntry]:
+        rel_path = self._safe_relative_path(path)
+        prefix = _join_s3_key(self._root_prefix, rel_path)
+        if prefix and not prefix.endswith("/"):
+            prefix = f"{prefix}/"
+
+        entries: list[InputEntry] = []
+        try:
+            response = self._client.list_objects_v2(
+                Bucket=self._bucket,
+                Prefix=prefix,
+                Delimiter="/",
+            )
+        except botocore.exceptions.ClientError as exc:
+            raise InputStorageError(f"Could not list S3 path {path!r}: {exc}") from exc
+
+        for common_prefix in response.get("CommonPrefixes", []):
+            key = common_prefix.get("Prefix", "")
+            rel_key = _relative_key(key.rstrip("/"), self._root_prefix)
+            name = pathlib.PurePosixPath(rel_key).name
+            if not name or name.startswith("."):
+                continue
+            entries.append(
+                InputEntry(
+                    name=name,
+                    kind="directory",
+                    path=rel_key,
+                    size_bytes=None,
+                    row_count=None,
+                )
+            )
+
+        for item in response.get("Contents", []):
+            key = item.get("Key", "")
+            if not key or key.endswith("/"):
+                continue
+            rel_key = _relative_key(key, self._root_prefix)
+            if "/" in rel_key[len(rel_path) + 1 :] if rel_path else "/" in rel_key:
+                continue
+            name = pathlib.PurePosixPath(rel_key).name
+            if name.startswith(".") or not name.lower().endswith(".csv"):
+                continue
+            entries.append(
+                InputEntry(
+                    name=name,
+                    kind="file",
+                    path=rel_key,
+                    size_bytes=item.get("Size"),
+                    row_count=None,
+                )
+            )
+
+        return _sort_entries(entries)
+
+    def preview_file(self, path: str, rows: int) -> InputPreview:
+        raw = self._get_object_bytes(path)
+        enc = detect_encoding_from_bytes(raw)
+        with io.StringIO(raw.decode(enc)) as fh:
+            reader = csv.DictReader(fh)
+            header = list(reader.fieldnames or [])
+            preview_rows = [dict(row) for _, row in zip(range(rows), reader)]
+        return InputPreview(
+            filename=self._safe_relative_path(path),
+            header=header,
+            rows=preview_rows,
+            row_count=len(preview_rows),
+        )
+
+    def discover_files(self, glob_pattern: str) -> list[str]:
+        safe_pattern = _validate_glob_pattern(glob_pattern)
+        paginator = self._client.get_paginator("list_objects_v2")
+        matched: list[str] = []
+
+        try:
+            for page in paginator.paginate(Bucket=self._bucket, Prefix=self._root_prefix):
+                for item in page.get("Contents", []):
+                    key = item.get("Key", "")
+                    if not key or key.endswith("/"):
+                        continue
+                    rel_key = _relative_key(key, self._root_prefix)
+                    if not rel_key.lower().endswith(".csv"):
+                        continue
+                    if _matches_glob(rel_key, safe_pattern):
+                        matched.append(rel_key)
+        except botocore.exceptions.ClientError as exc:
+            raise InputStorageError(f"Could not discover S3 files for {glob_pattern!r}: {exc}") from exc
+
+        return sorted(matched)
+
+    def open_text(self, path: str) -> IO[str]:
+        raw = self._get_object_bytes(path)
+        enc = detect_encoding_from_bytes(raw)
+        return io.StringIO(raw.decode(enc))
+
+
+async def get_storage(source: Optional[str], db: AsyncSession) -> BaseInputStorage:
+    """Resolve *source* to the appropriate input storage provider."""
+    if source in (None, "", "local"):
+        return LocalInputStorage(settings.input_dir)
+
+    ic = await db.get(InputConnection, source)
+    if ic is None:
+        raise InputStorageError(f"Input connection not found: {source}")
+    if ic.provider != "s3":
+        raise InputStorageError(f"Unsupported input connection provider: {ic.provider}")
+
+    return S3InputStorage(
+        bucket=ic.bucket,
+        root_prefix=ic.root_prefix,
+        region=ic.region,
+        access_key_id=decrypt_secret(ic.access_key_id),
+        secret_access_key=decrypt_secret(ic.secret_access_key),
+        session_token=decrypt_secret(ic.session_token) if ic.session_token else None,
+    )

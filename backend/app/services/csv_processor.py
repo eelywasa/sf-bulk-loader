@@ -85,7 +85,8 @@ def discover_files(
     """
     storage = LocalInputStorage(input_dir or settings.input_dir)
     try:
-        return storage.discover_files(glob_pattern)
+        base = pathlib.Path(input_dir or settings.input_dir).resolve()
+        return [base / rel_path for rel_path in storage.discover_files(glob_pattern)]
     except InputStorageError as exc:
         raise CSVProcessorError(str(exc)) from exc
 

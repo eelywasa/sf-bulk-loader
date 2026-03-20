@@ -1,17 +1,20 @@
 """Tests for the LocalInputStorage service and detect_encoding utility."""
 
 import csv
-import os
 import pathlib
-import tempfile
+from unittest.mock import patch
 
 import pytest
 
+from app.models.input_connection import InputConnection
 from app.services.input_storage import (
     InputStorageError,
     LocalInputStorage,
+    S3InputStorage,
     detect_encoding,
+    get_storage,
 )
+from app.utils.encryption import encrypt_secret
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -212,7 +215,7 @@ def test_discover_files_matches_pattern(tmp_path):
     storage = LocalInputStorage(str(tmp_path))
     found = storage.discover_files("accounts_*.csv")
     assert len(found) == 2
-    assert all(p.name.startswith("accounts_") for p in found)
+    assert all(path.startswith("accounts_") for path in found)
 
 
 def test_discover_files_sorted(tmp_path):
@@ -220,7 +223,7 @@ def test_discover_files_sorted(tmp_path):
         _write_csv(str(tmp_path / name))
     storage = LocalInputStorage(str(tmp_path))
     found = storage.discover_files("*.csv")
-    assert [p.name for p in found] == ["a.csv", "b.csv", "c.csv"]
+    assert found == ["a.csv", "b.csv", "c.csv"]
 
 
 def test_discover_files_regular_files_only(tmp_path):
@@ -228,7 +231,7 @@ def test_discover_files_regular_files_only(tmp_path):
     (tmp_path / "subdir.csv").mkdir()  # directory masquerading as CSV name
     storage = LocalInputStorage(str(tmp_path))
     found = storage.discover_files("*.csv")
-    assert all(p.is_file() for p in found)
+    assert found == ["real.csv"]
 
 
 def test_discover_files_traversal_raises(tmp_path):
@@ -240,3 +243,326 @@ def test_discover_files_traversal_raises(tmp_path):
 def test_discover_files_no_match_returns_empty(tmp_path):
     storage = LocalInputStorage(str(tmp_path))
     assert storage.discover_files("nonexistent_*.csv") == []
+
+
+# ── S3InputStorage ────────────────────────────────────────────────────────────
+
+
+class _FakeS3Body:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+
+class _FakePaginator:
+    def __init__(self, pages):
+        self._pages = pages
+
+    def paginate(self, **_kwargs):
+        return list(self._pages)
+
+
+class _FakeS3Client:
+    def __init__(self, *, list_response=None, object_map=None, pages=None) -> None:
+        self._list_response = list_response or {}
+        self._object_map = object_map or {}
+        self._pages = pages or []
+
+    def list_objects_v2(self, **_kwargs):
+        return self._list_response
+
+    def get_object(self, *, Bucket, Key):
+        if Key not in self._object_map:
+            error = {"Error": {"Code": "NoSuchKey", "Message": f"{Key} missing"}}
+            from botocore.exceptions import ClientError
+
+            raise ClientError(error, "GetObject")
+        return {"Body": _FakeS3Body(self._object_map[Key])}
+
+    def get_paginator(self, _name):
+        return _FakePaginator(self._pages)
+
+
+class _RaisingPaginator:
+    def __init__(self, exc) -> None:
+        self._exc = exc
+
+    def paginate(self, **_kwargs):
+        raise self._exc
+
+
+class _ErroringS3Client(_FakeS3Client):
+    def __init__(self, *, list_error=None, get_error=None, paginator_error=None) -> None:
+        super().__init__()
+        self._list_error = list_error
+        self._get_error = get_error
+        self._paginator_error = paginator_error
+
+    def list_objects_v2(self, **_kwargs):
+        if self._list_error is not None:
+            raise self._list_error
+        return super().list_objects_v2(**_kwargs)
+
+    def get_object(self, *, Bucket, Key):
+        if self._get_error is not None:
+            raise self._get_error
+        return super().get_object(Bucket=Bucket, Key=Key)
+
+    def get_paginator(self, _name):
+        if self._paginator_error is not None:
+            return _RaisingPaginator(self._paginator_error)
+        return super().get_paginator(_name)
+
+
+def test_s3_list_entries_returns_directories_then_csvs():
+    client = _FakeS3Client(
+        list_response={
+            "CommonPrefixes": [{"Prefix": "data/subdir/"}, {"Prefix": "data/archive/"}],
+            "Contents": [
+                {"Key": "data/accounts.csv", "Size": 123},
+                {"Key": "data/readme.txt", "Size": 5},
+                {"Key": "data/", "Size": 0},
+            ],
+        }
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        entries = storage.list_entries()
+
+    assert [(e.kind, e.path) for e in entries] == [
+        ("directory", "archive"),
+        ("directory", "subdir"),
+        ("file", "accounts.csv"),
+    ]
+    assert entries[-1].size_bytes == 123
+    assert entries[-1].row_count is None
+
+
+def test_s3_list_entries_subdirectory_path():
+    client = _FakeS3Client(
+        list_response={
+            "CommonPrefixes": [{"Prefix": "data/subdir/deeper/"}],
+            "Contents": [
+                {"Key": "data/subdir/accounts.csv", "Size": 42},
+                {"Key": "data/subdir/notes.txt", "Size": 7},
+            ],
+        }
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        entries = storage.list_entries("subdir")
+
+    assert [(e.kind, e.path) for e in entries] == [
+        ("directory", "subdir/deeper"),
+        ("file", "subdir/accounts.csv"),
+    ]
+
+
+def test_s3_list_entries_client_error_raises_input_storage_error():
+    from botocore.exceptions import ClientError
+
+    client = _ErroringS3Client(
+        list_error=ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "denied"}},
+            "ListObjectsV2",
+        )
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        with pytest.raises(InputStorageError, match="Could not list S3 path"):
+            storage.list_entries()
+
+
+def test_s3_preview_file_returns_rows():
+    client = _FakeS3Client(
+        object_map={"data/accounts.csv": b"Name,Value\nAcme,1\nBeta,2\n"}
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        preview = storage.preview_file("accounts.csv", rows=1)
+
+    assert preview.filename == "accounts.csv"
+    assert preview.header == ["Name", "Value"]
+    assert preview.row_count == 1
+    assert preview.rows[0]["Name"] == "Acme"
+
+
+def test_s3_preview_file_missing_object_raises_file_not_found():
+    from botocore.exceptions import ClientError
+
+    client = _ErroringS3Client(
+        get_error=ClientError(
+            {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+            "GetObject",
+        )
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        with pytest.raises(FileNotFoundError, match="File not found"):
+            storage.preview_file("accounts.csv", rows=5)
+
+
+def test_s3_discover_files_matches_glob():
+    client = _FakeS3Client(
+        pages=[
+            {
+                "Contents": [
+                    {"Key": "data/accounts/a.csv"},
+                    {"Key": "data/accounts/b.csv"},
+                    {"Key": "data/contacts/c.csv"},
+                    {"Key": "data/root.csv"},
+                ]
+            }
+        ]
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        found = storage.discover_files("accounts/*.csv")
+        recursive_found = storage.discover_files("**/*.csv")
+
+    assert found == ["accounts/a.csv", "accounts/b.csv"]
+    assert recursive_found == [
+        "accounts/a.csv",
+        "accounts/b.csv",
+        "contacts/c.csv",
+        "root.csv",
+    ]
+
+
+def test_s3_discover_files_client_error_raises_input_storage_error():
+    from botocore.exceptions import ClientError
+
+    client = _ErroringS3Client(
+        paginator_error=ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "denied"}},
+            "ListObjectsV2",
+        )
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        with pytest.raises(InputStorageError, match="Could not discover S3 files"):
+            storage.discover_files("**/*.csv")
+
+
+def test_s3_open_text_uses_detected_encoding():
+    client = _FakeS3Client(object_map={"data/cafe.csv": b"Name\nCaf\x80\n"})
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        with storage.open_text("cafe.csv") as fh:
+            content = fh.read()
+
+    assert "Caf" in content
+
+
+@pytest.mark.asyncio
+async def test_get_storage_returns_local_for_local_source():
+    storage = await get_storage("local", db=None)
+    assert isinstance(storage, LocalInputStorage)
+
+
+@pytest.mark.asyncio
+async def test_get_storage_returns_s3_for_input_connection():
+    ic = InputConnection(
+        id="ic-1",
+        name="S3",
+        provider="s3",
+        bucket="bucket",
+        root_prefix="data",
+        region="us-east-1",
+        access_key_id=encrypt_secret("ak"),
+        secret_access_key=encrypt_secret("sk"),
+        session_token=encrypt_secret("st"),
+    )
+
+    class _FakeDB:
+        async def get(self, model, key):
+            assert model is InputConnection
+            assert key == "ic-1"
+            return ic
+
+    with patch("app.services.input_storage.boto3.client", return_value=_FakeS3Client()):
+        storage = await get_storage("ic-1", db=_FakeDB())
+
+    assert isinstance(storage, S3InputStorage)
+
+
+@pytest.mark.asyncio
+async def test_get_storage_missing_source_raises():
+    class _FakeDB:
+        async def get(self, _model, _key):
+            return None
+
+    with pytest.raises(InputStorageError, match="Input connection not found"):
+        await get_storage("missing", db=_FakeDB())
+
+
+@pytest.mark.asyncio
+async def test_get_storage_unsupported_provider_raises():
+    ic = InputConnection(
+        id="ic-1",
+        name="Other",
+        provider="gcs",
+        bucket="bucket",
+        root_prefix=None,
+        region=None,
+        access_key_id=encrypt_secret("ak"),
+        secret_access_key=encrypt_secret("sk"),
+        session_token=None,
+    )
+
+    class _FakeDB:
+        async def get(self, _model, _key):
+            return ic
+
+    with pytest.raises(InputStorageError, match="Unsupported input connection provider"):
+        await get_storage("ic-1", db=_FakeDB())

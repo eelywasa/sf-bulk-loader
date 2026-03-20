@@ -749,6 +749,7 @@ Notes:
 
 - file discovery from `csv_processor` is already redirected to the storage abstraction
 - remaining work: make `partition_csv` accept an open file handle or stream so that remote providers can supply content without a local path
+- hardening requirement: remote storage readers must not require loading an entire object into memory before CSV processing begins; S3-backed `open_text` / partitioning flow should support streaming reads so large remote files preserve the same bounded-memory behavior as local files
 - this ticket is internal refactoring but required before remote execution can be reliable
 
 Dependencies:
@@ -792,6 +793,7 @@ Scope:
 - review API and UI naming consistency around source vs connection
 - clean up duplicated provider branching
 - review test coverage around secret redaction and source selection
+- verify remote CSV execution paths preserve bounded-memory streaming behavior and do not buffer whole S3 objects in memory
 - run regression coverage for files page, plan editor, step preview, and run execution
 
 Dependencies:
@@ -900,4 +902,3 @@ Recommended coordination checkpoints:
 | `frontend/src/__tests__/pages/FilesPage.test.tsx` | Modified |
 | `frontend/src/__tests__/pages/PlanEditor.test.tsx` | Modified |
 | `frontend/src/__tests__/api/endpoints.test.ts` | Modified |
-
