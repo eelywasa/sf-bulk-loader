@@ -6,6 +6,90 @@ import tempfile
 from unittest.mock import patch
 
 import pytest
+import app.models  # noqa: F401
+from app.services.input_storage import (
+    UnsupportedInputProviderError,
+)
+
+_IC = {
+    "name": "My S3 Bucket",
+    "provider": "s3",
+    "bucket": "my-bucket",
+    "root_prefix": "data/",
+    "region": "us-east-1",
+    "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+    "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+}
+
+
+class _FakeS3Body:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+
+class _FakePaginator:
+    def __init__(self, pages):
+        self._pages = pages
+
+    def paginate(self, **_kwargs):
+        return list(self._pages)
+
+
+class _FakeS3Client:
+    def __init__(self, *, list_response=None, object_map=None, pages=None) -> None:
+        self._list_response = list_response or {}
+        self._object_map = object_map or {}
+        self._pages = pages or []
+
+    def list_objects_v2(self, **_kwargs):
+        return self._list_response
+
+    def get_object(self, *, Bucket, Key):
+        if Key not in self._object_map:
+            error = {"Error": {"Code": "NoSuchKey", "Message": f"{Key} missing"}}
+            from botocore.exceptions import ClientError
+
+            raise ClientError(error, "GetObject")
+        return {"Body": _FakeS3Body(self._object_map[Key])}
+
+    def get_paginator(self, _name):
+        return _FakePaginator(self._pages)
+
+
+class _ErroringS3Client(_FakeS3Client):
+    def __init__(self, *, list_error=None, get_error=None) -> None:
+        super().__init__()
+        self._list_error = list_error
+        self._get_error = get_error
+
+    def list_objects_v2(self, **_kwargs):
+        if self._list_error is not None:
+            raise self._list_error
+        return super().list_objects_v2(**_kwargs)
+
+    def get_object(self, *, Bucket, Key):
+        if self._get_error is not None:
+            raise self._get_error
+        return super().get_object(Bucket=Bucket, Key=Key)
+
+
+def _create_input_connection(auth_client) -> str:
+    resp = auth_client.post("/api/input-connections/", json=_IC)
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+class _PreviewOSErrorStorage:
+    provider = "local"
+
+    def preview_file(self, path: str, rows: int):
+        raise OSError("disk error")
+
+    def list_entries(self, path: str = ""):
+        return []
 
 
 # ── Health check ───────────────────────────────────────────────────────────────
@@ -25,8 +109,7 @@ def test_health_returns_ok(auth_client):
 
 def test_list_input_files_empty_dir(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     assert resp.json() == []
@@ -38,8 +121,7 @@ def test_list_input_files_returns_csvs(auth_client):
         for name in ("accounts.csv", "contacts.csv", "readme.txt"):
             open(os.path.join(tmpdir, name), "w").close()
 
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input")
 
     assert resp.status_code == 200
@@ -47,11 +129,12 @@ def test_list_input_files_returns_csvs(auth_client):
     assert "accounts.csv" in names
     assert "contacts.csv" in names
     assert "readme.txt" not in names
+    assert all(f["source"] == "local" for f in resp.json())
+    assert all(f["provider"] == "local" for f in resp.json())
 
 
 def test_list_input_files_missing_dir_returns_empty(auth_client):
-    with patch("app.api.utility.settings") as mock_settings:
-        mock_settings.input_dir = "/path/that/does/not/exist"
+    with patch("app.services.input_storage.settings.input_dir", "/path/that/does/not/exist"):
         resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     assert resp.json() == []
@@ -61,8 +144,7 @@ def test_list_input_files_returns_directory_entries(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, "subdir"))
         open(os.path.join(tmpdir, "root.csv"), "w").close()
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     entries = resp.json()
@@ -75,8 +157,7 @@ def test_list_input_files_directories_sorted_before_files(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, "zfolder"))
         open(os.path.join(tmpdir, "accounts.csv"), "w").close()
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input")
     entries = resp.json()
     assert entries[0]["kind"] == "directory"
@@ -92,8 +173,7 @@ def test_list_input_files_with_path_param(auth_client):
             writer.writerow(["Id", "Name"])
             writer.writerow(["1", "Alpha"])
             writer.writerow(["2", "Beta"])
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input?path=sub")
     assert resp.status_code == 200
     entries = resp.json()
@@ -102,6 +182,8 @@ def test_list_input_files_with_path_param(auth_client):
     assert entries[0]["path"] == "sub/deep.csv"
     assert entries[0]["kind"] == "file"
     assert entries[0]["row_count"] == 2
+    assert entries[0]["source"] == "local"
+    assert entries[0]["provider"] == "local"
 
 
 def test_list_input_files_includes_row_count(auth_client):
@@ -112,26 +194,121 @@ def test_list_input_files_includes_row_count(auth_client):
             writer.writerow(["Name", "Industry"])
             for i in range(5):
                 writer.writerow([f"Acme {i}", "Tech"])
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input")
     assert resp.status_code == 200
     entry = resp.json()[0]
     assert entry["row_count"] == 5
+    assert entry["source"] == "local"
+    assert entry["provider"] == "local"
+
+
+def test_list_input_files_source_local_matches_default(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = os.path.join(tmpdir, "accounts.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Name", "Industry"])
+            writer.writerow(["Acme", "Tech"])
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            default_resp = auth_client.get("/api/files/input")
+            explicit_resp = auth_client.get("/api/files/input?source=local")
+
+    assert default_resp.status_code == 200
+    assert explicit_resp.status_code == 200
+    assert default_resp.json() == explicit_resp.json()
+
+
+def test_list_input_files_remote_source_returns_source_and_provider(auth_client):
+    ic_id = _create_input_connection(auth_client)
+    client = _FakeS3Client(
+        list_response={
+            "CommonPrefixes": [{"Prefix": "data/subdir/"}],
+            "Contents": [{"Key": "data/accounts.csv", "Size": 123}],
+        }
+    )
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.get(f"/api/files/input?source={ic_id}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == [
+        {
+            "name": "subdir",
+            "kind": "directory",
+            "path": "subdir",
+            "size_bytes": None,
+            "row_count": None,
+            "source": ic_id,
+            "provider": "s3",
+        },
+        {
+            "name": "accounts.csv",
+            "kind": "file",
+            "path": "accounts.csv",
+            "size_bytes": 123,
+            "row_count": None,
+            "source": ic_id,
+            "provider": "s3",
+        },
+    ]
+
+
+def test_list_input_files_unknown_source_returns_404(auth_client):
+    resp = auth_client.get("/api/files/input?source=missing-input-connection")
+    assert resp.status_code == 404
+
+
+def test_list_input_files_invalid_remote_path_returns_400(auth_client):
+    ic_id = _create_input_connection(auth_client)
+    client = _FakeS3Client()
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.get(f"/api/files/input?source={ic_id}&path=../etc")
+
+    assert resp.status_code == 400
+
+
+def test_list_input_files_remote_storage_error_returns_400(auth_client):
+    from botocore.exceptions import ClientError
+
+    ic_id = _create_input_connection(auth_client)
+    client = _ErroringS3Client(
+        list_error=ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "denied"}},
+            "ListObjectsV2",
+        )
+    )
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.get(f"/api/files/input?source={ic_id}")
+
+    assert resp.status_code == 400
+    assert "Could not list S3 path" in resp.json()["detail"]
+
+
+def test_list_input_files_unsupported_provider_returns_400(auth_client):
+    with patch(
+        "app.api.utility.get_storage",
+        side_effect=UnsupportedInputProviderError("Unsupported input connection provider: gcs"),
+    ):
+        resp = auth_client.get("/api/files/input?source=ic-unsupported")
+
+    assert resp.status_code == 400
+    assert "Unsupported input connection provider" in resp.json()["detail"]
 
 
 def test_list_input_files_path_traversal_returns_400(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input?path=../etc")
     assert resp.status_code == 400
 
 
 def test_list_input_files_nonexistent_path_returns_400(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input?path=nonexistent")
     assert resp.status_code == 400
 
@@ -140,8 +317,7 @@ def test_list_input_files_hidden_dirs_excluded(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, ".hidden"))
         open(os.path.join(tmpdir, "visible.csv"), "w").close()
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input")
     names = [e["name"] for e in resp.json()]
     assert ".hidden" not in names
@@ -160,8 +336,7 @@ def test_preview_input_file_returns_rows(auth_client):
             for i in range(20):
                 writer.writerow([f"Acme {i}", "Tech"])
 
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5")
 
     assert resp.status_code == 200
@@ -170,12 +345,13 @@ def test_preview_input_file_returns_rows(auth_client):
     assert body["header"] == ["Name", "Industry"]
     assert len(body["rows"]) == 5
     assert body["row_count"] == 5
+    assert body["source"] == "local"
+    assert body["provider"] == "local"
 
 
 def test_preview_input_file_not_found_returns_404(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input/nonexistent.csv/preview")
     assert resp.status_code == 404
 
@@ -195,8 +371,7 @@ def test_preview_input_file_in_subdirectory(auth_client):
             writer.writerow(["Id", "Name"])
             writer.writerow(["1", "Alpha"])
 
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input/sub/deep.csv/preview")
 
     assert resp.status_code == 200
@@ -204,14 +379,110 @@ def test_preview_input_file_in_subdirectory(auth_client):
     assert body["filename"] == "sub/deep.csv"
     assert body["header"] == ["Id", "Name"]
     assert len(body["rows"]) == 1
+    assert body["source"] == "local"
+    assert body["provider"] == "local"
 
 
 def test_preview_input_file_subdir_traversal_returns_400(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings") as mock_settings:
-            mock_settings.input_dir = tmpdir
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.get("/api/files/input/sub/../../etc/passwd/preview")
     assert resp.status_code in (400, 404)
+
+
+def test_preview_input_file_source_local_matches_default(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = os.path.join(tmpdir, "accounts.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Name", "Industry"])
+            writer.writerow(["Acme", "Tech"])
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            default_resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5")
+            explicit_resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5&source=local")
+
+    assert default_resp.status_code == 200
+    assert explicit_resp.status_code == 200
+    assert default_resp.json() == explicit_resp.json()
+
+
+def test_preview_input_file_remote_source_returns_source_and_provider(auth_client):
+    ic_id = _create_input_connection(auth_client)
+    client = _FakeS3Client(
+        object_map={"data/accounts.csv": b"Name,Industry\nAcme,Tech\nBeta,Finance\n"}
+    )
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.get(f"/api/files/input/accounts.csv/preview?rows=1&source={ic_id}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["filename"] == "accounts.csv"
+    assert body["row_count"] == 1
+    assert body["source"] == ic_id
+    assert body["provider"] == "s3"
+
+
+def test_preview_input_file_unknown_source_returns_404(auth_client):
+    resp = auth_client.get("/api/files/input/accounts.csv/preview?source=missing-input-connection")
+    assert resp.status_code == 404
+
+
+def test_preview_input_file_remote_missing_object_returns_404(auth_client):
+    ic_id = _create_input_connection(auth_client)
+    client = _FakeS3Client()
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.get(f"/api/files/input/accounts.csv/preview?source={ic_id}")
+
+    assert resp.status_code == 404
+
+
+def test_preview_input_file_remote_storage_error_returns_400(auth_client):
+    from botocore.exceptions import ClientError
+
+    ic_id = _create_input_connection(auth_client)
+    client = _ErroringS3Client(
+        get_error=ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "denied"}},
+            "GetObject",
+        )
+    )
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.get(f"/api/files/input/accounts.csv/preview?source={ic_id}")
+
+    assert resp.status_code == 400
+    assert "Could not read S3 object" in resp.json()["detail"]
+
+
+def test_preview_input_file_remote_invalid_path_returns_400(auth_client):
+    ic_id = _create_input_connection(auth_client)
+    client = _FakeS3Client()
+
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        resp = auth_client.get(f"/api/files/input/../secret.csv/preview?source={ic_id}")
+
+    assert resp.status_code in (400, 404)
+
+
+def test_preview_input_file_os_error_returns_500(auth_client):
+    with patch("app.api.utility.get_storage", return_value=_PreviewOSErrorStorage()):
+        resp = auth_client.get("/api/files/input/accounts.csv/preview")
+
+    assert resp.status_code == 500
+    assert "Could not read file" in resp.json()["detail"]
+
+
+def test_preview_input_file_unsupported_provider_returns_400(auth_client):
+    with patch(
+        "app.api.utility.get_storage",
+        side_effect=UnsupportedInputProviderError("Unsupported input connection provider: gcs"),
+    ):
+        resp = auth_client.get("/api/files/input/accounts.csv/preview?source=ic-unsupported")
+
+    assert resp.status_code == 400
+    assert "Unsupported input connection provider" in resp.json()["detail"]
 
 
 # ── WebSocket ──────────────────────────────────────────────────────────────────

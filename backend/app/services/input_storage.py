@@ -44,6 +44,14 @@ class InputStorageError(Exception):
     """Raised for invalid paths, traversal attempts, or inaccessible resources."""
 
 
+class InputConnectionNotFoundError(InputStorageError):
+    """Raised when a referenced input connection does not exist."""
+
+
+class UnsupportedInputProviderError(InputStorageError):
+    """Raised when an input connection refers to an unsupported provider."""
+
+
 # ── Data transfer objects ─────────────────────────────────────────────────────
 
 
@@ -70,6 +78,8 @@ class InputPreview:
 
 class BaseInputStorage(Protocol):
     """Provider-neutral storage contract used by file-browsing consumers."""
+
+    provider: str
 
     def list_entries(self, path: str = "") -> list[InputEntry]: ...
 
@@ -191,6 +201,8 @@ class LocalInputStorage:
     Args:
         input_dir: Absolute path to the root input directory.
     """
+
+    provider = "local"
 
     def __init__(self, input_dir: str) -> None:
         self._base = pathlib.Path(input_dir).resolve()
@@ -396,6 +408,8 @@ class LocalInputStorage:
 class S3InputStorage:
     """S3-backed input storage rooted at a bucket and optional prefix."""
 
+    provider = "s3"
+
     def __init__(
         self,
         *,
@@ -535,9 +549,11 @@ async def get_storage(source: Optional[str], db: AsyncSession) -> BaseInputStora
 
     ic = await db.get(InputConnection, source)
     if ic is None:
-        raise InputStorageError(f"Input connection not found: {source}")
+        raise InputConnectionNotFoundError(f"Input connection not found: {source}")
     if ic.provider != "s3":
-        raise InputStorageError(f"Unsupported input connection provider: {ic.provider}")
+        raise UnsupportedInputProviderError(
+            f"Unsupported input connection provider: {ic.provider}"
+        )
 
     return S3InputStorage(
         bucket=ic.bucket,

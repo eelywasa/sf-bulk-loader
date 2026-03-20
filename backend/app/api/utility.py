@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import pathlib
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -15,7 +14,13 @@ from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.services.auth import get_current_user, validate_ws_token
-from app.services.input_storage import InputStorageError, LocalInputStorage
+from app.services.input_storage import (
+    BaseInputStorage,
+    InputStorageError,
+    InputConnectionNotFoundError,
+    UnsupportedInputProviderError,
+    get_storage,
+)
 from app.utils.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -38,22 +43,46 @@ class InputDirectoryEntry(BaseModel):
     path: str
     size_bytes: Optional[int] = None
     row_count: Optional[int] = None
+    source: str
+    provider: str
+
+
+class InputPreviewResponse(BaseModel):
+    filename: str
+    header: list[str]
+    rows: list[dict[str, Optional[str]]]
+    row_count: int
+    source: str
+    provider: str
+
+
+def _resolve_provider(storage: BaseInputStorage) -> str:
+    return storage.provider
 
 
 @router.get("/api/files/input", response_model=List[InputDirectoryEntry])
 async def list_input_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
+    source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories at the given path within the input directory."""
-    if not pathlib.Path(settings.input_dir).is_dir():
-        return []
+    try:
+        storage = await get_storage(source, db)
+    except InputConnectionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except UnsupportedInputProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    storage = LocalInputStorage(settings.input_dir)
+    source_id = source or "local"
+    provider = _resolve_provider(storage)
     try:
         entries = storage.list_entries(path)
-    except InputStorageError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return [
         InputDirectoryEntry(
@@ -62,23 +91,37 @@ async def list_input_files(
             path=e.path,
             size_bytes=e.size_bytes,
             row_count=e.row_count,
+            source=source_id,
+            provider=provider,
         )
         for e in entries
     ]
 
 
-@router.get("/api/files/input/{file_path:path}/preview")
+@router.get("/api/files/input/{file_path:path}/preview", response_model=InputPreviewResponse)
 async def preview_input_file(
     file_path: str,
     rows: int = Query(default=10, ge=1, le=1000),
+    source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+) -> InputPreviewResponse:
     """Return the first *rows* data rows (plus header) of a CSV file."""
-    storage = LocalInputStorage(settings.input_dir)
+    try:
+        storage = await get_storage(source, db)
+    except InputConnectionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except UnsupportedInputProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    source_id = source or "local"
+    provider = _resolve_provider(storage)
     try:
         preview = storage.preview_file(file_path, rows)
-    except InputStorageError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file path")
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     except OSError as exc:
@@ -92,6 +135,8 @@ async def preview_input_file(
         "header": preview.header,
         "rows": preview.rows,
         "row_count": preview.row_count,
+        "source": source_id,
+        "provider": provider,
     }
 
 

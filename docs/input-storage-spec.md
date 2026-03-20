@@ -537,7 +537,13 @@ Optional future tuning variables:
 
 These tickets are intended to be small enough to execute incrementally while still producing coherent checkpoints. They are ordered and dependency-aware so they can be handed off one at a time.
 
+Maintenance note:
+
+- when a ticket is completed, update this section in the same change set to mark its status and keep the spec aligned with the implementation state
+
 ### 1. Add Backend Input Connection Model and Migration
+
+Status: **Completed**
 
 Goal: create the persistence foundation for remote input sources.
 
@@ -565,6 +571,8 @@ Exit criteria:
 
 ### 2. Add Backend Input Connection Schemas and CRUD/Test API
 
+Status: **Completed**
+
 Goal: expose remote input connections as a first-class backend resource.
 
 Scope:
@@ -590,6 +598,8 @@ Exit criteria:
 - input connections can be created, listed, updated, deleted, and tested
 
 ### 3. Add Backend Input Storage Abstraction
+
+Status: **Completed**
 
 Goal: remove direct provider assumptions from file-browsing consumers.
 
@@ -617,6 +627,8 @@ Exit criteria:
 
 ### 4. Make Files API Source-Aware
 
+Status: **Completed**
+
 Goal: support browsing and previewing local and remote sources through the existing files API.
 
 Scope:
@@ -641,6 +653,8 @@ Exit criteria:
 
 ### 5. Expand Frontend Connections Page for Input Connections
 
+Status: **Pending**
+
 Goal: surface remote input sources in the UI without disturbing Salesforce connection behavior.
 
 Scope:
@@ -663,6 +677,8 @@ Exit criteria:
 - users can manage S3 input connections from the browser
 
 ### 6. Make Files Page Source-Aware
+
+Status: **Pending**
 
 Goal: let users browse both local and remote file stores from the Input Files page.
 
@@ -689,6 +705,8 @@ Exit criteria:
 
 ### 7. Add Step-Level Input Source Selection
 
+Status: **Pending**
+
 Goal: bind each load step to the source its file pattern should resolve against.
 
 Scope:
@@ -714,6 +732,8 @@ Exit criteria:
 
 ### 8. Make Step Preview Source-Aware
 
+Status: **Pending**
+
 Goal: ensure preflight preview reflects the step's actual configured input source.
 
 Scope:
@@ -735,6 +755,8 @@ Exit criteria:
 - step preview returns correct matched files and row counts for local and S3-backed steps
 
 ### 9. Refactor CSV Processing Around Provider-Neutral Inputs
+
+Status: **Pending**
 
 Goal: decouple CSV parsing and partitioning from local filesystem paths.
 
@@ -762,6 +784,8 @@ Exit criteria:
 
 ### 10. Make Orchestrator Execution Source-Aware
 
+Status: **Pending**
+
 Goal: allow actual load runs to execute from remote input sources.
 
 Scope:
@@ -786,6 +810,8 @@ Exit criteria:
 
 ### 11. Stage 1 and Stage 2 Regression Pass
 
+Status: **Pending**
+
 Goal: stabilize the combined browsing plus execution feature set.
 
 Scope:
@@ -806,6 +832,8 @@ Exit criteria:
 - remote workflows are documented, tested, and operational
 
 ### 12. Provider Generalization Follow-Up
+
+Status: **Pending**
 
 Goal: prepare the S3 implementation so future providers can be added cleanly.
 
