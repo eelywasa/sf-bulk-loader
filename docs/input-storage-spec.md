@@ -714,7 +714,7 @@ Exit criteria:
 
 ### 7. Add Step-Level Input Source Selection
 
-Status: **Pending**
+Status: **Completed**
 
 Goal: bind each load step to the source its file pattern should resolve against.
 
@@ -730,6 +730,10 @@ Notes:
 
 - default to local for new steps
 - existing steps should continue to behave as local
+- implemented in backend and frontend:
+  - `load_step.input_connection_id` is carried through step create/update/read flows
+  - `PlanEditor` step modal includes `Input Source`
+  - step file picker and literal-file header preview are source-aware
 
 Dependencies:
 
@@ -741,7 +745,7 @@ Exit criteria:
 
 ### 8. Make Step Preview Source-Aware
 
-Status: **Pending**
+Status: **Completed**
 
 Goal: ensure preflight preview reflects the step's actual configured input source.
 
@@ -754,6 +758,10 @@ Scope:
 Notes:
 
 - endpoint contract can remain unchanged if the source is derived from the step
+- implemented:
+  - step preview resolves storage from `load_step.input_connection_id`
+  - local and S3-backed steps are both covered by backend preview tests
+  - basename-only filename response shape is preserved for UI compatibility
 
 Dependencies:
 
