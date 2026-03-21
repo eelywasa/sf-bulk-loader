@@ -14,11 +14,26 @@ vi.mock('../../api/endpoints', () => ({
     listInput: vi.fn(),
     previewInput: vi.fn(),
   },
+  inputConnectionsApi: {
+    list: vi.fn(),
+  },
 }))
 
-import { filesApi } from '../../api/endpoints'
+import { filesApi, inputConnectionsApi } from '../../api/endpoints'
+import type { InputConnection } from '../../api/types'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+const s3Connection: InputConnection = {
+  id: 'conn-s3-1',
+  name: 'Production S3',
+  provider: 's3',
+  bucket: 'my-data-bucket',
+  root_prefix: 'data/csvs/',
+  region: 'us-east-1',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+}
 
 const fileList: InputDirectoryEntry[] = [
   { name: 'accounts.csv', kind: 'file', path: 'accounts.csv', size_bytes: 2048, row_count: 100, source: 'local', provider: 'local' },
@@ -105,6 +120,7 @@ describe('formatFileSize', () => {
 describe('FilesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
   })
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -529,6 +545,114 @@ describe('FilesPage', () => {
       expect(screen.getByRole('navigation', { name: 'Directory breadcrumb' })).toHaveTextContent(
         '2026',
       )
+    })
+  })
+
+  // ── Subdirectory file preview ──────────────────────────────────────────────
+
+  // ── Source selector ────────────────────────────────────────────────────────
+
+  it('does not show source selector when no input connections exist', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    expect(screen.queryByLabelText('Source')).not.toBeInTheDocument()
+  })
+
+  it('shows source selector when input connections exist', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Source')).toBeInTheDocument()
+    })
+  })
+
+  it('lists local and S3 connection options in source selector', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage()
+    await waitFor(() => screen.getByLabelText('Source'))
+    const select = screen.getByLabelText('Source')
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toEqual(['Local files', 'Production S3'])
+  })
+
+  it('defaults to local source', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage()
+    await waitFor(() => screen.getByLabelText('Source'))
+    expect(screen.getByLabelText<HTMLSelectElement>('Source').value).toBe('local')
+  })
+
+  it('calls listInput with the connection id when source is changed', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage()
+    await waitFor(() => screen.getByLabelText('Source'))
+    await user.selectOptions(screen.getByLabelText('Source'), 'conn-s3-1')
+    expect(filesApi.listInput).toHaveBeenCalledWith('', 'conn-s3-1')
+  })
+
+  it('resets path to root when source changes', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValue(mixedList)
+    renderFilesPage()
+    await waitFor(() => screen.getByText('2026'))
+    // navigate into subdirectory
+    await user.click(screen.getByText('2026'))
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Directory breadcrumb' })).toHaveTextContent('2026')
+    })
+    // switch source — path should reset to root
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    await user.selectOptions(screen.getByLabelText('Source'), 'conn-s3-1')
+    await waitFor(() => {
+      expect(filesApi.listInput).toHaveBeenCalledWith('', 'conn-s3-1')
+    })
+    expect(screen.getByRole('navigation', { name: 'Directory breadcrumb' })).not.toHaveTextContent('2026')
+  })
+
+  it('clears selected file when source changes', async () => {
+    const user = userEvent.setup()
+    const s3Files: InputDirectoryEntry[] = [
+      { name: 'remote.csv', kind: 'file', path: 'remote.csv', size_bytes: 1024, row_count: 10 },
+    ]
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValueOnce(fileList).mockResolvedValue(s3Files)
+    vi.mocked(filesApi.previewInput).mockReturnValue(new Promise(() => {}))
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    expect(screen.queryByText('No file selected')).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Source'), 'conn-s3-1')
+    await waitFor(() => {
+      expect(screen.getByText('No file selected')).toBeInTheDocument()
+    })
+  })
+
+  it('shows generic empty state description for S3 source', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValueOnce(fileList).mockResolvedValue([])
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.selectOptions(screen.getByLabelText('Source'), 'conn-s3-1')
+    await waitFor(() => {
+      expect(screen.getByText('No files found in this location.')).toBeInTheDocument()
+    })
+  })
+
+  it('shows /data/input description for local empty state', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValue([])
+    renderFilesPage()
+    await waitFor(() => {
+      expect(screen.getByText(/Place CSV files in the \/data\/input directory/)).toBeInTheDocument()
     })
   })
 

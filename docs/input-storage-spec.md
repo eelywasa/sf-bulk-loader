@@ -653,7 +653,7 @@ Exit criteria:
 
 ### 5. Expand Frontend Connections Page for Input Connections
 
-Status: **Pending**
+Status: **Completed**
 
 Goal: surface remote input sources in the UI without disturbing Salesforce connection behavior.
 
@@ -687,7 +687,7 @@ Exit criteria:
 
 ### 6. Make Files Page Source-Aware
 
-Status: **Pending**
+Status: **Completed**
 
 Goal: let users browse both local and remote file stores from the Input Files page.
 

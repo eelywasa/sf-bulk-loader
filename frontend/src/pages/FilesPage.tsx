@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFolder, faChevronRight } from '@fortawesome/free-solid-svg-icons'
-import { filesApi } from '../api/endpoints'
+import { filesApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
-import type { InputDirectoryEntry } from '../api/types'
+import type { InputConnection, InputDirectoryEntry } from '../api/types'
 import { Card, EmptyState } from '../components/ui'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -216,12 +216,23 @@ function PreviewTable({ filename, header, rows, rowCount }: PreviewTableProps) {
 export default function FilesPage() {
   const [currentPath, setCurrentPath] = useState('')
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const source = 'local'
+  const [source, setSource] = useState<string>('local')
 
   function handleNavigate(path: string) {
     setCurrentPath(path)
     setSelectedFile(null)
   }
+
+  function handleSourceChange(newSource: string) {
+    setSource(newSource)
+    setCurrentPath('')
+    setSelectedFile(null)
+  }
+
+  const { data: inputConnections = [] } = useQuery<InputConnection[]>({
+    queryKey: ['input-connections'],
+    queryFn: () => inputConnectionsApi.list(),
+  })
 
   const {
     data: entries,
@@ -243,6 +254,27 @@ export default function FilesPage() {
     queryFn: () => filesApi.previewInput(selectedFile!, 25, source),
     enabled: !!selectedFile,
   })
+
+  // ── Source selector (shown when input connections exist) ───────────────────
+
+  const sourceSelector = inputConnections.length > 0 ? (
+    <div className="mt-3 flex items-center gap-2">
+      <label htmlFor="source-select" className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
+        Source
+      </label>
+      <select
+        id="source-select"
+        value={source}
+        onChange={(e) => handleSourceChange(e.target.value)}
+        className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option value="local">Local files</option>
+        {inputConnections.map((conn) => (
+          <option key={conn.id} value={conn.id}>{conn.name}</option>
+        ))}
+      </select>
+    </div>
+  ) : null
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -269,6 +301,7 @@ export default function FilesPage() {
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Browse and preview CSV files in the input directory.
           </p>
+          {sourceSelector}
         </div>
         <div className="rounded-md bg-red-50 border border-red-200 p-4">
           <p className="text-sm text-red-700">{message}</p>
@@ -287,11 +320,16 @@ export default function FilesPage() {
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Browse and preview CSV files in the input directory.
           </p>
+          {sourceSelector}
         </div>
         <Breadcrumb currentPath={currentPath} onNavigate={handleNavigate} />
         <EmptyState
           title="No input files found"
-          description="Place CSV files in the /data/input directory to see them here."
+          description={
+            source === 'local'
+              ? 'Place CSV files in the /data/input directory to see them here.'
+              : 'No files found in this location.'
+          }
         />
       </div>
     )
@@ -329,6 +367,7 @@ export default function FilesPage() {
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Browse and preview CSV files in the input directory.
         </p>
+        {sourceSelector}
       </div>
 
       <Breadcrumb currentPath={currentPath} onNavigate={handleNavigate} />
