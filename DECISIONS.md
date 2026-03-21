@@ -218,3 +218,31 @@ spec (§13).
 **Hook boundary rationale:** `usePlanEditorState` owns everything that involves mutations or cross-cutting state (plan form ↔ connection id ↔ sfObjects query, step form ↔ file picker ↔ patternPreview query). `useStepPreview` is kept separate because it has no dependency on mutation state and only needs the plan id.
 
 **No behaviour changes:** This is a pure structural refactor. Existing `PlanEditor.test.tsx` tests continue to pass without modification.
+
+---
+
+## 013 — Connections page: two separate sections, not tabs
+
+**Decision:** The Connections page shows Salesforce connections and S3 input connections as two
+distinct sections on a single scrollable page, each with its own heading, table, modals, and test
+result panel. No tabs, no unified polymorphic form.
+
+**Why — separate sections over tabs:** The spec explicitly requires "separate, not unified". A
+single scrollable page with two headed sections avoids tab-state management and keeps both
+connection lists visible at a glance. There are only two types, so the added complexity of tabs
+would be pure overhead.
+
+**Why — separate forms over a generic polymorphic form:** Salesforce and S3 have entirely
+different fields (JWT private key vs. AWS access keys, login URL vs. bucket/prefix/region). A
+shared form would require either heavy conditional rendering or a dynamic field schema, both of
+which obscure intent and make validation harder. Two explicit forms are simpler and more
+maintainable.
+
+**Why — credential fields blank = keep existing:** AWS credentials (access_key_id,
+secret_access_key, session_token) are never echoed back to the frontend. On edit, blank fields
+mean "leave unchanged", matching the pattern already established for `private_key` on Salesforce
+connections. Only non-empty values are included in the PATCH payload.
+
+**Why — `provider` hardcoded to `'s3'`:** Only one input provider is implemented. Adding a
+dropdown for a single option is YAGNI and creates a false impression of extensibility. When a
+second provider is added, the form can be extended then.

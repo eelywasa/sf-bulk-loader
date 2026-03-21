@@ -4,6 +4,7 @@ import type {
   ConnectionCreate,
   ConnectionTestResponse,
   InputConnection,
+  InputConnectionCreate,
   InputConnectionTestResponse,
   LoadPlan,
   LoadPlanDetail,
@@ -36,6 +37,10 @@ export const connectionsApi = {
 
 export const inputConnectionsApi = {
   list: () => api.get<InputConnection[]>('/api/input-connections/'),
+  create: (data: InputConnectionCreate) => api.post<InputConnection>('/api/input-connections/', data),
+  update: (id: string, data: Partial<InputConnectionCreate>) =>
+    api.put<InputConnection>(`/api/input-connections/${id}`, data),
+  delete: (id: string) => api.delete(`/api/input-connections/${id}`),
   test: (id: string) => api.post<InputConnectionTestResponse>(`/api/input-connections/${id}/test`),
 }
 

@@ -3,9 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Button, Card, Badge, Modal, DataTable, EmptyState, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
-import { connectionsApi } from '../api/endpoints'
+import { connectionsApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
-import type { Connection, ConnectionCreate, ApiValidationError } from '../api/types'
+import type {
+  Connection,
+  ConnectionCreate,
+  InputConnection,
+  InputConnectionCreate,
+  ApiValidationError,
+} from '../api/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +63,26 @@ const LOGIN_URLS = [
   { value: 'https://test.salesforce.com', label: 'https://test.salesforce.com (Sandbox)' },
 ]
 
+interface InputConnFormData {
+  name: string
+  bucket: string
+  root_prefix: string
+  region: string
+  access_key_id: string
+  secret_access_key: string
+  session_token: string
+}
+
+const EMPTY_INPUT_FORM: InputConnFormData = {
+  name: '',
+  bucket: '',
+  root_prefix: '',
+  region: '',
+  access_key_id: '',
+  secret_access_key: '',
+  session_token: '',
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Connections() {
@@ -71,6 +97,20 @@ export default function Connections() {
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<Connection | null>(null)
+
+  // ── Input Connection state ──────────────────────────────────────────────────
+  const [inputModalOpen, setInputModalOpen] = useState(false)
+  const [editingInputConn, setEditingInputConn] = useState<InputConnection | null>(null)
+  const [inputForm, setInputForm] = useState<InputConnFormData>(EMPTY_INPUT_FORM)
+  const [inputFormErrors, setInputFormErrors] = useState<string[]>([])
+  const [inputDeleteTarget, setInputDeleteTarget] = useState<InputConnection | null>(null)
+  const [inputTestResult, setInputTestResult] = useState<{
+    connectionId: string
+    connectionName: string
+    success: boolean
+    message: string
+  } | null>(null)
+  const [inputTestingId, setInputTestingId] = useState<string | null>(null)
 
   // Test result panel
   const [testResult, setTestResult] = useState<{
@@ -91,6 +131,15 @@ export default function Connections() {
   } = useQuery({
     queryKey: ['connections'],
     queryFn: connectionsApi.list,
+  })
+
+  const {
+    data: inputConnections,
+    isLoading: inputLoading,
+    error: inputLoadError,
+  } = useQuery({
+    queryKey: ['input-connections'],
+    queryFn: inputConnectionsApi.list,
   })
 
   // ── Mutations ──────────────────────────────────────────────────────────────
@@ -127,6 +176,41 @@ export default function Connections() {
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Failed to delete connection')
       setDeleteTarget(null)
+    },
+  })
+
+  const createInputMutation = useMutation({
+    mutationFn: (data: InputConnectionCreate) => inputConnectionsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['input-connections'] })
+      toast.success('Input connection created')
+      closeInputModal()
+    },
+    onError: (err) => setInputFormErrors(extractErrors(err)),
+  })
+
+  const updateInputMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<InputConnectionCreate> }) =>
+      inputConnectionsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['input-connections'] })
+      toast.success('Input connection updated')
+      closeInputModal()
+    },
+    onError: (err) => setInputFormErrors(extractErrors(err)),
+  })
+
+  const deleteInputMutation = useMutation({
+    mutationFn: (id: string) => inputConnectionsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['input-connections'] })
+      toast.success('Input connection deleted')
+      setInputDeleteTarget(null)
+      setInputTestResult(null)
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete input connection')
+      setInputDeleteTarget(null)
     },
   })
 
@@ -222,7 +306,87 @@ export default function Connections() {
     }
   }
 
+  function openInputCreate() {
+    setEditingInputConn(null)
+    setInputForm(EMPTY_INPUT_FORM)
+    setInputFormErrors([])
+    setInputModalOpen(true)
+  }
+
+  function openInputEdit(conn: InputConnection) {
+    setEditingInputConn(conn)
+    setInputForm({
+      name: conn.name,
+      bucket: conn.bucket,
+      root_prefix: conn.root_prefix ?? '',
+      region: conn.region ?? '',
+      access_key_id: '',
+      secret_access_key: '',
+      session_token: '',
+    })
+    setInputFormErrors([])
+    setInputModalOpen(true)
+  }
+
+  function closeInputModal() {
+    setInputModalOpen(false)
+    setEditingInputConn(null)
+    setInputForm(EMPTY_INPUT_FORM)
+    setInputFormErrors([])
+  }
+
+  function setInputField<K extends keyof InputConnFormData>(key: K, value: InputConnFormData[K]) {
+    setInputForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function handleInputSubmit() {
+    setInputFormErrors([])
+
+    if (editingInputConn) {
+      const data: Partial<InputConnectionCreate> = {
+        name: inputForm.name,
+        bucket: inputForm.bucket,
+        root_prefix: inputForm.root_prefix || null,
+        region: inputForm.region || null,
+      }
+      if (inputForm.access_key_id.trim()) data.access_key_id = inputForm.access_key_id.trim()
+      if (inputForm.secret_access_key.trim()) data.secret_access_key = inputForm.secret_access_key.trim()
+      if (inputForm.session_token.trim()) data.session_token = inputForm.session_token.trim()
+      updateInputMutation.mutate({ id: editingInputConn.id, data })
+    } else {
+      createInputMutation.mutate({
+        name: inputForm.name,
+        provider: 's3',
+        bucket: inputForm.bucket,
+        root_prefix: inputForm.root_prefix || null,
+        region: inputForm.region || null,
+        access_key_id: inputForm.access_key_id,
+        secret_access_key: inputForm.secret_access_key,
+        session_token: inputForm.session_token || null,
+      })
+    }
+  }
+
+  async function handleInputTest(conn: InputConnection) {
+    setInputTestingId(conn.id)
+    setInputTestResult(null)
+    try {
+      const result = await inputConnectionsApi.test(conn.id)
+      setInputTestResult({
+        connectionId: conn.id,
+        connectionName: conn.name,
+        success: result.success,
+        message: result.message,
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Test request failed')
+    } finally {
+      setInputTestingId(null)
+    }
+  }
+
   const isSaving = createMutation.isPending || updateMutation.isPending
+  const isInputSaving = createInputMutation.isPending || updateInputMutation.isPending
 
   // ── Table columns ──────────────────────────────────────────────────────────
 
@@ -297,6 +461,73 @@ export default function Connections() {
     },
   ]
 
+  const inputColumns: Column<InputConnection>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (c) => <span className="font-medium text-gray-900">{c.name}</span>,
+    },
+    { key: 'bucket', header: 'Bucket', render: (c) => <span className="font-mono text-xs text-gray-600">{c.bucket}</span> },
+    {
+      key: 'region',
+      header: 'Region',
+      render: (c) => <span className="text-gray-600 text-sm">{c.region ?? '—'}</span>,
+    },
+    {
+      key: 'root_prefix',
+      header: 'Root Prefix',
+      render: (c) => (
+        <span className="font-mono text-xs text-gray-500">{c.root_prefix ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'created_at',
+      header: 'Created',
+      render: (c) => <span className="text-gray-500 text-sm">{formatDate(c.created_at)}</span>,
+    },
+    {
+      key: 'id',
+      header: '',
+      className: 'text-right whitespace-nowrap',
+      render: (c) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={inputTestingId === c.id}
+            disabled={inputTestingId !== null}
+            onClick={(e) => {
+              e.stopPropagation()
+              void handleInputTest(c)
+            }}
+          >
+            Test
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={(e) => {
+              e.stopPropagation()
+              openInputEdit(c)
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={(e) => {
+              e.stopPropagation()
+              setInputDeleteTarget(c)
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ]
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -306,86 +537,183 @@ export default function Connections() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Connections</h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Manage Salesforce org connections (JWT Bearer auth).
+            Manage Salesforce org connections and S3 input sources.
           </p>
         </div>
-        <Button onClick={openCreate}>New Connection</Button>
       </div>
 
-      {/* Test result panel */}
-      {testResult && (
-        <div
-          role="status"
-          aria-live="polite"
-          className={clsx(
-            'rounded-lg border p-4',
-            testResult.success
-              ? 'bg-green-50 border-green-200'
-              : 'bg-red-50 border-red-200',
-          )}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1 min-w-0">
-              <p
-                className={clsx(
-                  'font-medium',
-                  testResult.success ? 'text-green-800' : 'text-red-800',
-                )}
-              >
-                {testResult.success ? '✓ Connection successful' : '✗ Connection failed'}
-                {' — '}
-                <span className="font-normal">{testResult.connectionName}</span>
-              </p>
-              <p
-                className={clsx(
-                  'text-sm',
-                  testResult.success ? 'text-green-700' : 'text-red-700',
-                )}
-              >
-                {testResult.message}
-              </p>
-              {testResult.instanceUrl && (
-                <p className="text-xs font-mono text-gray-600 break-all">
-                  {testResult.instanceUrl}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              aria-label="Dismiss test result"
-              onClick={() => setTestResult(null)}
-              className="shrink-0 text-gray-400 hover:text-gray-600 text-xl leading-none"
-            >
-              ×
-            </button>
+      {/* ── Salesforce Connections ─────────────────────────────────────────── */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Salesforce Connections
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              JWT Bearer auth — one entry per org.
+            </p>
           </div>
+          <Button onClick={openCreate}>New Connection</Button>
         </div>
-      )}
 
-      {/* Content area */}
-      {isLoading ? (
-        <div className="flex justify-center py-16">
-          <span
-            aria-label="Loading"
-            className="h-7 w-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"
+        {/* SF test result panel */}
+        {testResult && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={clsx(
+              'rounded-lg border p-4',
+              testResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200',
+            )}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1 min-w-0">
+                <p
+                  className={clsx(
+                    'font-medium',
+                    testResult.success ? 'text-green-800' : 'text-red-800',
+                  )}
+                >
+                  {testResult.success ? '✓ Connection successful' : '✗ Connection failed'}
+                  {' — '}
+                  <span className="font-normal">{testResult.connectionName}</span>
+                </p>
+                <p
+                  className={clsx(
+                    'text-sm',
+                    testResult.success ? 'text-green-700' : 'text-red-700',
+                  )}
+                >
+                  {testResult.message}
+                </p>
+                {testResult.instanceUrl && (
+                  <p className="text-xs font-mono text-gray-600 break-all">
+                    {testResult.instanceUrl}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss test result"
+                onClick={() => setTestResult(null)}
+                className="shrink-0 text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* SF content area */}
+        {isLoading ? (
+          <div className="flex justify-center py-16">
+            <span
+              aria-label="Loading"
+              className="h-7 w-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"
+            />
+          </div>
+        ) : loadError ? (
+          <Card>
+            <p className="text-red-700 text-sm">
+              Failed to load connections:{' '}
+              {loadError instanceof Error ? loadError.message : 'Unknown error'}
+            </p>
+          </Card>
+        ) : !connections?.length ? (
+          <EmptyState
+            title="No connections yet"
+            description="Add a Salesforce connection to get started. You'll need a Connected App configured for JWT Bearer authentication."
+            action={<Button onClick={openCreate}>Add Connection</Button>}
           />
+        ) : (
+          <DataTable columns={columns} data={connections} keyExtractor={(c) => c.id} />
+        )}
+      </div>
+
+      {/* ── S3 Input Connections ───────────────────────────────────────────── */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              S3 Input Connections
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Remote S3 buckets used as CSV input sources for load steps.
+            </p>
+          </div>
+          <Button onClick={openInputCreate}>New Input Connection</Button>
         </div>
-      ) : loadError ? (
-        <Card>
-          <p className="text-red-700 text-sm">
-            Failed to load connections:{' '}
-            {loadError instanceof Error ? loadError.message : 'Unknown error'}
-          </p>
-        </Card>
-      ) : !connections?.length ? (
-        <EmptyState
-          title="No connections yet"
-          description="Add a Salesforce connection to get started. You'll need a Connected App configured for JWT Bearer authentication."
-          action={<Button onClick={openCreate}>Add Connection</Button>}
-        />
-      ) : (
-        <DataTable columns={columns} data={connections} keyExtractor={(c) => c.id} />
-      )}
+
+        {/* Input test result panel */}
+        {inputTestResult && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={clsx(
+              'rounded-lg border p-4',
+              inputTestResult.success
+                ? 'bg-green-50 border-green-200'
+                : 'bg-red-50 border-red-200',
+            )}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1 min-w-0">
+                <p
+                  className={clsx(
+                    'font-medium',
+                    inputTestResult.success ? 'text-green-800' : 'text-red-800',
+                  )}
+                >
+                  {inputTestResult.success ? '✓ Connection successful' : '✗ Connection failed'}
+                  {' — '}
+                  <span className="font-normal">{inputTestResult.connectionName}</span>
+                </p>
+                <p
+                  className={clsx(
+                    'text-sm',
+                    inputTestResult.success ? 'text-green-700' : 'text-red-700',
+                  )}
+                >
+                  {inputTestResult.message}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss input test result"
+                onClick={() => setInputTestResult(null)}
+                className="shrink-0 text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Input content area */}
+        {inputLoading ? (
+          <div className="flex justify-center py-16">
+            <span
+              aria-label="Loading input connections"
+              className="h-7 w-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"
+            />
+          </div>
+        ) : inputLoadError ? (
+          <Card>
+            <p className="text-red-700 text-sm">
+              Failed to load input connections:{' '}
+              {inputLoadError instanceof Error ? inputLoadError.message : 'Unknown error'}
+            </p>
+          </Card>
+        ) : !inputConnections?.length ? (
+          <EmptyState
+            title="No input connections yet"
+            description="Add an S3 connection to use remote CSV files as input sources for load steps."
+            action={<Button onClick={openInputCreate}>Add Input Connection</Button>}
+          />
+        ) : (
+          <DataTable columns={inputColumns} data={inputConnections} keyExtractor={(c) => c.id} />
+        )}
+      </div>
 
       {/* ── Create / Edit Modal ─────────────────────────────────────────────── */}
       <Modal
@@ -596,6 +924,205 @@ export default function Connections() {
         <p className="text-sm text-gray-700">
           Are you sure you want to delete{' '}
           <span className="font-semibold">{deleteTarget?.name}</span>? This cannot be undone.
+        </p>
+      </Modal>
+
+      {/* ── Input Connection Create / Edit Modal ───────────────────────────── */}
+      <Modal
+        open={inputModalOpen}
+        onClose={closeInputModal}
+        size="lg"
+        title={editingInputConn ? 'Edit Input Connection' : 'New Input Connection'}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeInputModal} disabled={isInputSaving}>
+              Cancel
+            </Button>
+            <Button loading={isInputSaving} onClick={handleInputSubmit}>
+              {editingInputConn ? 'Save Changes' : 'Create Input Connection'}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="input-connection-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleInputSubmit()
+          }}
+          className="space-y-4"
+          noValidate
+        >
+          {inputFormErrors.length > 0 && (
+            <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 space-y-1">
+              {inputFormErrors.map((msg, i) => (
+                <p key={i} className="text-sm text-red-700">
+                  {msg}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div>
+            <label
+              htmlFor="ic-name"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="ic-name"
+              type="text"
+              required
+              value={inputForm.name}
+              onChange={(e) => setInputField('name', e.target.value)}
+              placeholder="My S3 Bucket"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="ic-bucket"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Bucket <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="ic-bucket"
+              type="text"
+              required
+              value={inputForm.bucket}
+              onChange={(e) => setInputField('bucket', e.target.value)}
+              placeholder="my-data-bucket"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label
+                htmlFor="ic-region"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Region
+              </label>
+              <input
+                id="ic-region"
+                type="text"
+                value={inputForm.region}
+                onChange={(e) => setInputField('region', e.target.value)}
+                placeholder="us-east-1"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="ic-root-prefix"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Root Prefix
+              </label>
+              <input
+                id="ic-root-prefix"
+                type="text"
+                value={inputForm.root_prefix}
+                onChange={(e) => setInputField('root_prefix', e.target.value)}
+                placeholder="data/csvs/"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="ic-access-key-id"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Access Key ID
+              {!editingInputConn && <span className="text-red-500"> *</span>}
+            </label>
+            <input
+              id="ic-access-key-id"
+              type="text"
+              required={!editingInputConn}
+              value={inputForm.access_key_id}
+              onChange={(e) => setInputField('access_key_id', e.target.value)}
+              placeholder={editingInputConn ? 'Leave blank to keep existing' : 'AKIA...'}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="ic-secret-access-key"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Secret Access Key
+              {!editingInputConn && <span className="text-red-500"> *</span>}
+            </label>
+            <input
+              id="ic-secret-access-key"
+              type="password"
+              required={!editingInputConn}
+              value={inputForm.secret_access_key}
+              onChange={(e) => setInputField('secret_access_key', e.target.value)}
+              placeholder={editingInputConn ? 'Leave blank to keep existing' : '••••••••'}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="ic-session-token"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Session Token
+            </label>
+            <input
+              id="ic-session-token"
+              type="password"
+              value={inputForm.session_token}
+              onChange={(e) => setInputField('session_token', e.target.value)}
+              placeholder={
+                editingInputConn ? 'Leave blank to keep existing (or clear it)' : 'Optional'
+              }
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── Input Connection Delete Confirmation ───────────────────────────── */}
+      <Modal
+        open={inputDeleteTarget !== null}
+        onClose={() => setInputDeleteTarget(null)}
+        size="sm"
+        title="Delete Input Connection"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setInputDeleteTarget(null)}
+              disabled={deleteInputMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={deleteInputMutation.isPending}
+              onClick={() =>
+                inputDeleteTarget && deleteInputMutation.mutate(inputDeleteTarget.id)
+              }
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-700">
+          Are you sure you want to delete{' '}
+          <span className="font-semibold">{inputDeleteTarget?.name}</span>? This cannot be undone.
         </p>
       </Modal>
     </div>

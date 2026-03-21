@@ -93,6 +93,17 @@ export interface InputConnection {
   updated_at: string
 }
 
+export interface InputConnectionCreate {
+  name: string
+  provider: string
+  bucket: string
+  root_prefix?: string | null
+  region?: string | null
+  access_key_id: string
+  secret_access_key: string
+  session_token?: string | null
+}
+
 export interface InputConnectionTestResponse {
   success: boolean
   message: string
