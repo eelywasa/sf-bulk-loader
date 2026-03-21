@@ -553,7 +553,7 @@ export default function Connections() {
               JWT Bearer auth — one entry per org.
             </p>
           </div>
-          <Button onClick={openCreate}>New Connection</Button>
+          <Button onClick={openCreate}>New Salesforce Connection</Button>
         </div>
 
         {/* SF test result panel */}
@@ -623,7 +623,7 @@ export default function Connections() {
           <EmptyState
             title="No connections yet"
             description="Add a Salesforce connection to get started. You'll need a Connected App configured for JWT Bearer authentication."
-            action={<Button onClick={openCreate}>Add Connection</Button>}
+            action={<Button onClick={openCreate}>Add Salesforce Connection</Button>}
           />
         ) : (
           <DataTable columns={columns} data={connections} keyExtractor={(c) => c.id} />

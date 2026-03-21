@@ -155,23 +155,23 @@ describe('Connections page', () => {
 
   // ── Create flow ─────────────────────────────────────────────────────────────
 
-  it('opens the create modal when "New Connection" is clicked', async () => {
+  it('opens the create modal when "New Salesforce Connection" is clicked', async () => {
     mockList([])
     render(<Connections />)
     await waitFor(() => screen.getByText('No connections yet'))
 
-    await userEvent.click(screen.getByRole('button', { name: 'New Connection' }))
+    await userEvent.click(screen.getByRole('button', { name: 'New Salesforce Connection' }))
 
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('New Connection')).toBeInTheDocument()
   })
 
-  it('opens the create modal from the empty-state "Add Connection" button', async () => {
+  it('opens the create modal from the empty-state "Add Salesforce Connection" button', async () => {
     mockList([])
     render(<Connections />)
     await waitFor(() => screen.getByText('No connections yet'))
 
-    await userEvent.click(screen.getByRole('button', { name: 'Add Connection' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add Salesforce Connection' }))
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
@@ -184,7 +184,7 @@ describe('Connections page', () => {
     render(<Connections />)
     await waitFor(() => screen.getByText('No connections yet'))
 
-    await user.click(screen.getByRole('button', { name: 'New Connection' }))
+    await user.click(screen.getByRole('button', { name: 'New Salesforce Connection' }))
 
     const dialog = screen.getByRole('dialog')
     await user.type(within(dialog).getByLabelText(/Name/), 'Production Org')
@@ -231,7 +231,7 @@ describe('Connections page', () => {
 
     render(<Connections />)
     await waitFor(() => screen.getByText('No connections yet'))
-    await user.click(screen.getByRole('button', { name: 'New Connection' }))
+    await user.click(screen.getByRole('button', { name: 'New Salesforce Connection' }))
 
     const dialog = screen.getByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Create Connection' }))
@@ -247,7 +247,7 @@ describe('Connections page', () => {
     render(<Connections />)
     await waitFor(() => screen.getByText('No connections yet'))
 
-    await user.click(screen.getByRole('button', { name: 'New Connection' }))
+    await user.click(screen.getByRole('button', { name: 'New Salesforce Connection' }))
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -489,7 +489,7 @@ describe('Connections page', () => {
     render(<Connections />)
     await waitFor(() => screen.getByText('No connections yet'))
 
-    await user.click(screen.getByRole('button', { name: 'New Connection' }))
+    await user.click(screen.getByRole('button', { name: 'New Salesforce Connection' }))
 
     const loginUrlSelect = screen.getByLabelText(/Login URL/)
     await user.selectOptions(loginUrlSelect, 'https://test.salesforce.com')
@@ -504,7 +504,7 @@ describe('Connections page', () => {
     render(<Connections />)
     await waitFor(() => screen.getByText('No connections yet'))
 
-    await user.click(screen.getByRole('button', { name: 'New Connection' }))
+    await user.click(screen.getByRole('button', { name: 'New Salesforce Connection' }))
 
     // Select sandbox first, then switch back
     const loginUrlSelect = screen.getByLabelText(/Login URL/)
