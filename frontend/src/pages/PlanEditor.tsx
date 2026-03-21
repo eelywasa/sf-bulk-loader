@@ -141,6 +141,7 @@ export default function PlanEditor() {
             <StepList
               steps={sortedSteps}
               previews={previews}
+              inputConnections={inputConnections}
               reorderPending={reorderMutation.isPending}
               onEdit={(step) => openStepModal(step)}
               onDelete={(step) => setDeleteStepTarget(step)}

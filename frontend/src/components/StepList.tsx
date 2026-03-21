@@ -1,11 +1,12 @@
 import clsx from 'clsx'
 import { Button, Card, Badge } from './ui'
-import type { LoadStep } from '../api/types'
+import type { LoadStep, InputConnection } from '../api/types'
 import { operationVariant, type PreviewEntry } from '../pages/planEditorUtils'
 
 interface StepListProps {
   steps: LoadStep[]
   previews: Record<string, PreviewEntry>
+  inputConnections: InputConnection[]
   reorderPending: boolean
   onEdit: (step: LoadStep) => void
   onDelete: (step: LoadStep) => void
@@ -18,6 +19,7 @@ interface StepListProps {
 export default function StepList({
   steps,
   previews,
+  inputConnections,
   reorderPending,
   onEdit,
   onDelete,
@@ -68,6 +70,12 @@ export default function StepList({
                         </span>
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5 font-mono truncate">
+                        <span className="not-italic font-sans text-gray-400 mr-1">
+                          {step.input_connection_id
+                            ? (inputConnections.find((c) => c.id === step.input_connection_id)?.name ?? 'S3')
+                            : 'Local'}
+                          {' · '}
+                        </span>
                         {step.csv_file_pattern}
                       </p>
                       {step.external_id_field && (
