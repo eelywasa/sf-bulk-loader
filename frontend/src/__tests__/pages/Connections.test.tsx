@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../utils'
 import Connections from '../../pages/Connections'
+import type { InputConnection } from '../../api/types'
 
 // ─── Mock the endpoints module ─────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ const conn2 = {
 
 // ─── Fixtures — input connections ──────────────────────────────────────────────
 
-const ic1 = {
+const ic1: InputConnection = {
   id: 'ic-1',
   name: 'Production S3',
   provider: 's3',
@@ -65,7 +66,7 @@ const ic1 = {
   updated_at: '2024-04-01T00:00:00Z',
 }
 
-const ic2 = {
+const ic2: InputConnection = {
   id: 'ic-2',
   name: 'Staging S3',
   provider: 's3',
@@ -82,7 +83,7 @@ function mockList(data: typeof conn1[]) {
   vi.mocked(connectionsApi.list).mockResolvedValue(data)
 }
 
-function mockInputList(data: typeof ic1[]) {
+function mockInputList(data: InputConnection[]) {
   vi.mocked(inputConnectionsApi.list).mockResolvedValue(data)
 }
 
