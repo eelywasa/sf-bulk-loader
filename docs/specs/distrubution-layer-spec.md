@@ -631,7 +631,7 @@ Primary outcome:
 
 These tickets are ordered and dependency-aware so they can be handed to Claude incrementally while preserving coherence.
 
-### 1. Define Distribution Profile and Shared Config Model
+### 1. Define Distribution Profile and Shared Config Model — ✅ DONE
 
 Goal: introduce an explicit runtime/distribution abstraction that the rest of the implementation can build upon.
 
@@ -652,7 +652,7 @@ Exit criteria:
 - application can start with explicit distribution profiles
 - current deployment continues to work unchanged or with minimal env updates
 
-### 2. Refactor Frontend and Backend for Profile-Aware Runtime Configuration
+### 2. Refactor Frontend and Backend for Profile-Aware Runtime Configuration — ✅ DONE
 
 Goal: remove hardcoded assumptions that the app is always browser-served behind the current container topology.
 
@@ -672,7 +672,7 @@ Exit criteria:
 - runtime profile controls core behavior through explicit config
 - business logic remains largely distribution-agnostic
 
-### 3. Introduce Multi-Engine Persistence Support for Hosted and Desktop Modes
+### 3. Introduce Multi-Engine Persistence Support for Hosted and Desktop Modes — ✅ DONE
 
 Goal: support SQLite and PostgreSQL deliberately rather than accidentally.
 
@@ -694,7 +694,7 @@ Exit criteria:
 - desktop path remains valid with SQLite
 - database portability risks are documented and tested
 
-### 4. Implement Self-Hosted Docker Distribution Hardening
+### 4. Implement Self-Hosted Docker Distribution Hardening — ✅ DONE
 
 Goal: establish Docker as the first fully supported distribution model.
 
