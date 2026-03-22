@@ -1,6 +1,7 @@
 """Tests for the LocalInputStorage service and detect_encoding utility."""
 
 import csv
+import io
 import pathlib
 from unittest.mock import patch
 
@@ -250,10 +251,10 @@ def test_discover_files_no_match_returns_empty(tmp_path):
 
 class _FakeS3Body:
     def __init__(self, data: bytes) -> None:
-        self._data = data
+        self._io = io.BytesIO(data)
 
-    def read(self) -> bytes:
-        return self._data
+    def read(self, n: int = -1) -> bytes:
+        return self._io.read() if n == -1 else self._io.read(n)
 
 
 class _FakePaginator:
@@ -534,6 +535,60 @@ async def test_get_storage_returns_s3_for_input_connection():
         storage = await get_storage("ic-1", db=_FakeDB())
 
     assert isinstance(storage, S3InputStorage)
+
+
+# ── S3InputStorage — streaming open_text ─────────────────────────────────────
+
+
+def test_s3_open_text_does_not_load_entire_object_before_returning():
+    """open_text must not call body.read() without a size limit."""
+
+    class _GuardedBody:
+        def __init__(self, data: bytes) -> None:
+            self._io = io.BytesIO(data)
+
+        def read(self, n: int = -1) -> bytes:
+            if n == -1:
+                raise AssertionError(
+                    "open_text called body.read() without a size limit"
+                )
+            return self._io.read(n)
+
+    class _GuardedClient(_FakeS3Client):
+        def get_object(self, *, Bucket, Key):
+            return {"Body": _GuardedBody(b"Name\nAlice\n")}
+
+    with patch("app.services.input_storage.boto3.client", return_value=_GuardedClient()):
+        storage = S3InputStorage(
+            bucket="b",
+            root_prefix=None,
+            region=None,
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        with storage.open_text("file.csv") as fh:
+            content = fh.read()
+
+    assert "Alice" in content
+
+
+def test_s3_open_text_streaming_full_content():
+    """open_text returns the complete object content when read to end."""
+    data = b"Name,Val\nAlice,1\nBob,2\n"
+    client = _FakeS3Client(object_map={"file.csv": data})
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="b",
+            root_prefix=None,
+            region=None,
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        with storage.open_text("file.csv") as fh:
+            content = fh.read()
+
+    assert "Alice" in content
+    assert "Bob" in content
 
 
 @pytest.mark.asyncio

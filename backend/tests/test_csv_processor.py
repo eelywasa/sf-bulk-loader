@@ -17,6 +17,7 @@ Additional coverage:
 
 from __future__ import annotations
 
+import io
 import pathlib
 from typing import Iterator
 
@@ -508,6 +509,57 @@ class TestPartitionCSV:
 
         # The embedded newline stays inside the cell
         assert rows[1] == ["line1\nline2"]
+
+
+# ── partition_csv — IO[str] stream input ─────────────────────────────────────
+
+
+class TestPartitionCSVStream:
+    """partition_csv should accept an open IO[str] handle, not only pathlib.Path."""
+
+    def test_accepts_text_stream(self) -> None:
+        fh = io.StringIO("Name,Email\nAlice,alice@example.com\n")
+        partitions = collect(partition_csv(fh, 10))
+        assert len(partitions) == 1
+        rows = decode_partition(partitions[0])
+        assert rows[0] == ["Name", "Email"]
+        assert rows[1] == ["Alice", "alice@example.com"]
+
+    def test_stream_header_only_yields_nothing(self) -> None:
+        fh = io.StringIO("Name,Email\n")
+        assert collect(partition_csv(fh, 10)) == []
+
+    def test_stream_empty_raises(self) -> None:
+        fh = io.StringIO("")
+        with pytest.raises(CSVProcessorError, match="empty"):
+            collect(partition_csv(fh, 10))
+
+    def test_stream_multiple_partitions(self) -> None:
+        lines = ["Name"] + [f"Row{i}" for i in range(7)]
+        fh = io.StringIO("\n".join(lines) + "\n")
+        partitions = collect(partition_csv(fh, 3))
+        assert len(partitions) == 3
+        data_rows = [len(decode_partition(p)) - 1 for p in partitions]
+        assert data_rows == [3, 3, 1]
+
+    def test_stream_headers_preserved_in_all_partitions(self) -> None:
+        lines = ["Id,Name"] + [f"{i},Row{i}" for i in range(10)]
+        fh = io.StringIO("\n".join(lines) + "\n")
+        for p in collect(partition_csv(fh, 3)):
+            assert decode_partition(p)[0] == ["Id", "Name"]
+
+    def test_stream_output_is_utf8_lf(self) -> None:
+        fh = io.StringIO("Name,City\nAlice,London\n")
+        raw = collect(partition_csv(fh, 10))[0]
+        raw.decode("utf-8")  # must not raise
+        assert b"\r\n" not in raw
+        assert b"\n" in raw
+
+    def test_pathlib_path_regression(self, tmp_path: pathlib.Path) -> None:
+        """Existing pathlib.Path callers must be unaffected."""
+        f = write_csv(tmp_path / "a.csv", "Id\n1\n2\n")
+        partitions = collect(partition_csv(f, 10))
+        assert len(partitions) == 1
 
 
 # ── _render_partition (internal) ─────────────────────────────────────────────

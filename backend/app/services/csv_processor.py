@@ -22,12 +22,13 @@ configured input directory (spec §11).
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
 import logging
 import pathlib
 from dataclasses import dataclass, field
-from typing import Iterator, Optional, Sequence
+from typing import IO, Iterator, Optional, Sequence, Union
 
 from app.config import settings
 from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding  # noqa: F401 — re-export
@@ -158,32 +159,38 @@ def validate_csv_headers(
 
 
 def partition_csv(
-    file_path: pathlib.Path,
+    source: Union[pathlib.Path, IO[str]],
     partition_size: int,
     *,
     encoding: Optional[str] = None,
 ) -> Iterator[bytes]:
-    """Stream-partition *file_path* into fixed-size CSV chunks.
+    """Stream-partition *source* into fixed-size CSV chunks.
 
     Each yielded value is a complete, self-contained CSV: the original header
     row followed by up to *partition_size* data rows.  Only one partition's
-    worth of rows is kept in memory at once; the source file is read
-    sequentially via the standard :mod:`csv` module.
+    worth of rows is kept in memory at once; the source is read sequentially
+    via the standard :mod:`csv` module.
 
     Encoding is normalised to **UTF-8** and line endings to **LF** in every
     output partition, as required by the Salesforce Bulk API 2.0 (spec §10).
 
     Args:
-        file_path: Path to the source CSV file.
+        source: Either a :class:`pathlib.Path` to a local CSV file, or an
+            already-opened text stream (``IO[str]``).  When a ``Path`` is
+            given, encoding is auto-detected (or taken from *encoding*) and
+            the file is opened and closed by this function.  When an
+            ``IO[str]`` handle is given, it is used as-is and the caller
+            retains ownership (the handle is *not* closed here).
         partition_size: Maximum number of data rows per partition.  Must be ≥ 1.
-        encoding: Source-file encoding.  Auto-detected when ``None``.
+        encoding: Source-file encoding override.  Only used when *source* is a
+            :class:`pathlib.Path`; ignored for pre-opened streams.
 
     Yields:
         UTF-8-encoded CSV bytes for each partition, in source-file order.
         Yields nothing if the file contains only a header row (no data rows).
 
     Raises:
-        CSVProcessorError: If *partition_size* < 1 or the file has no header
+        CSVProcessorError: If *partition_size* < 1 or the source has no header
             row (completely empty).
     """
     if partition_size < 1:
@@ -191,16 +198,22 @@ def partition_csv(
             f"partition_size must be ≥ 1, got {partition_size!r}"
         )
 
-    enc = encoding or detect_encoding(file_path)
+    if isinstance(source, pathlib.Path):
+        enc = encoding or detect_encoding(source)
+        ctx: contextlib.AbstractContextManager[IO[str]] = source.open(encoding=enc, newline="")
+        source_name = source.name
+    else:
+        ctx = contextlib.nullcontext(source)
+        source_name = getattr(source, "name", "<stream>")
 
-    with file_path.open(encoding=enc, newline="") as fh:
+    with ctx as fh:
         reader = csv.reader(fh)
 
         try:
             raw_headers = next(reader)
         except StopIteration:
             raise CSVProcessorError(
-                f"File '{file_path.name}' is empty — no header row found."
+                f"File '{source_name}' is empty — no header row found."
             )
 
         header: list[str] = [h.strip() for h in raw_headers]

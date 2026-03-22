@@ -1,5 +1,6 @@
 """Tests for the /api/load-plans/{plan_id}/steps endpoints."""
 
+import io
 import os
 import tempfile
 from unittest.mock import AsyncMock, patch
@@ -44,10 +45,10 @@ def _add_step(auth_client, plan_id: str, overrides=None) -> dict:
 
 class _FakeS3Body:
     def __init__(self, data: bytes) -> None:
-        self._data = data
+        self._io = io.BytesIO(data)
 
-    def read(self) -> bytes:
-        return self._data
+    def read(self, n: int = -1) -> bytes:
+        return self._io.read() if n == -1 else self._io.read(n)
 
 
 class _FakePaginator:

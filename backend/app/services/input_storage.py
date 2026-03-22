@@ -184,6 +184,44 @@ def _sort_entries(entries: list[InputEntry]) -> list[InputEntry]:
     return dirs + files
 
 
+# ── S3 streaming helper ───────────────────────────────────────────────────────
+
+
+class _S3StreamingBodyReader(io.RawIOBase):
+    """Adapts a boto3 ``StreamingBody`` with a prepended sample to ``io.RawIOBase``.
+
+    The first *sample* bytes were read upfront for encoding detection.  This
+    class re-emits them first, then continues reading from *body* on demand, so
+    the full S3 object is accessible as a single sequential byte stream without
+    loading it entirely into memory before CSV processing can begin.
+
+    Args:
+        body: boto3 ``StreamingBody`` (already partially consumed by the sample
+            read).
+        sample: Bytes already read from *body* for encoding detection.
+    """
+
+    def __init__(self, body, sample: bytes) -> None:
+        self._prefix = io.BytesIO(sample)
+        self._body = body
+
+    def readinto(self, b: bytearray) -> int:  # type: ignore[override]
+        # Drain the in-memory prefix first.
+        n = self._prefix.readinto(b)
+        if n > 0:
+            return n
+        # Then stream the remainder from S3 in caller-sized chunks.
+        data = self._body.read(len(b))
+        if not data:
+            return 0
+        n = len(data)
+        b[:n] = data
+        return n
+
+    def readable(self) -> bool:
+        return True
+
+
 # ── Local storage implementation ──────────────────────────────────────────────
 
 
@@ -537,9 +575,37 @@ class S3InputStorage:
         return sorted(matched)
 
     def open_text(self, path: str) -> IO[str]:
-        raw = self._get_object_bytes(path)
-        enc = detect_encoding_from_bytes(raw)
-        return io.StringIO(raw.decode(enc))
+        """Open *path* for sequential text reading without loading the full object.
+
+        Reads the first 64 KiB of the S3 object for encoding detection, then
+        wraps the remaining stream so that CSV processing can read rows
+        incrementally while keeping memory usage bounded.
+
+        The returned handle must be used as a context manager (or closed
+        explicitly) so that the underlying S3 connection is released.
+
+        Raises:
+            :exc:`FileNotFoundError`: If the object does not exist.
+            :exc:`InputStorageError`: For any other S3 access failure.
+        """
+        rel_path = self._safe_relative_path(path)
+        key = _join_s3_key(self._root_prefix, rel_path)
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=key)
+        except botocore.exceptions.ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code")
+            if code in {"NoSuchKey", "404"}:
+                raise FileNotFoundError(f"File not found: {path!r}") from exc
+            raise InputStorageError(
+                f"Could not read S3 object {path!r}: {exc}"
+            ) from exc
+
+        body = response["Body"]
+        sample = body.read(65536)  # read just enough for encoding detection
+        enc = detect_encoding_from_bytes(sample)
+        raw = _S3StreamingBodyReader(body, sample)
+        buffered = io.BufferedReader(raw, buffer_size=65536)
+        return io.TextIOWrapper(buffered, encoding=enc, newline="")
 
 
 async def get_storage(source: Optional[str], db: AsyncSession) -> BaseInputStorage:
