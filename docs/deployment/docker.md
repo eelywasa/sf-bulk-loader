@@ -219,16 +219,15 @@ Ensure `certs/cert.pem` and `certs/key.pem` exist when using the HTTPS overlay.
 
 ### Port conflict on 80 or 443
 
-Edit the host-side port in the relevant Compose file:
-```yaml
-# docker-compose.yml — change HTTP port
-ports:
-  - "8080:80"
+Set `HTTP_PORT` or `HTTPS_PORT` in `.env` (defaults: 80 and 443):
 
-# docker-compose.https.yml — change HTTPS port
-ports:
-  - "8443:443"
 ```
+HTTP_PORT=8080
+HTTPS_PORT=8443
+```
+
+These values control only the host-side binding — the application continues to listen
+on 80/443 inside the container.
 
 ### Viewing logs
 
