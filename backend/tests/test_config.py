@@ -53,6 +53,10 @@ class TestDesktopProfile:
         assert s.transport_mode == "local"
         assert s.input_storage_mode == "local"
 
+    def test_desktop_rejects_postgresql(self):
+        with pytest.raises(ValidationError, match="desktop profile requires a SQLite DATABASE_URL"):
+            make(app_distribution="desktop", database_url=PG_URL)
+
     def test_desktop_rejects_auth_local(self):
         with pytest.raises(ValidationError, match="desktop profile does not support auth_mode=local"):
             make(app_distribution="desktop", auth_mode="local")

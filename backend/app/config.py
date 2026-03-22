@@ -70,6 +70,8 @@ class Settings(BaseSettings):
                 raise ValueError("aws_hosted requires input_storage_mode=s3")
 
         if profile == "desktop":
+            if not is_sqlite:
+                raise ValueError("desktop profile requires a SQLite DATABASE_URL")
             if self.auth_mode != "none":
                 raise ValueError("desktop profile does not support auth_mode=local")
             if self.transport_mode != "local":
