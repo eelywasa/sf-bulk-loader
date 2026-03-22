@@ -99,3 +99,69 @@ class TestSelfHostedProfile:
     def test_self_hosted_accepts_https_transport(self):
         s = make(app_distribution="self_hosted", transport_mode="https")
         assert s.transport_mode == "https"
+
+
+class TestAutoKeyGeneration:
+    def test_encryption_key_auto_generated(self, tmp_path):
+        key_file = tmp_path / "encryption.key"
+        s = Settings(
+            encryption_key="",  # override env — test the auto-generate path
+            encryption_key_file=str(key_file),
+            jwt_secret_key="test-secret",
+            database_url=SQLITE_URL,
+        )
+        assert s.encryption_key
+        assert key_file.exists()
+        assert key_file.read_text().strip() == s.encryption_key
+
+    def test_encryption_key_loaded_from_file(self, tmp_path):
+        key = Fernet.generate_key().decode()
+        key_file = tmp_path / "encryption.key"
+        key_file.write_text(key)
+        s = Settings(
+            encryption_key="",  # override env — test the file-load path
+            encryption_key_file=str(key_file),
+            jwt_secret_key="test-secret",
+            database_url=SQLITE_URL,
+        )
+        assert s.encryption_key == key
+
+    def test_encryption_key_env_takes_precedence(self, tmp_path):
+        explicit_key = Fernet.generate_key().decode()
+        key_file = tmp_path / "encryption.key"
+        s = Settings(
+            encryption_key=explicit_key,
+            encryption_key_file=str(key_file),
+            jwt_secret_key="test-secret",
+            database_url=SQLITE_URL,
+        )
+        assert s.encryption_key == explicit_key
+        assert not key_file.exists()
+
+    def test_jwt_secret_key_auto_generated(self, tmp_path):
+        key_file = tmp_path / "jwt.key"
+        s = Settings(
+            encryption_key=Fernet.generate_key().decode(),
+            jwt_secret_key="",  # override env — test the auto-generate path
+            jwt_secret_key_file=str(key_file),
+            database_url=SQLITE_URL,
+        )
+        assert s.jwt_secret_key
+        assert key_file.exists()
+        assert key_file.read_text().strip() == s.jwt_secret_key
+
+    def test_key_file_unwritable_raises_clear_error(self, tmp_path):
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        readonly_dir.chmod(0o555)
+        key_file = readonly_dir / "encryption.key"
+        try:
+            with pytest.raises((ValidationError, ValueError), match="ENCRYPTION_KEY"):
+                Settings(
+                    encryption_key="",  # override env — force the write attempt
+                    encryption_key_file=str(key_file),
+                    jwt_secret_key="test-secret",
+                    database_url=SQLITE_URL,
+                )
+        finally:
+            readonly_dir.chmod(0o755)  # restore so tmp_path cleanup works

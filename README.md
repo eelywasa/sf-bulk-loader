@@ -33,7 +33,7 @@ Browser ──▶ nginx (port 80, HTTP — default)
 ```bash
 git clone https://github.com/your-org/sf-bulk-loader.git
 cd sf-bulk-loader
-cp .env.example .env          # fill in ENCRYPTION_KEY, JWT_SECRET_KEY, ADMIN_USERNAME, ADMIN_PASSWORD
+cp .env.example .env          # set ADMIN_USERNAME and ADMIN_PASSWORD
 mkdir -p data/input data/output data/db
 docker compose up --build
 ```

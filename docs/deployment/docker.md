@@ -30,25 +30,16 @@ cd sf-bulk-loader
 cp .env.example .env
 ```
 
-### 2. Generate required secrets
+Open `.env` and set `ADMIN_USERNAME` and `ADMIN_PASSWORD` — these create the first
+admin account on initial startup.
 
-```bash
-# Encryption key (encrypts stored Salesforce credentials)
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-
-# JWT secret key (signs session tokens)
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-Set `ENCRYPTION_KEY`, `JWT_SECRET_KEY`, `ADMIN_USERNAME`, and `ADMIN_PASSWORD` in `.env`.
-
-### 3. Create data directories
+### 2. Create data directories
 
 ```bash
 mkdir -p data/input data/output data/db
 ```
 
-### 4. Start
+### 3. Start
 
 ```bash
 docker compose up --build
@@ -63,6 +54,34 @@ Data in `data/` is persisted between restarts.
 
 ```bash
 docker compose down   # stop
+```
+
+---
+
+## Key Management
+
+`ENCRYPTION_KEY` and `JWT_SECRET_KEY` are auto-generated on first start and persisted
+to `data/db/`:
+
+| File | Purpose |
+|------|---------|
+| `data/db/encryption.key` | Fernet key — encrypts stored Salesforce credentials |
+| `data/db/jwt_secret.key` | JWT signing secret — signs session tokens |
+
+**Back up `data/db/encryption.key`.** If it is lost and `ENCRYPTION_KEY` is not set
+in `.env`, stored Salesforce credentials (private keys, tokens) become unreadable and
+connections must be re-configured.
+
+**Bring your own key:** Set `ENCRYPTION_KEY` or `JWT_SECRET_KEY` in `.env` — an
+explicit value always takes precedence over the auto-generated file. To generate:
+
+```bash
+# Encryption key (requires Docker — no local Python needed)
+docker run --rm python:3.12-slim python -c \
+  "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# JWT secret key
+openssl rand -hex 32
 ```
 
 ---
@@ -147,8 +166,6 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 
 | Variable | Description |
 |----------|-------------|
-| `ENCRYPTION_KEY` | 32-byte URL-safe base64 Fernet key. |
-| `JWT_SECRET_KEY` | Random secret for signing session JWTs. |
 | `ADMIN_USERNAME` | Bootstrap admin username — creates the first account. |
 | `ADMIN_PASSWORD` | Bootstrap admin password — used on first startup only. |
 
@@ -159,8 +176,10 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 | `APP_DISTRIBUTION` | `self_hosted` | Distribution profile. Leave as `self_hosted`. |
 | `APP_ENV` | `production` | `development` or `production`. |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
-| `ENCRYPTION_KEY` | _(required)_ | Fernet key for stored credential encryption. |
-| `JWT_SECRET_KEY` | _(required)_ | JWT signing secret. |
+| `ENCRYPTION_KEY` | _(auto-generated)_ | Fernet key for stored credential encryption. See [Key Management](#key-management). |
+| `ENCRYPTION_KEY_FILE` | `/data/db/encryption.key` | Where to persist the auto-generated encryption key. |
+| `JWT_SECRET_KEY` | _(auto-generated)_ | JWT signing secret. See [Key Management](#key-management). |
+| `JWT_SECRET_KEY_FILE` | `/data/db/jwt_secret.key` | Where to persist the auto-generated JWT secret. |
 | `ADMIN_USERNAME` | _(required on first boot)_ | Bootstrap admin username. |
 | `ADMIN_PASSWORD` | _(required on first boot)_ | Bootstrap admin password. |
 | `JWT_EXPIRY_MINUTES` | `60` | Session token lifetime in minutes. |
