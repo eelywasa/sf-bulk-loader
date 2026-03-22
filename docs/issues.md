@@ -31,6 +31,18 @@ Many elements use light-mode Tailwind colour classes without corresponding `dark
 
 ---
 
+### Duplicate CTA on empty Connections page
+
+When the Connections page has no Salesforce connections or no input file connections, an
+empty-state CTA button is shown in the centre of the table area alongside the persistent
+"Add Connection" button in the top-right header. The two buttons trigger the same action,
+making the centre CTA redundant. Remove the empty-state CTA and rely solely on the
+header button, which is always visible regardless of state.
+
+**Affects:** Connections page, both sections (Salesforce connections, Input file connections)
+
+---
+
 ### Table overflows viewport horizontally; action buttons inaccessible
 
 **Affects:** Connections page (likely all pages that render `DataTable` with many/wide columns)
