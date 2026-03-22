@@ -146,20 +146,39 @@ HTTPS is served on port 443. Port 80 redirects to HTTPS.
 
 ## PostgreSQL Overlay
 
-PostgreSQL is recommended for multi-user or long-running installs. The overlay adds a
-`postgres:16` service and sets `DATABASE_URL` automatically.
+PostgreSQL is recommended for multi-user or long-running installs.
+
+### Bundled postgres (Docker-managed)
+
+The overlay adds a `postgres:16` service and injects `DATABASE_URL` into the backend
+automatically — **no `.env` changes are needed**.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
 ```
 
-Default credentials are in `docker-compose.postgres.yml` — change them before any
-exposed deployment.
+Default credentials (defined in `docker-compose.postgres.yml`):
 
-For externally-hosted PostgreSQL (e.g. AWS RDS), set `DATABASE_URL` directly in `.env`:
+| Variable | Default |
+|----------|---------|
+| `POSTGRES_DB` | `bulk_loader` |
+| `POSTGRES_USER` | `bulk_loader` |
+| `POSTGRES_PASSWORD` | `bulk_loader` |
+
+Change all three values in `docker-compose.postgres.yml` before any deployment
+accessible beyond localhost.
+
+### Externally-hosted postgres (AWS RDS, managed service, etc.)
+
+The postgres overlay is **not needed**. Set `DATABASE_URL` directly in `.env` and use
+the base compose file as normal:
 
 ```
 DATABASE_URL=postgresql+asyncpg://user:password@your-host:5432/bulk_loader
+```
+
+```bash
+docker compose up --build
 ```
 
 For RDS with SSL enforcement, append `?ssl=require` to the connection string.
