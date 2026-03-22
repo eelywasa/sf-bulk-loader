@@ -748,6 +748,8 @@ Scope:
 - define HTTPS-only assumption for AWS skeleton
 - review WebSocket endpoint handling under each profile
 - document nginx/TLS behavior for self-hosted
+- document path toward automated certificate management (e.g. Let's Encrypt / Certbot)
+  as a recommended enhancement for self-hosted HTTPS deployments
 
 Dependencies:
 
