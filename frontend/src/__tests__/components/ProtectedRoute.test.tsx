@@ -5,7 +5,7 @@ import { ThemeProvider } from '../../context/ThemeContext'
 import { AuthProvider } from '../../context/AuthContext'
 import * as client from '../../api/client'
 import ProtectedRoute from '../../components/ProtectedRoute'
-import type { UserResponse } from '../../api/types'
+import type { RuntimeConfig, UserResponse } from '../../api/types'
 
 const MOCK_USER: UserResponse = {
   id: '1',
@@ -14,6 +14,20 @@ const MOCK_USER: UserResponse = {
   display_name: null,
   role: 'admin',
   is_active: true,
+}
+
+const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
+  auth_mode: 'local',
+  app_distribution: 'self_hosted',
+  transport_mode: 'http',
+  input_storage_mode: 'local',
+}
+
+const MOCK_RUNTIME_DESKTOP: RuntimeConfig = {
+  auth_mode: 'none',
+  app_distribution: 'desktop',
+  transport_mode: 'local',
+  input_storage_mode: 'local',
 }
 
 function renderProtected(initialPath: string) {
@@ -50,6 +64,8 @@ describe('ProtectedRoute', () => {
   })
 
   it('redirects to /login when not authenticated', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+
     renderProtected('/protected')
     await waitFor(() => {
       expect(screen.getByText('Login page')).toBeInTheDocument()
@@ -58,7 +74,10 @@ describe('ProtectedRoute', () => {
 
   it('renders protected content when authenticated', async () => {
     localStorage.setItem('auth_token', 'test-token')
-    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_USER)
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(MOCK_USER)
+
     renderProtected('/protected')
     await waitFor(() => {
       expect(screen.getByText('Protected content')).toBeInTheDocument()
@@ -67,8 +86,8 @@ describe('ProtectedRoute', () => {
 
   it('shows loading indicator while bootstrapping', () => {
     localStorage.setItem('auth_token', 'test-token')
-    let resolve: (v: unknown) => void
-    vi.mocked(client.apiFetch).mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    let resolveRuntime: (v: unknown) => void
+    vi.mocked(client.apiFetch).mockReturnValueOnce(new Promise((r) => { resolveRuntime = r }))
 
     renderProtected('/protected')
 
@@ -76,12 +95,15 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
 
     // Cleanup
-    resolve!(MOCK_USER)
+    resolveRuntime!(MOCK_RUNTIME_LOCAL)
   })
 
   it('redirects to /login after bootstrap with invalid token', async () => {
     localStorage.setItem('auth_token', 'expired-token')
-    vi.mocked(client.apiFetch).mockRejectedValueOnce(new Error('Unauthorized'))
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockRejectedValueOnce(new Error('Unauthorized'))
+
     renderProtected('/protected')
     await waitFor(() => {
       expect(screen.getByText('Login page')).toBeInTheDocument()
@@ -89,7 +111,8 @@ describe('ProtectedRoute', () => {
   })
 
   it('includes next param when redirecting unauthenticated users', async () => {
-    // Render without AuthProvider to get the redirect location
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+
     const { container } = render(
       <ThemeProvider>
         <AuthProvider>
@@ -116,7 +139,28 @@ describe('ProtectedRoute', () => {
     await waitFor(() => {
       expect(screen.getByTestId('login')).toBeInTheDocument()
     })
-    // Protected content should not be visible
     expect(container.textContent).not.toContain('Protected content')
+  })
+
+  describe('desktop profile (auth_mode=none)', () => {
+    it('renders protected content without a token', async () => {
+      vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+      // No localStorage token set
+
+      renderProtected('/protected')
+      await waitFor(() => {
+        expect(screen.getByText('Protected content')).toBeInTheDocument()
+      })
+    })
+
+    it('does not redirect to /login', async () => {
+      vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+
+      renderProtected('/protected')
+      await waitFor(() => {
+        expect(screen.getByText('Protected content')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('Login page')).not.toBeInTheDocument()
+    })
   })
 })

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { runsApi, plansApi } from '../api/endpoints'
 import { getStoredToken } from '../api/client'
+import { useAuth } from '../context/AuthContext'
 import type { LoadRun, JobRecord, LoadPlanDetail } from '../api/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ export interface UseLiveRunResult {
  */
 export function useLiveRun(runId: string): UseLiveRunResult {
   const queryClient = useQueryClient()
+  const { authRequired } = useAuth()
   const [isWsConnected, setIsWsConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
@@ -84,10 +86,11 @@ export function useLiveRun(runId: string): UseLiveRunResult {
     if (!runId || !isLive) return
 
     const token = getStoredToken()
-    if (!token) return // no auth token — polling-only mode
+    if (authRequired && !token) return // no auth token in hosted mode — polling-only mode
 
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const wsUrl = `${protocol}://${window.location.host}/ws/runs/${runId}?token=${encodeURIComponent(token)}`
+    const base = `${protocol}://${window.location.host}/ws/runs/${runId}`
+    const wsUrl = token ? `${base}?token=${encodeURIComponent(token)}` : base
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
@@ -128,7 +131,7 @@ export function useLiveRun(runId: string): UseLiveRunResult {
       wsRef.current = null
       setIsWsConnected(false)
     }
-  }, [runId, isLive, queryClient])
+  }, [runId, isLive, authRequired, queryClient])
 
   return {
     run,

@@ -66,10 +66,16 @@ def decode_access_token(token: str) -> dict:
 # ── FastAPI dependencies ──────────────────────────────────────────────────────
 
 
+_DESKTOP_USER = User(id="desktop", username="desktop", role="admin", is_active=True)
+
+
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    if settings.auth_mode == "none":
+        return _DESKTOP_USER
+
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -124,7 +130,12 @@ async def seed_admin(db: AsyncSession) -> None:
     Idempotent — does nothing when at least one user is already present.
     Raises RuntimeError on first boot if the required env vars are absent or
     if ADMIN_PASSWORD does not meet minimum complexity requirements.
+
+    Skipped entirely in desktop profile (auth_mode=none) — no managed users needed.
     """
+    if settings.auth_mode == "none":
+        return
+
     count = await db.scalar(select(func.count()).select_from(User))
     if count and count > 0:
         return
@@ -158,7 +169,12 @@ def validate_ws_token(token: Optional[str]) -> dict:
 
     Usage: ``payload = validate_ws_token(request.query_params.get("token"))``
     Raises HTTP 401 if the token is missing or invalid.
+
+    In desktop profile (auth_mode=none) the token is not required and validation
+    is skipped entirely.
     """
+    if settings.auth_mode == "none":
+        return {}
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

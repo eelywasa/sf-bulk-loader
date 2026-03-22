@@ -26,6 +26,10 @@ vi.mock('../../api/client', () => ({
   getStoredToken: vi.fn(() => 'test-token'),
 }))
 
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: vi.fn(() => ({ authRequired: true })),
+}))
+
 import { runsApi, plansApi } from '../../api/endpoints'
 import { getStoredToken } from '../../api/client'
 

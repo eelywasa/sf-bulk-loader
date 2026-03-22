@@ -17,6 +17,10 @@ vi.mock('../../api/endpoints', () => ({
   },
 }))
 
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: vi.fn(() => ({ authRequired: true })),
+}))
+
 import { runsApi, plansApi } from '../../api/endpoints'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────

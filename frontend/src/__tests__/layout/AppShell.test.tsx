@@ -6,7 +6,14 @@ import AppShell from '../../layout/AppShell'
 import { ThemeProvider } from '../../context/ThemeContext'
 import { AuthProvider } from '../../context/AuthContext'
 import * as client from '../../api/client'
-import type { UserResponse } from '../../api/types'
+import type { RuntimeConfig, UserResponse } from '../../api/types'
+
+const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
+  auth_mode: 'local',
+  app_distribution: 'self_hosted',
+  transport_mode: 'http',
+  input_storage_mode: 'local',
+}
 
 const MOCK_USER: UserResponse = {
   id: '1',
@@ -25,6 +32,7 @@ const MOCK_USER_DISPLAY: UserResponse = {
 function renderAppShell(initialPath = '/', mockUser: UserResponse | null = null) {
   if (mockUser) {
     localStorage.setItem('auth_token', 'test-token')
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
     vi.mocked(client.apiFetch).mockResolvedValueOnce(mockUser)
   }
   const router = createMemoryRouter(
