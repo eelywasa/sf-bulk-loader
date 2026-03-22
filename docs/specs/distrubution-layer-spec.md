@@ -761,7 +761,7 @@ Exit criteria:
 - self-hosted HTTP quick start remains easy
 - public-facing recommendations are explicit
 
-### 7. Implement Electron Packaging Skeleton
+### 7. Implement Electron Packaging Skeleton — ✅ DONE
 
 Goal: create the second supported distribution target with no-login desktop behavior.
 

@@ -88,8 +88,13 @@ export function useLiveRun(runId: string): UseLiveRunResult {
     const token = getStoredToken()
     if (authRequired && !token) return // no auth token in hosted mode — polling-only mode
 
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const base = `${protocol}://${window.location.host}/ws/runs/${runId}`
+    // Derive WebSocket base from VITE_API_URL when set (e.g. Electron desktop where
+    // the page is loaded via file:// and window.location.host is empty).
+    const apiBase = (import.meta.env.VITE_API_URL as string) || ''
+    const wsBase = apiBase
+      ? apiBase.replace(/^http/, 'ws')
+      : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+    const base = `${wsBase}/ws/runs/${runId}`
     const wsUrl = token ? `${base}?token=${encodeURIComponent(token)}` : base
 
     const ws = new WebSocket(wsUrl)
