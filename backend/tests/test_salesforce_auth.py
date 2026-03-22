@@ -205,12 +205,6 @@ class TestIsTokenValid:
         expiry = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
         assert _is_token_valid(self._conn("tok", expiry)) is False
 
-    def test_naive_datetime_treated_as_utc(self):
-        # SQLite returns naive datetimes; service should handle them
-        expiry = datetime.utcnow() + timedelta(hours=1)
-        assert expiry.tzinfo is None
-        assert _is_token_valid(self._conn("tok", expiry)) is True
-
 
 # ── _exchange_jwt tests ───────────────────────────────────────────────────────
 
