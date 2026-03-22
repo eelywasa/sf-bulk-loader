@@ -218,11 +218,11 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 
 ### Volume mounts
 
-| Host path | Container path | Access | Purpose |
-|-----------|---------------|--------|---------|
-| `./data/input` | `/data/input` | Read-only | Source CSV files |
-| `./data/output` | `/data/output` | Read-write | Success/error result CSVs |
-| `./data/db` | `/data/db` | Read-write | SQLite database (ignored when using PostgreSQL) |
+| Host path       | Container path | Access     | Purpose                                         |
+| --------------- | -------------- | ---------- | ----------------------------------------------- |
+| `./data/input`  | `/data/input`  | Read-only  | Source CSV files                                |
+| `./data/output` | `/data/output` | Read-write | Success/error result CSVs                       |
+| `./data/db`     | `/data/db`     | Read-write | SQLite database + auto-generated encryption and JWT key files |
 
 When using the HTTPS overlay:
 
@@ -234,12 +234,24 @@ When using the HTTPS overlay:
 
 ## Troubleshooting
 
-### Backend fails to start — `ENCRYPTION_KEY` missing or invalid
+### Backend fails to start — cannot write encryption key
 
-Generate a valid Fernet key:
+The backend auto-generates `ENCRYPTION_KEY` on first start and writes it to `data/db/encryption.key`.
+This fails if the `data/db` directory does not exist or is not writable by the container.
+
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+mkdir -p data/db data/input data/output
+docker compose up
 ```
+
+If you want to supply your own key instead:
+
+```bash
+docker run --rm python:3.12-slim python -c \
+  "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Set the output as `ENCRYPTION_KEY=<key>` in `.env`.
 
 ### Backend fails to start — database locked
 
