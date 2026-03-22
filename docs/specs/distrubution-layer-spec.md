@@ -784,7 +784,7 @@ Exit criteria:
 - desktop runs without login
 - desktop architecture does not require reworking core services
 
-### 8. Implement Desktop Secrets and Workspace Behavior
+### 8. Implement Desktop Secrets and Workspace Behavior — ✅ DONE
 
 Goal: make desktop-specific local behavior explicit and safe enough for MVP.
 

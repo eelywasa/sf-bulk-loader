@@ -1,7 +1,7 @@
 'use strict'
 
 const { app, BrowserWindow } = require('electron')
-const { spawn } = require('child_process')
+const { spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const http = require('http')
 const path = require('path')
@@ -15,7 +15,7 @@ const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}`
 const FRONTEND_INDEX = path.join(__dirname, '..', 'frontend', 'dist', 'index.html')
 const BACKEND_DIR = path.join(__dirname, '..', 'backend')
 
-// ─── Uvicorn discovery ───────────────────────────────────────────────────────
+// ─── Tool discovery ──────────────────────────────────────────────────────────
 
 function findUvicorn() {
   const venvUvicorn = path.join(BACKEND_DIR, '.venv', 'bin', 'uvicorn')
@@ -25,11 +25,56 @@ function findUvicorn() {
   return 'uvicorn'
 }
 
+function findAlembic() {
+  const venvAlembic = path.join(BACKEND_DIR, '.venv', 'bin', 'alembic')
+  if (fs.existsSync(venvAlembic)) {
+    return venvAlembic
+  }
+  return 'alembic'
+}
+
 // ─── Data directory setup ────────────────────────────────────────────────────
 
 function ensureDataDirs(dataDir) {
-  for (const subdir of ['', 'input', 'output']) {
+  for (const subdir of ['', 'db', 'input', 'output', 'logs']) {
     fs.mkdirSync(path.join(dataDir, subdir), { recursive: true })
+  }
+}
+
+// ─── Backend environment ─────────────────────────────────────────────────────
+
+function buildBackendEnv(dataDir) {
+  return {
+    ...process.env,
+    APP_DISTRIBUTION: 'desktop',
+    DATABASE_URL: `sqlite+aiosqlite:///${dataDir}/db/bulk_loader.db`,
+    ENCRYPTION_KEY_FILE: path.join(dataDir, 'db', 'encryption.key'),
+    JWT_SECRET_KEY_FILE: path.join(dataDir, 'db', 'jwt_secret.key'),
+    INPUT_DIR: path.join(dataDir, 'input'),
+    OUTPUT_DIR: path.join(dataDir, 'output'),
+  }
+}
+
+// ─── Database migrations ─────────────────────────────────────────────────────
+
+function runMigrations(dataDir) {
+  const alembic = findAlembic()
+  const env = buildBackendEnv(dataDir)
+
+  console.log('[electron] Running database migrations...')
+  const result = spawnSync(alembic, ['upgrade', 'head'], {
+    cwd: BACKEND_DIR,
+    env,
+    stdio: ['ignore', 'inherit', 'inherit'],
+  })
+
+  if (result.error) {
+    console.error('[electron] Could not run alembic:', result.error.message)
+    return // binary not found — log and continue; DB may already be initialised
+  }
+  if (result.status !== 0) {
+    console.error('[electron] Migration failed with exit code', result.status)
+    app.quit()
   }
 }
 
@@ -39,16 +84,7 @@ let backendProcess = null
 
 function startBackend(dataDir) {
   const uvicorn = findUvicorn()
-
-  const env = {
-    ...process.env,
-    APP_DISTRIBUTION: 'desktop',
-    DATABASE_URL: `sqlite+aiosqlite:///${dataDir}/bulk_loader.db`,
-    ENCRYPTION_KEY_FILE: path.join(dataDir, 'encryption.key'),
-    JWT_SECRET_KEY_FILE: path.join(dataDir, 'jwt_secret.key'),
-    INPUT_DIR: path.join(dataDir, 'input'),
-    OUTPUT_DIR: path.join(dataDir, 'output'),
-  }
+  const env = buildBackendEnv(dataDir)
 
   backendProcess = spawn(
     uvicorn,
@@ -112,6 +148,7 @@ function waitForBackend(maxAttempts = 30) {
 async function createWindow() {
   const dataDir = app.getPath('userData')
   ensureDataDirs(dataDir)
+  runMigrations(dataDir)
   startBackend(dataDir)
 
   try {

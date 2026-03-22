@@ -23,16 +23,19 @@ def upgrade() -> None:
     inspector = sa.inspect(bind)
     existing = {col["name"] for col in inspector.get_columns("load_run")}
     if "retry_of_run_id" not in existing:
-        op.add_column(
-            "load_run",
-            sa.Column(
-                "retry_of_run_id",
-                sa.String(36),
-                sa.ForeignKey("load_run.id"),
-                nullable=True,
-            ),
-        )
+        # batch_alter_table is required for SQLite — plain ADD COLUMN cannot carry
+        # FK constraints in SQLite's ALTER TABLE implementation.
+        with op.batch_alter_table("load_run") as batch_op:
+            batch_op.add_column(
+                sa.Column(
+                    "retry_of_run_id",
+                    sa.String(36),
+                    sa.ForeignKey("load_run.id"),
+                    nullable=True,
+                )
+            )
 
 
 def downgrade() -> None:
-    op.drop_column("load_run", "retry_of_run_id")
+    with op.batch_alter_table("load_run") as batch_op:
+        batch_op.drop_column("retry_of_run_id")

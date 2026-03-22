@@ -1,11 +1,6 @@
 # Desktop Deployment
 
-> **Status: Planned (Tickets 7–8)**
->
-> The Electron desktop distribution is not yet implemented. This document describes
-> the intended configuration model. See
-> [docs/specs/distrubution-layer-spec.md](../specs/distrubution-layer-spec.md)
-> for the full design.
+> **Status: Implemented (Tickets 7–8)**
 
 ---
 
@@ -61,19 +56,30 @@ database using the same Fernet encryption model as the hosted distributions.
 OS-native secure storage (macOS Keychain, Windows Credential Manager) is an explicitly
 planned future enhancement — it is not forgotten, simply deferred past MVP.
 
-## Workspace Layout (planned)
+## Workspace Layout
 
 ```
 ~/Library/Application Support/SalesforceBulkLoader/   (macOS)
 %APPDATA%\SalesforceBulkLoader\                        (Windows)
 ~/.config/SalesforceBulkLoader/                        (Linux)
-├── bulk_loader.db    # SQLite database
-├── logs/             # Application logs
-├── input/            # Source CSV files
-└── output/           # Result files
+├── db/
+│   ├── bulk_loader.db    # SQLite database
+│   ├── encryption.key    # Auto-generated Fernet key (mode 0o600)
+│   └── jwt_secret.key    # Auto-generated JWT signing secret (mode 0o600)
+├── logs/                 # Application logs
+├── input/                # Source CSV files
+└── output/               # Result files
 ```
 
-Packaged application assets are kept separate from runtime data and user workspace.
+The `db/` subdirectory mirrors Docker's `/data/db/` layout. Packaged application assets
+are kept separate from runtime data and user workspace.
+
+## First Launch and Database Migrations
+
+On first launch, Electron runs `alembic upgrade head` synchronously before starting the
+backend. This creates the full database schema in `db/bulk_loader.db`. On subsequent
+launches the same command runs again as a no-op, or applies any pending migrations if the
+app has been updated. No user action is required — migrations are fully automatic.
 
 ---
 
@@ -116,10 +122,12 @@ npm start
 ```
 
 Electron will:
-1. Locate the backend Python interpreter (`backend/.venv/bin/python`, or system `python3`)
-2. Spawn `uvicorn` bound to `127.0.0.1:8000` with `APP_DISTRIBUTION=desktop`
-3. Poll `/api/health` until the backend is ready (up to 30 seconds)
-4. Open the application window loading `frontend/dist/index.html`
+1. Locate the `alembic` binary (`backend/.venv/bin/alembic`, or system `alembic`)
+2. Run `alembic upgrade head` to initialise or migrate the database
+3. Locate the `uvicorn` binary (`backend/.venv/bin/uvicorn`, or system `uvicorn`)
+4. Spawn `uvicorn` bound to `127.0.0.1:8000` with `APP_DISTRIBUTION=desktop`
+5. Poll `/api/health` until the backend is ready (up to 30 seconds)
+6. Open the application window loading `frontend/dist/index.html`
 
 The login screen is skipped — `desktop` profile sets `auth_mode=none`.
 
@@ -133,15 +141,17 @@ Runtime data is stored in the OS user-data directory:
 | Windows | `%APPDATA%\sf-bulk-loader-desktop\` |
 | Linux | `~/.config/sf-bulk-loader-desktop/` |
 
-Contents mirror the intended workspace layout:
+Contents:
 
 ```
 <data-dir>/
-├── bulk_loader.db    # SQLite database
-├── encryption.key    # Auto-generated Fernet key
-├── jwt_secret.key    # Auto-generated JWT signing secret
-├── input/            # Source CSV files
-└── output/           # Result CSVs
+├── db/
+│   ├── bulk_loader.db    # SQLite database
+│   ├── encryption.key    # Auto-generated Fernet key
+│   └── jwt_secret.key    # Auto-generated JWT signing secret
+├── input/                # Source CSV files
+├── output/               # Result CSVs
+└── logs/
 ```
 
 ### Note on `webSecurity: false`
@@ -154,5 +164,10 @@ acceptable because:
 - The desktop profile uses `auth_mode=none` — there are no credentials to intercept
 - No cross-origin data leaves the local machine
 
-A future enhancement would serve the frontend via a local HTTP server (e.g. `http://127.0.0.1:3000`)
-and re-enable `webSecurity`, eliminating this trade-off.
+### Secrets model
+
+Encryption and JWT keys are auto-generated on first launch and stored in `<data-dir>/db/`
+with mode `0o600`. Salesforce private keys are Fernet-encrypted at rest in the SQLite database.
+
+OS-native secure storage (macOS Keychain, Windows Credential Manager, Linux libsecret) is an
+explicitly planned future enhancement — deferred past MVP.
