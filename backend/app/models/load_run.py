@@ -32,8 +32,8 @@ class LoadRun(Base):
     status: Mapped[RunStatus] = mapped_column(
         SAEnum(RunStatus, name="run_status_enum"), nullable=False, default=RunStatus.pending
     )
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     total_records: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     total_success: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     total_errors: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
