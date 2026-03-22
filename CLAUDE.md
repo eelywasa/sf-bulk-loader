@@ -11,7 +11,18 @@ Docker deployment.
 The full specification is in `salesforce-bulk-loader-spec.md`. Always refer to it for architectural decisions, data model, API design, and build order.
 For the UI extra guidance can be found in `frontend-claude-runbook.md`. Treat it as an authority — if other docs conflict, follow the runbook.
 
-When all tickets in a spec file have been fully implemented, move the file to `docs/implemented/` to keep the active docs folder uncluttered.
+Active spec files live in `docs/specs/`. When all tickets in a spec file have been fully implemented, move the file to `docs/specs/implemented/`.
+
+## Documentation Structure
+User-facing documentation lives in `docs/`:
+- `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)
+- `docs/usage.md` — using the app (Salesforce setup, CSV format, load plans)
+- `docs/development.md` — local dev, tests, migrations
+- `docs/specs/` — architecture and feature specs (not user-facing)
+
+When implementing tickets that require documentation changes, add to or update the
+appropriate file in `docs/` rather than expanding `README.md`. The README is a
+project overview and signpost only.
 
 ## Tech Stack
 - Backend: Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, httpx
