@@ -2,7 +2,7 @@
 
 All external I/O is mocked:
   - SalesforceBulkClient  (no real HTTP calls)
-  - discover_files / partition_csv  (no real filesystem access)
+  - get_storage / partition_csv  (no real filesystem or S3 access)
   - get_access_token  (no real token exchange)
   - ws_manager.broadcast  (no real WebSockets)
 
@@ -33,6 +33,7 @@ from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep, Operation
+from app.services.input_storage import InputConnectionNotFoundError
 from app.services.orchestrator import (
     _count_csv_rows,
     _execute_run,
@@ -199,6 +200,15 @@ def _make_bulk_client_mock(
     return mock
 
 
+def _make_storage_mock(rel_paths: list[str] | None = None, provider: str = "local") -> MagicMock:
+    """Return a mock BaseInputStorage with the given discovered paths."""
+    mock = MagicMock()
+    mock.provider = provider
+    mock.discover_files.return_value = rel_paths if rel_paths is not None else ["accounts.csv"]
+    # open_text() returns a context manager; MagicMock handles __enter__/__exit__ automatically.
+    return mock
+
+
 # ── Unit tests: _count_csv_rows ───────────────────────────────────────────────
 
 
@@ -240,7 +250,7 @@ async def test_successful_single_step_run(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["accounts.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -284,7 +294,7 @@ async def test_multi_step_run_executes_in_sequence(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["file.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["file.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -326,7 +336,7 @@ async def test_run_with_errors_below_threshold(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -360,7 +370,7 @@ async def test_run_aborted_when_error_threshold_exceeded(db: AsyncSession, tmp_p
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", side_effect=capture_broadcast),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -388,7 +398,7 @@ async def test_error_threshold_exceeded_no_abort(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -415,7 +425,7 @@ async def test_multi_step_second_step_skipped_on_abort(db: AsyncSession, tmp_pat
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -462,7 +472,7 @@ async def test_external_abort_stops_before_next_step(db: AsyncSession, tmp_path)
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -514,7 +524,7 @@ async def test_job_creation_failure_marks_job_failed(db: AsyncSession, tmp_path)
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -544,7 +554,7 @@ async def test_upload_failure_marks_job_failed(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -570,7 +580,7 @@ async def test_no_csv_files_found_skips_step(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=[]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock([]))),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
     ):
@@ -604,7 +614,7 @@ async def test_multiple_partitions_created_for_large_file(tmp_path):
         with (
             patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
             patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-            patch("app.services.orchestrator.discover_files", return_value=["big.csv"]),
+            patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["big.csv"]))),
             patch("app.services.orchestrator.partition_csv", return_value=[part1, part2]),
             patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
             patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -656,7 +666,7 @@ async def test_semaphore_limits_concurrency(tmp_path):
         with (
             patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
             patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-            patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+            patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
             patch("app.services.orchestrator.partition_csv", return_value=partitions),
             patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
             patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -690,7 +700,7 @@ async def test_result_files_saved_to_output_dir(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -730,7 +740,7 @@ async def test_run_started_and_completed_events_broadcast(db: AsyncSession, tmp_
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", side_effect=capture),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -767,7 +777,7 @@ async def test_pending_jobs_aborted_when_run_aborted_mid_step(tmp_path):
         with (
             patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
             patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-            patch("app.services.orchestrator.discover_files", return_value=["f.csv"]),
+            patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
             patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS, CSV_2_ROWS]),
             patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
             patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -795,7 +805,7 @@ async def test_total_records_set_at_creation(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["accounts.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -833,7 +843,7 @@ async def test_mid_poll_progress_persisted(db: AsyncSession, tmp_path):
     with (
         patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
         patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
-        patch("app.services.orchestrator.discover_files", return_value=["accounts.csv"]),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"]))),
         patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
         patch("app.services.orchestrator.ws_manager.broadcast", side_effect=capture_broadcast),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
@@ -856,3 +866,117 @@ async def test_mid_poll_progress_persisted(db: AsyncSession, tmp_path):
     assert len(jobs) == 1
     # After _download_results, records_processed comes from the CSV files (CSV_2_ROWS = 2 rows).
     assert jobs[0].records_processed == 2
+
+
+# ── Source-aware execution tests ──────────────────────────────────────────────
+
+
+async def test_step_executes_from_s3_source(db: AsyncSession, tmp_path):
+    """A step with input_connection_id set resolves an S3 storage mock."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    # Create step with a (fake) input_connection_id to simulate S3-backed source.
+    step = LoadStep(
+        id=str(uuid.uuid4()),
+        load_plan_id=plan.id,
+        sequence=1,
+        object_name="Account",
+        operation=Operation.insert,
+        csv_file_pattern="data/accounts_*.csv",
+        partition_size=10_000,
+        input_connection_id="fake-s3-connection-id",
+    )
+    db.add(step)
+    await db.commit()
+    run = await _make_run(db, plan)
+
+    s3_storage_mock = _make_storage_mock(["data/accounts_001.csv"], provider="s3")
+    bulk_mock = _make_bulk_client_mock(success_csv=CSV_2_ROWS, error_csv=CSV_HEADER)
+    db_factory = make_db_factory(db)
+
+    get_storage_mock = AsyncMock(return_value=s3_storage_mock)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.get_storage", new=get_storage_mock),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    assert run.status == RunStatus.completed
+    assert run.total_records == 2
+
+    # get_storage was called with the step's input_connection_id.
+    get_storage_mock.assert_awaited()
+    call_args = get_storage_mock.call_args_list
+    assert any(args[0][0] == "fake-s3-connection-id" for args in call_args)
+
+
+async def test_storage_resolution_failure_marks_run_failed(db: AsyncSession, tmp_path):
+    """If get_storage raises InputConnectionNotFoundError, run is marked failed."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    step = LoadStep(
+        id=str(uuid.uuid4()),
+        load_plan_id=plan.id,
+        sequence=1,
+        object_name="Account",
+        operation=Operation.insert,
+        csv_file_pattern="*.csv",
+        partition_size=10_000,
+        input_connection_id="nonexistent-connection",
+    )
+    db.add(step)
+    await db.commit()
+    run = await _make_run(db, plan)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=_make_bulk_client_mock()),
+        patch(
+            "app.services.orchestrator.get_storage",
+            new=AsyncMock(side_effect=InputConnectionNotFoundError("Input connection not found: nonexistent-connection")),
+        ),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        await _execute_run(run.id, db, db_factory=make_db_factory(db))
+
+    await db.refresh(run)
+    assert run.status == RunStatus.failed
+
+
+async def test_local_source_used_when_no_input_connection_id(db: AsyncSession, tmp_path):
+    """A step with input_connection_id=None uses local storage (provider='local')."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)  # input_connection_id defaults to None
+    run = await _make_run(db, plan)
+
+    local_storage_mock = _make_storage_mock(["accounts.csv"], provider="local")
+    bulk_mock = _make_bulk_client_mock(success_csv=CSV_2_ROWS, error_csv=CSV_HEADER)
+    db_factory = make_db_factory(db)
+
+    get_storage_mock = AsyncMock(return_value=local_storage_mock)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.get_storage", new=get_storage_mock),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    assert run.status == RunStatus.completed
+
+    # get_storage was called with None (local source).
+    get_storage_mock.assert_awaited()
+    call_args = get_storage_mock.call_args_list
+    assert any(args[0][0] is None for args in call_args)

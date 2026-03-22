@@ -23,10 +23,17 @@ from typing import Iterator
 
 import pytest
 
+import uuid
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.services.csv_processor import (
     CSVProcessorError,
     CSVValidationResult,
     _render_partition,
+    build_retry_partitions,
     detect_encoding,
     discover_files,
     partition_csv,
@@ -577,3 +584,163 @@ class TestRenderPartition:
     def test_lf_not_crlf(self) -> None:
         raw = _render_partition(["A"], [["x"]])
         assert b"\r" not in raw
+
+
+# ── build_retry_partitions ────────────────────────────────────────────────────
+
+
+def _fake_job(
+    *,
+    partition_index: int = 0,
+    error_file_path: str | None = None,
+    unprocessed_file_path: str | None = None,
+) -> MagicMock:
+    """Create a minimal fake JobRecord for retry tests."""
+    job = MagicMock()
+    job.partition_index = partition_index
+    job.error_file_path = error_file_path
+    job.unprocessed_file_path = unprocessed_file_path
+    return job
+
+
+def _fake_step(*, csv_file_pattern: str = "*.csv", partition_size: int = 10, input_connection_id: str | None = None) -> MagicMock:
+    step = MagicMock()
+    step.csv_file_pattern = csv_file_pattern
+    step.partition_size = partition_size
+    step.input_connection_id = input_connection_id
+    return step
+
+
+def _fake_db() -> MagicMock:
+    return MagicMock(spec=AsyncSession)
+
+
+class TestBuildRetryPartitions:
+    """Tests for the async build_retry_partitions function."""
+
+    @pytest.mark.asyncio
+    async def test_track_a_error_file_rows_returned(self, tmp_path: pathlib.Path) -> None:
+        """Track A: error file rows are stripped of sf__ columns and re-partitioned."""
+        error_file = tmp_path / "err.csv"
+        error_file.write_bytes(b"sf__Id,sf__Error,Name,Ext\n001,bad,Acme,EXT-1\n")
+
+        job = _fake_job(error_file_path="err.csv")
+        step = _fake_step()
+
+        result = await build_retry_partitions(
+            job_records=[job],
+            step=step,
+            partition_size=100,
+            output_dir=str(tmp_path),
+            db=_fake_db(),
+        )
+
+        assert len(result) == 1
+        text = result[0].decode("utf-8")
+        assert "Name" in text
+        assert "Acme" in text
+        assert "sf__Id" not in text
+        assert "sf__Error" not in text
+
+    @pytest.mark.asyncio
+    async def test_track_a_unprocessed_file_rows_returned(self, tmp_path: pathlib.Path) -> None:
+        """Track A: unprocessed file rows are returned as-is."""
+        unprocessed_file = tmp_path / "unproc.csv"
+        unprocessed_file.write_bytes(b"Name,Ext\nBeta,EXT-2\n")
+
+        job = _fake_job(unprocessed_file_path="unproc.csv")
+        step = _fake_step()
+
+        result = await build_retry_partitions(
+            job_records=[job],
+            step=step,
+            partition_size=100,
+            output_dir=str(tmp_path),
+            db=_fake_db(),
+        )
+
+        assert len(result) == 1
+        assert b"Beta" in result[0]
+
+    @pytest.mark.asyncio
+    async def test_track_b_local_source_returns_original_partition(self) -> None:
+        """Track B (no result files): re-discovers and re-partitions via storage mock."""
+        original_chunk = b"Name\nAcme\n"
+        mock_storage = MagicMock()
+        mock_storage.discover_files.return_value = ["data.csv"]
+        mock_storage.open_text.return_value.__enter__ = lambda s: io.StringIO("Name\nAcme\n")
+        mock_storage.open_text.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_storage = AsyncMock(return_value=mock_storage)
+
+        job = _fake_job(partition_index=0)  # no result files → Track B
+        step = _fake_step(csv_file_pattern="data.csv", partition_size=100)
+
+        result = await build_retry_partitions(
+            job_records=[job],
+            step=step,
+            partition_size=100,
+            output_dir="/nonexistent",
+            db=_fake_db(),
+            _get_storage=mock_get_storage,
+        )
+
+        assert len(result) == 1
+        assert b"Acme" in result[0]
+        mock_get_storage.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_track_b_s3_source_uses_get_storage(self) -> None:
+        """Track B: get_storage is called with the step's input_connection_id."""
+        mock_storage = MagicMock()
+        mock_storage.discover_files.return_value = ["s3_data.csv"]
+        mock_storage.open_text.return_value.__enter__ = lambda s: io.StringIO("Name\nGamma\n")
+        mock_storage.open_text.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_storage = AsyncMock(return_value=mock_storage)
+
+        job = _fake_job(partition_index=0)
+        step = _fake_step(csv_file_pattern="s3_data.csv", partition_size=100, input_connection_id="s3-conn-id")
+
+        await build_retry_partitions(
+            job_records=[job],
+            step=step,
+            partition_size=100,
+            output_dir="/nonexistent",
+            db=_fake_db(),
+            _get_storage=mock_get_storage,
+        )
+
+        # get_storage was called with the S3 connection ID.
+        mock_get_storage.assert_awaited_once()
+        call_source = mock_get_storage.call_args[0][0]
+        assert call_source == "s3-conn-id"
+
+    @pytest.mark.asyncio
+    async def test_no_track_b_jobs_skips_get_storage(self) -> None:
+        """If all jobs have result files (Track A only), get_storage is never called."""
+        mock_get_storage = AsyncMock()
+
+        job = _fake_job(error_file_path="nonexistent_err.csv")  # Track A, but file missing
+        step = _fake_step()
+
+        result = await build_retry_partitions(
+            job_records=[job],
+            step=step,
+            partition_size=100,
+            output_dir="/nonexistent",
+            db=_fake_db(),
+            _get_storage=mock_get_storage,
+        )
+
+        mock_get_storage.assert_not_awaited()
+        assert result == []  # error file missing → no rows collected
+
+    @pytest.mark.asyncio
+    async def test_empty_job_list_returns_empty(self) -> None:
+        result = await build_retry_partitions(
+            job_records=[],
+            step=_fake_step(),
+            partition_size=100,
+            output_dir="/nonexistent",
+            db=_fake_db(),
+        )
+        assert result == []

@@ -23,7 +23,8 @@ from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
 from app.services import step_executor as _step_executor_mod
-from app.services.csv_processor import discover_files as _default_discover, partition_csv as _default_partition
+from app.services.csv_processor import partition_csv as _default_partition
+from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
 from app.services.partition_executor import process_partition as _default_process
 from app.services.result_persistence import count_csv_rows
 from app.services.run_event_publisher import (
@@ -225,7 +226,7 @@ async def _execute_run(
     db_factory: _DbFactory = AsyncSessionLocal,
     _get_token: Callable = _default_get_token,
     _BulkClient: type = SalesforceBulkClient,
-    _discover: Callable = _default_discover,
+    _get_storage: Callable = _default_get_storage,
     _partition: Callable = _default_partition,
 ) -> None:
     """Orchestrate a load run.
@@ -304,16 +305,29 @@ async def _execute_run(
                 step.object_name,
             )
 
-            step_success, step_errors = await _step_executor_mod.execute_step(
-                run_id=run_id,
-                step=step,
-                bulk_client=bulk_client,
-                db=db,
-                semaphore=semaphore,
-                db_factory=db_factory,
-                _discover=_discover,
-                _partition=_partition,
-            )
+            try:
+                step_success, step_errors = await _step_executor_mod.execute_step(
+                    run_id=run_id,
+                    step=step,
+                    bulk_client=bulk_client,
+                    db=db,
+                    semaphore=semaphore,
+                    db_factory=db_factory,
+                    _get_storage=_get_storage,
+                    _partition=_partition,
+                )
+            except InputStorageError as exc:
+                logger.error(
+                    "Run %s step %s: storage error: %s",
+                    run_id,
+                    step.id,
+                    exc,
+                )
+                await _mark_run_failed(
+                    run_id, db, error_summary={"storage_error": str(exc)}
+                )
+                await publish_run_failed(run_id, error=str(exc))
+                return
 
             total_step_records = step_success + step_errors
             run_total_records += total_step_records

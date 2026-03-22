@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job import JobRecord, JobStatus
 from app.models.load_step import LoadStep
-from app.services.csv_processor import discover_files as _default_discover, partition_csv as _default_partition
+from app.services.csv_processor import partition_csv as _default_partition
+from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
 from app.services.partition_executor import process_partition
 from app.services.result_persistence import count_csv_rows
 from app.services.salesforce_bulk import SalesforceBulkClient
@@ -35,14 +36,14 @@ async def execute_step(
     db: AsyncSession,
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
-    _discover: Callable = _default_discover,
+    _get_storage: Callable = _default_get_storage,
     _partition: Callable = _default_partition,
     _process: Callable = process_partition,
 ) -> tuple[int, int]:
     """Execute one LoadStep: discover files, partition, submit and poll jobs.
 
     Args:
-        _discover: Injected file-discovery callable (default: ``discover_files``).
+        _get_storage: Injected storage-resolver callable (default: ``get_storage``).
             Overridden by the orchestrator facade so test patches propagate.
         _partition: Injected CSV-partition callable (default: ``partition_csv``).
             Overridden by the orchestrator facade so test patches propagate.
@@ -51,23 +52,31 @@ async def execute_step(
 
     Returns:
         ``(total_success, total_errors)`` record counts across all partitions.
+
+    Raises:
+        InputStorageError: If the storage connection cannot be resolved or
+            accessed.  The caller (run_coordinator) is responsible for marking
+            the run as failed.
     """
-    # ── 1. Discover CSV files ─────────────────────────────────────────────────
-    csv_files = _discover(step.csv_file_pattern)
-    if not csv_files:
+    # ── 1. Resolve storage and discover CSV files ─────────────────────────────
+    storage = await _get_storage(step.input_connection_id, db)
+    rel_paths = storage.discover_files(step.csv_file_pattern)
+    if not rel_paths:
         logger.warning(
-            "Run %s step %s: no files matched pattern %r — skipping",
+            "Run %s step %s: no files matched pattern %r on %s — skipping",
             run_id,
             step.id,
             step.csv_file_pattern,
+            storage.provider,
         )
         return 0, 0
 
     # ── 2. Build list of (partition_index, csv_bytes) ─────────────────────────
     partitions: list[tuple[int, bytes]] = []
-    for csv_file in csv_files:
-        for chunk in _partition(csv_file, step.partition_size):
-            partitions.append((len(partitions), chunk))
+    for rel_path in rel_paths:
+        with storage.open_text(rel_path) as fh:
+            for chunk in _partition(fh, step.partition_size):
+                partitions.append((len(partitions), chunk))
 
     if not partitions:
         logger.warning(
@@ -78,10 +87,11 @@ async def execute_step(
         return 0, 0
 
     logger.info(
-        "Run %s step %s: %d file(s) → %d partition(s)",
+        "Run %s step %s: %d file(s) [%s] → %d partition(s)",
         run_id,
         step.id,
-        len(csv_files),
+        len(rel_paths),
+        storage.provider,
         len(partitions),
     )
 

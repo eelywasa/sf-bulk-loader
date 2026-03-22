@@ -59,7 +59,8 @@ from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
-from app.services.csv_processor import discover_files, partition_csv
+from app.services.csv_processor import partition_csv
+from app.services.input_storage import get_storage
 from app.services.salesforce_auth import get_access_token
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient, _TERMINAL_STATES
 from app.utils.ws_manager import ws_manager
@@ -107,7 +108,7 @@ async def _execute_run(
         db_factory=db_factory,
         _get_token=get_access_token,
         _BulkClient=SalesforceBulkClient,
-        _discover=discover_files,
+        _get_storage=get_storage,
         _partition=partition_csv,
     )
 
@@ -129,7 +130,7 @@ async def _execute_step(
         db=db,
         semaphore=semaphore,
         db_factory=db_factory,
-        _discover=discover_files,
+        _get_storage=get_storage,
         _partition=partition_csv,
         _process=_process_partition,
     )

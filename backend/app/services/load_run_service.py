@@ -168,11 +168,12 @@ async def prepare_retry_step(
             except Exception as exc:
                 logger.warning("prepare_retry_step: could not obtain token for SF job cleanup: %s", exc)
 
-    partitions = build_retry_partitions(
+    partitions = await build_retry_partitions(
         job_records=retryable_jobs,
         step=step,
         partition_size=step.partition_size,
         output_dir=settings.output_dir,
+        db=db,
     )
 
     if not partitions:

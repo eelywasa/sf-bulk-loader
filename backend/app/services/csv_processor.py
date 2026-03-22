@@ -28,10 +28,12 @@ import io
 import logging
 import pathlib
 from dataclasses import dataclass, field
-from typing import IO, Iterator, Optional, Sequence, Union
+from typing import IO, Callable, Iterator, Optional, Sequence, Union
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding  # noqa: F401 — re-export
+from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding, get_storage as _default_get_storage  # noqa: F401 — re-export
 
 logger = logging.getLogger(__name__)
 
@@ -234,11 +236,13 @@ def partition_csv(
 # ── Retry partition builder ───────────────────────────────────────────────────
 
 
-def build_retry_partitions(
+async def build_retry_partitions(
     job_records: list,  # list[JobRecord] — typed as list to avoid circular import
     step: object,  # LoadStep
     partition_size: int,
     output_dir: str,
+    db: AsyncSession,
+    _get_storage: Callable = _default_get_storage,
 ) -> list[bytes]:
     """Build CSV partition bytes for retrying failed/aborted jobs of a single step.
 
@@ -252,19 +256,26 @@ def build_retry_partitions(
 
     **Track B** — no result files (job never reached Salesforce; stuck in pending/uploading):
     - The original CSV partition is re-discovered via the step's glob pattern and
-      ``partition_index``, then yielded as-is.
+      ``partition_index`` using the step's input source, then yielded as-is.
 
     Args:
         job_records: Failed/aborted :class:`JobRecord` instances for the step.
         step: The :class:`LoadStep` that owns these jobs.
         partition_size: Maximum data rows per output partition.
         output_dir: Absolute path to the output directory (``settings.output_dir``).
+        db: Database session used to resolve the input storage connection.
+        _get_storage: Injected storage-resolver callable (default: ``get_storage``).
 
     Returns:
         List of UTF-8 CSV bytes: Track A re-partitioned chunks followed by
         Track B original chunks.  Returns ``[]`` if there are no retryable records.
     """
     output_base = pathlib.Path(output_dir)
+
+    # Resolve storage once for all Track B jobs (avoids redundant DB lookups).
+    # Track B may not exist at all, but resolving upfront keeps the code clean.
+    has_track_b = any(not (j.error_file_path or j.unprocessed_file_path) for j in job_records)
+    storage = await _get_storage(getattr(step, "input_connection_id", None), db) if has_track_b else None
 
     track_a_header: list[str] | None = None
     track_a_rows: list[list[str]] = []
@@ -316,17 +327,19 @@ def build_retry_partitions(
                         )
         else:
             # ── Track B ──────────────────────────────────────────────────────
+            assert storage is not None  # guaranteed by has_track_b check above
             target_idx: int = job.partition_index
             current_idx = 0
-            csv_files = discover_files(step.csv_file_pattern)
+            rel_paths = storage.discover_files(step.csv_file_pattern)
             found = False
-            for csv_file in csv_files:
-                for chunk in partition_csv(csv_file, step.partition_size):
-                    if current_idx == target_idx:
-                        track_b_chunks.append(chunk)
-                        found = True
-                        break
-                    current_idx += 1
+            for rel_path in rel_paths:
+                with storage.open_text(rel_path) as fh:
+                    for chunk in partition_csv(fh, step.partition_size):
+                        if current_idx == target_idx:
+                            track_b_chunks.append(chunk)
+                            found = True
+                            break
+                        current_idx += 1
                 if found:
                     break
             if not found:
