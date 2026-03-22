@@ -1,5 +1,7 @@
 # Environment (secrets, credentials)
 .env
+.env.*
+!.env.example
 
 # Python
 venv/
@@ -13,8 +15,18 @@ data/
 # TLS certificates (private keys must never be committed)
 certs/
 
+# Node
+node_modules/
+
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor / tools
+.obsidian/
 
 # Local test databases and scratch files
 backend/test_*.db
