@@ -37,6 +37,29 @@ This enforces:
 | TLS | Terminated at load balancer / CloudFront |
 | Secrets | AWS Secrets Manager or Parameter Store (compatible with app DB model) |
 
+## Authentication
+
+The `aws_hosted` profile uses the same in-app login model as `self_hosted`: users
+authenticate with a username and password, and the backend issues a signed JWT.
+
+Bootstrap admin credentials (`ADMIN_USERNAME`, `ADMIN_PASSWORD`) are required on first
+boot and ignored thereafter — same as self-hosted.
+
+**SSO / OIDC** is not supported in this release. It is an explicitly planned future
+direction for hosted distributions, but is out of scope for the initial AWS implementation.
+
+## Transport and TLS
+
+The `aws_hosted` profile requires `transport_mode=https`. HTTPS is enforced at the
+**load balancer or CloudFront layer** — the backend itself listens on plain HTTP internally.
+The backend logs a reminder of this at startup.
+
+WebSocket connections use `wss://` at the client-facing layer (load balancer terminates
+TLS). The backend receives plain `ws://` connections internally and proxies them as normal.
+No WebSocket-specific TLS configuration is needed in the backend or nginx.
+
+---
+
 ## Database
 
 The `aws_hosted` profile requires a PostgreSQL `DATABASE_URL`. Any standard

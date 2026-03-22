@@ -58,6 +58,27 @@ docker compose down   # stop
 
 ---
 
+## Authentication
+
+The `self_hosted` profile requires in-app authentication. Every user must log in with a
+username and password before accessing the application.
+
+The first account is created automatically on startup using the `ADMIN_USERNAME` and
+`ADMIN_PASSWORD` values from `.env`. After the first user exists, these bootstrap
+credentials are ignored.
+
+Two endpoints are always public (no login required):
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/health` | Container health check |
+| `GET /api/runtime` | Returns the active distribution profile (used by the frontend to determine whether to show the login screen) |
+
+**SSO / OIDC** is not supported in this release. It is an explicitly planned future
+enhancement.
+
+---
+
 ## Key Management
 
 `ENCRYPTION_KEY` and `JWT_SECRET_KEY` are auto-generated on first start and persisted

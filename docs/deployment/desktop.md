@@ -26,6 +26,25 @@ This enforces:
 | `input_storage_mode` | `local` | Local filesystem |
 | `DATABASE_URL` | SQLite only | PostgreSQL is rejected at startup for this profile |
 
+## Authentication
+
+The desktop profile requires **no login**. This is a deliberate distribution policy for a
+single-user local tool, not an accidental bypass. The `auth_mode=none` setting causes the
+backend to return a synthetic user for all requests, and the frontend skips the login screen
+entirely.
+
+There is no user database seeded on desktop startup. The `ADMIN_USERNAME` and
+`ADMIN_PASSWORD` bootstrap credentials are ignored.
+
+## Transport
+
+The desktop profile uses `transport_mode=local`. The backend is intended to be bound to
+`127.0.0.1` only and must not be accessible from other machines on the network. This binding
+is enforced by the Electron launcher (Ticket 7). Plain HTTP and WebSocket (`ws://`) over
+loopback are acceptable — no TLS is required for local loopback communication.
+
+---
+
 ## Intended Packaging
 
 - Electron shell wrapping the React frontend

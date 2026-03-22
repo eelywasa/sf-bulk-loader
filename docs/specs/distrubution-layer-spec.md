@@ -717,7 +717,7 @@ Exit criteria:
 - SQLite quick start works end-to-end
 - PostgreSQL variant is supported and documented
 
-### 5. Implement Hosted Auth Policy for Self-Hosted and AWS Skeleton
+### 5. Implement Hosted Auth Policy for Self-Hosted and AWS Skeleton — ✅ DONE
 
 Goal: make hosted auth behavior explicit and shared across hosted distributions.
 
@@ -737,7 +737,7 @@ Exit criteria:
 - hosted profiles share one explicit auth behavior
 - desktop no-auth and hosted auth are clearly separated
 
-### 6. Implement Transport/TLS Policy by Distribution
+### 6. Implement Transport/TLS Policy by Distribution — ✅ DONE
 
 Goal: make transport expectations explicit by distribution rather than implied by deployment history.
 

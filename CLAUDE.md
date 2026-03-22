@@ -138,7 +138,7 @@ Connection → LoadPlan → LoadStep → JobRecord
 - SQLite + WAL mode for simplicity and concurrent I/O; SQLAlchemy makes it swappable.
 - asyncio for background tasks (no Celery).
 - CSV streaming with Python's `csv` module (no pandas).
-- No user authentication layer — MVP assumes trusted environment.
+- Authentication is required for hosted profiles (`self_hosted`, `aws_hosted`). Desktop profile (`auth_mode=none`) bypasses login — controlled via `APP_DISTRIBUTION` in `.env`.
 
 ## Code Standards
 - Python: async/await throughout, type hints on all function signatures, Pydantic schemas, SQLAlchemy 2.0 `mapped_column` style.

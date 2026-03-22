@@ -32,6 +32,16 @@ async def lifespan(app: FastAPI):
         settings.transport_mode,
         settings.input_storage_mode,
     )
+    if settings.transport_mode == "https":
+        logger.info(
+            "Transport mode: https — HTTPS must be enforced at the reverse proxy or load balancer. "
+            "The backend listens on plain HTTP internally."
+        )
+    elif settings.transport_mode == "local":
+        logger.info(
+            "Transport mode: local — backend should be accessible on loopback only. "
+            "Ensure the process is not exposed beyond localhost."
+        )
     yield
     # Shutdown: dispose engine connection pool
     await engine.dispose()
