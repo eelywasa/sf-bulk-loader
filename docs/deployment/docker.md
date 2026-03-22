@@ -93,19 +93,41 @@ HTTPS is recommended for any deployment beyond localhost. The HTTPS overlay adds
 
 ### 1. Provide certificates
 
-**Self-signed (for internal/dev use):**
+**Option A — mkcert (recommended for local/dev use, no browser warnings):**
+
+[mkcert](https://github.com/FiloSottile/mkcert) creates locally-trusted certificates
+that work in all browsers without security warnings.
+
 ```bash
-mkdir certs
+# Install mkcert (one-time)
+brew install mkcert          # macOS
+# Linux / Windows: see https://github.com/FiloSottile/mkcert#installation
+
+# Install the local CA into your OS/browser trust stores (one-time per machine)
+mkcert -install
+
+# Generate a cert for localhost
+mkdir -p certs
+mkcert -key-file certs/key.pem -cert-file certs/cert.pem localhost 127.0.0.1 ::1
+```
+
+Replace `localhost 127.0.0.1 ::1` with your hostname or IP if accessing from other
+machines on the network.
+
+**Option B — openssl self-signed (for server/headless environments):**
+
+```bash
+mkdir -p certs
 openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem \
   -sha256 -days 825 -nodes \
   -subj "/CN=bulkloader.internal" \
   -addext "subjectAltName=DNS:bulkloader.internal,IP:your.server.ip"
 ```
-Browsers will show a security warning. Add the cert to your OS/browser trust store to
-suppress it on internal networks. (Modern browsers require the SAN extension — the
-`-addext` flag above ensures it is present.)
 
-**CA-signed cert:**
+Browsers will show a security warning. This is acceptable for server environments
+where you control the client, or where a CA-signed cert is used in production.
+
+**Option C — CA-signed cert (for production):**
 Place the full certificate chain as `certs/cert.pem` (leaf cert followed by any
 intermediates) and the unencrypted private key as `certs/key.pem`.
 
