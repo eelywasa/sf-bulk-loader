@@ -11,7 +11,7 @@
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit",
-    "build:desktop": "VITE_API_URL=http://127.0.0.1:8000 VITE_ROUTER=hash vite build --base ./"
+    "build:desktop": "cross-env VITE_API_URL=http://127.0.0.1:8000 VITE_ROUTER=hash vite build --base ./"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
@@ -33,6 +33,7 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.5.1",
     "tailwindcss": "^3.4.17",
