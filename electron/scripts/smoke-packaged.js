@@ -8,7 +8,10 @@ const path = require('path')
 const rootDir = path.resolve(__dirname, '..')
 const distDir = path.join(rootDir, 'dist')
 const platform = process.argv[2]
-const productName = 'Salesforce Bulk Loader'
+const packageJson = require(path.join(rootDir, 'package.json'))
+const productName = packageJson.build?.productName || 'Salesforce Bulk Loader'
+const linuxExecutableName = packageJson.build?.linux?.executableName
+const packageName = packageJson.name
 
 function fail(message) {
   throw new Error(message)
@@ -44,13 +47,29 @@ function resolveExecutablePath() {
 
   if (platform === 'linux') {
     const linuxDir = path.join(distDir, 'linux-unpacked')
-    const preferred = path.join(linuxDir, productName)
-    if (fs.existsSync(preferred)) {
-      return preferred
+
+    const candidateNames = [
+      linuxExecutableName,
+      productName,
+      packageName,
+      productName.toLowerCase().replace(/\s+/g, '-'),
+      packageName.replace(/-desktop$/, ''),
+    ].filter(Boolean)
+
+    for (const candidateName of candidateNames) {
+      const candidatePath = path.join(linuxDir, candidateName)
+      if (fs.existsSync(candidatePath)) {
+        return candidatePath
+      }
     }
+
     return findTopLevelExecutable(
       linuxDir,
-      (name) => !name.endsWith('.so') && !name.includes('.') && name !== 'chrome-sandbox',
+      (name) =>
+        !name.endsWith('.so') &&
+        !name.includes('.') &&
+        !name.startsWith('chrome_') &&
+        name !== 'chrome-sandbox',
     )
   }
 
