@@ -17,6 +17,7 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # ── Set test environment BEFORE importing any app modules ─────────────────────
 _TEST_ENCRYPTION_KEY = Fernet.generate_key().decode()
@@ -46,7 +47,11 @@ _DEFAULT_TEST_DB_URL = f"sqlite+aiosqlite:///{_DEFAULT_TEST_DB_PATH}"
 TEST_DB_URL = os.environ.get("TEST_DATABASE_URL") or _DEFAULT_TEST_DB_URL
 _is_sqlite = TEST_DB_URL.startswith("sqlite")
 
-_engine = create_async_engine(TEST_DB_URL, echo=False)
+# NullPool disables connection pooling so each checkout gets a fresh connection
+# on the current event loop. This is required when _run_async() creates a new
+# event loop per call — asyncpg connections are loop-bound and cannot be reused
+# across loops, which causes "another operation is in progress" on teardown.
+_engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
 _TestSession = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
 if _is_sqlite:
