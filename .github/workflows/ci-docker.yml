@@ -27,11 +27,9 @@ jobs:
         # auto-generates them on first start and writes to /data/db/*.key (writable volume).
         # ADMIN_USERNAME/PASSWORD are required on first boot to seed the initial admin user.
         run: |
-          cat > .env <<'EOF'
-APP_DISTRIBUTION=self_hosted
-ADMIN_USERNAME=ci-admin
-ADMIN_PASSWORD=CIpassword1!
-EOF
+          echo 'APP_DISTRIBUTION=self_hosted' > .env
+          echo 'ADMIN_USERNAME=ci-admin' >> .env
+          echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
       - name: Build and start (SQLite mode)
         run: docker compose up -d --build --wait --timeout 120
@@ -74,11 +72,9 @@ EOF
 
       - name: Create CI env file
         run: |
-          cat > .env <<'EOF'
-APP_DISTRIBUTION=self_hosted
-ADMIN_USERNAME=ci-admin
-ADMIN_PASSWORD=CIpassword1!
-EOF
+          echo 'APP_DISTRIBUTION=self_hosted' > .env
+          echo 'ADMIN_USERNAME=ci-admin' >> .env
+          echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
       - name: Build and start (PostgreSQL mode)
         run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build --wait --timeout 120
