@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  docker-publish:
+    name: Publish Docker Images to GHCR
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: meta
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:latest
+
+  electron-release:
+    name: Build and Attach Electron macOS Release
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build frontend (desktop mode)
+        run: npm ci && npm run build:desktop
+        working-directory: frontend
+
+      - name: Install Electron dependencies
+        run: npm install
+        working-directory: electron
+
+      - name: Package for macOS (unsigned zip)
+        # Produces a .zip of the .app in electron/dist/ for attaching to the GitHub Release.
+        # CSC_IDENTITY_AUTO_DISCOVERY=false suppresses keychain signing lookup in CI.
+        #
+        # Future signing (requires Apple Developer account — add as GitHub Actions secrets):
+        #   CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        #   CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        #   APPLE_ID: ${{ secrets.APPLE_ID }}
+        #   APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist -- --mac zip
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Attach artifact to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: electron/dist/*.zip

@@ -1,0 +1,88 @@
+name: Docker Distribution
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke-sqlite:
+    name: Docker Smoke Test (SQLite)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create data directories
+        run: mkdir -p data/input data/output data/db
+
+      - name: Create CI env file
+        # ENCRYPTION_KEY and JWT_SECRET_KEY are intentionally omitted — the backend
+        # auto-generates them on first start and writes to /data/db/*.key (writable volume).
+        run: |
+          cat > .env <<'EOF'
+          APP_DISTRIBUTION=self_hosted
+          EOF
+
+      - name: Build and start (SQLite mode)
+        run: docker compose up -d --build --wait --timeout 120
+
+      - name: Verify backend health
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Verify auth enforcement
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/api/connections)
+          echo "Unauthenticated /api/connections → HTTP $STATUS"
+          test "$STATUS" = "401" || (echo "Expected 401, got $STATUS" && exit 1)
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  smoke-postgres:
+    name: Docker Smoke Test (PostgreSQL)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create data directories
+        run: mkdir -p data/input data/output data/db
+
+      - name: Create CI env file
+        run: |
+          cat > .env <<'EOF'
+          APP_DISTRIBUTION=self_hosted
+          EOF
+
+      - name: Build and start (PostgreSQL mode)
+        run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build --wait --timeout 120
+
+      - name: Verify backend health
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Verify auth enforcement
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/api/connections)
+          echo "Unauthenticated /api/connections → HTTP $STATUS"
+          test "$STATUS" = "401" || (echo "Expected 401, got $STATUS" && exit 1)
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml down -v

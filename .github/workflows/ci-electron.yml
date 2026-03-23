@@ -1,0 +1,97 @@
+name: Electron Desktop CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-smoke:
+    name: Electron Build & Smoke Test (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Build frontend (desktop mode)
+        run: npm ci && npm run build:desktop
+        working-directory: frontend
+
+      - name: Set up backend virtualenv
+        # Creates .venv/bin/uvicorn and .venv/bin/alembic so main.js tool discovery
+        # finds them in the expected location (../backend/.venv/bin/).
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+        working-directory: backend
+
+      - name: Install Electron dependencies
+        run: npm install
+        working-directory: electron
+
+      - name: Smoke test — launch Electron and verify desktop bootstrap
+        # Runs from source (not a packaged .app) so dev-relative paths in main.js resolve.
+        # macOS-latest runners have a display available; no Xvfb needed.
+        working-directory: electron
+        run: |
+          npx electron . &
+          ELECTRON_PID=$!
+
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8000/api/health > /dev/null 2>&1 \
+              && echo "Backend ready after ${i}s" && break
+            sleep 1
+            if [ "$i" -eq 60 ]; then
+              echo "Timeout: backend did not start within 60 seconds"
+              kill $ELECTRON_PID
+              exit 1
+            fi
+          done
+
+          STATUS=$(curl -sf http://127.0.0.1:8000/api/health \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['status'])")
+          echo "Health status: $STATUS"
+          test "$STATUS" = "ok"
+
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/connections)
+          echo "Unauthenticated /api/connections → HTTP $HTTP (expect 200 in desktop mode)"
+          test "$HTTP" = "200"
+
+          kill $ELECTRON_PID
+          wait $ELECTRON_PID 2>/dev/null
+          echo "Smoke tests passed"
+
+      - name: Package for macOS (unsigned)
+        # Produces a directory-format .app in electron/dist/.
+        # CSC_IDENTITY_AUTO_DISCOVERY=false suppresses keychain signing lookup in CI.
+        #
+        # Future signing (requires Apple Developer account — add as GitHub Actions secrets):
+        #   CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        #   CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        #   APPLE_ID: ${{ secrets.APPLE_ID }}
+        #   APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sf-bulk-loader-macos-${{ github.sha }}
+          path: electron/dist/mac*/**/*.app
+          retention-days: 7
