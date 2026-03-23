@@ -120,6 +120,10 @@ async def prepare_retry_step(
             detail=f"Cannot retry a run with status '{original_run.status.value}' — run must be in a terminal state.",
         )
 
+    step = await db.get(LoadStep, step_id)
+    if step is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
+
     jobs_result = await db.execute(
         select(JobRecord).where(
             JobRecord.load_run_id == run_id,
@@ -138,10 +142,6 @@ async def prepare_retry_step(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No retryable jobs found for this step.",
         )
-
-    step = await db.get(LoadStep, step_id)
-    if step is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found")
 
     # Best-effort abort of any uploading SF jobs that may still be open
     uploading_jobs = [j for j in retryable_jobs if j.sf_job_id and j.status == JobStatus.aborted]

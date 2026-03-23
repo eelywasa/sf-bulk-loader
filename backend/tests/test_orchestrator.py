@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.connection import Connection
 from app.models.job import JobRecord, JobStatus
@@ -41,22 +41,7 @@ from app.services.orchestrator import (
 
 # ── In-process test database ──────────────────────────────────────────────────
 
-_TEST_URL = "sqlite+aiosqlite:///./test_orchestrator.db"
-_engine = create_async_engine(_TEST_URL, echo=False)
-_SessionFactory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
-
-
-@pytest.fixture(scope="module", autouse=True)
-async def _create_tables():
-    """Create all tables once for the module and drop them on teardown."""
-    from app.database import Base
-
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await _engine.dispose()
+from tests.conftest import _TestSession as _SessionFactory
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +76,22 @@ def make_db_factory(session: AsyncSession):
 
 
 # ── Test data helpers ─────────────────────────────────────────────────────────
+
+
+async def _make_input_connection(db: AsyncSession) -> "InputConnection":
+    from app.models.input_connection import InputConnection
+    ic = InputConnection(
+        id=str(uuid.uuid4()),
+        name="Test S3 Source",
+        provider="s3",
+        bucket="test-bucket",
+        access_key_id="fake-key-id",
+        secret_access_key="fake-secret",
+    )
+    db.add(ic)
+    await db.commit()
+    await db.refresh(ic)
+    return ic
 
 
 async def _make_connection(db: AsyncSession) -> Connection:
@@ -875,7 +876,7 @@ async def test_step_executes_from_s3_source(db: AsyncSession, tmp_path):
     """A step with input_connection_id set resolves an S3 storage mock."""
     conn = await _make_connection(db)
     plan = await _make_plan(db, conn)
-    # Create step with a (fake) input_connection_id to simulate S3-backed source.
+    ic = await _make_input_connection(db)
     step = LoadStep(
         id=str(uuid.uuid4()),
         load_plan_id=plan.id,
@@ -884,7 +885,7 @@ async def test_step_executes_from_s3_source(db: AsyncSession, tmp_path):
         operation=Operation.insert,
         csv_file_pattern="data/accounts_*.csv",
         partition_size=10_000,
-        input_connection_id="fake-s3-connection-id",
+        input_connection_id=ic.id,
     )
     db.add(step)
     await db.commit()
@@ -913,13 +914,14 @@ async def test_step_executes_from_s3_source(db: AsyncSession, tmp_path):
     # get_storage was called with the step's input_connection_id.
     get_storage_mock.assert_awaited()
     call_args = get_storage_mock.call_args_list
-    assert any(args[0][0] == "fake-s3-connection-id" for args in call_args)
+    assert any(args[0][0] == ic.id for args in call_args)
 
 
 async def test_storage_resolution_failure_marks_run_failed(db: AsyncSession, tmp_path):
     """If get_storage raises InputConnectionNotFoundError, run is marked failed."""
     conn = await _make_connection(db)
     plan = await _make_plan(db, conn)
+    ic = await _make_input_connection(db)
     step = LoadStep(
         id=str(uuid.uuid4()),
         load_plan_id=plan.id,
@@ -928,7 +930,7 @@ async def test_storage_resolution_failure_marks_run_failed(db: AsyncSession, tmp
         operation=Operation.insert,
         csv_file_pattern="*.csv",
         partition_size=10_000,
-        input_connection_id="nonexistent-connection",
+        input_connection_id=ic.id,
     )
     db.add(step)
     await db.commit()

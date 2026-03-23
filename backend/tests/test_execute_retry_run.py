@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.connection import Connection
 from app.models.job import JobRecord, JobStatus
@@ -31,21 +31,7 @@ from app.services.run_coordinator import execute_retry_run
 
 # ── In-process test database ──────────────────────────────────────────────────
 
-_TEST_URL = "sqlite+aiosqlite:///./test_retry_run.db"
-_engine = create_async_engine(_TEST_URL, echo=False)
-_SessionFactory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
-
-
-@pytest.fixture(scope="module", autouse=True)
-async def _create_tables():
-    from app.database import Base
-
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await _engine.dispose()
+from tests.conftest import _TestSession as _SessionFactory
 
 
 @pytest.fixture(autouse=True)
