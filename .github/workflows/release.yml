@@ -88,6 +88,14 @@ jobs:
         run: npm install
         working-directory: electron
 
+      - name: Set version from tag
+        # Stamps the version in package.json from the git tag (e.g. v0.2.0 → 0.2.0)
+        # so electron-builder uses the correct version in output filenames.
+        # npm version accepts the v-prefixed tag directly. --no-git-tag-version
+        # prevents npm from creating a conflicting git tag.
+        run: npm version ${{ github.ref_name }} --no-git-tag-version --allow-same-version
+        working-directory: electron
+
       - name: Package with electron-builder
         # CSC_IDENTITY_AUTO_DISCOVERY=false suppresses keychain signing lookup in CI.
         #
