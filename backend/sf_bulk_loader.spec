@@ -144,7 +144,6 @@ excludes = [
     # Test infrastructure
     'pytest',
     'pytest_asyncio',
-    'anyio',
     # Notebook / scientific artefacts sometimes pulled in by boto3/botocore
     'IPython',
     'matplotlib',

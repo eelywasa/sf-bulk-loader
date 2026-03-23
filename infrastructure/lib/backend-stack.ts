@@ -5,6 +5,7 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -13,14 +14,20 @@ import { Construct } from 'constructs';
 export interface BackendStackProps extends cdk.StackProps {
   envName: string;
   vpc: ec2.Vpc;
+  albSecurityGroup: ec2.SecurityGroup;
+  backendServiceSecurityGroup: ec2.SecurityGroup;
   inputBucket: s3.Bucket;
   outputBucket: s3.Bucket;
   encryptionKeySecret: secretsmanager.Secret;
   jwtSecretKeySecret: secretsmanager.Secret;
   databaseUrlSecret: secretsmanager.Secret;
   adminPasswordSecret: secretsmanager.Secret;
+  /** DNS hostname that CloudFront uses as the backend origin (for example api.example.com). */
+  backendDomainName: string;
   /** ACM certificate ARN for the ALB HTTPS listener. */
-  certificateArn: string;
+  backendCertificateArn: string;
+  /** Route53 hosted zone name that owns backendDomainName. */
+  hostedZoneDomain: string;
   ecsDesiredCount: number;
   ecrImageTag: string;
 }
@@ -36,6 +43,7 @@ export interface BackendStackProps extends cdk.StackProps {
  *       - SSM Parameter Store injection for non-sensitive config
  *       - IAM task role with S3 read/write permissions
  *   - Application Load Balancer (HTTPS on 443 → HTTP on 8000 internally)
+ *   - Route53 alias record for the backend origin hostname used by CloudFront
  *   - CloudWatch Logs log group
  *
  * Runtime config injection model:
@@ -58,10 +66,11 @@ export interface BackendStackProps extends cdk.StackProps {
  * are needed in config.py. The aws_hosted profile validates at startup that
  * transport_mode=https, input_storage_mode=s3, and DATABASE_URL is PostgreSQL.
  *
- * TLS is terminated at the ALB. The Fargate container listens on plain HTTP (port 8000)
- * internally. The backend logs a reminder of this at startup when transport_mode=https.
- * WebSocket connections use wss:// at the client layer; the ALB forwards ws:// to the
- * container transparently.
+ * TLS is terminated at the ALB. CloudFront connects to the ALB using the backend origin
+ * hostname so the TLS certificate matches the origin request hostname. The Fargate
+ * container listens on plain HTTP (port 8000) internally. The backend logs a reminder of
+ * this at startup when transport_mode=https. WebSocket connections use wss:// at the
+ * client layer; the ALB forwards ws:// to the container transparently.
  */
 export class BackendStack extends cdk.Stack {
   /** DNS name of the Application Load Balancer — consumed by FrontendStack for API routing. */
@@ -193,33 +202,19 @@ export class BackendStack extends cdk.Stack {
     // Suppress unused variable warning — container is used implicitly through taskDefinition.
     void container;
 
-    // --- Security Groups ---
-    const albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSecurityGroup', {
-      vpc: props.vpc,
-      description: 'Allow HTTPS inbound to ALB',
-    });
-    albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS');
-    albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP redirect');
-
-    const ecsSecurityGroup = new ec2.SecurityGroup(this, 'EcsSecurityGroup', {
-      vpc: props.vpc,
-      description: 'Allow traffic from ALB to ECS tasks',
-    });
-    ecsSecurityGroup.addIngressRule(albSecurityGroup, ec2.Port.tcp(8000), 'From ALB');
-
     // --- Application Load Balancer ---
     // TLS is terminated here. The backend container receives plain HTTP on port 8000.
     const alb = new elbv2.ApplicationLoadBalancer(this, 'Alb', {
       vpc: props.vpc,
       internetFacing: true,
-      securityGroup: albSecurityGroup,
+      securityGroup: props.albSecurityGroup,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
 
     const httpsListener = alb.addListener('HttpsListener', {
       port: 443,
       certificates: [
-        elbv2.ListenerCertificate.fromArn(props.certificateArn),
+        elbv2.ListenerCertificate.fromArn(props.backendCertificateArn),
       ],
       sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
     });
@@ -239,7 +234,7 @@ export class BackendStack extends cdk.Stack {
       cluster,
       taskDefinition,
       desiredCount: props.ecsDesiredCount,
-      securityGroups: [ecsSecurityGroup],
+      securityGroups: [props.backendServiceSecurityGroup],
       // Tasks run in public subnets and are assigned public IPs so they can reach
       // the Salesforce API without a NAT Gateway. Inbound traffic is restricted by
       // the security group to the ALB only — no direct public access to port 8000.
@@ -269,6 +264,17 @@ export class BackendStack extends cdk.Stack {
       // Sticky sessions are not required because the backend is stateless (JWT auth).
     });
 
+    new route53.CfnRecordSet(this, 'BackendAliasRecord', {
+      hostedZoneName: `${props.hostedZoneDomain}.`,
+      name: `${props.backendDomainName}.`,
+      type: 'A',
+      aliasTarget: {
+        dnsName: alb.loadBalancerDnsName,
+        hostedZoneId: alb.loadBalancerCanonicalHostedZoneId,
+        evaluateTargetHealth: true,
+      },
+    });
+
     this.albDnsName = alb.loadBalancerDnsName;
 
     // --- Outputs ---
@@ -276,6 +282,10 @@ export class BackendStack extends cdk.Stack {
       value: alb.loadBalancerDnsName,
       description: 'ALB DNS name (used as CloudFront backend origin for /api/* and /ws/*)',
       exportName: `${this.stackName}-AlbDnsName`,
+    });
+    new cdk.CfnOutput(this, 'BackendOriginDomainName', {
+      value: props.backendDomainName,
+      description: 'DNS name that CloudFront uses as the HTTPS backend origin',
     });
     new cdk.CfnOutput(this, 'EcrRepositoryUri', {
       value: repository.repositoryUri,

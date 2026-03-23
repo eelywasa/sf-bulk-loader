@@ -27,6 +27,8 @@ export interface NetworkStackProps extends cdk.StackProps {
  */
 export class NetworkStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
+  public readonly albSecurityGroup: ec2.SecurityGroup;
+  public readonly backendServiceSecurityGroup: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
@@ -60,6 +62,19 @@ export class NetworkStack extends cdk.Stack {
     this.vpc.addGatewayEndpoint('S3GatewayEndpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
+
+    this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSecurityGroup', {
+      vpc: this.vpc,
+      description: 'Allow HTTPS inbound to ALB',
+    });
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS');
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP redirect');
+
+    this.backendServiceSecurityGroup = new ec2.SecurityGroup(this, 'BackendServiceSecurityGroup', {
+      vpc: this.vpc,
+      description: 'Shared security group for Bulk Loader ECS tasks',
+    });
+    this.backendServiceSecurityGroup.addIngressRule(this.albSecurityGroup, ec2.Port.tcp(8000), 'From ALB');
 
     // TODO: Add VPC flow logs (CloudWatch Logs) for production traffic auditing.
     // TODO: Add Interface Endpoints for ECR, Secrets Manager, and SSM if a

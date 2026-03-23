@@ -8,8 +8,27 @@ on:
 
 jobs:
   build-and-smoke:
-    name: Electron Build & Smoke Test (macOS)
-    runs-on: macos-latest
+    name: Electron Build & Smoke Test (${{ matrix.artifact_suffix }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: mac
+            artifact_suffix: mac-arm64
+            dir_args: --mac dir
+            artifact_path: electron/dist/mac-arm64/**/*.app
+          - os: windows-2025
+            platform: win
+            artifact_suffix: windows-x64
+            dir_args: --win dir
+            artifact_path: electron/dist/win-unpacked/**
+          - os: ubuntu-24.04
+            platform: linux
+            artifact_suffix: linux-x64
+            dir_args: --linux dir
+            artifact_path: electron/dist/linux-unpacked/**
 
     steps:
       - uses: actions/checkout@v4
@@ -18,92 +37,15 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: electron/package-lock.json
+          cache-dependency-path: |
+            electron/package-lock.json
+            frontend/package-lock.json
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
-
-      - name: Build frontend (desktop mode)
-        run: npm ci && npm run build:desktop
-        working-directory: frontend
-
-      - name: Set up backend virtualenv
-        # Creates .venv/bin/uvicorn and .venv/bin/alembic so main.js dev-mode
-        # tool discovery finds them in the expected location (backend/.venv/bin/).
-        run: |
-          python -m venv .venv
-          .venv/bin/pip install -r requirements.txt
-        working-directory: backend
-
-      - name: Install Electron dependencies
-        run: npm install
-        working-directory: electron
-
-      - name: Smoke test — launch Electron and verify desktop bootstrap
-        # Runs from source (not a packaged .app) so dev-relative paths in main.js resolve.
-        # macOS-latest runners have a display available; no Xvfb needed.
-        working-directory: electron
-        run: |
-          npx electron . &
-          ELECTRON_PID=$!
-
-          for i in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8000/api/health > /dev/null 2>&1 \
-              && echo "Backend ready after ${i}s" && break
-            sleep 1
-            if [ "$i" -eq 60 ]; then
-              echo "Timeout: backend did not start within 60 seconds"
-              kill $ELECTRON_PID
-              exit 1
-            fi
-          done
-
-          STATUS=$(curl -sf http://127.0.0.1:8000/api/health \
-            | python3 -c "import sys, json; print(json.load(sys.stdin)['status'])")
-          echo "Health status: $STATUS"
-          test "$STATUS" = "ok"
-
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/connections/)
-          echo "Unauthenticated /api/connections/ → HTTP $HTTP (expect 200 in desktop mode)"
-          test "$HTTP" = "200"
-
-          kill $ELECTRON_PID
-          wait $ELECTRON_PID 2>/dev/null
-          echo "Smoke tests passed"
-
-      - name: Package for macOS (unsigned dir)
-        # Produces a directory-format .app in electron/dist/ for artifact inspection.
-        # CSC_IDENTITY_AUTO_DISCOVERY=false suppresses keychain signing lookup in CI.
-        # NOTE: this artifact uses source-bundled backend (no PyInstaller) — it is a
-        # build-validity check only, not a distributable. See pyinstaller-check job
-        # (runs on main pushes) for binary validation, and release.yml for the real build.
-        run: npm run dist -- --mac dir
-        working-directory: electron
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sf-bulk-loader-macos-${{ github.sha }}
-          path: electron/dist/mac*/**/*.app
-          retention-days: 1
-
-  pyinstaller-check:
-    name: PyInstaller Binary Check (macOS arm64)
-    runs-on: macos-latest
-    # Only run on pushes to main — not on every PR — to keep PR CI fast.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+          cache-dependency-path: backend/requirements-desktop.txt
 
       - name: Install backend dependencies + PyInstaller
         run: |
@@ -115,14 +57,34 @@ jobs:
         run: pyinstaller sf_bulk_loader.spec --clean --noconfirm
         working-directory: backend
 
-      - name: Verify binary — run migrations against a temp DB
-        # Confirms sys._MEIPASS path resolution finds the bundled alembic/ directory
-        # and that alembic can create the full schema without errors.
-        run: |
-          DATABASE_URL="sqlite+aiosqlite:////tmp/pyinstaller_test.db" \
-          ENCRYPTION_KEY_FILE=/tmp/enc.key \
-          JWT_SECRET_KEY_FILE=/tmp/jwt.key \
-          APP_DISTRIBUTION=desktop \
-          ./dist/sf_bulk_loader/sf_bulk_loader --migrate
-          echo "PyInstaller --migrate succeeded"
-        working-directory: backend
+      - name: Build frontend (desktop mode)
+        run: npm ci && npm run build:desktop
+        working-directory: frontend
+
+      - name: Install Electron dependencies
+        run: npm ci
+        working-directory: electron
+
+      - name: Package unpacked desktop app
+        run: npm run dist -- ${{ matrix.dir_args }}
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Smoke packaged app (macOS/Windows)
+        if: matrix.platform != 'linux'
+        run: node scripts/smoke-packaged.js ${{ matrix.platform }}
+        working-directory: electron
+
+      - name: Smoke packaged app (Linux)
+        if: matrix.platform == 'linux'
+        run: xvfb-run -a node scripts/smoke-packaged.js linux
+        working-directory: electron
+
+      - name: Upload unpacked artifact on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sf-bulk-loader-${{ matrix.artifact_suffix }}-${{ github.sha }}
+          path: ${{ matrix.artifact_path }}
+          retention-days: 1

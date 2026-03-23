@@ -32,13 +32,17 @@ function findBackendBinary() {
 }
 
 function findVenvUvicorn() {
-  const venvUvicorn = path.join(BACKEND_DIR, '.venv', 'bin', 'uvicorn')
+  const venvBin = process.platform === 'win32' ? 'Scripts' : 'bin'
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const venvUvicorn = path.join(BACKEND_DIR, '.venv', venvBin, `uvicorn${ext}`)
   if (fs.existsSync(venvUvicorn)) return venvUvicorn
   return 'uvicorn'
 }
 
 function findVenvAlembic() {
-  const venvAlembic = path.join(BACKEND_DIR, '.venv', 'bin', 'alembic')
+  const venvBin = process.platform === 'win32' ? 'Scripts' : 'bin'
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const venvAlembic = path.join(BACKEND_DIR, '.venv', venvBin, `alembic${ext}`)
   if (fs.existsSync(venvAlembic)) return venvAlembic
   return 'alembic'
 }

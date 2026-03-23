@@ -13,7 +13,10 @@
       "staging": {
         "vpcCidr": "10.10.0.0/16",
         "domainName": "staging.your-domain.example",
-        "certificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/STAGING-CERT-ID",
+        "certificateArn": "arn:aws:acm:us-east-1:ACCOUNT:certificate/STAGING-CLOUDFRONT-CERT-ID",
+        "backendDomainName": "api-staging.your-domain.example",
+        "backendCertificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/STAGING-ALB-CERT-ID",
+        "hostedZoneDomain": "your-domain.example",
         "rdsInstanceClass": "db.t3.medium",
         "ecsDesiredCount": 1,
         "ecrImageTag": "latest"
@@ -21,7 +24,10 @@
       "production": {
         "vpcCidr": "10.20.0.0/16",
         "domainName": "bulk-loader.your-domain.example",
-        "certificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/PROD-CERT-ID",
+        "certificateArn": "arn:aws:acm:us-east-1:ACCOUNT:certificate/PROD-CLOUDFRONT-CERT-ID",
+        "backendDomainName": "api.your-domain.example",
+        "backendCertificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/PROD-ALB-CERT-ID",
+        "hostedZoneDomain": "your-domain.example",
         "rdsInstanceClass": "db.t3.large",
         "ecsDesiredCount": 2,
         "ecrImageTag": "stable"

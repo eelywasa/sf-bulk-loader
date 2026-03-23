@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -10,17 +11,17 @@ export interface FrontendStackProps extends cdk.StackProps {
   domainName: string;
   /** ACM certificate ARN — must be in us-east-1 for CloudFront. */
   certificateArn: string;
-  /** ALB DNS name from BackendStack — used as origin for /api/* and /ws/* paths. */
-  albDnsName: string;
+  /** Backend origin hostname covered by the ALB certificate (for example api.example.com). */
+  backendOriginDomainName: string;
 }
 
 /**
  * FrontendStack — CloudFront + S3 static hosting for the aws_hosted distribution.
  *
  * Architecture:
- *   Browser → CloudFront → /api/*  → ALB → ECS/Fargate (BackendStack)
- *                        → /ws/*   → ALB → ECS/Fargate (BackendStack)
- *                        → /*      → S3  → React SPA (index.html fallback)
+ *   Browser → CloudFront → /api/*  → backend origin hostname → ALB → ECS/Fargate
+ *                        → /ws/*   → backend origin hostname → ALB → ECS/Fargate
+ *                        → /*      → S3                     → React SPA
  *
  * TLS is terminated at CloudFront (wss:// at client, ws:// at ALB internally).
  * The certificate must be provisioned in us-east-1 regardless of the deployment region.
@@ -54,9 +55,9 @@ export class FrontendStack extends cdk.Stack {
     // --- ALB origin for API and WebSocket paths ---
     // The ALB handles /api/* and /ws/* paths.
     // CloudFront does not terminate WebSocket connections — it proxies them through.
-    const albOrigin = new origins.HttpOrigin(props.albDnsName, {
+    const albOrigin = new origins.HttpOrigin(props.backendOriginDomainName, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-      // The ALB is already HTTPS-terminated; CloudFront connects to it securely.
+      // CloudFront connects using a hostname covered by the ALB certificate.
     });
 
     // --- CloudFront Distribution ---
@@ -108,9 +109,8 @@ export class FrontendStack extends cdk.Stack {
         },
       ],
 
-      // TODO: add domainNames and certificate once DNS is configured:
-      // domainNames: [props.domainName],
-      // certificate: acm.Certificate.fromCertificateArn(this, 'Cert', props.certificateArn),
+      domainNames: [props.domainName],
+      certificate: acm.Certificate.fromCertificateArn(this, 'Cert', props.certificateArn),
     });
 
     // --- Frontend Deployment ---
