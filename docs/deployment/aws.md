@@ -61,13 +61,34 @@ is required or acceptable for a reproducible deployment.
 
 | Stack | Contents |
 |-------|----------|
-| `BulkLoader-{env}-Network` | VPC, public/private subnets across 2 AZs, NAT gateway |
+| `BulkLoader-{env}-Network` | VPC, public subnets (ALB + ECS) and isolated subnets (RDS) across 2 AZs, S3 Gateway Endpoint |
 | `BulkLoader-{env}-Data` | RDS PostgreSQL, S3 input + output buckets, Secrets Manager secrets |
 | `BulkLoader-{env}-Backend` | ECR repository, ECS cluster, Fargate task/service, ALB |
 | `BulkLoader-{env}-Frontend` | CloudFront distribution, S3 frontend bucket |
 
 Environments (`staging`, `production`) are parameterised via CDK context — same code, different
 values. Environment configuration lives in `infrastructure/cdk.json` under `context.environments`.
+
+### Network Topology
+
+The Network stack uses a no-NAT-Gateway design to minimise cost:
+
+| Subnet type | Contains | Internet access |
+|-------------|----------|-----------------|
+| Public (× 2 AZs) | ALB, ECS Fargate tasks | Direct via Internet Gateway |
+| Isolated (× 2 AZs) | RDS PostgreSQL | None — VPC-internal only |
+
+**No NAT Gateway is provisioned.** Fargate tasks are placed in public subnets and assigned public
+IPs so they can reach the Salesforce API directly. Inbound traffic to the containers is restricted
+by the ECS security group to the ALB only — no direct public access to port 8000 is possible.
+The attack-surface exposure is equivalent to a private-subnet deployment.
+
+**S3 Gateway Endpoint** is added to the VPC at no charge. All S3 traffic (input CSV reads and
+result CSV writes) is routed over the AWS backbone rather than the public internet, eliminating
+S3-related data-transfer charges.
+
+Saving vs a standard NAT Gateway design: approximately **$32–45/month** per environment (NAT
+Gateway hourly fee + per-GB data processing charge).
 
 ---
 
@@ -358,7 +379,7 @@ To add a new environment:
 - The Fargate container runs as a non-root user (inherited from `backend/Dockerfile`)
 - All S3 buckets block public access; CloudFront accesses the frontend bucket via OAC
 - Secrets Manager secrets are never exposed in CloudFormation templates or task definition plaintext
-- RDS is in private subnets, accessible only from within the VPC
+- RDS is in isolated subnets (no internet route), accessible only from within the VPC
 - ALB enforces TLS 1.2+ via `SslPolicy.RECOMMENDED_TLS`
 - HTTP to HTTPS redirect is enforced at the ALB
 - `enforceSSL: true` on all S3 buckets rejects unencrypted requests
