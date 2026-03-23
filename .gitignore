@@ -18,6 +18,11 @@ certs/
 # Node
 node_modules/
 
+# CDK
+infrastructure/cdk.out/
+infrastructure/cdk.context.json
+infrastructure/dist/
+
 # OS
 .DS_Store
 .DS_Store?

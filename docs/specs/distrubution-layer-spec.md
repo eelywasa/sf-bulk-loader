@@ -188,6 +188,10 @@ AWS deployment should support:
 
 AWS is **not MVP**, but the architecture must leave a clean lane open for it.
 
+**Infrastructure as code**: AWS-hosted deployments will be defined using **AWS CDK**. CDK synthesises to CloudFormation, which manages provisioning and updates. Infrastructure must be fully reproducible from code and must support environment-specific configuration (e.g. staging vs. production) without manual intervention. No ad hoc console-driven infrastructure is acceptable for a supported distribution.
+
+**Runtime configuration**: Runtime configuration will be injected via AWS-native mechanisms — **Secrets Manager** for sensitive values such as encryption keys and database credentials, and **SSM Parameter Store** for non-sensitive configuration. These values must be mapped into the application's distribution-aware configuration model under the `aws_hosted` profile, so the core app remains agnostic to how configuration is sourced.
+
 ### Distribution Policy Matrix
 
 The distribution layer should explicitly support policy differences by deployment model rather than hardcoding one universal behavior.
@@ -198,7 +202,7 @@ The distribution layer should explicitly support policy differences by deploymen
 | Transport | local loopback | http first, https optional/recommended | https required |
 | Database | SQLite | SQLite or PostgreSQL | PostgreSQL |
 | File storage | local filesystem | local/shared filesystem | S3 default |
-| Secrets | app DB initially | app DB | app DB + cloud-native injection compatibility |
+| Secrets | app DB initially | app DB | Secrets Manager + SSM Parameter Store (infra/config); app DB for persisted connection secrets |
 | Runtime topology | bundled local backend | hosted backend | hosted backend |
 
 ---
@@ -421,8 +425,9 @@ Expected concerns:
 
 - static frontend build/deploy
 - ECS/Fargate backend target
-- infrastructure configuration
-- secrets/config injection
+- **AWS CDK** stack definitions synthesised to CloudFormation — fully reproducible, no manual console provisioning
+- environment-specific configuration without manual overrides (e.g. staging vs. production stacks)
+- runtime config injection via **Secrets Manager** (sensitive values) and **SSM Parameter Store** (non-sensitive config), mapped into the `aws_hosted` profile
 - release automation
 
 ### Packaging Principle
@@ -455,7 +460,7 @@ Make local storage and secrets handling distribution-aware.
 
 - desktop: secrets remain stored in the application database for MVP
 - self-hosted: secrets remain stored in the application database using current encryption model
-- AWS-hosted: application secrets/config should be compatible with cloud-native secret injection, while application-managed encrypted storage may remain for persisted connection secrets
+- AWS-hosted: infrastructure-level secrets (encryption keys, database credentials) must be sourced from **Secrets Manager**; non-sensitive operational config from **SSM Parameter Store**; both must be mapped into the `aws_hosted` profile at startup so the core application remains agnostic to the injection mechanism. Application-managed encrypted storage (Fernet-encrypted connection secrets) may remain for data persisted in the database.
 - AWS-hosted file storage: **S3 default**
 
 ### Design Guidance
@@ -559,7 +564,7 @@ The distribution layer should introduce an explicit configuration model for:
 | `AUTH_MODE` | `none` | `local` | `local` initially |
 | `TRANSPORT_MODE` | `local` | `http` or `https` | `https` |
 | `INPUT_STORAGE_MODE` | local filesystem | local/shared filesystem | S3 default |
-| `SECRETS_MODE` | app_db | app_db | app_db + cloud-native injection compatibility |
+| `SECRETS_MODE` | app_db | app_db | Secrets Manager (infra secrets) + SSM Parameter Store (config) + app_db (persisted connection secrets) |
 
 ### Configuration rules
 
@@ -804,7 +809,7 @@ Exit criteria:
 - desktop distribution has a defined storage/secrets model
 - future secure-store enhancement is documented, not forgotten
 
-### 9. Implement AWS Distribution Skeleton
+### 9. Implement AWS Distribution Skeleton — ✅ DONE
 
 Goal: ensure the architecture supports later AWS delivery without requiring major redesign.
 
@@ -812,8 +817,10 @@ Scope:
 
 - document `aws_hosted` runtime profile
 - define AWS assumptions: static frontend hosting, ECS/Fargate backend, PostgreSQL, S3 default file storage, HTTPS mandatory
-- add placeholder deployment assets and/or docs sufficient to anchor later implementation
-- ensure hosted config model supports cloud-native secrets/config injection
+- define infrastructure-as-code approach: **AWS CDK** stacks synthesising to CloudFormation; fully reproducible and environment-parameterised (no manual console provisioning)
+- define runtime config injection model: **Secrets Manager** for sensitive values (encryption keys, DB credentials); **SSM Parameter Store** for non-sensitive operational config; both mapped into the `aws_hosted` profile at startup
+- add placeholder CDK stack(s) and/or docs sufficient to anchor later implementation
+- ensure hosted config model supports cloud-native secrets/config injection without requiring changes to core application logic
 
 Dependencies:
 

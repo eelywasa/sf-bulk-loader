@@ -1,0 +1,31 @@
+// This file shows the shape of cdk.context.json for local overrides.
+// cdk.context.json is git-ignored — copy this to cdk.context.json and fill in real values.
+//
+// Most environment config lives in cdk.json under context.environments.
+// Use cdk.context.json only for values that should NOT be committed (account IDs, real ARNs).
+//
+// Usage:
+//   cp cdk.context.json.example cdk.context.json
+//   # edit with real values
+//   cdk deploy --all -c env=staging
+
+{
+  "environments": {
+    "staging": {
+      "vpcCidr": "10.10.0.0/16",
+      "domainName": "staging.bulk-loader.example.com",
+      "certificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "rdsInstanceClass": "db.t3.medium",
+      "ecsDesiredCount": 1,
+      "ecrImageTag": "latest"
+    },
+    "production": {
+      "vpcCidr": "10.20.0.0/16",
+      "domainName": "bulk-loader.example.com",
+      "certificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+      "rdsInstanceClass": "db.t3.large",
+      "ecsDesiredCount": 2,
+      "ecrImageTag": "stable"
+    }
+  }
+}
