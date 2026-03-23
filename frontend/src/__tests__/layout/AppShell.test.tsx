@@ -15,6 +15,13 @@ const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
   input_storage_mode: 'local',
 }
 
+const MOCK_RUNTIME_DESKTOP: RuntimeConfig = {
+  auth_mode: 'none',
+  app_distribution: 'desktop',
+  transport_mode: 'local',
+  input_storage_mode: 'local',
+}
+
 const MOCK_USER: UserResponse = {
   id: '1',
   username: 'alice',
@@ -169,9 +176,20 @@ describe('AppShell', () => {
     expect(brand?.querySelector('svg')).toBeInTheDocument()
   })
 
-  it('shows sign out button', () => {
+  it('shows sign out button when auth is required', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
     renderAppShell()
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    })
+  })
+
+  it('hides sign out button in desktop profile', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+    renderAppShell()
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument()
+    })
   })
 
   it('shows username when user is authenticated', async () => {

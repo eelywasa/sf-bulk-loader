@@ -3,25 +3,28 @@
   "version": "0.1.0",
   "description": "Salesforce Bulk Loader — Desktop",
   "main": "main.js",
+  "author": "Matthew Jenkin <mjenkin@salesforce.com>",
   "private": true,
   "scripts": {
     "start": "electron .",
     "build:frontend": "cd ../frontend && npm run build:desktop",
-    "dist": "electron-builder --mac dir"
+    "dist": "electron-builder"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.example.sf-bulk-loader",
     "productName": "Salesforce Bulk Loader",
-    "files": ["main.js", "preload.js"],
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
     "extraResources": [
       {
-        "from": "../backend",
-        "to": "backend",
-        "filter": ["**/*", "!.venv/**", "!__pycache__/**", "!*.pyc", "!test_*.db", "!tests/**"]
+        "from": "../backend/dist/sf_bulk_loader",
+        "to": "backend/sf_bulk_loader"
       },
       {
         "from": "../frontend/dist",
@@ -29,8 +32,18 @@
       }
     ],
     "mac": {
-      "target": "dir",
+      "icon": "build/icon.icns",
+      "target": [{ "target": "zip", "arch": ["arm64"] }],
       "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "category": "Development"
     }
   }
 }

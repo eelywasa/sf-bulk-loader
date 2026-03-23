@@ -18,6 +18,14 @@ certs/
 # Node
 node_modules/
 
+# Electron build intermediates (iconset PNGs — only the compiled .icns is committed)
+electron/build/icon.iconset/
+
+# PyInstaller output — rebuilt by CI on every release
+backend/dist/
+backend/build/
+backend/__pycache__/
+
 # CDK
 infrastructure/cdk.out/
 infrastructure/cdk.context.json

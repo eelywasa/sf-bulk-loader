@@ -129,7 +129,7 @@ function SettingsMenu() {
 }
 
 export default function AppShell() {
-  const { user, logout } = useAuth()
+  const { user, logout, authRequired } = useAuth()
   const displayName = user?.display_name ?? user?.username ?? null
 
   return (
@@ -183,14 +183,16 @@ export default function AppShell() {
             {displayName && (
               <span className="text-xs text-gray-500 dark:text-gray-400">{displayName}</span>
             )}
-            <button
-              onClick={logout}
-              className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-              aria-label="Sign out"
-            >
-              <FontAwesomeIcon icon={faRightFromBracket} className="w-3.5 h-3.5" />
-              Sign out
-            </button>
+            {authRequired && (
+              <button
+                onClick={logout}
+                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                aria-label="Sign out"
+              >
+                <FontAwesomeIcon icon={faRightFromBracket} className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            )}
           </div>
         </header>
 

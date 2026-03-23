@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, dialog } = require('electron')
 const { spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const http = require('http')
@@ -20,19 +20,26 @@ const BACKEND_DIR = path.join(resourcesPath, 'backend')
 
 // ─── Tool discovery ──────────────────────────────────────────────────────────
 
-function findUvicorn() {
+// In packaged mode the PyInstaller binary is at:
+//   Contents/Resources/backend/sf_bulk_loader/sf_bulk_loader(.exe)
+//
+// In dev mode fall back to the backend venv uvicorn/alembic so developers
+// do not need to run PyInstaller to iterate locally.
+
+function findBackendBinary() {
+  const binName = process.platform === 'win32' ? 'sf_bulk_loader.exe' : 'sf_bulk_loader'
+  return path.join(BACKEND_DIR, 'sf_bulk_loader', binName)
+}
+
+function findVenvUvicorn() {
   const venvUvicorn = path.join(BACKEND_DIR, '.venv', 'bin', 'uvicorn')
-  if (fs.existsSync(venvUvicorn)) {
-    return venvUvicorn
-  }
+  if (fs.existsSync(venvUvicorn)) return venvUvicorn
   return 'uvicorn'
 }
 
-function findAlembic() {
+function findVenvAlembic() {
   const venvAlembic = path.join(BACKEND_DIR, '.venv', 'bin', 'alembic')
-  if (fs.existsSync(venvAlembic)) {
-    return venvAlembic
-  }
+  if (fs.existsSync(venvAlembic)) return venvAlembic
   return 'alembic'
 }
 
@@ -44,13 +51,40 @@ function ensureDataDirs(dataDir) {
   }
 }
 
+// ─── PATH enrichment ─────────────────────────────────────────────────────────
+// Electron does not inherit the user's shell PATH. Augment it with locations
+// where Python tools are commonly installed so uvicorn/alembic can be found
+// in dev mode when the backend venv is absent.
+
+function enrichedPath() {
+  const extra = [
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    `${process.env.HOME}/.pyenv/shims`,
+    `${process.env.HOME}/.local/bin`,
+  ]
+  const current = process.env.PATH || ''
+  const parts = current.split(':').filter(Boolean)
+  for (const p of extra) {
+    if (!parts.includes(p)) parts.push(p)
+  }
+  return parts.join(':')
+}
+
 // ─── Backend environment ─────────────────────────────────────────────────────
 
 function buildBackendEnv(dataDir) {
+  // Normalise path separators to forward slashes for the SQLite URL.
+  // On Windows, path.join produces backslashes which SQLAlchemy does not accept
+  // in a sqlite+aiosqlite:/// URL.
+  const normalised = dataDir.replace(/\\/g, '/')
+
   return {
     ...process.env,
+    PATH: enrichedPath(),
     APP_DISTRIBUTION: 'desktop',
-    DATABASE_URL: `sqlite+aiosqlite:///${dataDir}/db/bulk_loader.db`,
+    DATABASE_URL: `sqlite+aiosqlite:///${normalised}/db/bulk_loader.db`,
     ENCRYPTION_KEY_FILE: path.join(dataDir, 'db', 'encryption.key'),
     JWT_SECRET_KEY_FILE: path.join(dataDir, 'db', 'jwt_secret.key'),
     INPUT_DIR: path.join(dataDir, 'input'),
@@ -61,18 +95,28 @@ function buildBackendEnv(dataDir) {
 // ─── Database migrations ─────────────────────────────────────────────────────
 
 function runMigrations(dataDir) {
-  const alembic = findAlembic()
   const env = buildBackendEnv(dataDir)
+  let cmd, args
+
+  if (app.isPackaged) {
+    // Packaged: use the compiled binary with --migrate flag
+    cmd = findBackendBinary()
+    args = ['--migrate']
+  } else {
+    // Dev: use alembic from the backend venv
+    cmd = findVenvAlembic()
+    args = ['upgrade', 'head']
+  }
 
   console.log('[electron] Running database migrations...')
-  const result = spawnSync(alembic, ['upgrade', 'head'], {
+  const result = spawnSync(cmd, args, {
     cwd: BACKEND_DIR,
     env,
     stdio: ['ignore', 'inherit', 'inherit'],
   })
 
   if (result.error) {
-    console.error('[electron] Could not run alembic:', result.error.message)
+    console.error('[electron] Could not run migrations:', result.error.message)
     return // binary not found — log and continue; DB may already be initialised
   }
   if (result.status !== 0) {
@@ -86,14 +130,20 @@ function runMigrations(dataDir) {
 let backendProcess = null
 
 function startBackend(dataDir) {
-  const uvicorn = findUvicorn()
   const env = buildBackendEnv(dataDir)
+  let cmd, args
 
-  backendProcess = spawn(
-    uvicorn,
-    ['app.main:app', '--host', BACKEND_HOST, '--port', String(BACKEND_PORT)],
-    { cwd: BACKEND_DIR, env },
-  )
+  if (app.isPackaged) {
+    // Packaged: run the PyInstaller binary directly — it starts uvicorn
+    cmd = findBackendBinary()
+    args = []
+  } else {
+    // Dev: use uvicorn from the backend venv
+    cmd = findVenvUvicorn()
+    args = ['app.main:app', '--host', BACKEND_HOST, '--port', String(BACKEND_PORT)]
+  }
+
+  backendProcess = spawn(cmd, args, { cwd: BACKEND_DIR, env })
 
   backendProcess.stdout.on('data', (data) => {
     process.stdout.write(`[backend] ${data}`)
@@ -101,6 +151,17 @@ function startBackend(dataDir) {
   backendProcess.stderr.on('data', (data) => {
     process.stderr.write(`[backend] ${data}`)
   })
+  backendProcess.on('error', (err) => {
+    console.error('[electron] Failed to start backend:', err.message)
+    backendProcess = null
+    const hint = app.isPackaged
+      ? 'The backend binary could not be started. Try reinstalling the application.'
+      : 'Make sure the backend virtual environment is set up:\n' +
+        '  cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt'
+    dialog.showErrorBox('Backend failed to start', `${err.message}\n\n${hint}`)
+    app.quit()
+  })
+
   backendProcess.on('exit', (code) => {
     console.log(`[backend] process exited with code ${code}`)
     backendProcess = null

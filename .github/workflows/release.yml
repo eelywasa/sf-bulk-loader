@@ -46,8 +46,18 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:latest
 
   electron-release:
-    name: Build and Attach Electron macOS Release
-    runs-on: macos-latest
+    name: Build Electron — ${{ matrix.artifact-suffix }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest   # arm64 (Apple Silicon)
+            artifact-suffix: mac-arm64
+          - os: windows-latest
+            artifact-suffix: windows-x64
+          - os: ubuntu-latest
+            artifact-suffix: linux-x64
 
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +70,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install backend dependencies + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-desktop.txt pyinstaller
+        working-directory: backend
+
+      - name: Build PyInstaller binary
+        run: pyinstaller sf_bulk_loader.spec --clean --noconfirm
+        working-directory: backend
+
       - name: Build frontend (desktop mode)
         run: npm ci && npm run build:desktop
         working-directory: frontend
@@ -68,8 +88,7 @@ jobs:
         run: npm install
         working-directory: electron
 
-      - name: Package for macOS (unsigned zip)
-        # Produces a .zip of the .app in electron/dist/ for attaching to the GitHub Release.
+      - name: Package with electron-builder
         # CSC_IDENTITY_AUTO_DISCOVERY=false suppresses keychain signing lookup in CI.
         #
         # Future signing (requires Apple Developer account — add as GitHub Actions secrets):
@@ -78,12 +97,15 @@ jobs:
         #   APPLE_ID: ${{ secrets.APPLE_ID }}
         #   APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run dist -- --mac zip
+        run: npm run dist
         working-directory: electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Attach artifact to GitHub Release
+      - name: Attach artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: electron/dist/*.zip
+          files: |
+            electron/dist/*.zip
+            electron/dist/*.exe
+            electron/dist/*.AppImage

@@ -153,6 +153,25 @@ describe('AuthContext', () => {
   })
 
   describe('logout()', () => {
+    it('does not redirect to /login in desktop profile', async () => {
+      vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+      const mockLocation = { href: '', pathname: '/' }
+      vi.stubGlobal('location', mockLocation)
+
+      renderAuth()
+      await waitFor(() => {
+        expect(screen.getByTestId('bootstrapping').textContent).toBe('false')
+      })
+
+      await act(async () => {
+        await userEvent.click(screen.getByRole('button', { name: 'Logout' }))
+      })
+
+      expect(mockLocation.href).toBe('')
+
+      vi.unstubAllGlobals()
+    })
+
     it('clears token, user, and localStorage', async () => {
       localStorage.setItem('auth_token', 'existing-token')
       vi.mocked(client.apiFetch)

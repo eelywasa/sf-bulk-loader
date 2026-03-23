@@ -154,6 +154,55 @@ Contents:
 └── logs/
 ```
 
+### Application icon
+
+The macOS app icon is `electron/build/icon.icns`. It is compiled from the same SVG used as
+the browser favicon (`frontend/public/favicon.svg`). Only the compiled `.icns` is committed;
+the intermediate per-size PNGs are excluded by `.gitignore`.
+
+To regenerate the icon (e.g. after updating `favicon.svg`):
+
+```bash
+# Requires librsvg (brew install librsvg)
+mkdir -p electron/build/icon.iconset
+
+rsvg-convert -w 16   -h 16   frontend/public/favicon.svg > electron/build/icon.iconset/icon_16x16.png
+rsvg-convert -w 32   -h 32   frontend/public/favicon.svg > electron/build/icon.iconset/icon_16x16@2x.png
+rsvg-convert -w 32   -h 32   frontend/public/favicon.svg > electron/build/icon.iconset/icon_32x32.png
+rsvg-convert -w 64   -h 64   frontend/public/favicon.svg > electron/build/icon.iconset/icon_32x32@2x.png
+rsvg-convert -w 128  -h 128  frontend/public/favicon.svg > electron/build/icon.iconset/icon_128x128.png
+rsvg-convert -w 256  -h 256  frontend/public/favicon.svg > electron/build/icon.iconset/icon_128x128@2x.png
+rsvg-convert -w 256  -h 256  frontend/public/favicon.svg > electron/build/icon.iconset/icon_256x256.png
+rsvg-convert -w 512  -h 512  frontend/public/favicon.svg > electron/build/icon.iconset/icon_256x256@2x.png
+rsvg-convert -w 512  -h 512  frontend/public/favicon.svg > electron/build/icon.iconset/icon_512x512.png
+rsvg-convert -w 1024 -h 1024 frontend/public/favicon.svg > electron/build/icon.iconset/icon_512x512@2x.png
+
+iconutil -c icns electron/build/icon.iconset -o electron/build/icon.icns
+```
+
+Commit `electron/build/icon.icns` (macOS), `electron/build/icon.ico` (Windows), and
+`electron/build/icon.png` (Linux). The iconset directory is gitignored.
+
+`icon.ico` and `icon.png` are generated once from the same SVG:
+
+```bash
+# Linux icon (PNG)
+rsvg-convert -w 256 -h 256 frontend/public/favicon.svg > electron/build/icon.png
+
+# Windows icon (ICO wrapping a 256x256 PNG — valid for Windows Vista+)
+python3 - <<'EOF'
+import struct
+with open('electron/build/icon.png', 'rb') as f:
+    png = f.read()
+header = struct.pack('<HHH', 0, 1, 1)
+entry  = struct.pack('<BBBBHHII', 0, 0, 0, 0, 1, 32, len(png), 22)
+with open('electron/build/icon.ico', 'wb') as f:
+    f.write(header + entry + png)
+EOF
+```
+
+---
+
 ### Note on `webSecurity: false`
 
 The Electron window runs with `webSecurity: false`. This allows the `file://`-loaded
