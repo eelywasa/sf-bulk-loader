@@ -166,15 +166,6 @@ describe('Connections page', () => {
     expect(within(dialog).getByText('New Connection')).toBeInTheDocument()
   })
 
-  it('opens the create modal from the empty-state "Add Salesforce Connection" button', async () => {
-    mockList([])
-    render(<Connections />)
-    await waitFor(() => screen.getByText('No connections yet'))
-
-    await userEvent.click(screen.getByRole('button', { name: 'Add Salesforce Connection' }))
-
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-  })
 
   it('calls connectionsApi.create with form data and closes modal on success', async () => {
     const user = userEvent.setup()
@@ -582,15 +573,6 @@ describe('Input Connections section', () => {
     expect(within(dialog).getByText('New Input Connection')).toBeInTheDocument()
   })
 
-  it('opens create modal from the empty-state "Add Input Connection" button', async () => {
-    mockInputList([])
-    render(<Connections />)
-    await waitFor(() => screen.getByText('No input connections yet'))
-
-    await userEvent.click(screen.getByRole('button', { name: 'Add Input Connection' }))
-
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-  })
 
   it('calls inputConnectionsApi.create with form data and closes modal on success', async () => {
     const user = userEvent.setup()

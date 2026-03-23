@@ -623,7 +623,6 @@ export default function Connections() {
           <EmptyState
             title="No connections yet"
             description="Add a Salesforce connection to get started. You'll need a Connected App configured for JWT Bearer authentication."
-            action={<Button onClick={openCreate}>Add Salesforce Connection</Button>}
           />
         ) : (
           <DataTable columns={columns} data={connections} keyExtractor={(c) => c.id} />
@@ -708,7 +707,6 @@ export default function Connections() {
           <EmptyState
             title="No input connections yet"
             description="Add an S3 connection to use remote CSV files as input sources for load steps."
-            action={<Button onClick={openInputCreate}>Add Input Connection</Button>}
           />
         ) : (
           <DataTable columns={inputColumns} data={inputConnections} keyExtractor={(c) => c.id} />
