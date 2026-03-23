@@ -12,7 +12,7 @@ to have changed.
 |---|---|---|---|
 | Shared Quality Checks | `ci-shared.yml` | Every push and PR (all branches) | ubuntu-latest |
 | Docker Distribution | `ci-docker.yml` | Push/PR targeting `main` | ubuntu-latest |
-| Electron Desktop CI | `ci-electron.yml` | Push/PR targeting `main` | macos-latest (smoke + PyInstaller check on main) |
+| Electron Desktop CI | `ci-electron.yml` | Push/PR targeting `main` | matrix: `macos-15`, `windows-2025`, `ubuntu-24.04` |
 | AWS Skeleton Validation | `ci-aws-skeleton.yml` | Push/PR targeting `main` | ubuntu-latest |
 | Release | `release.yml` | Semantic version tags (`v*.*.*`) | ubuntu-latest + matrix: mac-arm64, windows-x64, linux-x64 |
 
@@ -95,44 +95,33 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 
 ## ci-electron.yml — Electron Desktop CI
 
-Runs on push to `main` and on PRs targeting `main`. Uses a `macos-latest` runner (full macOS VM
-with display — no virtual framebuffer required).
+Runs on push to `main` and on PRs targeting `main`. Uses a native build matrix so every supported
+desktop artifact is built and smoke-tested on its own OS family.
 
 ### Job: `build-and-smoke`
 
-**Why run from source, not from the packaged `.app`?**
-The smoke test uses the dev-mode path in `main.js` (venv uvicorn/alembic), which is faster than
-running a full PyInstaller build on every PR. The packaged app with the compiled binary is
-validated by the `pyinstaller-check` job on pushes to `main`, and by `release.yml` on tags.
+Matrix:
 
-Steps:
+| Runner | Artifact | Unpacked smoke target |
+|---|---|---|
+| `macos-15` | `mac-arm64` | `electron-builder --mac dir` (`electron/dist/mac-arm64/*.app`) |
+| `windows-2025` | `windows-x64` | `electron-builder --win dir` (`electron/dist/win-unpacked/`) |
+| `ubuntu-24.04` | `linux-x64` | `electron-builder --linux dir` (`electron/dist/linux-unpacked/`) |
 
-1. Build frontend in desktop mode (`VITE_API_URL=http://127.0.0.1:8000`, hash routing, relative
-   asset base) — produces `frontend/dist/`
-2. Create `backend/.venv` and install requirements — `main.js` dev-mode looks for `.venv/bin/uvicorn`
-   and `.venv/bin/alembic` in `BACKEND_DIR`; this ensures they are found
-3. `npm install` in `electron/`
-4. **Smoke test** — launch `npx electron .` in background, then:
-   - Poll `http://127.0.0.1:8000/api/health` for up to 60 seconds
-   - Assert `status == "ok"`
-   - Assert `GET /api/connections/` returns `200` — confirms desktop profile bypasses auth
-   - Kill the Electron process
-5. **Package** — `npm run dist -- --mac dir` produces a directory-format `.app` in `electron/dist/`.
-   This artifact uses source-bundled backend (no PyInstaller) and is a build-validity check only,
-   not a distributable. `CSC_IDENTITY_AUTO_DISCOVERY=false` suppresses keychain lookup.
-6. **Upload artifact** — uploaded as `sf-bulk-loader-macos-<sha>`, retained for 1 day.
+Each runner:
 
-### Job: `pyinstaller-check` (push to `main` only)
+1. Installs `requirements-desktop.txt` + PyInstaller
+2. Builds the native backend binary with `pyinstaller sf_bulk_loader.spec --clean --noconfirm`
+3. Builds the frontend in desktop mode (`VITE_API_URL=http://127.0.0.1:8000`, hash routing,
+   relative asset base)
+4. Installs Electron dependencies
+5. Builds an unpacked packaged app (`dir` target only)
+6. Launches that unpacked packaged app and smoke-tests:
+   - `GET http://127.0.0.1:8000/api/health` returns `{"status":"ok"}`
+   - `GET /api/connections/` returns `200` in desktop mode
+7. Uploads the unpacked build on failure for debugging (1-day retention)
 
-Validates that the PyInstaller binary builds successfully and that the `--migrate` flag works
-end-to-end. Runs only on pushes to `main` (not PRs) to keep PR feedback fast.
-
-Steps:
-
-1. Install `requirements-desktop.txt` + PyInstaller
-2. `pyinstaller sf_bulk_loader.spec --clean --noconfirm`
-3. Run `./dist/sf_bulk_loader/sf_bulk_loader --migrate` with a temp SQLite DB — confirms
-   `sys._MEIPASS` path resolution finds the bundled `alembic/` directory and migrations succeed
+Linux smoke runs under `xvfb-run`; macOS and Windows launch the unpacked app directly.
 
 ---
 
@@ -175,15 +164,16 @@ Images appear under the repository's **Packages** tab on GitHub.
 
 Builds a platform-native, self-contained Electron package on each runner:
 
-| Runner | Output |
-|---|---|
-| `macos-latest` (arm64) | `.zip` containing unsigned `.app` |
-| `windows-latest` | `.exe` NSIS installer |
-| `ubuntu-latest` | `.AppImage` |
+| Runner | Smoke build | Release output |
+|---|---|---|
+| `macos-15` | `--mac dir` | `.zip` containing unsigned `.app` |
+| `windows-2025` | `--win dir` | `.exe` NSIS installer |
+| `ubuntu-24.04` | `--linux dir` | `.AppImage` |
 
 Each runner: installs `requirements-desktop.txt` + PyInstaller → compiles the backend to a
 standalone binary (`pyinstaller sf_bulk_loader.spec`) → builds frontend in desktop mode →
-runs `electron-builder` → attaches the output to the GitHub Release via `softprops/action-gh-release`.
+builds an unpacked packaged app → runs the same smoke checks as `ci-electron.yml` → only then
+builds the release artifact and attaches it to the GitHub Release via `softprops/action-gh-release`.
 
 The resulting packages are **fully self-contained**: no Python installation is required on the
 user's machine.

@@ -14,7 +14,10 @@
     "staging": {
       "vpcCidr": "10.10.0.0/16",
       "domainName": "staging.bulk-loader.example.com",
-      "certificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "backendDomainName": "api-staging.bulk-loader.example.com",
+      "backendCertificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "hostedZoneDomain": "bulk-loader.example.com",
       "rdsInstanceClass": "db.t3.medium",
       "ecsDesiredCount": 1,
       "ecrImageTag": "latest"
@@ -22,7 +25,10 @@
     "production": {
       "vpcCidr": "10.20.0.0/16",
       "domainName": "bulk-loader.example.com",
-      "certificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+      "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+      "backendDomainName": "api.bulk-loader.example.com",
+      "backendCertificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "hostedZoneDomain": "bulk-loader.example.com",
       "rdsInstanceClass": "db.t3.large",
       "ecsDesiredCount": 2,
       "ecrImageTag": "stable"

@@ -8,6 +8,7 @@ import { Construct } from 'constructs';
 export interface DataStackProps extends cdk.StackProps {
   envName: string;
   vpc: ec2.Vpc;
+  backendServiceSecurityGroup: ec2.SecurityGroup;
   /** RDS instance class string, e.g. 'db.t3.medium'. */
   rdsInstanceClass: string;
 }
@@ -54,6 +55,11 @@ export class DataStack extends cdk.Stack {
       description: 'Allow PostgreSQL access from ECS tasks',
       allowAllOutbound: false,
     });
+    dbSecurityGroup.addIngressRule(
+      props.backendServiceSecurityGroup,
+      ec2.Port.tcp(5432),
+      'Allow PostgreSQL from ECS tasks',
+    );
 
     this.database = new rds.DatabaseInstance(this, 'Database', {
       engine: rds.DatabaseInstanceEngine.postgres({

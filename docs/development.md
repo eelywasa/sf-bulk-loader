@@ -81,6 +81,10 @@ pyinstaller sf_bulk_loader.spec --clean --noconfirm
 # Output: backend/dist/sf_bulk_loader/  (folder with executable + shared libs)
 ```
 
+When running the desktop app from source, Electron looks for backend tools in the backend virtualenv:
+- macOS/Linux: `backend/.venv/bin/uvicorn`, `backend/.venv/bin/alembic`
+- Windows: `backend/.venv/Scripts/uvicorn.exe`, `backend/.venv/Scripts/alembic.exe`
+
 ### Test the binary
 
 ```bash

@@ -31,23 +31,24 @@ This enforces at startup:
 | Layer | Service |
 |-------|---------|
 | Frontend | S3 + CloudFront |
-| Backend | ECS/Fargate (Fargate capacity provider) |
+| Backend | ECS/Fargate behind ALB, reached via dedicated backend origin hostname |
 | Database | Amazon RDS PostgreSQL 16 |
 | Input/output file storage | Amazon S3 |
-| TLS | Terminated at ALB (backend) and CloudFront (frontend) |
+| TLS | Terminated at CloudFront (frontend) and ALB (backend origin) |
 | Secrets | AWS Secrets Manager (sensitive) + SSM Parameter Store (non-sensitive) |
 | Infrastructure | AWS CDK → CloudFormation |
 
 ```
 Browser
-  └─► CloudFront
-        ├─► /api/* and /ws/* → Application Load Balancer → Fargate container (port 8000)
+  └─► CloudFront (frontend domain / CloudFront certificate)
+        ├─► /api/* and /ws/* → backend origin hostname → ALB → Fargate container (port 8000)
         └─► /*               → S3 bucket (React SPA, index.html fallback)
 ```
 
-TLS is terminated at CloudFront and the ALB. The Fargate container listens on plain HTTP
-port 8000 internally. WebSocket connections use `wss://` at the browser; the ALB proxies
-them as plain `ws://` to the container.
+TLS is terminated at CloudFront and the ALB. CloudFront connects to the backend using a dedicated
+origin hostname that matches the ALB certificate, rather than the raw `*.elb.amazonaws.com` name.
+The Fargate container listens on plain HTTP port 8000 internally. WebSocket connections use
+`wss://` at the browser; the ALB proxies them as plain `ws://` to the container.
 
 ---
 
@@ -63,7 +64,7 @@ is required or acceptable for a reproducible deployment.
 |-------|----------|
 | `BulkLoader-{env}-Network` | VPC, public subnets (ALB + ECS) and isolated subnets (RDS) across 2 AZs, S3 Gateway Endpoint |
 | `BulkLoader-{env}-Data` | RDS PostgreSQL, S3 input + output buckets, Secrets Manager secrets |
-| `BulkLoader-{env}-Backend` | ECR repository, ECS cluster, Fargate task/service, ALB |
+| `BulkLoader-{env}-Backend` | ECR repository, ECS cluster, Fargate task/service, ALB, backend Route53 alias |
 | `BulkLoader-{env}-Frontend` | CloudFront distribution, S3 frontend bucket |
 
 Environments (`staging`, `production`) are parameterised via CDK context — same code, different
@@ -82,6 +83,9 @@ The Network stack uses a no-NAT-Gateway design to minimise cost:
 IPs so they can reach the Salesforce API directly. Inbound traffic to the containers is restricted
 by the ECS security group to the ALB only — no direct public access to port 8000 is possible.
 The attack-surface exposure is equivalent to a private-subnet deployment.
+
+RDS remains in isolated subnets. The backend stack adds an explicit security-group rule allowing
+the ECS service to reach PostgreSQL on the default port; no broader database exposure is opened.
 
 **S3 Gateway Endpoint** is added to the VPC at no charge. All S3 traffic (input CSV reads and
 result CSV writes) is routed over the AWS backbone rather than the public internet, eliminating
@@ -145,7 +149,9 @@ for hosted distributions.
 - Node.js 20+ and npm (for CDK)
 - AWS CDK CLI: `npm install -g aws-cdk`
 - Docker (for building and pushing the backend image)
-- ACM certificate in the deployment region (for ALB) — CloudFront certificates must be in `us-east-1`
+- ACM certificate in `us-east-1` for the frontend CloudFront distribution
+- ACM certificate in the deployment region for the backend ALB listener
+- A Route53 hosted zone matching `hostedZoneDomain`
 
 ---
 
@@ -164,10 +170,20 @@ Copy the example context file and fill in real values:
 ```bash
 cd infrastructure
 cp cdk.context.json.example cdk.context.json
-# Edit cdk.context.json with real certificate ARNs, domain names, etc.
+# Edit cdk.context.json with real certificate ARNs, domain names, and hosted zone values.
 ```
 
 Or edit `infrastructure/cdk.json` directly for values safe to commit (no account IDs or real ARNs).
+
+Environment config now includes:
+
+| Key | Purpose |
+|-----|---------|
+| `domainName` | Public frontend hostname served by CloudFront |
+| `certificateArn` | CloudFront certificate ARN (must be in `us-east-1`) |
+| `backendDomainName` | Backend origin hostname used by CloudFront (for example `api.example.com`) |
+| `backendCertificateArn` | ALB certificate ARN in the deployment region |
+| `hostedZoneDomain` | Route53 hosted zone that owns `backendDomainName` |
 
 ### 3. Deploy infrastructure stacks
 
@@ -178,7 +194,7 @@ npx cdk deploy --all -c env=staging
 ```
 
 This creates all four stacks in dependency order. Note the outputs — you'll need the ECR URI,
-ALB DNS name, and bucket names from the CloudFormation outputs.
+backend origin domain name, and bucket names from the CloudFormation outputs.
 
 ### 4. Provision secrets before first ECS start
 
@@ -294,7 +310,7 @@ aws cloudfront create-invalidation --distribution-id ${DIST_ID} --paths '/*'
 
 ```bash
 # Replace with your CloudFront domain or custom domain
-DOMAIN=https://<distribution-domain>
+DOMAIN=https://<distribution-domain-or-domainName>
 
 curl -f ${DOMAIN}/api/health
 # Expected: {"status":"ok"}
@@ -362,9 +378,9 @@ role grants read/write access to both buckets automatically.
 ## Multi-Environment Pattern
 
 The CDK stacks support `staging` and `production` environments out of the box via CDK context.
-Environment-specific values (instance sizes, desired task counts, certificate ARNs, domain names)
-live in `cdk.json` under `context.environments`. The stack code is shared and parameterised — no
-duplication.
+Environment-specific values (instance sizes, desired task counts, certificate ARNs, domain names,
+and hosted zone) live in `cdk.json` under `context.environments`. The stack code is shared and
+parameterised — no duplication.
 
 To add a new environment:
 
@@ -380,6 +396,7 @@ To add a new environment:
 - All S3 buckets block public access; CloudFront accesses the frontend bucket via OAC
 - Secrets Manager secrets are never exposed in CloudFormation templates or task definition plaintext
 - RDS is in isolated subnets (no internet route), accessible only from within the VPC
+- The database security group allows PostgreSQL traffic only from the ECS service
 - ALB enforces TLS 1.2+ via `SslPolicy.RECOMMENDED_TLS`
 - HTTP to HTTPS redirect is enforced at the ALB
 - `enforceSSL: true` on all S3 buckets rejects unencrypted requests
