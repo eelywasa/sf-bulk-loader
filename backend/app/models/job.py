@@ -48,8 +48,8 @@ class JobRecord(Base):
     unprocessed_file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     # JSON string of last Salesforce API response
     sf_api_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     load_run: Mapped["LoadRun"] = relationship("LoadRun", back_populates="job_records")

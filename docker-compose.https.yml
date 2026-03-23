@@ -1,0 +1,26 @@
+# HTTPS override for docker-compose.yml
+#
+# Enables nginx TLS termination. Place certificate files at ./certs/ before starting:
+#   certs/cert.pem  — full certificate chain (leaf + any intermediates)
+#   certs/key.pem   — unencrypted private key
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up --build
+#
+# Local dev (no browser warnings) — recommended:
+#   brew install mkcert && mkcert -install
+#   mkdir -p certs && mkcert -key-file certs/key.pem -cert-file certs/cert.pem localhost 127.0.0.1 ::1
+#
+# Server / headless (self-signed, browser warning):
+#   mkdir -p certs
+#   openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem \
+#     -sha256 -days 825 -nodes -subj "/CN=bulkloader.internal" \
+#     -addext "subjectAltName=DNS:bulkloader.internal,IP:x.x.x.x"
+
+services:
+  frontend:
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+      - ./frontend/nginx.https.conf:/etc/nginx/conf.d/app.conf:ro

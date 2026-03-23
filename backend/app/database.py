@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 
 from sqlalchemy import event
@@ -5,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -15,6 +18,7 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.app_env == "development",
 )
+_log.info("Database engine: %s", engine.dialect.name)
 
 
 @event.listens_for(engine.sync_engine, "connect")

@@ -92,6 +92,50 @@ class _PreviewOSErrorStorage:
         return []
 
 
+# ── Runtime config ─────────────────────────────────────────────────────────────
+
+
+def test_runtime_config_is_public(client):
+    """/api/runtime requires no authentication."""
+    resp = client.get("/api/runtime")
+    assert resp.status_code == 200
+
+
+def test_runtime_config_returns_expected_fields(client):
+    """/api/runtime includes all required distribution profile fields."""
+    resp = client.get("/api/runtime")
+    body = resp.json()
+    assert "auth_mode" in body
+    assert "app_distribution" in body
+    assert "transport_mode" in body
+    assert "input_storage_mode" in body
+
+
+def test_runtime_config_reflects_self_hosted_defaults(client):
+    """Default test profile is self_hosted with auth_mode=local."""
+    resp = client.get("/api/runtime")
+    body = resp.json()
+    assert body["app_distribution"] == "self_hosted"
+    assert body["auth_mode"] == "local"
+
+
+def test_runtime_config_reflects_desktop_profile(client):
+    """/api/runtime returns correct values when distribution is desktop."""
+    from unittest.mock import patch
+
+    with patch("app.api.utility.settings") as mock_settings:
+        mock_settings.auth_mode = "none"
+        mock_settings.app_distribution = "desktop"
+        mock_settings.transport_mode = "local"
+        mock_settings.input_storage_mode = "local"
+        resp = client.get("/api/runtime")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["auth_mode"] == "none"
+    assert body["app_distribution"] == "desktop"
+
+
 # ── Health check ───────────────────────────────────────────────────────────────
 
 

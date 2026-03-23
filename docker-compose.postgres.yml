@@ -1,0 +1,36 @@
+# PostgreSQL override for docker-compose.yml
+#
+# Use this file when you want to run the app with PostgreSQL instead of SQLite.
+# This is recommended for multi-user or production-style self-hosted installs.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
+#
+# The ./data/db volume from docker-compose.yml is unused when PostgreSQL is active.
+# Database credentials can be changed here or overridden via .env.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bulk_loader
+      POSTGRES_USER: bulk_loader
+      POSTGRES_PASSWORD: bulk_loader
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bulk_loader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bulk_loader:bulk_loader@postgres:5432/bulk_loader
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

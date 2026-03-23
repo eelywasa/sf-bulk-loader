@@ -31,17 +31,18 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,  # Required for SQLite ALTER TABLE support
+        render_as_batch=url.startswith("sqlite"),  # SQLite requires batch for ALTER TABLE
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection) -> None:
+    use_batch = connection.engine.dialect.name == "sqlite"
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
-        render_as_batch=True,  # Required for SQLite ALTER TABLE support
+        render_as_batch=use_batch,  # SQLite requires batch for ALTER TABLE
     )
     with context.begin_transaction():
         context.run_migrations()

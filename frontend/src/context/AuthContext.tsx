@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { apiFetch, clearStoredToken, getStoredToken, storeToken } from '../api/client'
-import type { UserResponse } from '../api/types'
+import type { RuntimeConfig, UserResponse } from '../api/types'
 
 interface AuthContextValue {
   token: string | null
   user: UserResponse | null
   isBootstrapping: boolean
+  /** False when the active distribution profile requires no login (e.g. desktop). */
+  authRequired: boolean
   login: (token: string) => Promise<void>
   logout: () => void
 }
@@ -16,21 +18,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<UserResponse | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
+  const [authRequired, setAuthRequired] = useState(true)
 
   useEffect(() => {
-    const stored = getStoredToken()
-    if (!stored) {
-      setIsBootstrapping(false)
-      return
-    }
-    setToken(stored)
-    apiFetch<UserResponse>('/api/auth/me')
-      .then((u) => setUser(u))
-      .catch(() => {
-        // Token was invalid — client already cleared it; reset local state
-        setToken(null)
+    apiFetch<RuntimeConfig>('/api/runtime')
+      .then((cfg) => {
+        if (cfg.auth_mode === 'none') {
+          // Desktop / no-login profile — skip token validation entirely
+          setAuthRequired(false)
+          setIsBootstrapping(false)
+          return
+        }
+
+        // Hosted profile — validate any stored token
+        setAuthRequired(true)
+        const stored = getStoredToken()
+        if (!stored) {
+          setIsBootstrapping(false)
+          return
+        }
+        setToken(stored)
+        apiFetch<UserResponse>('/api/auth/me')
+          .then((u) => setUser(u))
+          .catch(() => {
+            // Token was invalid — client already cleared it; reset local state
+            setToken(null)
+          })
+          .finally(() => setIsBootstrapping(false))
       })
-      .finally(() => setIsBootstrapping(false))
+      .catch(() => {
+        // Could not reach /api/runtime — fall back to requiring auth
+        const stored = getStoredToken()
+        if (!stored) {
+          setIsBootstrapping(false)
+          return
+        }
+        setToken(stored)
+        apiFetch<UserResponse>('/api/auth/me')
+          .then((u) => setUser(u))
+          .catch(() => setToken(null))
+          .finally(() => setIsBootstrapping(false))
+      })
   }, [])
 
   async function login(newToken: string): Promise<void> {
@@ -48,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, isBootstrapping, login, logout }}>
+    <AuthContext.Provider value={{ token, user, isBootstrapping, authRequired, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

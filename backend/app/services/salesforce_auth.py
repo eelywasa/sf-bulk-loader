@@ -159,10 +159,6 @@ def _is_token_valid(connection: Connection) -> bool:
         return False
 
     expiry: datetime = connection.token_expiry
-    if expiry.tzinfo is None:
-        # SQLite returns naive datetimes — assume UTC.
-        expiry = expiry.replace(tzinfo=timezone.utc)
-
     return datetime.now(tz=timezone.utc) < expiry - timedelta(
         seconds=_TOKEN_REFRESH_BUFFER_SECONDS
     )

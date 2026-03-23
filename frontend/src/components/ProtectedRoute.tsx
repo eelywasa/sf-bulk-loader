@@ -6,7 +6,7 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { token, isBootstrapping } = useAuth()
+  const { token, isBootstrapping, authRequired } = useAuth()
   const location = useLocation()
 
   if (isBootstrapping) {
@@ -15,6 +15,10 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         <p className="text-sm text-gray-400" aria-label="Loading" />
       </div>
     )
+  }
+
+  if (!authRequired) {
+    return <>{children}</>
   }
 
   if (!token) {

@@ -1,0 +1,22 @@
+{
+  "name": "sf-bulk-loader-infrastructure",
+  "version": "0.1.0",
+  "description": "AWS CDK infrastructure for the Salesforce Bulk Loader",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "aws-cdk": "^2.170.0",
+    "typescript": "~5.6.0"
+  }
+}

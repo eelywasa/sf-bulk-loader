@@ -4,6 +4,9 @@ API tests use a synchronous TestClient backed by a file-based SQLite DB so that
 FastAPI's internal anyio event loop and pytest-asyncio's loop don't conflict.
 A fresh Fernet key is generated at session start and injected via os.environ
 before any app code is imported.
+
+To run the suite against PostgreSQL, set TEST_DATABASE_URL before invoking pytest:
+    TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/test_db pytest
 """
 
 import asyncio
@@ -14,6 +17,7 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # ── Set test environment BEFORE importing any app modules ─────────────────────
 _TEST_ENCRYPTION_KEY = Fernet.generate_key().decode()
@@ -38,18 +42,24 @@ settings.admin_password = "Test-Admin-P4ss!"
 
 # ── Test database ─────────────────────────────────────────────────────────────
 
-TEST_DB_PATH = "./test_api.db"
-TEST_DB_URL = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
+_DEFAULT_TEST_DB_PATH = "./test_api.db"
+_DEFAULT_TEST_DB_URL = f"sqlite+aiosqlite:///{_DEFAULT_TEST_DB_PATH}"
+TEST_DB_URL = os.environ.get("TEST_DATABASE_URL") or _DEFAULT_TEST_DB_URL
+_is_sqlite = TEST_DB_URL.startswith("sqlite")
 
-_engine = create_async_engine(TEST_DB_URL, echo=False)
+# NullPool disables connection pooling so each checkout gets a fresh connection
+# on the current event loop. This is required when _run_async() creates a new
+# event loop per call — asyncpg connections are loop-bound and cannot be reused
+# across loops, which causes "another operation is in progress" on teardown.
+_engine = create_async_engine(TEST_DB_URL, echo=False, poolclass=NullPool)
 _TestSession = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
-
-@event.listens_for(_engine.sync_engine, "connect")
-def _set_sqlite_pragmas(dbapi_connection: object, _record: object) -> None:
-    cursor = dbapi_connection.cursor()  # type: ignore[union-attr]
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+if _is_sqlite:
+    @event.listens_for(_engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection: object, _record: object) -> None:
+        cursor = dbapi_connection.cursor()  # type: ignore[union-attr]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 # Point the session factories used by lifespan seed and app routes to the test DB
 _db_module.AsyncSessionLocal = _TestSession
@@ -81,11 +91,12 @@ def setup_test_database():
     _run_async(_create())
     yield
     _run_async(_drop())
-    for path in (TEST_DB_PATH, TEST_DB_PATH + "-shm", TEST_DB_PATH + "-wal"):
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
+    if _is_sqlite:
+        for path in (_DEFAULT_TEST_DB_PATH, _DEFAULT_TEST_DB_PATH + "-shm", _DEFAULT_TEST_DB_PATH + "-wal"):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
 
 
 @pytest.fixture(autouse=True)

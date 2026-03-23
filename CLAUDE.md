@@ -11,7 +11,18 @@ Docker deployment.
 The full specification is in `salesforce-bulk-loader-spec.md`. Always refer to it for architectural decisions, data model, API design, and build order.
 For the UI extra guidance can be found in `frontend-claude-runbook.md`. Treat it as an authority — if other docs conflict, follow the runbook.
 
-When all tickets in a spec file have been fully implemented, move the file to `docs/implemented/` to keep the active docs folder uncluttered.
+Active spec files live in `docs/specs/`. Mark each ticket as complete by appending `— ✅ DONE` to its heading when it is fully implemented. When all tickets in a spec file have been fully implemented, move the file to `docs/specs/implemented/`.
+
+## Documentation Structure
+User-facing documentation lives in `docs/`:
+- `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)
+- `docs/usage.md` — using the app (Salesforce setup, CSV format, load plans)
+- `docs/development.md` — local dev, tests, migrations
+- `docs/specs/` — architecture and feature specs (not user-facing)
+
+When implementing tickets that require documentation changes, add to or update the
+appropriate file in `docs/` rather than expanding `README.md`. The README is a
+project overview and signpost only.
 
 ## Tech Stack
 - Backend: Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, httpx
@@ -127,7 +138,7 @@ Connection → LoadPlan → LoadStep → JobRecord
 - SQLite + WAL mode for simplicity and concurrent I/O; SQLAlchemy makes it swappable.
 - asyncio for background tasks (no Celery).
 - CSV streaming with Python's `csv` module (no pandas).
-- No user authentication layer — MVP assumes trusted environment.
+- Authentication is required for hosted profiles (`self_hosted`, `aws_hosted`). Desktop profile (`auth_mode=none`) bypasses login — controlled via `APP_DISTRIBUTION` in `.env`.
 
 ## Code Standards
 - Python: async/await throughout, type hints on all function signatures, Pydantic schemas, SQLAlchemy 2.0 `mapped_column` style.

@@ -1,0 +1,31 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": ["README.md", "cdk*.json", "**/*.d.ts", "**/*.js", "tsconfig.json", "node_modules"]
+  },
+  "context": {
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/aws-ecs:arnFormatIncludesClusterName": true,
+    "environments": {
+      "staging": {
+        "vpcCidr": "10.10.0.0/16",
+        "domainName": "staging.your-domain.example",
+        "certificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/STAGING-CERT-ID",
+        "rdsInstanceClass": "db.t3.medium",
+        "ecsDesiredCount": 1,
+        "ecrImageTag": "latest"
+      },
+      "production": {
+        "vpcCidr": "10.20.0.0/16",
+        "domainName": "bulk-loader.your-domain.example",
+        "certificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/PROD-CERT-ID",
+        "rdsInstanceClass": "db.t3.large",
+        "ecsDesiredCount": 2,
+        "ecrImageTag": "stable"
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, createHashRouter, RouterProvider } from 'react-router-dom'
 import AppShell from './layout/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
@@ -11,7 +11,9 @@ import RunDetail from './pages/RunDetail'
 import JobDetail from './pages/JobDetail'
 import FilesPage from './pages/FilesPage'
 
-const router = createBrowserRouter([
+const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter : createBrowserRouter
+
+const router = createRouter([
   { path: '/login', element: <Login /> },
   {
     element: (

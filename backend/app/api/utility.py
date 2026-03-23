@@ -140,6 +140,31 @@ async def preview_input_file(
     }
 
 
+# ── Runtime config ─────────────────────────────────────────────────────────────
+
+
+class RuntimeConfigResponse(BaseModel):
+    auth_mode: str
+    app_distribution: str
+    transport_mode: str
+    input_storage_mode: str
+
+
+@router.get("/api/runtime", response_model=RuntimeConfigResponse)
+async def runtime_config() -> RuntimeConfigResponse:
+    """Return the active distribution profile settings.
+
+    Unauthenticated — the frontend calls this on startup to adapt its behaviour
+    (e.g. whether to show the login screen).
+    """
+    return RuntimeConfigResponse(
+        auth_mode=settings.auth_mode or "",
+        app_distribution=settings.app_distribution,
+        transport_mode=settings.transport_mode or "",
+        input_storage_mode=settings.input_storage_mode or "",
+    )
+
+
 # ── Health check ───────────────────────────────────────────────────────────────
 
 

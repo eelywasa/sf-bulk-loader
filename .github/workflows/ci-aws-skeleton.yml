@@ -1,0 +1,35 @@
+name: AWS Skeleton Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cdk-synth:
+    name: CDK Synth
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK dependencies
+        # npm install (not ci) handles both lock-file-present and lock-file-absent cases.
+        run: npm install
+        working-directory: infrastructure
+
+      - name: TypeScript compile check
+        # Validates that all stack definitions compile cleanly before synthesis.
+        run: npm run build
+        working-directory: infrastructure
+
+      - name: Synthesise CloudFormation templates
+        # Validates that all four stacks (Network, Data, Backend, Frontend) are
+        # structurally sound. No AWS credentials or live deployment required.
+        run: npx cdk synth -c env=staging
+        working-directory: infrastructure

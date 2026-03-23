@@ -10,7 +10,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:desktop": "VITE_API_URL=http://127.0.0.1:8000 VITE_ROUTER=hash vite build --base ./"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.2.0",

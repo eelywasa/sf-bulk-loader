@@ -3,16 +3,9 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from app.models.job import JobRecord, JobStatus
 from app.models.load_run import LoadRun, RunStatus
-
-# ── Secondary DB session (same file as conftest's test_api.db) ─────────────────
-
-_TEST_DB_URL = "sqlite+aiosqlite:///./test_api.db"
-_engine = create_async_engine(_TEST_DB_URL, echo=False)
-_S = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+from tests.conftest import _TestSession as _S
 
 
 def _run(coro):
@@ -193,19 +186,15 @@ def test_retry_step_run_pending_returns_409(auth_client):
 
 
 def test_retry_step_step_not_found_returns_404(auth_client):
-    """Retryable jobs exist for the step_id but the LoadStep row doesn't → 404."""
+    """Step ID that was never inserted returns 404 before checking jobs."""
+    import uuid
     conn_id = auth_client.post("/api/connections/", json=_CONN).json()["id"]
     plan_id = auth_client.post(
         "/api/load-plans/",
         json={"name": "Test Plan", "connection_id": conn_id},
     ).json()["id"]
     run_id = _seed_run(plan_id, RunStatus.completed)
-
-    # Use a step_id that was never inserted into the DB.
-    # SQLite doesn't enforce FK by default so the job can reference it.
-    import uuid
     fake_step_id = str(uuid.uuid4())
-    _seed_job(run_id, fake_step_id, status=JobStatus.failed)
 
     resp = auth_client.post(f"/api/runs/{run_id}/retry-step/{fake_step_id}")
 

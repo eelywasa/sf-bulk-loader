@@ -24,7 +24,7 @@ class Connection(Base):
     username: Mapped[str] = mapped_column(String(255), nullable=False)
     # Stored encrypted; refreshed automatically
     access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    token_expiry: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    token_expiry: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_sandbox: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

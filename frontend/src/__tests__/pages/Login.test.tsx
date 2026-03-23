@@ -6,7 +6,14 @@ import { ThemeProvider } from '../../context/ThemeContext'
 import { AuthProvider } from '../../context/AuthContext'
 import * as client from '../../api/client'
 import Login from '../../pages/Login'
-import type { UserResponse } from '../../api/types'
+import type { RuntimeConfig, UserResponse } from '../../api/types'
+
+const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
+  auth_mode: 'local',
+  app_distribution: 'self_hosted',
+  transport_mode: 'http',
+  input_storage_mode: 'local',
+}
 
 const MOCK_USER: UserResponse = {
   id: '1',
@@ -70,7 +77,9 @@ describe('Login page', () => {
       token_type: 'bearer',
       expires_in: 3600,
     })
-    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_USER)
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL) // bootstrap: /api/runtime
+      .mockResolvedValueOnce(MOCK_USER)          // login: /api/auth/me
 
     renderLogin()
 
@@ -91,7 +100,9 @@ describe('Login page', () => {
       token_type: 'bearer',
       expires_in: 3600,
     })
-    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_USER)
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL) // bootstrap: /api/runtime
+      .mockResolvedValueOnce(MOCK_USER)          // login: /api/auth/me
 
     renderLogin('/login?next=%2Fplans')
 

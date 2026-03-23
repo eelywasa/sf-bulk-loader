@@ -188,6 +188,10 @@ AWS deployment should support:
 
 AWS is **not MVP**, but the architecture must leave a clean lane open for it.
 
+**Infrastructure as code**: AWS-hosted deployments will be defined using **AWS CDK**. CDK synthesises to CloudFormation, which manages provisioning and updates. Infrastructure must be fully reproducible from code and must support environment-specific configuration (e.g. staging vs. production) without manual intervention. No ad hoc console-driven infrastructure is acceptable for a supported distribution.
+
+**Runtime configuration**: Runtime configuration will be injected via AWS-native mechanisms — **Secrets Manager** for sensitive values such as encryption keys and database credentials, and **SSM Parameter Store** for non-sensitive configuration. These values must be mapped into the application's distribution-aware configuration model under the `aws_hosted` profile, so the core app remains agnostic to how configuration is sourced.
+
 ### Distribution Policy Matrix
 
 The distribution layer should explicitly support policy differences by deployment model rather than hardcoding one universal behavior.
@@ -198,7 +202,7 @@ The distribution layer should explicitly support policy differences by deploymen
 | Transport | local loopback | http first, https optional/recommended | https required |
 | Database | SQLite | SQLite or PostgreSQL | PostgreSQL |
 | File storage | local filesystem | local/shared filesystem | S3 default |
-| Secrets | app DB initially | app DB | app DB + cloud-native injection compatibility |
+| Secrets | app DB initially | app DB | Secrets Manager + SSM Parameter Store (infra/config); app DB for persisted connection secrets |
 | Runtime topology | bundled local backend | hosted backend | hosted backend |
 
 ---
@@ -421,8 +425,9 @@ Expected concerns:
 
 - static frontend build/deploy
 - ECS/Fargate backend target
-- infrastructure configuration
-- secrets/config injection
+- **AWS CDK** stack definitions synthesised to CloudFormation — fully reproducible, no manual console provisioning
+- environment-specific configuration without manual overrides (e.g. staging vs. production stacks)
+- runtime config injection via **Secrets Manager** (sensitive values) and **SSM Parameter Store** (non-sensitive config), mapped into the `aws_hosted` profile
 - release automation
 
 ### Packaging Principle
@@ -455,7 +460,7 @@ Make local storage and secrets handling distribution-aware.
 
 - desktop: secrets remain stored in the application database for MVP
 - self-hosted: secrets remain stored in the application database using current encryption model
-- AWS-hosted: application secrets/config should be compatible with cloud-native secret injection, while application-managed encrypted storage may remain for persisted connection secrets
+- AWS-hosted: infrastructure-level secrets (encryption keys, database credentials) must be sourced from **Secrets Manager**; non-sensitive operational config from **SSM Parameter Store**; both must be mapped into the `aws_hosted` profile at startup so the core application remains agnostic to the injection mechanism. Application-managed encrypted storage (Fernet-encrypted connection secrets) may remain for data persisted in the database.
 - AWS-hosted file storage: **S3 default**
 
 ### Design Guidance
@@ -559,7 +564,7 @@ The distribution layer should introduce an explicit configuration model for:
 | `AUTH_MODE` | `none` | `local` | `local` initially |
 | `TRANSPORT_MODE` | `local` | `http` or `https` | `https` |
 | `INPUT_STORAGE_MODE` | local filesystem | local/shared filesystem | S3 default |
-| `SECRETS_MODE` | app_db | app_db | app_db + cloud-native injection compatibility |
+| `SECRETS_MODE` | app_db | app_db | Secrets Manager (infra secrets) + SSM Parameter Store (config) + app_db (persisted connection secrets) |
 
 ### Configuration rules
 
@@ -631,7 +636,7 @@ Primary outcome:
 
 These tickets are ordered and dependency-aware so they can be handed to Claude incrementally while preserving coherence.
 
-### 1. Define Distribution Profile and Shared Config Model
+### 1. Define Distribution Profile and Shared Config Model — ✅ DONE
 
 Goal: introduce an explicit runtime/distribution abstraction that the rest of the implementation can build upon.
 
@@ -652,7 +657,7 @@ Exit criteria:
 - application can start with explicit distribution profiles
 - current deployment continues to work unchanged or with minimal env updates
 
-### 2. Refactor Frontend and Backend for Profile-Aware Runtime Configuration
+### 2. Refactor Frontend and Backend for Profile-Aware Runtime Configuration — ✅ DONE
 
 Goal: remove hardcoded assumptions that the app is always browser-served behind the current container topology.
 
@@ -672,7 +677,7 @@ Exit criteria:
 - runtime profile controls core behavior through explicit config
 - business logic remains largely distribution-agnostic
 
-### 3. Introduce Multi-Engine Persistence Support for Hosted and Desktop Modes
+### 3. Introduce Multi-Engine Persistence Support for Hosted and Desktop Modes — ✅ DONE
 
 Goal: support SQLite and PostgreSQL deliberately rather than accidentally.
 
@@ -694,7 +699,7 @@ Exit criteria:
 - desktop path remains valid with SQLite
 - database portability risks are documented and tested
 
-### 4. Implement Self-Hosted Docker Distribution Hardening
+### 4. Implement Self-Hosted Docker Distribution Hardening — ✅ DONE
 
 Goal: establish Docker as the first fully supported distribution model.
 
@@ -717,7 +722,7 @@ Exit criteria:
 - SQLite quick start works end-to-end
 - PostgreSQL variant is supported and documented
 
-### 5. Implement Hosted Auth Policy for Self-Hosted and AWS Skeleton
+### 5. Implement Hosted Auth Policy for Self-Hosted and AWS Skeleton — ✅ DONE
 
 Goal: make hosted auth behavior explicit and shared across hosted distributions.
 
@@ -737,7 +742,7 @@ Exit criteria:
 - hosted profiles share one explicit auth behavior
 - desktop no-auth and hosted auth are clearly separated
 
-### 6. Implement Transport/TLS Policy by Distribution
+### 6. Implement Transport/TLS Policy by Distribution — ✅ DONE
 
 Goal: make transport expectations explicit by distribution rather than implied by deployment history.
 
@@ -748,6 +753,8 @@ Scope:
 - define HTTPS-only assumption for AWS skeleton
 - review WebSocket endpoint handling under each profile
 - document nginx/TLS behavior for self-hosted
+- document path toward automated certificate management (e.g. Let's Encrypt / Certbot)
+  as a recommended enhancement for self-hosted HTTPS deployments
 
 Dependencies:
 
@@ -759,7 +766,7 @@ Exit criteria:
 - self-hosted HTTP quick start remains easy
 - public-facing recommendations are explicit
 
-### 7. Implement Electron Packaging Skeleton
+### 7. Implement Electron Packaging Skeleton — ✅ DONE
 
 Goal: create the second supported distribution target with no-login desktop behavior.
 
@@ -782,7 +789,7 @@ Exit criteria:
 - desktop runs without login
 - desktop architecture does not require reworking core services
 
-### 8. Implement Desktop Secrets and Workspace Behavior
+### 8. Implement Desktop Secrets and Workspace Behavior — ✅ DONE
 
 Goal: make desktop-specific local behavior explicit and safe enough for MVP.
 
@@ -802,7 +809,7 @@ Exit criteria:
 - desktop distribution has a defined storage/secrets model
 - future secure-store enhancement is documented, not forgotten
 
-### 9. Implement AWS Distribution Skeleton
+### 9. Implement AWS Distribution Skeleton — ✅ DONE
 
 Goal: ensure the architecture supports later AWS delivery without requiring major redesign.
 
@@ -810,8 +817,10 @@ Scope:
 
 - document `aws_hosted` runtime profile
 - define AWS assumptions: static frontend hosting, ECS/Fargate backend, PostgreSQL, S3 default file storage, HTTPS mandatory
-- add placeholder deployment assets and/or docs sufficient to anchor later implementation
-- ensure hosted config model supports cloud-native secrets/config injection
+- define infrastructure-as-code approach: **AWS CDK** stacks synthesising to CloudFormation; fully reproducible and environment-parameterised (no manual console provisioning)
+- define runtime config injection model: **Secrets Manager** for sensitive values (encryption keys, DB credentials); **SSM Parameter Store** for non-sensitive operational config; both mapped into the `aws_hosted` profile at startup
+- add placeholder CDK stack(s) and/or docs sufficient to anchor later implementation
+- ensure hosted config model supports cloud-native secrets/config injection without requiring changes to core application logic
 
 Dependencies:
 
@@ -822,26 +831,399 @@ Exit criteria:
 - AWS is represented in the architecture and config model
 - Docker/Electron choices do not block later ECS/Fargate delivery
 
-### 10. Add Cross-Distribution Build/Test/Release Workflows
+### 10. Add Cross-Distribution Build/Test/Release Workflows — ✅ DONE
 
-Goal: make the supported distributions reproducible and supportable.
+## Goal
 
-Scope:
+Establish a reproducible, automation-driven build, test, and release framework across supported distribution models, ensuring:
 
-- add CI workflows for Docker distribution
-- add database-matrix testing for SQLite and PostgreSQL
-- add Electron packaging pipeline skeleton
-- define release artifacts for Docker and desktop
-- add smoke-test expectations for each supported distribution
+- distribution artifacts can be built from a clean checkout
+- cross-distribution regressions are detected early
+- runtime profile behavior (auth, transport, database, bootstrap) is validated in CI
+- release outputs are clearly defined and versioned
 
-Dependencies:
+This work must make distribution support **operationally real**, not just buildable.
 
-- Tickets 3, 4, 7, and 9
+## Scope
 
-Exit criteria:
+### A. CI Platform and Structure
 
-- distribution builds are reproducible in automation
-- cross-distribution regressions are detectable earlier
+- use **GitHub Actions** as the CI/CD platform
+- define workflows under `.github/workflows/`
+- separate workflows by concern:
+    - shared checks
+    - Docker distribution
+    - Electron packaging
+    - AWS skeleton validation
+    - release pipeline
+
+---
+
+### B. Shared Quality Workflow
+
+Create `ci-shared.yml`:
+
+Responsibilities:
+
+- install backend and frontend dependencies
+- run backend tests
+- run frontend build and lint (if present)
+- validate config model integrity
+- ensure application can initialise with explicit runtime profiles
+
+Exit conditions:
+
+- no failing tests
+- no build errors
+- config validation passes
+
+---
+
+### C. Self-Hosted Docker Workflow
+
+Create `ci-docker.yml`:
+
+Responsibilities:
+
+- build backend Docker image
+- build frontend assets for hosted deployment
+- validate Docker Compose configuration
+- run smoke tests in:
+    - SQLite mode (quick start)
+    - PostgreSQL mode (hosted configuration)
+
+Smoke tests must verify:
+
+- containers start successfully
+- backend health endpoint responds
+- frontend can reach backend
+- hosted auth mode is enforced
+- database selection is respected (SQLite vs PostgreSQL)
+
+Artifact handling:
+
+- on release (tag), publish image to **GHCR**
+
+---
+
+### D. Database Matrix Validation
+
+Integrated into Docker workflow:
+
+- run migrations against:
+    - SQLite
+    - PostgreSQL (single supported version)
+- validate application startup against both engines
+- run minimal integration/smoke checks for each engine
+
+Constraints:
+
+- no implicit reliance on one database engine
+- failures must surface in CI
+
+---
+
+### E. Electron Packaging Workflow
+
+Create `ci-electron.yml`:
+
+Responsibilities:
+
+- build frontend assets for desktop
+- package Electron app for **macOS only (initial target)**
+- verify desktop bootstrap wiring
+
+Smoke tests must confirm:
+
+- Electron app launches
+- local backend process starts
+- `desktop` runtime profile is selected
+- authentication is bypassed (no-login policy)
+- backend binds to localhost assumptions
+
+Artifacts:
+
+- generate macOS build output (e.g. `.app` or installer)
+- signing/notarisation is **not implemented yet**
+- include placeholders for future signing integration
+
+---
+
+### F. AWS Skeleton Validation Workflow
+
+Create `ci-aws-skeleton.yml`:
+
+Responsibilities:
+
+- install CDK dependencies
+- run `cdk synth`
+- validate stack definitions compile successfully
+
+Constraints:
+
+- **no live deployment**
+- validate that `aws_hosted` profile assumptions are represented
+- ensure infrastructure code is buildable and consistent
+
+---
+
+### G. Release Workflow
+
+Create `release.yml`:
+
+Trigger:
+
+- runs on **semantic version tags only** (e.g. `v1.2.0`)
+
+Responsibilities:
+
+- build Docker distribution
+- publish Docker image to **GitHub Container Registry (GHCR)**
+- build Electron macOS artifact
+- attach Electron artifact to GitHub release
+- generate release metadata (version, notes)
+
+Outputs:
+
+Docker:
+
+- versioned image in GHCR
+
+Electron:
+
+- macOS packaged artifact
+- unsigned (signing deferred)
+
+---
+
+### H. Smoke-Test Contract by Distribution
+
+Define and enforce minimum smoke coverage:
+
+#### Self-hosted Docker
+
+- container startup succeeds
+- backend health endpoint responds
+- frontend ↔ backend connectivity works
+- auth is enforced
+- SQLite mode works
+- PostgreSQL mode works
+
+#### Electron (desktop)
+
+- app launches
+- local backend starts
+- no-login behavior is active
+- API round-trip succeeds
+- runtime profile = `desktop`
+
+#### AWS skeleton
+
+- CDK stacks synthesise successfully
+- configuration aligns with `aws_hosted` profile expectations
+- no AWS-specific assumptions leak into core application logic
+
+---
+
+## Non-goals
+
+- full production-grade deployment pipelines
+- multi-platform Electron packaging (Windows/Linux deferred)
+- desktop code signing and notarisation (placeholders only)
+- live AWS deployment
+- full end-to-end functional test coverage
+
+---
+
+## Deliverables
+
+- GitHub Actions workflows:
+    - `ci-shared.yml`
+    - `ci-docker.yml`
+    - `ci-electron.yml`
+    - `ci-aws-skeleton.yml`
+    - `release.yml`
+- reusable scripts or commands for:
+    - Docker build and smoke testing
+    - database matrix validation
+    - Electron packaging and smoke testing
+    - CDK synth validation
+- documented release artifact structure
+- defined smoke-test matrix per distribution
+
+---
+
+## Dependencies
+
+- Ticket 3: persistence portability (SQLite/PostgreSQL)
+- Ticket 4: Docker distribution hardening
+- Ticket 7: Electron packaging skeleton
+- Ticket 9: AWS distribution skeleton
+
+---
+
+## Exit Criteria
+
+- CI can build the self-hosted Docker distribution from a clean checkout
+- CI verifies application startup in both SQLite and PostgreSQL modes
+- CI packages Electron app for macOS
+- Electron smoke test validates local backend bootstrap and no-login behavior
+- AWS CDK stacks synthesise successfully in CI
+- Docker images are published to GHCR on tagged release
+- Electron macOS artifact is attached to release
+- regressions in:
+    - runtime profile handling
+    - database engine support
+    - auth posture
+    - transport assumptions
+    - bootstrap logic  
+        fail CI before merge/release
+
+---
+
+## Suggested Workflow Trigger Model
+
+| Event         | Workflows                                 |
+| ------------- | ----------------------------------------- |
+| Pull Request  | shared + docker + electron (lightweight)  |
+| Main branch   | shared + docker + electron + aws-skeleton |
+| Tag (release) | full build + publish artifacts            |
+
+---
+
+## Electron Full Distribution Backlog
+
+The CI workflow (`ci-electron.yml`) verifies that Electron bootstraps correctly from source and
+that electron-builder can produce a `.app`. The following work is required before that `.app` is
+truly user-distributable.
+
+### 1. Path handling for packaged mode (`electron/main.js`) — ✅ DONE
+
+`main.js` currently uses dev-relative paths:
+
+```js
+const FRONTEND_INDEX = path.join(__dirname, '..', 'frontend', 'dist', 'index.html')
+const BACKEND_DIR = path.join(__dirname, '..', 'backend')
+```
+
+Inside a packaged `.app`, `__dirname` resolves to `Contents/Resources/app/`, so these `../` paths
+do not find the bundled resources. Fix using `app.isPackaged`:
+
+```js
+const resourcesPath = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..')
+const FRONTEND_INDEX = path.join(resourcesPath, 'frontend', 'dist', 'index.html')
+const BACKEND_DIR = path.join(resourcesPath, 'backend')
+```
+
+`process.resourcesPath` is cross-platform; the same fix covers Windows and Linux.
+
+### 2. Backend and frontend bundling (`electron/package.json`) — ✅ DONE
+
+electron-builder's `"files"` currently only bundles `main.js` and `preload.js`. The backend
+Python source and the built frontend assets must be included via `extraResources`:
+
+```json
+"extraResources": [
+  {
+    "from": "../backend",
+    "to": "backend",
+    "filter": ["**/*", "!.venv/**", "!__pycache__/**", "!*.pyc", "!test_*.db", "!tests/**"]
+  },
+  {
+    "from": "../frontend/dist",
+    "to": "frontend/dist"
+  }
+]
+```
+
+Files land at `Contents/Resources/backend/` and `Contents/Resources/frontend/dist/` —
+matching the path fix in §1.
+
+**Python runtime:** `extraResources` copies raw Python source. The user must have Python 3.12
+installed and accessible on PATH. For a fully self-contained installer, the backend should be
+compiled with PyInstaller into a single binary bundled alongside the app.
+
+### 3. macOS code signing and notarization
+
+Unsigned `.app` bundles are quarantined by Gatekeeper on macOS 10.15+. Users must right-click →
+Open, which is unsuitable for general distribution.
+
+**Requirements:**
+- Apple Developer Program membership ($99/year)
+- Developer ID Application certificate exported as `.p12`
+- App-specific password for notarization (`xcrun notarytool`)
+
+**electron-builder additions:**
+```json
+"mac": {
+  "target": [{"target": "zip", "arch": ["x64", "arm64"]}],
+  "hardenedRuntime": true,
+  "gatekeeperAssess": false,
+  "entitlements": "entitlements.mac.plist",
+  "entitlementsInherit": "entitlements.mac.plist"
+},
+"afterSign": "scripts/notarize.js"
+```
+
+The entitlements plist must grant `com.apple.security.cs.allow-unsigned-executable-memory`
+(for Python's JIT) and `com.apple.security.inherit` for child processes (uvicorn).
+
+**GitHub Actions secrets needed:** `MACOS_CERTIFICATE_P12`, `MACOS_CERTIFICATE_PASSWORD`,
+`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
+
+### 4. Windows packaging (deferred)
+
+**Installer target:** NSIS (default electron-builder Windows target). EV (Extended Validation)
+code-signing certificate strongly recommended — bypasses SmartScreen immediately. Standard OV
+certs trigger a SmartScreen warning until the app accumulates reputation.
+
+**Venv path fix:** On Windows the virtualenv binary directory is `Scripts\`, not `bin/`. Update
+`findUvicorn()` and `findAlembic()` in `main.js`:
+
+```js
+const venvBin = process.platform === 'win32' ? '.venv/Scripts' : '.venv/bin'
+const ext = process.platform === 'win32' ? '.exe' : ''
+const venvUvicorn = path.join(BACKEND_DIR, venvBin, `uvicorn${ext}`)
+```
+
+**GitHub Actions secrets needed:** `WINDOWS_CERTIFICATE_PFX` (base64), `WINDOWS_CERTIFICATE_PASSWORD`.
+
+**electron-builder additions:**
+```json
+"win": {
+  "target": "nsis",
+  "publisherName": "Your Name"
+}
+```
+
+### 5. Linux packaging (deferred)
+
+**Targets:** AppImage (portable, no install required), deb (Debian/Ubuntu), rpm (Fedora/RHEL).
+
+**Smoke test on Linux CI:** Linux runners have no display. Add before launching Electron:
+
+```bash
+Xvfb :99 -screen 0 1024x768x24 &
+export DISPLAY=:99
+```
+
+**electron-builder additions:**
+```json
+"linux": {
+  "target": ["AppImage", "deb"],
+  "category": "Office"
+}
+```
+
+Code signing is not required on Linux, but AppImages can be GPG-signed for integrity verification.
+
+### 6. Auto-update (deferred)
+
+`electron-updater` (bundled with electron-builder) provides automatic in-app updates from GitHub
+Releases. Requires `publish` config in electron-builder and code signing to be in place before
+it is useful.
+
+---
 
 ### 11. Regression and Security Hardening Pass
 

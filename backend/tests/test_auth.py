@@ -449,3 +449,44 @@ def test_websocket_rejects_invalid_token(client):
         with client.websocket_connect("/ws/runs/test-run?token=not.a.valid.jwt"):
             pass
     assert exc_info.value.code == 1008
+
+
+# ── Ticket 2: Desktop profile auth bypass ─────────────────────────────────────
+
+
+def test_seed_admin_skips_in_desktop_profile():
+    """seed_admin is a no-op when auth_mode='none' — desktop needs no managed users."""
+    from unittest.mock import patch, MagicMock
+
+    from tests.conftest import _run_async
+
+    async def _run():
+        with patch("app.services.auth.settings") as mock_settings:
+            mock_settings.auth_mode = "none"
+            db = MagicMock()
+            await seed_admin(db)
+            # DB should never be touched
+            db.scalar.assert_not_called()
+
+    _run_async(_run())
+
+
+def test_validate_ws_token_bypasses_in_desktop_profile():
+    """validate_ws_token returns an empty dict without validation when auth_mode='none'."""
+    from unittest.mock import patch
+
+    with patch("app.services.auth.settings") as mock_settings:
+        mock_settings.auth_mode = "none"
+        result = validate_ws_token(None)  # no token supplied
+        assert result == {}
+
+
+def test_websocket_accepts_connection_without_token_in_desktop_profile(client):
+    """In desktop profile (auth_mode=none) WS accepts connections with no token."""
+    from unittest.mock import patch
+
+    with patch("app.services.auth.settings") as mock_settings:
+        mock_settings.auth_mode = "none"
+        with client.websocket_connect("/ws/runs/test-run") as ws:
+            data = ws.receive_json()
+            assert data["event"] == "connected"

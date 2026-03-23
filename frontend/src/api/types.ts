@@ -1,3 +1,12 @@
+// ─── Runtime config ────────────────────────────────────────────────────────────
+
+export interface RuntimeConfig {
+  auth_mode: 'none' | 'local'
+  app_distribution: string
+  transport_mode: string
+  input_storage_mode: string
+}
+
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 
 export interface TokenResponse {

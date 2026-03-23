@@ -5,16 +5,9 @@ import io
 import zipfile
 from unittest.mock import patch
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from app.models.job import JobRecord, JobStatus
 from app.models.load_run import LoadRun, RunStatus
-
-# ── Secondary DB session (same file as conftest's test_api.db) ─────────────────
-
-_TEST_DB_URL = "sqlite+aiosqlite:///./test_api.db"
-_engine = create_async_engine(_TEST_DB_URL, echo=False)
-_S = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+from tests.conftest import _TestSession as _S
 
 
 def _run(coro):

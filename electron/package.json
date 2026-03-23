@@ -1,0 +1,36 @@
+{
+  "name": "sf-bulk-loader-desktop",
+  "version": "0.1.0",
+  "description": "Salesforce Bulk Loader — Desktop",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:frontend": "cd ../frontend && npm run build:desktop",
+    "dist": "electron-builder --mac dir"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.example.sf-bulk-loader",
+    "productName": "Salesforce Bulk Loader",
+    "files": ["main.js", "preload.js"],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": ["**/*", "!.venv/**", "!__pycache__/**", "!*.pyc", "!test_*.db", "!tests/**"]
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      }
+    ],
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}
