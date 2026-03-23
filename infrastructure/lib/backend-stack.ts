@@ -240,7 +240,11 @@ export class BackendStack extends cdk.Stack {
       taskDefinition,
       desiredCount: props.ecsDesiredCount,
       securityGroups: [ecsSecurityGroup],
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      // Tasks run in public subnets and are assigned public IPs so they can reach
+      // the Salesforce API without a NAT Gateway. Inbound traffic is restricted by
+      // the security group to the ALB only — no direct public access to port 8000.
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      assignPublicIp: true,
       // Rolling deploy: always keep at least one healthy task during updates.
       minHealthyPercent: 50,
       maxHealthyPercent: 200,

@@ -47,7 +47,7 @@ export class DataStack extends cdk.Stack {
     const env = props.envName;
 
     // --- RDS PostgreSQL ---
-    // Placed in private subnets; only reachable from within the VPC.
+    // Placed in isolated subnets — no internet route, reachable from within the VPC only.
     // The aws_hosted profile requires a PostgreSQL DATABASE_URL — SQLite is rejected at startup.
     const dbSecurityGroup = new ec2.SecurityGroup(this, 'DbSecurityGroup', {
       vpc: props.vpc,
@@ -61,7 +61,7 @@ export class DataStack extends cdk.Stack {
       }),
       instanceType: new ec2.InstanceType(props.rdsInstanceClass),
       vpc: props.vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [dbSecurityGroup],
       databaseName: 'bulk_loader',
       // Credentials auto-generated in Secrets Manager under:
