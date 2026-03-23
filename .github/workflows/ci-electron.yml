@@ -66,8 +66,8 @@ jobs:
           echo "Health status: $STATUS"
           test "$STATUS" = "ok"
 
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/connections)
-          echo "Unauthenticated /api/connections → HTTP $HTTP (expect 200 in desktop mode)"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/connections/)
+          echo "Unauthenticated /api/connections/ → HTTP $HTTP (expect 200 in desktop mode)"
           test "$HTTP" = "200"
 
           kill $ELECTRON_PID

@@ -25,14 +25,17 @@ def upgrade() -> None:
     if "retry_of_run_id" not in existing:
         # batch_alter_table is required for SQLite — plain ADD COLUMN cannot carry
         # FK constraints in SQLite's ALTER TABLE implementation.
+        # FK must be named separately; Alembic 1.18+ rejects unnamed constraints
+        # in batch operations.
         with op.batch_alter_table("load_run") as batch_op:
             batch_op.add_column(
-                sa.Column(
-                    "retry_of_run_id",
-                    sa.String(36),
-                    sa.ForeignKey("load_run.id"),
-                    nullable=True,
-                )
+                sa.Column("retry_of_run_id", sa.String(36), nullable=True)
+            )
+            batch_op.create_foreign_key(
+                "fk_load_run_retry_of_run_id",
+                "load_run",
+                ["retry_of_run_id"],
+                ["id"],
             )
 
 
