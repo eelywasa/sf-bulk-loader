@@ -15,7 +15,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Create data directories
-        run: mkdir -p data/input data/output data/db
+        # data/db and data/output are mounted as writable volumes into the container
+        # which runs as appuser (non-root). chmod ensures appuser can write even though
+        # the host directories are created by root on the CI runner.
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
 
       - name: Create CI env file
         # ENCRYPTION_KEY and JWT_SECRET_KEY are intentionally omitted — the backend
@@ -60,7 +65,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Create data directories
-        run: mkdir -p data/input data/output data/db
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
 
       - name: Create CI env file
         run: |
