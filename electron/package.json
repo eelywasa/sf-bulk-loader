@@ -17,6 +17,17 @@
     "appId": "com.example.sf-bulk-loader",
     "productName": "Salesforce Bulk Loader",
     "files": ["main.js", "preload.js"],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": ["**/*", "!.venv/**", "!__pycache__/**", "!*.pyc", "!test_*.db", "!tests/**"]
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      }
+    ],
     "mac": {
       "target": "dir",
       "category": "public.app-category.developer-tools"

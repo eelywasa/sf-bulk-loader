@@ -12,8 +12,11 @@ const BACKEND_PORT = 8000
 const BACKEND_HOST = '127.0.0.1'
 const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}`
 
-const FRONTEND_INDEX = path.join(__dirname, '..', 'frontend', 'dist', 'index.html')
-const BACKEND_DIR = path.join(__dirname, '..', 'backend')
+const resourcesPath = app.isPackaged
+  ? process.resourcesPath
+  : path.join(__dirname, '..')
+const FRONTEND_INDEX = path.join(resourcesPath, 'frontend', 'dist', 'index.html')
+const BACKEND_DIR = path.join(resourcesPath, 'backend')
 
 // ─── Tool discovery ──────────────────────────────────────────────────────────
 

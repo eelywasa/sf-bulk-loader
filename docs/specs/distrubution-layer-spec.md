@@ -1097,7 +1097,7 @@ The CI workflow (`ci-electron.yml`) verifies that Electron bootstraps correctly 
 that electron-builder can produce a `.app`. The following work is required before that `.app` is
 truly user-distributable.
 
-### 1. Path handling for packaged mode (`electron/main.js`)
+### 1. Path handling for packaged mode (`electron/main.js`) — ✅ DONE
 
 `main.js` currently uses dev-relative paths:
 
@@ -1117,7 +1117,7 @@ const BACKEND_DIR = path.join(resourcesPath, 'backend')
 
 `process.resourcesPath` is cross-platform; the same fix covers Windows and Linux.
 
-### 2. Backend and frontend bundling (`electron/package.json`)
+### 2. Backend and frontend bundling (`electron/package.json`) — ✅ DONE
 
 electron-builder's `"files"` currently only bundles `main.js` and `preload.js`. The backend
 Python source and the built frontend assets must be included via `extraResources`:
