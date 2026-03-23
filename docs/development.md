@@ -59,6 +59,58 @@ alembic revision --autogenerate -m "describe your change"
 
 ---
 
+## PyInstaller (desktop binary)
+
+The Electron app bundles a compiled backend binary rather than raw Python source.
+This makes the packaged app self-contained — no Python installation required on the
+user's machine.
+
+### Prerequisites
+
+```bash
+cd backend
+pip install -r requirements-desktop.txt   # slim deps — no asyncpg, no pytest
+pip install pyinstaller
+```
+
+### Build the binary
+
+```bash
+cd backend
+pyinstaller sf_bulk_loader.spec --clean --noconfirm
+# Output: backend/dist/sf_bulk_loader/  (folder with executable + shared libs)
+```
+
+### Test the binary
+
+```bash
+# Verify --migrate works (creates the full schema in a temp DB)
+DATABASE_URL="sqlite+aiosqlite:////tmp/test.db" \
+ENCRYPTION_KEY_FILE=/tmp/enc.key \
+JWT_SECRET_KEY_FILE=/tmp/jwt.key \
+APP_DISTRIBUTION=desktop \
+./dist/sf_bulk_loader/sf_bulk_loader --migrate
+
+# Verify the server starts
+DATABASE_URL="sqlite+aiosqlite:////tmp/test.db" \
+ENCRYPTION_KEY_FILE=/tmp/enc.key \
+JWT_SECRET_KEY_FILE=/tmp/jwt.key \
+APP_DISTRIBUTION=desktop \
+./dist/sf_bulk_loader/sf_bulk_loader &
+curl http://127.0.0.1:8000/api/health
+```
+
+### Notes
+
+- `backend/dist/sf_bulk_loader/` is gitignored — it is rebuilt by CI on every release
+- The binary is self-contained: no Python required on the target machine
+- `asyncpg` is intentionally excluded (SQLite-only on desktop; not imported in the app tree)
+- `boto3` is bundled (~50 MB) because it is imported at module level in `input_connections.py`
+- Adding a new migration: add the version file to `backend/alembic/versions/` — the `alembic/`
+  directory is bundled into the binary's `_MEIPASS` at build time, so no spec changes needed
+
+---
+
 ## Running Tests
 
 ### Backend

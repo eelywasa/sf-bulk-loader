@@ -12,9 +12,9 @@ to have changed.
 |---|---|---|---|
 | Shared Quality Checks | `ci-shared.yml` | Every push and PR (all branches) | ubuntu-latest |
 | Docker Distribution | `ci-docker.yml` | Push/PR targeting `main` | ubuntu-latest |
-| Electron Desktop CI | `ci-electron.yml` | Push/PR targeting `main` | macos-latest |
+| Electron Desktop CI | `ci-electron.yml` | Push/PR targeting `main` | macos-latest (smoke + PyInstaller check on main) |
 | AWS Skeleton Validation | `ci-aws-skeleton.yml` | Push/PR targeting `main` | ubuntu-latest |
-| Release | `release.yml` | Semantic version tags (`v*.*.*`) | ubuntu-latest + macos-latest |
+| Release | `release.yml` | Semantic version tags (`v*.*.*`) | ubuntu-latest + matrix: mac-arm64, windows-x64, linux-x64 |
 
 ---
 
@@ -101,28 +101,38 @@ with display — no virtual framebuffer required).
 ### Job: `build-and-smoke`
 
 **Why run from source, not from the packaged `.app`?**
-`electron/main.js` uses dev-relative paths (`../backend`, `../frontend/dist`) that only resolve
-correctly when run from the repo root. The packaged `.app` requires additional work before it is
-fully functional — see [Electron Full Distribution Backlog](specs/distrubution-layer-spec.md).
+The smoke test uses the dev-mode path in `main.js` (venv uvicorn/alembic), which is faster than
+running a full PyInstaller build on every PR. The packaged app with the compiled binary is
+validated by the `pyinstaller-check` job on pushes to `main`, and by `release.yml` on tags.
 
 Steps:
 
 1. Build frontend in desktop mode (`VITE_API_URL=http://127.0.0.1:8000`, hash routing, relative
    asset base) — produces `frontend/dist/`
-2. Create `backend/.venv` and install requirements — `main.js` looks for `.venv/bin/uvicorn`
+2. Create `backend/.venv` and install requirements — `main.js` dev-mode looks for `.venv/bin/uvicorn`
    and `.venv/bin/alembic` in `BACKEND_DIR`; this ensures they are found
 3. `npm install` in `electron/`
 4. **Smoke test** — launch `npx electron .` in background, then:
    - Poll `http://127.0.0.1:8000/api/health` for up to 60 seconds
    - Assert `status == "ok"`
-   - Assert `GET /api/connections` returns `200` — confirms desktop profile bypasses auth
+   - Assert `GET /api/connections/` returns `200` — confirms desktop profile bypasses auth
    - Kill the Electron process
-5. **Package** — `npm run dist` runs `electron-builder --mac dir`, producing a directory-format
-   `.app` in `electron/dist/`. `CSC_IDENTITY_AUTO_DISCOVERY=false` suppresses keychain lookup
-   (no signing credentials in CI). Signing placeholder env vars are documented in the workflow
-   comments.
-6. **Upload artifact** — the `.app` is uploaded as `sf-bulk-loader-macos-<sha>`, retained for
-   7 days. Download from the Actions run to inspect the build output.
+5. **Package** — `npm run dist -- --mac dir` produces a directory-format `.app` in `electron/dist/`.
+   This artifact uses source-bundled backend (no PyInstaller) and is a build-validity check only,
+   not a distributable. `CSC_IDENTITY_AUTO_DISCOVERY=false` suppresses keychain lookup.
+6. **Upload artifact** — uploaded as `sf-bulk-loader-macos-<sha>`, retained for 1 day.
+
+### Job: `pyinstaller-check` (push to `main` only)
+
+Validates that the PyInstaller binary builds successfully and that the `--migrate` flag works
+end-to-end. Runs only on pushes to `main` (not PRs) to keep PR feedback fast.
+
+Steps:
+
+1. Install `requirements-desktop.txt` + PyInstaller
+2. `pyinstaller sf_bulk_loader.spec --clean --noconfirm`
+3. Run `./dist/sf_bulk_loader/sf_bulk_loader --migrate` with a temp SQLite DB — confirms
+   `sys._MEIPASS` path resolution finds the bundled `alembic/` directory and migrations succeed
 
 ---
 
@@ -161,13 +171,26 @@ Builds and pushes both Docker images to GitHub Container Registry (GHCR):
 Authentication uses `GITHUB_TOKEN` (automatically available — no secrets to configure).
 Images appear under the repository's **Packages** tab on GitHub.
 
-### Job: `electron-release`
+### Job: `electron-release` (matrix: 3 platforms)
 
-Builds the frontend in desktop mode, packages the Electron app as a `.zip` (`--mac zip`), and
-attaches it to the GitHub Release created by the tag push.
+Builds a platform-native, self-contained Electron package on each runner:
 
-The `.zip` contains an unsigned `.app`. See [Electron Full Distribution Backlog](specs/distrubution-layer-spec.md)
-for what is needed before this artifact is Gatekeeper-safe.
+| Runner | Output |
+|---|---|
+| `macos-latest` (arm64) | `.zip` containing unsigned `.app` |
+| `windows-latest` | `.exe` NSIS installer |
+| `ubuntu-latest` | `.AppImage` |
+
+Each runner: installs `requirements-desktop.txt` + PyInstaller → compiles the backend to a
+standalone binary (`pyinstaller sf_bulk_loader.spec`) → builds frontend in desktop mode →
+runs `electron-builder` → attaches the output to the GitHub Release via `softprops/action-gh-release`.
+
+The resulting packages are **fully self-contained**: no Python installation is required on the
+user's machine.
+
+Release artifacts attach to GitHub Releases storage (not the Actions artifact pool). On public
+repos, GitHub Releases storage is unlimited. On private repos it counts against Git LFS storage
+(1 GB free, then paid data packs).
 
 ---
 
@@ -213,10 +236,12 @@ curl http://localhost/api/health
 
 ### Downloading a CI-built Electron artifact
 
-1. Go to the Actions tab on GitHub
-2. Open any `Electron Desktop CI` run
-3. Download the `sf-bulk-loader-macos-<sha>` artifact
-4. Unzip and open the `.app` — right-click → Open to bypass Gatekeeper on unsigned builds
+The CI smoke test uploads a `sf-bulk-loader-macos-<sha>` artifact (retained 1 day). This is a
+**source-bundled build** for debugging, not a distributable — it requires Python on the host.
+
+For a properly self-contained build, download release artifacts from the GitHub Releases page
+(created when a version tag is pushed). Three platform downloads are available per release:
+`mac-arm64` (`.zip`), `windows-x64` (`.exe`), `linux-x64` (`.AppImage`).
 
 ### Creating a release
 
