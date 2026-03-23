@@ -136,8 +136,9 @@ function stopProcess(child) {
 async function main() {
   const executablePath = resolveExecutablePath()
   console.log(`[smoke] Launching ${executablePath}`)
+  const launchArgs = platform === 'linux' ? ['--no-sandbox'] : []
 
-  const child = spawn(executablePath, [], {
+  const child = spawn(executablePath, launchArgs, {
     cwd: rootDir,
     stdio: 'inherit',
     detached: process.platform !== 'win32',
