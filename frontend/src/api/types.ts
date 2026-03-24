@@ -224,11 +224,30 @@ export interface InputDirectoryEntry {
   provider?: string
 }
 
-export interface InputFilePreview {
-  filename: string
+export interface FilterRule {
+  column: string
+  value: string
+}
+
+export interface CsvFetchParams {
+  offset: number
+  limit: number
+  filters: FilterRule[]
+}
+
+export interface CsvPageResult {
+  filename?: string
   header: string[]
-  rows: Record<string, string>[]
-  row_count: number
+  rows: Record<string, string | null>[]
+  total_rows: number | null
+  filtered_rows: number | null
+  offset: number
+  limit: number
+  has_next: boolean
+}
+
+export interface InputFilePreview extends CsvPageResult {
+  filename: string
   source?: string
   provider?: string
 }

@@ -27,3 +27,6 @@ export type { EmptyStateProps } from './EmptyState'
 
 export { ComboInput } from './ComboInput'
 export type { ComboInputProps } from './ComboInput'
+
+export { CsvPreviewPanel } from './CsvPreviewPanel'
+export type { CsvPreviewPanelProps } from './CsvPreviewPanel'

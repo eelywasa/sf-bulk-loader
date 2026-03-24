@@ -24,10 +24,11 @@ _IC = {
 
 class _FakeS3Body:
     def __init__(self, data: bytes) -> None:
-        self._data = data
+        import io
+        self._buf = io.BytesIO(data)
 
-    def read(self) -> bytes:
-        return self._data
+    def read(self, n: int = -1) -> bytes:
+        return self._buf.read(n)
 
 
 class _FakePaginator:
@@ -85,7 +86,7 @@ def _create_input_connection(auth_client) -> str:
 class _PreviewOSErrorStorage:
     provider = "local"
 
-    def preview_file(self, path: str, rows: int):
+    def preview_file(self, path: str, limit: int = 50, offset: int = 0, filters=None):
         raise OSError("disk error")
 
     def list_entries(self, path: str = ""):
@@ -381,14 +382,18 @@ def test_preview_input_file_returns_rows(auth_client):
                 writer.writerow([f"Acme {i}", "Tech"])
 
         with patch("app.services.input_storage.settings.input_dir", tmpdir):
-            resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5")
+            resp = auth_client.get("/api/files/input/accounts.csv/preview?limit=5")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["filename"] == "accounts.csv"
     assert body["header"] == ["Name", "Industry"]
     assert len(body["rows"]) == 5
-    assert body["row_count"] == 5
+    assert body["has_next"] is True   # file has 20 rows, limit=5
+    assert body["offset"] == 0
+    assert body["limit"] == 5
+    assert body["total_rows"] is None
+    assert body["filtered_rows"] is None
     assert body["source"] == "local"
     assert body["provider"] == "local"
 
@@ -423,6 +428,9 @@ def test_preview_input_file_in_subdirectory(auth_client):
     assert body["filename"] == "sub/deep.csv"
     assert body["header"] == ["Id", "Name"]
     assert len(body["rows"]) == 1
+    assert body["has_next"] is False   # only 1 data row
+    assert body["offset"] == 0
+    assert body["limit"] == 50  # default
     assert body["source"] == "local"
     assert body["provider"] == "local"
 
@@ -442,8 +450,8 @@ def test_preview_input_file_source_local_matches_default(auth_client):
             writer.writerow(["Name", "Industry"])
             writer.writerow(["Acme", "Tech"])
         with patch("app.services.input_storage.settings.input_dir", tmpdir):
-            default_resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5")
-            explicit_resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5&source=local")
+            default_resp = auth_client.get("/api/files/input/accounts.csv/preview?limit=5")
+            explicit_resp = auth_client.get("/api/files/input/accounts.csv/preview?limit=5&source=local")
 
     assert default_resp.status_code == 200
     assert explicit_resp.status_code == 200
@@ -457,12 +465,16 @@ def test_preview_input_file_remote_source_returns_source_and_provider(auth_clien
     )
 
     with patch("app.services.input_storage.boto3.client", return_value=client):
-        resp = auth_client.get(f"/api/files/input/accounts.csv/preview?rows=1&source={ic_id}")
+        resp = auth_client.get(f"/api/files/input/accounts.csv/preview?limit=1&source={ic_id}")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["filename"] == "accounts.csv"
-    assert body["row_count"] == 1
+    assert body["has_next"] is True   # 2 data rows, limit=1
+    assert body["offset"] == 0
+    assert body["limit"] == 1
+    assert body["total_rows"] is None
+    assert body["filtered_rows"] is None
     assert body["source"] == ic_id
     assert body["provider"] == "s3"
 
@@ -527,6 +539,149 @@ def test_preview_input_file_unsupported_provider_returns_400(auth_client):
 
     assert resp.status_code == 400
     assert "Unsupported input connection provider" in resp.json()["detail"]
+
+
+def _write_preview_csv(path, rows=10):
+    """Write a CSV with Name/Industry columns and `rows` data rows."""
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Name", "Industry"])
+        for i in range(rows):
+            writer.writerow([f"Acme {i}", "Tech"])
+
+
+def test_preview_input_file_limit_param_controls_page_size(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_preview_csv(os.path.join(tmpdir, "data.csv"), rows=10)
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get("/api/files/input/data.csv/preview?limit=3")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["rows"]) == 3
+    assert body["limit"] == 3
+    assert body["has_next"] is True
+
+
+def test_preview_input_file_has_next_false_on_last_page(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_preview_csv(os.path.join(tmpdir, "data.csv"), rows=5)
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get("/api/files/input/data.csv/preview?limit=5")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["rows"]) == 5
+    assert body["has_next"] is False
+
+
+def test_preview_input_file_offset_returns_second_page(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = os.path.join(tmpdir, "data.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Name"])
+            for i in range(5):
+                writer.writerow([f"Row{i}"])
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get("/api/files/input/data.csv/preview?limit=2&offset=2")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["offset"] == 2
+    assert body["limit"] == 2
+    assert len(body["rows"]) == 2
+    assert body["rows"][0]["Name"] == "Row2"
+    assert body["rows"][1]["Name"] == "Row3"
+
+
+def test_preview_input_file_filtered_request_returns_filtered_rows(auth_client):
+    import urllib.parse
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = os.path.join(tmpdir, "data.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Name", "Industry"])
+            writer.writerow(["Acme Corp", "Tech"])
+            writer.writerow(["Beta Inc", "Finance"])
+            writer.writerow(["Acme Labs", "Research"])
+        filters_json = urllib.parse.quote('[{"column":"Name","value":"Acme"}]')
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get(f"/api/files/input/data.csv/preview?filters={filters_json}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["filtered_rows"] == 2
+    assert len(body["rows"]) == 2
+    assert all("Acme" in row["Name"] for row in body["rows"])
+    assert body["has_next"] is False
+
+
+def test_preview_input_file_filtered_no_matches_returns_empty(auth_client):
+    import urllib.parse
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_preview_csv(os.path.join(tmpdir, "data.csv"), rows=5)
+        filters_json = urllib.parse.quote('[{"column":"Name","value":"NoMatch"}]')
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get(f"/api/files/input/data.csv/preview?filters={filters_json}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["rows"] == []
+    assert body["filtered_rows"] == 0
+    assert body["has_next"] is False
+
+
+def test_preview_input_file_malformed_filters_json_returns_400(auth_client):
+    import urllib.parse
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_preview_csv(os.path.join(tmpdir, "data.csv"))
+        bad = urllib.parse.quote("not-json")
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get(f"/api/files/input/data.csv/preview?filters={bad}")
+
+    assert resp.status_code == 400
+    assert "Invalid filters JSON" in resp.json()["detail"]
+
+
+def test_preview_input_file_filters_not_array_returns_400(auth_client):
+    import urllib.parse
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_preview_csv(os.path.join(tmpdir, "data.csv"))
+        bad = urllib.parse.quote('{"column":"Name","value":"x"}')
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get(f"/api/files/input/data.csv/preview?filters={bad}")
+
+    assert resp.status_code == 400
+    assert "filters must be a JSON array" in resp.json()["detail"]
+
+
+def test_preview_input_file_unknown_filter_column_returns_400(auth_client):
+    import urllib.parse
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_preview_csv(os.path.join(tmpdir, "data.csv"))
+        bad = urllib.parse.quote('[{"column":"Nonexistent","value":"x"}]')
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get(f"/api/files/input/data.csv/preview?filters={bad}")
+
+    assert resp.status_code == 400
+
+
+def test_preview_input_file_duplicate_filter_column_returns_400(auth_client):
+    import urllib.parse
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_preview_csv(os.path.join(tmpdir, "data.csv"))
+        bad = urllib.parse.quote('[{"column":"Name","value":"a"},{"column":"Name","value":"b"}]')
+        with patch("app.services.input_storage.settings.input_dir", tmpdir):
+            resp = auth_client.get(f"/api/files/input/data.csv/preview?filters={bad}")
+
+    assert resp.status_code == 400
 
 
 # ── WebSocket ──────────────────────────────────────────────────────────────────

@@ -171,7 +171,11 @@ describe('PlanEditor', () => {
       filename: '',
       header: [],
       rows: [],
-      row_count: 0,
+      total_rows: null,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
     })
   })
 
@@ -497,7 +501,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['ExternalId__c'],
       rows: [{ ExternalId__c: 'A-1' }],
-      row_count: 1,
+      total_rows: 1,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
       source: 'ic-1',
       provider: 's3',
     })
@@ -516,7 +524,11 @@ describe('PlanEditor', () => {
     await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts.csv')
 
     await waitFor(() => {
-      expect(filesApi.previewInput).toHaveBeenCalledWith('accounts.csv', 1, 'ic-1')
+      expect(filesApi.previewInput).toHaveBeenCalledWith(
+        'accounts.csv',
+        { offset: 0, limit: 1, filters: [] },
+        'ic-1',
+      )
     })
   })
 
@@ -1053,7 +1065,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['Name', 'ExternalId__c'],
       rows: [],
-      row_count: 0,
+      total_rows: 0,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
     })
     renderEditor('plan-1')
     await waitFor(() => screen.getByText(/No steps yet/))
@@ -1070,7 +1086,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['Name', 'ExternalId__c', 'BillingCity'],
       rows: [],
-      row_count: 0,
+      total_rows: 0,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
     })
     renderEditor('plan-1')
     await waitFor(() => screen.getByText(/No steps yet/))
@@ -1092,7 +1112,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['Name', 'ExternalId__c'],
       rows: [],
-      row_count: 0,
+      total_rows: 0,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
     })
     renderEditor('plan-1')
     await waitFor(() => screen.getByText(/No steps yet/))

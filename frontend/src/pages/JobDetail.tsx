@@ -3,8 +3,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { jobsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
-import type { JobStatus, InputFilePreview } from '../api/types'
-import { Badge, Button, Card, Tabs } from '../components/ui'
+import type { CsvFetchParams, JobStatus } from '../api/types'
+import { Badge, Button, Card, CsvPreviewPanel, Tabs } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -31,6 +31,11 @@ function jobStatusVariant(status: JobStatus): BadgeVariant {
   return map[status] ?? 'neutral'
 }
 
+function basename(path: string): string {
+  const segments = path.split('/')
+  return segments[segments.length - 1] || path
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function MetaField({ label, children }: { label: string; children: ReactNode }) {
@@ -47,11 +52,20 @@ interface LogSectionProps {
   description: string
   downloadHref: string
   available: boolean
-  preview: InputFilePreview | undefined
-  isLoading: boolean
+  queryKey: unknown[]
+  fetchPage: (params: CsvFetchParams) => ReturnType<typeof jobsApi.previewSuccessCsv>
+  filename?: string
 }
 
-function LogSection({ label, description, downloadHref, available, preview, isLoading }: LogSectionProps) {
+function LogSection({
+  label,
+  description,
+  downloadHref,
+  available,
+  queryKey,
+  fetchPage,
+  filename,
+}: LogSectionProps) {
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       {/* Header */}
@@ -76,57 +90,10 @@ function LogSection({ label, description, downloadHref, available, preview, isLo
       {/* Preview */}
       {!available ? (
         <p className="px-4 py-3 text-sm text-gray-400 italic">No file generated for this job.</p>
-      ) : isLoading ? (
-        <div className="flex items-center justify-center py-8">
-          <span className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : preview && preview.header.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-xs">
-            <thead className="bg-gray-50">
-              <tr>
-                {preview.header.map((col) => (
-                  <th
-                    key={col}
-                    className="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
-              {preview.rows.length === 0 ? (
-                <tr>
-                  <td colSpan={preview.header.length} className="px-3 py-4 text-center text-gray-400 italic">
-                    No records.
-                  </td>
-                </tr>
-              ) : (
-                preview.rows.map((row, i) => (
-                  <tr key={i} className="hover:bg-gray-50">
-                    {preview.header.map((col) => (
-                      <td
-                        key={col}
-                        className="px-3 py-2 text-gray-700 max-w-xs truncate"
-                        title={row[col]}
-                      >
-                        {row[col] ?? ''}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          {preview.row_count === 25 && (
-            <p className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
-              Showing first 25 rows.
-            </p>
-          )}
-        </div>
       ) : (
-        <p className="px-4 py-3 text-sm text-gray-400 italic">File is empty.</p>
+        <div className="px-4 py-4">
+          <CsvPreviewPanel queryKey={queryKey} fetchPage={fetchPage} filename={filename} />
+        </div>
       )}
     </div>
   )
@@ -142,24 +109,6 @@ export default function JobDetail() {
     queryKey: ['job', jobId],
     queryFn: () => jobsApi.get(jobId!),
     enabled: !!jobId,
-  })
-
-  const { data: successPreview, isLoading: successLoading } = useQuery({
-    queryKey: ['job-preview-success', jobId],
-    queryFn: () => jobsApi.previewSuccessCsv(jobId!),
-    enabled: !!jobId && !!job?.success_file_path,
-  })
-
-  const { data: errorPreview, isLoading: errorLoading } = useQuery({
-    queryKey: ['job-preview-error', jobId],
-    queryFn: () => jobsApi.previewErrorCsv(jobId!),
-    enabled: !!jobId && !!job?.error_file_path,
-  })
-
-  const { data: unprocessedPreview, isLoading: unprocessedLoading } = useQuery({
-    queryKey: ['job-preview-unprocessed', jobId],
-    queryFn: () => jobsApi.previewUnprocessedCsv(jobId!),
-    enabled: !!jobId && !!job?.unprocessed_file_path,
   })
 
   if (isLoading) {
@@ -245,24 +194,27 @@ export default function JobDetail() {
         description="Records successfully processed by Salesforce."
         downloadHref={jobsApi.successCsvUrl(jobId!)}
         available={!!job.success_file_path}
-        preview={successPreview}
-        isLoading={successLoading}
+        queryKey={['job-preview', 'success', jobId]}
+        fetchPage={(params) => jobsApi.previewSuccessCsv(jobId!, params)}
+        filename={job.success_file_path ? basename(job.success_file_path) : undefined}
       />
       <LogSection
         label="Error CSV"
         description="Records that failed to process with error details."
         downloadHref={jobsApi.errorCsvUrl(jobId!)}
         available={!!job.error_file_path}
-        preview={errorPreview}
-        isLoading={errorLoading}
+        queryKey={['job-preview', 'error', jobId]}
+        fetchPage={(params) => jobsApi.previewErrorCsv(jobId!, params)}
+        filename={job.error_file_path ? basename(job.error_file_path) : undefined}
       />
       <LogSection
         label="Unprocessed CSV"
         description="Records not submitted due to job cancellation."
         downloadHref={jobsApi.unprocessedCsvUrl(jobId!)}
         available={!!job.unprocessed_file_path}
-        preview={unprocessedPreview}
-        isLoading={unprocessedLoading}
+        queryKey={['job-preview', 'unprocessed', jobId]}
+        fetchPage={(params) => jobsApi.previewUnprocessedCsv(jobId!, params)}
+        filename={job.unprocessed_file_path ? basename(job.unprocessed_file_path) : undefined}
       />
     </div>
   ) : null

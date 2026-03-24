@@ -2,6 +2,7 @@ import { api } from './client'
 import type {
   Connection,
   ConnectionCreate,
+  CsvFetchParams,
   ConnectionTestResponse,
   InputConnection,
   InputConnectionCreate,
@@ -12,7 +13,6 @@ import type {
   LoadRun,
   JobRecord,
   StepPreviewResponse,
-  InputFileInfo,
   InputFilePreview,
   InputDirectoryEntry,
 } from './types'
@@ -138,15 +138,48 @@ export const jobsApi = {
   successCsvUrl: (id: string) => `/api/jobs/${id}/success-csv`,
   errorCsvUrl: (id: string) => `/api/jobs/${id}/error-csv`,
   unprocessedCsvUrl: (id: string) => `/api/jobs/${id}/unprocessed-csv`,
-  previewSuccessCsv: (id: string, rows = 25) =>
-    api.get<InputFilePreview>(`/api/jobs/${id}/success-csv/preview?rows=${rows}`),
-  previewErrorCsv: (id: string, rows = 25) =>
-    api.get<InputFilePreview>(`/api/jobs/${id}/error-csv/preview?rows=${rows}`),
-  previewUnprocessedCsv: (id: string, rows = 25) =>
-    api.get<InputFilePreview>(`/api/jobs/${id}/unprocessed-csv/preview?rows=${rows}`),
+  previewSuccessCsv: (id: string, params?: CsvFetchParams) =>
+    api.get<InputFilePreview>(`/api/jobs/${id}/success-csv/preview?${buildPreviewQuery(params)}`),
+  previewErrorCsv: (id: string, params?: CsvFetchParams) =>
+    api.get<InputFilePreview>(`/api/jobs/${id}/error-csv/preview?${buildPreviewQuery(params)}`),
+  previewUnprocessedCsv: (id: string, params?: CsvFetchParams) =>
+    api.get<InputFilePreview>(`/api/jobs/${id}/unprocessed-csv/preview?${buildPreviewQuery(params)}`),
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────
+
+function buildPreviewQuery(params?: CsvFetchParams): string {
+  const query = new URLSearchParams()
+  const normalized = params ?? { offset: 0, limit: 50, filters: [] }
+
+  query.set('limit', String(normalized.limit))
+  query.set('offset', String(normalized.offset))
+  if (normalized.filters.length > 0) {
+    query.set('filters', JSON.stringify(normalized.filters))
+  }
+
+  return query.toString()
+}
+
+function buildPreviewPath(filePath: string): string {
+  return filePath.split('/').map(encodeURIComponent).join('/')
+}
+
+function previewInput(
+  filePath: string,
+  params?: CsvFetchParams,
+  source?: string,
+): Promise<InputFilePreview> {
+  const query = new URLSearchParams(buildPreviewQuery(params))
+  const effectiveSource = source ?? 'local'
+  if (effectiveSource !== 'local') {
+    query.set('source', effectiveSource)
+  }
+
+  return api.get<InputFilePreview>(
+    `/api/files/input/${buildPreviewPath(filePath)}/preview?${query.toString()}`,
+  )
+}
 
 export const filesApi = {
   listInput: (path = '', source = 'local') => {
@@ -156,11 +189,5 @@ export const filesApi = {
     const qs = params.toString()
     return api.get<InputDirectoryEntry[]>(`/api/files/input${qs ? `?${qs}` : ''}`)
   },
-  previewInput: (filePath: string, rows = 25, source = 'local') => {
-    const params = new URLSearchParams({ rows: String(rows) })
-    if (source !== 'local') params.set('source', source)
-    return api.get<InputFilePreview>(
-      `/api/files/input/${filePath.split('/').map(encodeURIComponent).join('/')}/preview?${params.toString()}`,
-    )
-  },
+  previewInput,
 }

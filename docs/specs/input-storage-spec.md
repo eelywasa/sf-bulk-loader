@@ -801,7 +801,7 @@ Exit criteria:
 
 ### 10. Make Orchestrator Execution Source-Aware
 
-Status: **Pending**
+Status: **Completed**
 
 Goal: allow actual load runs to execute from remote input sources.
 
@@ -816,6 +816,11 @@ Notes:
 
 - keep memory behavior bounded
 - avoid introducing a hard dependency on persistent local temp files unless necessary
+- implemented:
+  - step execution resolves storage from `load_step.input_connection_id`
+  - matched files are discovered through the storage abstraction
+  - partitioning consumes provider-neutral `open_text()` streams rather than assuming local paths
+  - orchestrator tests cover S3-backed execution and local fallback behavior
 
 Dependencies:
 
@@ -838,6 +843,7 @@ Scope:
 - review test coverage around secret redaction and source selection
 - verify remote CSV execution paths preserve bounded-memory streaming behavior and do not buffer whole S3 objects in memory
 - run regression coverage for files page, plan editor, step preview, and run execution
+- include CSV preview pagination/filtering coverage once the CSV preview enhancement work lands
 
 Dependencies:
 
@@ -847,6 +853,7 @@ Exit criteria:
 
 - local workflows remain intact
 - remote workflows are documented, tested, and operational
+- CSV preview enhancements are covered by the same regression pass rather than treated as a prerequisite to it
 
 ### 12. Provider Generalization Follow-Up
 
@@ -863,6 +870,8 @@ Scope:
 Notes:
 
 - this is a design-hardening ticket, not a commitment to add another provider immediately
+- this ticket does not block the CSV preview enhancement work; it should be revisited after the
+  S3/local preview and execution flows are stable
 
 Dependencies:
 

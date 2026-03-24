@@ -12,6 +12,9 @@ import type { JobRecord } from '../../api/types'
 vi.mock('../../api/endpoints', () => ({
   jobsApi: {
     get: vi.fn(),
+    previewSuccessCsv: vi.fn(),
+    previewErrorCsv: vi.fn(),
+    previewUnprocessedCsv: vi.fn(),
     successCsvUrl: (id: string) => `/api/jobs/${id}/success-csv`,
     errorCsvUrl: (id: string) => `/api/jobs/${id}/error-csv`,
     unprocessedCsvUrl: (id: string) => `/api/jobs/${id}/unprocessed-csv`,
@@ -19,6 +22,7 @@ vi.mock('../../api/endpoints', () => ({
 }))
 
 import { jobsApi } from '../../api/endpoints'
+import type { InputFilePreview } from '../../api/types'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -67,6 +71,23 @@ const jobPending: JobRecord = {
   error_message: null,
 }
 
+const successPreview: InputFilePreview = {
+  filename: 'success.csv',
+  header: ['Id', 'Name', 'Status'],
+  rows: [{ Id: '001', Name: 'Acme Corp', Status: 'Processed' }],
+  total_rows: 120,
+  filtered_rows: null,
+  offset: 0,
+  limit: 50,
+  has_next: true,
+}
+
+const errorPreview: InputFilePreview = {
+  ...successPreview,
+  filename: 'errors.csv',
+  rows: [{ Id: '002', Name: 'Globex', Status: 'Failed' }],
+}
+
 // ─── Render helper ─────────────────────────────────────────────────────────────
 
 function renderJobDetail(runId = 'run-111', jobId = 'job-abc-123') {
@@ -96,6 +117,9 @@ function renderJobDetail(runId = 'run-111', jobId = 'job-abc-123') {
 describe('JobDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(jobsApi.previewSuccessCsv).mockResolvedValue(successPreview)
+    vi.mocked(jobsApi.previewErrorCsv).mockResolvedValue(errorPreview)
+    vi.mocked(jobsApi.previewUnprocessedCsv).mockResolvedValue(successPreview)
   })
 
   // ── Loading / error states ─────────────────────────────────────────────────
@@ -321,6 +345,85 @@ describe('JobDetail', () => {
     })
   })
 
+  it('renders shared CSV preview content for available log sections', async () => {
+    const user = userEvent.setup()
+    vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
+    renderJobDetail()
+
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
+    await waitFor(() =>
+      expect(jobsApi.previewSuccessCsv).toHaveBeenCalledWith('job-abc-123', {
+        offset: 0,
+        limit: 50,
+        filters: [],
+      }),
+    )
+    await waitFor(() =>
+      expect(jobsApi.previewErrorCsv).toHaveBeenCalledWith('job-abc-123', {
+        offset: 0,
+        limit: 50,
+        filters: [],
+      }),
+    )
+
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
+    await waitFor(() => {
+      expect(screen.getByText('Acme Corp')).toBeVisible()
+      expect(screen.getByText('Globex')).toBeVisible()
+      expect(screen.getAllByText('Page 1 of 3 (120 rows)').length).toBeGreaterThanOrEqual(2)
+      expect(screen.getByText('success.csv')).toBeVisible()
+      expect(screen.getByText('errors.csv')).toBeVisible()
+    })
+  })
+
+  it('passes pagination and filters to the correct preview helper', async () => {
+    const user = userEvent.setup()
+    vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
+    vi.mocked(jobsApi.previewSuccessCsv).mockImplementation(async (_id, params) => {
+      if (params?.offset === 50) {
+        return {
+          ...successPreview,
+          rows: [{ Id: '051', Name: 'Page Two', Status: 'Processed' }],
+          offset: 50,
+        }
+      }
+      return successPreview
+    })
+
+    renderJobDetail()
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
+    await waitFor(() => screen.getByText('Acme Corp'))
+
+    const nextButtons = screen.getAllByRole('button', { name: 'Next page' })
+    await user.click(nextButtons[0])
+    await waitFor(() =>
+      expect(jobsApi.previewSuccessCsv).toHaveBeenCalledWith('job-abc-123', {
+        offset: 50,
+        limit: 50,
+        filters: [],
+      }),
+    )
+
+    const addFilterButtons = screen.getAllByText('+ Add Filter')
+    await user.click(addFilterButtons[0])
+    const filterColumns = screen.getAllByRole('combobox', { name: 'Filter column' })
+    const filterValues = screen.getAllByRole('textbox', { name: 'Filter value' })
+    const applyButtons = screen.getAllByRole('button', { name: 'Apply' })
+    await user.selectOptions(filterColumns[0], 'Name')
+    await user.type(filterValues[0], 'Acme')
+    await user.click(applyButtons[0])
+
+    await waitFor(() =>
+      expect(jobsApi.previewSuccessCsv).toHaveBeenLastCalledWith('job-abc-123', {
+        offset: 0,
+        limit: 50,
+        filters: [{ column: 'Name', value: 'Acme' }],
+      }),
+    )
+  })
+
   it('download links point to correct API endpoints', async () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
@@ -345,6 +448,7 @@ describe('JobDetail', () => {
     await waitFor(() => {
       expect(screen.getByText('Not available')).toBeVisible()
     })
+    expect(jobsApi.previewUnprocessedCsv).not.toHaveBeenCalled()
   })
 
   it('shows Not available for all three files when no files are present', async () => {
@@ -367,6 +471,16 @@ describe('JobDetail', () => {
     await waitFor(() => {
       expect(screen.queryAllByRole('link', { name: /Download/ }).length).toBe(0)
     })
+  })
+
+  it('does not show the legacy "Showing first 25 rows" footer', async () => {
+    const user = userEvent.setup()
+    vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
+    renderJobDetail()
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeVisible())
+    expect(screen.queryByText('Showing first 25 rows.')).not.toBeInTheDocument()
   })
 
   // ── Tab switching ─────────────────────────────────────────────────────────

@@ -87,7 +87,12 @@ export function usePlanEditorState(id: string | undefined) {
 
   const { data: patternPreview, isLoading: patternPreviewLoading } = useQuery({
     queryKey: ['files', 'preview-headers', stepSource, stepForm.csv_file_pattern],
-    queryFn: () => filesApi.previewInput(stepForm.csv_file_pattern, 1, stepSource),
+    queryFn: () =>
+      filesApi.previewInput(
+        stepForm.csv_file_pattern,
+        { offset: 0, limit: 1, filters: [] },
+        stepSource,
+      ),
     enabled: patternIsLiteral,
   })
 
