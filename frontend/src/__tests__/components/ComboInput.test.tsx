@@ -105,7 +105,7 @@ describe('ComboInput', () => {
     const listbox = screen.getByRole('listbox')
     expect(listbox).toBeInTheDocument()
     const options = screen.getAllByRole('option')
-    expect(options[0]).toHaveClass('bg-blue-50')
+    expect(options[0]).toHaveClass('bg-surface-selected')
   })
 
   it('selects highlighted option on Enter', async () => {
@@ -123,7 +123,7 @@ describe('ComboInput', () => {
     await user.click(screen.getByRole('textbox'))
     await user.keyboard('{ArrowDown}{ArrowDown}')
     const options = screen.getAllByRole('option')
-    expect(options[1]).toHaveClass('bg-blue-50')
+    expect(options[1]).toHaveClass('bg-surface-selected')
   })
 
   it('does not navigate above first option with ArrowUp', async () => {
@@ -132,7 +132,7 @@ describe('ComboInput', () => {
     await user.click(screen.getByRole('textbox'))
     await user.keyboard('{ArrowDown}{ArrowDown}{ArrowUp}')
     const options = screen.getAllByRole('option')
-    expect(options[0]).toHaveClass('bg-blue-50')
+    expect(options[0]).toHaveClass('bg-surface-selected')
   })
 
   // ── Free text ──────────────────────────────────────────────────────────────

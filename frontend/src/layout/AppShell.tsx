@@ -66,10 +66,10 @@ function SettingsMenu() {
   }
 
   return (
-    <div ref={menuRef} className="relative px-3 py-3 border-t border-gray-200 dark:border-gray-700">
+    <div ref={menuRef} className="relative px-3 py-3 border-t border-border-base">
       <button
         onClick={() => { setOpen(v => !v); setThemeOpen(false) }}
-        className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 transition-colors"
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-content-secondary hover:bg-surface-hover hover:text-content-primary transition-colors"
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -83,12 +83,12 @@ function SettingsMenu() {
 
       {/* Settings popover — floats above the button */}
       {open && (
-        <div className="absolute bottom-full left-3 right-3 mb-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 overflow-visible">
+        <div className="absolute bottom-full left-3 right-3 mb-1 bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 overflow-visible">
           {/* Theme row */}
           <div className="relative">
             <button
               onClick={() => setThemeOpen(v => !v)}
-              className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
               aria-haspopup="menu"
               aria-expanded={themeOpen}
             >
@@ -101,19 +101,19 @@ function SettingsMenu() {
 
             {/* Theme submenu — floats to the right of the popover */}
             {themeOpen && (
-              <div className="absolute bottom-0 left-full ml-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50 min-w-[120px]">
+              <div className="absolute bottom-0 left-full ml-1 bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 min-w-[120px]">
                 {themeOptions.map(opt => (
                   <button
                     key={opt.value}
                     onClick={() => handleThemeSelect(opt.value)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
                     role="menuitemradio"
                     aria-checked={theme === opt.value}
                   >
                     {/* Checkmark placeholder — keeps alignment consistent */}
                     <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
                       {theme === opt.value && (
-                        <FontAwesomeIcon icon={faCheck} className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <FontAwesomeIcon icon={faCheck} className="w-3.5 h-3.5 text-accent" />
                       )}
                     </span>
                     {opt.label}
@@ -133,16 +133,16 @@ export default function AppShell() {
   const displayName = user?.display_name ?? user?.username ?? null
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen overflow-hidden bg-surface-base">
       {/* Sidebar */}
-      <aside className="w-56 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
+      <aside className="w-56 bg-surface-raised border-r border-border-base flex flex-col flex-shrink-0">
         {/* Logo/brand */}
-        <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="px-5 py-4 border-b border-border-base">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center">
               <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight">
+            <span className="text-sm font-semibold text-content-primary leading-tight">
               Bulk Loader
             </span>
           </div>
@@ -159,8 +159,8 @@ export default function AppShell() {
                 clsx(
                   'flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors duration-100',
                   isActive
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-r-2 border-blue-600 dark:border-blue-500'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100',
+                    ? 'bg-accent-soft text-content-selected border-r-2 border-accent'
+                    : 'text-content-secondary hover:bg-surface-hover hover:text-content-primary',
                 )
               }
             >
@@ -177,16 +177,16 @@ export default function AppShell() {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <header className="bg-surface-raised border-b border-border-base px-6 py-3 flex items-center justify-between flex-shrink-0">
           <div />
           <div className="flex items-center gap-4">
             {displayName && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">{displayName}</span>
+              <span className="text-xs text-content-muted">{displayName}</span>
             )}
             {authRequired && (
               <button
                 onClick={logout}
-                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                className="flex items-center gap-1.5 text-xs text-content-muted hover:text-content-primary transition-colors"
                 aria-label="Sign out"
               >
                 <FontAwesomeIcon icon={faRightFromBracket} className="w-3.5 h-3.5" />

@@ -11,8 +11,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (isBootstrapping) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <p className="text-sm text-gray-400" aria-label="Loading" />
+      <div className="flex items-center justify-center h-screen bg-surface-base">
+        <p className="text-sm text-content-disabled" aria-label="Loading" />
       </div>
     )
   }
