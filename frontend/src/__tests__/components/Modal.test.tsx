@@ -48,18 +48,33 @@ describe('Modal', () => {
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
   })
 
-  it('calls onClose when backdrop is clicked', () => {
+  it('calls onClose when Escape is pressed', () => {
     const onClose = vi.fn()
     render(
       <Modal open onClose={onClose}>
         <p>Content</p>
       </Modal>,
     )
-    // Headless UI Dialog closes on Escape key
     fireEvent.keyDown(document.activeElement ?? document.body, {
       key: 'Escape',
       code: 'Escape',
     })
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('does not call onClose when Escape is pressed and closeOnBackdropClick={false}', () => {
+    // closeOnBackdropClick=false passes a no-op to Dialog's onClose, which handles
+    // both Escape and outside-clicks in Headless UI — neither should close the modal
+    const onClose = vi.fn()
+    render(
+      <Modal open onClose={onClose} closeOnBackdropClick={false}>
+        <p>Content</p>
+      </Modal>,
+    )
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+      code: 'Escape',
+    })
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

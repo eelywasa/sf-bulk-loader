@@ -12,6 +12,7 @@ export interface ModalProps {
   size?: ModalSize
   children: React.ReactNode
   footer?: React.ReactNode
+  closeOnBackdropClick?: boolean
 }
 
 const sizeClasses: Record<ModalSize, string> = {
@@ -29,9 +30,10 @@ export function Modal({
   size = 'md',
   children,
   footer,
+  closeOnBackdropClick = true,
 }: ModalProps) {
   return (
-    <Dialog open={open} onClose={onClose} className="relative z-50">
+    <Dialog open={open} onClose={closeOnBackdropClick ? onClose : () => {}} className="relative z-50">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
 

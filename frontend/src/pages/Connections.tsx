@@ -717,6 +717,7 @@ export default function Connections() {
       <Modal
         open={modalOpen}
         onClose={closeModal}
+        closeOnBackdropClick={false}
         size="lg"
         title={editingConn ? 'Edit Connection' : 'New Connection'}
         footer={
@@ -929,6 +930,7 @@ export default function Connections() {
       <Modal
         open={inputModalOpen}
         onClose={closeInputModal}
+        closeOnBackdropClick={false}
         size="lg"
         title={editingInputConn ? 'Edit Input Connection' : 'New Input Connection'}
         footer={
