@@ -45,13 +45,13 @@ export default function Dashboard() {
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-bold text-content-primary">Dashboard</h1>
+          <p className="mt-1 text-sm text-content-muted">
             Overview of active runs, recent completions, and connection health.
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-500">API</span>
+          <span className="text-content-muted">API</span>
           {healthQuery.isPending ? (
             <Badge variant="neutral">Checking…</Badge>
           ) : healthQuery.isError ? (
@@ -65,30 +65,30 @@ export default function Dashboard() {
       {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
-          <div className="text-sm font-medium text-gray-500">Active Runs</div>
-          <div className="mt-2 text-3xl font-bold text-gray-900">
+          <div className="text-sm font-medium text-content-muted">Active Runs</div>
+          <div className="mt-2 text-3xl font-bold text-content-primary">
             {runsQuery.isPending ? (
-              <span className="text-gray-300">—</span>
+              <span className="text-content-disabled">—</span>
             ) : (
               activeRuns
             )}
           </div>
         </Card>
         <Card>
-          <div className="text-sm font-medium text-gray-500">Completed Today</div>
-          <div className="mt-2 text-3xl font-bold text-gray-900">
+          <div className="text-sm font-medium text-content-muted">Completed Today</div>
+          <div className="mt-2 text-3xl font-bold text-content-primary">
             {runsQuery.isPending ? (
-              <span className="text-gray-300">—</span>
+              <span className="text-content-disabled">—</span>
             ) : (
               completedToday
             )}
           </div>
         </Card>
         <Card>
-          <div className="text-sm font-medium text-gray-500">Error Rate</div>
-          <div className="mt-2 text-3xl font-bold text-gray-900">
+          <div className="text-sm font-medium text-content-muted">Error Rate</div>
+          <div className="mt-2 text-3xl font-bold text-content-primary">
             {runsQuery.isPending ? (
-              <span className="text-gray-300">—</span>
+              <span className="text-content-disabled">—</span>
             ) : (
               `${errorRate}%`
             )}
@@ -99,10 +99,10 @@ export default function Dashboard() {
       {/* Recent runs table */}
       <Card title="Recent Runs">
         {runsQuery.isPending && (
-          <p className="text-sm text-gray-400 py-4 text-center">Loading runs…</p>
+          <p className="text-sm text-content-disabled py-4 text-center">Loading runs…</p>
         )}
         {runsQuery.isError && (
-          <p className="text-sm text-red-500 py-4 text-center">
+          <p className="text-sm text-error-text py-4 text-center">
             Failed to load runs. Is the backend running?
           </p>
         )}
@@ -114,26 +114,26 @@ export default function Dashboard() {
         )}
         {runsQuery.isSuccess && recentRuns.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <table className="min-w-full divide-y divide-border-base text-sm">
               <thead>
                 <tr>
                   {['Run ID', 'Status', 'Records', 'Successes', 'Errors', 'Started'].map((h) => (
                     <th
                       key={h}
-                      className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      className="px-4 py-2 text-left text-xs font-medium text-content-muted uppercase tracking-wider"
                     >
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border-base">
                 {recentRuns.map((run) => (
-                  <tr key={run.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 font-mono text-xs text-gray-600 max-w-[9rem] truncate">
+                  <tr key={run.id} className="hover:bg-surface-hover">
+                    <td className="px-4 py-2 font-mono text-xs text-content-secondary max-w-[9rem] truncate">
                       <a
                         href={`/runs/${run.id}`}
-                        className="text-blue-600 hover:underline"
+                        className="text-content-link hover:underline"
                       >
                         {run.id.slice(0, 8)}…
                       </a>
@@ -141,10 +141,10 @@ export default function Dashboard() {
                     <td className="px-4 py-2">
                       <Badge variant={statusVariant(run.status)}>{run.status}</Badge>
                     </td>
-                    <td className="px-4 py-2 text-gray-700">{run.total_records ?? '—'}</td>
-                    <td className="px-4 py-2 text-green-700">{run.total_success ?? '—'}</td>
-                    <td className="px-4 py-2 text-red-700">{run.total_errors ?? '—'}</td>
-                    <td className="px-4 py-2 text-gray-500">
+                    <td className="px-4 py-2 text-content-secondary">{run.total_records ?? '—'}</td>
+                    <td className="px-4 py-2 text-success-text">{run.total_success ?? '—'}</td>
+                    <td className="px-4 py-2 text-error-text">{run.total_errors ?? '—'}</td>
+                    <td className="px-4 py-2 text-content-muted">
                       {run.started_at
                         ? new Date(run.started_at).toLocaleString()
                         : '—'}

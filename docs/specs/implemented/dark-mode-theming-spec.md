@@ -329,7 +329,7 @@ existing `dark:` variants from these files.
 
 ---
 
-## Ticket 4 — Container UI Components
+## Ticket 4 — Container UI Components — ✅ DONE
 
 ### Goal
 Migrate `Card`, `Modal`, `Tabs`, and `Toast` to use semantic tokens. Apply a shared overlay shadow
@@ -388,7 +388,7 @@ Add a shared overlay shadow constant or utility (for example `OVERLAY_SHADOW_CLA
 
 ---
 
-## Ticket 5 — DataTable
+## Ticket 5 — DataTable — ✅ DONE
 
 ### Goal
 Migrate `DataTable` to use semantic tokens. DataTable is used on every data page, so this
@@ -418,7 +418,7 @@ ticket directly improves all pages.
 
 ---
 
-## Ticket 6 — Dashboard Page
+## Ticket 6 — Dashboard Page — ✅ DONE
 
 ### Goal
 Migrate `Dashboard.tsx` to semantic tokens. This is a self-contained page with no sub-components
@@ -450,7 +450,7 @@ to update.
 
 ---
 
-## Ticket 7 — Connections Page
+## Ticket 7 — Connections Page — ✅ DONE
 
 ### Goal
 Migrate `Connections.tsx` to semantic tokens. This is the most form-heavy page and the first
@@ -483,7 +483,7 @@ to use the shared `formStyles.ts` constants from Ticket 2 alongside the token sy
 
 ---
 
-## Ticket 8 — Plans Pages
+## Ticket 8 — Plans Pages — ✅ DONE
 
 ### Goal
 Migrate `PlansPage.tsx`, `PlanEditor.tsx`, `PlanForm.tsx`, `StepList.tsx`,
@@ -544,7 +544,7 @@ Migrate `PlansPage.tsx`, `PlanEditor.tsx`, `PlanForm.tsx`, `StepList.tsx`,
 
 ---
 
-## Ticket 9 — Runs Pages
+## Ticket 9 — Runs Pages — ✅ DONE
 
 ### Goal
 Migrate `RunsPage.tsx`, `RunDetail.tsx`, and its sub-components (`RunSummaryCard`,
@@ -610,7 +610,7 @@ Migrate `RunsPage.tsx`, `RunDetail.tsx`, and its sub-components (`RunSummaryCard
 
 ---
 
-## Ticket 10 — JobDetail and FilesPage
+## Ticket 10 — JobDetail and FilesPage — ✅ DONE
 
 ### Goal
 Migrate `JobDetail.tsx` and `FilesPage.tsx` to semantic tokens. Both pages have partial dark

@@ -42,7 +42,7 @@ export default function RunDetail() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <p className="text-sm text-gray-400" aria-label="Loading">
+        <p className="text-sm text-content-disabled" aria-label="Loading">
           Loading run…
         </p>
       </div>
@@ -52,14 +52,14 @@ export default function RunDetail() {
   if (isError) {
     return (
       <div className="p-6 space-y-4">
-        <nav className="flex items-center gap-2 text-sm text-gray-500">
-          <Link to="/runs" className="hover:text-gray-900">
+        <nav className="flex items-center gap-2 text-sm text-content-muted">
+          <Link to="/runs" className="hover:text-content-primary">
             Runs
           </Link>
           <span>›</span>
-          <span className="text-gray-900">Error</span>
+          <span className="text-content-primary">Error</span>
         </nav>
-        <p className="text-sm text-red-500">
+        <p className="text-sm text-error-text">
           Failed to load run. {error instanceof Error ? error.message : ''}
         </p>
         <Button variant="secondary" onClick={() => navigate('/runs')}>
@@ -72,7 +72,7 @@ export default function RunDetail() {
   if (!run) {
     return (
       <div className="p-6 space-y-4">
-        <p className="text-sm text-gray-500">Run not found.</p>
+        <p className="text-sm text-content-muted">Run not found.</p>
         <Button variant="secondary" onClick={() => navigate('/runs')}>
           Back to Runs
         </Button>
@@ -84,12 +84,12 @@ export default function RunDetail() {
   return (
     <div className="p-6 space-y-6">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/runs" className="hover:text-gray-900">
+      <nav className="flex items-center gap-2 text-sm text-content-muted">
+        <Link to="/runs" className="hover:text-content-primary">
           Runs
         </Link>
         <span>›</span>
-        <span className="text-gray-900 font-mono">{run.id}</span>
+        <span className="text-content-primary font-mono">{run.id}</span>
       </nav>
 
       <RunSummaryCard
@@ -104,7 +104,7 @@ export default function RunDetail() {
       {/* Step accordion */}
       <Card title="Steps">
         {sortedSteps.length === 0 && !planDetail && (
-          <p className="text-sm text-gray-400 py-4 text-center">
+          <p className="text-sm text-content-disabled py-4 text-center">
             {isLive ? 'Loading plan steps…' : 'No step information available.'}
           </p>
         )}
@@ -148,11 +148,11 @@ export default function RunDetail() {
           </>
         }
       >
-        <p className="text-sm text-gray-700">
+        <p className="text-sm text-content-secondary">
           Are you sure you want to abort run{' '}
           <span className="font-mono font-medium">{run.id.slice(0, 8)}…</span>?
         </p>
-        <p className="mt-2 text-sm text-gray-500">
+        <p className="mt-2 text-sm text-content-muted">
           In-progress Salesforce jobs will be aborted and pending jobs will not be submitted.
         </p>
       </Modal>

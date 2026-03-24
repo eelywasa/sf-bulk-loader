@@ -127,7 +127,7 @@ export function ComboInput({
           onClick={() => {
             if (options.length > 0 || loading) setOpen((o) => !o)
           }}
-          className="absolute right-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          className="absolute right-2 text-content-muted hover:text-content-secondary transition-colors"
         >
           {loading ? (
             <FontAwesomeIcon icon={faSpinner} className="animate-spin text-xs" />
@@ -141,10 +141,10 @@ export function ComboInput({
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-50 mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto text-sm"
+          className="absolute z-50 mt-1 w-full rounded-md border border-border-base bg-surface-elevated shadow-lg max-h-48 overflow-y-auto text-sm"
         >
           {loading ? (
-            <li className="px-3 py-2 text-gray-400 dark:text-gray-500 italic">
+            <li className="px-3 py-2 text-content-muted italic">
               {loadingMessage}
             </li>
           ) : (
@@ -162,8 +162,8 @@ export function ComboInput({
                 className={clsx(
                   'px-3 py-2 cursor-pointer truncate',
                   i === activeIndex
-                    ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700',
+                    ? 'bg-surface-selected text-content-selected'
+                    : 'text-content-primary hover:bg-surface-hover',
                 )}
               >
                 {opt}

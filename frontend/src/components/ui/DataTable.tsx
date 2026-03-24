@@ -30,15 +30,15 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   return (
     <div className={clsx('overflow-x-auto', className)}>
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+      <table className="min-w-full divide-y divide-border-base">
+        <thead className="bg-surface-sunken">
           <tr>
             {columns.map((col) => (
               <th
                 key={col.key}
                 scope="col"
                 className={clsx(
-                  'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider',
+                  'px-6 py-3 text-left text-xs font-medium text-content-muted uppercase tracking-wider',
                   col.headerClassName,
                 )}
               >
@@ -47,7 +47,7 @@ export function DataTable<T>({
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-surface-raised divide-y divide-border-base">
           {loading ? (
             <tr>
               <td colSpan={columns.length} className="px-6 py-10 text-center">
@@ -58,7 +58,7 @@ export function DataTable<T>({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-6 py-10 text-center text-sm text-gray-400"
+                className="px-6 py-10 text-center text-sm text-content-muted"
               >
                 {emptyMessage}
               </td>
@@ -69,7 +69,7 @@ export function DataTable<T>({
                 key={keyExtractor(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={clsx(
-                  'hover:bg-gray-50 transition-colors',
+                  'hover:bg-surface-hover transition-colors',
                   onRowClick && 'cursor-pointer',
                 )}
               >
@@ -77,7 +77,7 @@ export function DataTable<T>({
                   <td
                     key={col.key}
                     className={clsx(
-                      'px-6 py-4 whitespace-nowrap text-sm text-gray-900',
+                      'px-6 py-4 whitespace-nowrap text-sm text-content-primary',
                       col.className,
                     )}
                   >

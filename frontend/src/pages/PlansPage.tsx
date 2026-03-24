@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, DataTable, EmptyState, Modal, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
+import { ALERT_ERROR } from '../components/ui/formStyles'
 import { plansApi, connectionsApi } from '../api/endpoints'
 import type { LoadPlan } from '../api/types'
 
@@ -75,7 +76,7 @@ export default function PlansPage() {
     {
       key: 'name',
       header: 'Name',
-      render: (p) => <span className="font-medium text-gray-900">{p.name}</span>,
+      render: (p) => <span className="font-medium text-content-primary">{p.name}</span>,
     },
     {
       key: 'connection_id',
@@ -83,7 +84,7 @@ export default function PlansPage() {
       render: (p) => {
         const conn = connectionMap.get(p.connection_id)
         return (
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-content-secondary">
             {conn ? conn.name : p.connection_id.slice(0, 8) + '…'}
           </span>
         )
@@ -92,12 +93,12 @@ export default function PlansPage() {
     {
       key: 'description',
       header: 'Description',
-      render: (p) => <span className="text-sm text-gray-500">{p.description ?? '—'}</span>,
+      render: (p) => <span className="text-sm text-content-muted">{p.description ?? '—'}</span>,
     },
     {
       key: 'created_at',
       header: 'Created',
-      render: (p) => <span className="text-sm text-gray-500">{formatDate(p.created_at)}</span>,
+      render: (p) => <span className="text-sm text-content-muted">{formatDate(p.created_at)}</span>,
     },
     {
       key: 'id',
@@ -149,8 +150,8 @@ export default function PlansPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Load Plans</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-bold text-content-primary">Load Plans</h1>
+          <p className="mt-1 text-sm text-content-muted">
             Define and manage data load configurations.
           </p>
         </div>
@@ -166,8 +167,8 @@ export default function PlansPage() {
           />
         </div>
       ) : loadError ? (
-        <div className="rounded border border-red-200 bg-red-50 p-4">
-          <p className="text-red-700 text-sm">
+        <div className={ALERT_ERROR}>
+          <p>
             Failed to load plans:{' '}
             {loadError instanceof Error ? loadError.message : 'Unknown error'}
           </p>
@@ -212,7 +213,7 @@ export default function PlansPage() {
           </>
         }
       >
-        <p className="text-sm text-gray-700">
+        <p className="text-sm text-content-secondary">
           Are you sure you want to delete{' '}
           <span className="font-semibold">{deleteTarget?.name}</span>? This cannot be undone.
         </p>

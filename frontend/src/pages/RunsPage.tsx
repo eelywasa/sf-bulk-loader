@@ -77,8 +77,8 @@ export default function RunsPage() {
     <div className="p-6 space-y-6">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Runs</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <h1 className="text-2xl font-bold text-content-primary">Runs</h1>
+        <p className="mt-1 text-sm text-content-muted">
           View and monitor load run history.
         </p>
       </div>
@@ -169,7 +169,7 @@ export default function RunsPage() {
       <Card title="Load Runs">
         {runsQuery.isPending && (
           <p
-            className="text-sm text-gray-400 py-6 text-center"
+            className="text-sm text-content-disabled py-6 text-center"
             aria-label="Loading"
           >
             Loading runs…
@@ -177,7 +177,7 @@ export default function RunsPage() {
         )}
 
         {runsQuery.isError && (
-          <p className="text-sm text-red-500 py-6 text-center">
+          <p className="text-sm text-error-text py-6 text-center">
             Failed to load runs.{' '}
             {runsQuery.error instanceof Error ? runsQuery.error.message : ''}
           </p>
@@ -196,14 +196,14 @@ export default function RunsPage() {
 
         {runsQuery.isSuccess && runs.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <table className="min-w-full divide-y divide-border-base text-sm">
               <thead>
                 <tr>
                   {['Run ID', 'Status', 'Plan', 'Records', 'Success', 'Errors', 'Started', ''].map(
                     (h) => (
                       <th
                         key={h}
-                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                        className="px-4 py-2 text-left text-xs font-medium text-content-muted uppercase tracking-wider whitespace-nowrap"
                       >
                         {h}
                       </th>
@@ -211,16 +211,16 @@ export default function RunsPage() {
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border-base">
                 {runs.map((run) => {
                   const plan = plans.find((p) => p.id === run.load_plan_id)
                   return (
                     <tr
                       key={run.id}
-                      className="hover:bg-gray-50 cursor-pointer"
+                      className="hover:bg-surface-hover cursor-pointer"
                       onClick={() => navigate(`/runs/${run.id}`)}
                     >
-                      <td className="px-4 py-2 font-mono text-xs text-blue-600">
+                      <td className="px-4 py-2 font-mono text-xs text-content-link">
                         {run.id.slice(0, 8)}…
                       </td>
                       <td className="px-4 py-2">
@@ -228,19 +228,19 @@ export default function RunsPage() {
                           {run.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-2 text-gray-700 max-w-[10rem] truncate">
-                        {plan?.name ?? <span className="text-gray-400 font-mono text-xs">{run.load_plan_id.slice(0, 8)}…</span>}
+                      <td className="px-4 py-2 text-content-secondary max-w-[10rem] truncate">
+                        {plan?.name ?? <span className="text-content-muted font-mono text-xs">{run.load_plan_id.slice(0, 8)}…</span>}
                       </td>
-                      <td className="px-4 py-2 text-gray-700">
+                      <td className="px-4 py-2 text-content-secondary">
                         {run.total_records ?? '—'}
                       </td>
-                      <td className="px-4 py-2 text-green-700">
+                      <td className="px-4 py-2 text-success-text">
                         {run.total_success ?? '—'}
                       </td>
-                      <td className="px-4 py-2 text-red-700">
+                      <td className="px-4 py-2 text-error-text">
                         {run.total_errors ?? '—'}
                       </td>
-                      <td className="px-4 py-2 text-gray-500 whitespace-nowrap">
+                      <td className="px-4 py-2 text-content-muted whitespace-nowrap">
                         {formatDate(run.started_at)}
                       </td>
                       <td className="px-4 py-2">

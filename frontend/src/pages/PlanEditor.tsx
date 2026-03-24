@@ -1,5 +1,6 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Button, Modal } from '../components/ui'
+import { ALERT_ERROR } from '../components/ui/formStyles'
 import PlanForm from '../components/PlanForm'
 import StepList from '../components/StepList'
 import StepEditorModal from '../components/StepEditorModal'
@@ -59,16 +60,16 @@ export default function PlanEditor() {
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <nav className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-            <Link to="/plans" className="hover:text-gray-900">
+          <nav className="flex items-center gap-2 text-sm text-content-muted mb-1">
+            <Link to="/plans" className="hover:text-content-primary">
               Load Plans
             </Link>
             <span>›</span>
-            <span className="text-gray-900">
+            <span className="text-content-primary">
               {isNew ? 'New Plan' : (plan?.name ?? `Plan ${id}`)}
             </span>
           </nav>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          <h1 className="text-2xl font-bold text-content-primary">
             {isNew ? 'New Load Plan' : 'Edit Load Plan'}
           </h1>
         </div>
@@ -106,8 +107,8 @@ export default function PlanEditor() {
 
       {/* ── Error state (edit mode only) ────────────────────────────────────── */}
       {!isNew && planError && (
-        <div className="rounded border border-red-200 bg-red-50 p-4">
-          <p className="text-red-700 text-sm">
+        <div className={ALERT_ERROR}>
+          <p>
             Failed to load plan:{' '}
             {planError instanceof Error ? planError.message : 'Unknown error'}
           </p>
@@ -131,7 +132,7 @@ export default function PlanEditor() {
 
           {/* New plan: save-first hint */}
           {isNew && (
-            <div className="rounded-md border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700">
+            <div className="rounded-md border border-info-border bg-info-bg p-4 text-sm text-info-text">
               Save the plan first, then you can add load steps.
             </div>
           )}
@@ -204,7 +205,7 @@ export default function PlanEditor() {
               </>
             }
           >
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-content-secondary">
               Delete the step for{' '}
               <span className="font-semibold">{deleteStepTarget?.object_name}</span>? This cannot
               be undone.

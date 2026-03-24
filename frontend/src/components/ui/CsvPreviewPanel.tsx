@@ -74,7 +74,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
   return (
     <div className="flex flex-col gap-3">
       {filename && (
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{filename}</div>
+        <div className="text-sm font-medium text-content-secondary">{filename}</div>
       )}
 
       {/* Filter bar */}
@@ -91,7 +91,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
               <select
                 value={filter.column}
                 onChange={(e) => updateFilter(idx, 'column', e.target.value)}
-                className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm px-2 py-1"
+                className="rounded border border-border-strong bg-surface-sunken text-content-primary text-sm px-2 py-1"
                 aria-label="Filter column"
               >
                 <option value="">Select column</option>
@@ -101,18 +101,18 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
                   </option>
                 ))}
               </select>
-              <span className="text-sm text-gray-500 dark:text-gray-400">contains</span>
+              <span className="text-sm text-content-muted">contains</span>
               <input
                 type="text"
                 value={filter.value}
                 onChange={(e) => updateFilter(idx, 'value', e.target.value)}
                 placeholder="Filter value"
-                className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm px-2 py-1 flex-1"
+                className="rounded border border-border-strong bg-surface-sunken text-content-primary text-sm px-2 py-1 flex-1"
                 aria-label="Filter value"
               />
               <button
                 onClick={() => removeFilter(idx)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm"
+                className="text-content-muted hover:text-content-secondary text-sm"
                 aria-label="Remove filter"
               >
                 ×
@@ -123,7 +123,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
         <div className="flex items-center gap-2">
           <button
             onClick={addFilter}
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            className="text-sm text-content-link hover:underline"
           >
             + Add Filter
           </button>
@@ -139,7 +139,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
           {activeFilters.length > 0 && (
             <button
               onClick={clearFilters}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:underline"
+              className="text-sm text-content-muted hover:underline"
             >
               Clear Filters
             </button>
@@ -149,7 +149,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
 
       {/* Error state */}
       {isError && (
-        <div className="text-sm text-red-600 dark:text-red-400" role="alert">
+        <div className="text-sm text-error-text" role="alert">
           {error instanceof Error ? error.message : 'Failed to load preview'}
         </div>
       )}
@@ -158,7 +158,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
       <div className="overflow-x-auto relative">
         {isFetching && (
           <div
-            className="absolute inset-0 flex items-center justify-center bg-white/60 dark:bg-gray-900/60 z-10"
+            className="absolute inset-0 flex items-center justify-center bg-surface-raised/60 z-10"
             aria-label="Loading"
           >
             <span className="inline-block h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -173,30 +173,30 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
             }
           />
         ) : (
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-800">
+          <table className="min-w-full divide-y divide-border-base">
+            <thead className="bg-surface-sunken">
               <tr>
                 {header.map((col) => (
                   <th
                     key={col}
                     scope="col"
-                    className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap"
+                    className="px-4 py-2 text-left text-xs font-medium text-content-muted uppercase tracking-wider whitespace-nowrap"
                   >
                     {col}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody className="bg-surface-raised divide-y divide-border-subtle">
               {rows.map((row, rowIdx) => (
                 <tr
                   key={rowIdx}
-                  className={rowIdx % 2 === 0 ? '' : 'bg-gray-50 dark:bg-gray-800'}
+                  className={rowIdx % 2 === 0 ? '' : 'bg-surface-hover'}
                 >
                   {header.map((col) => (
                     <td
                       key={col}
-                      className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100 whitespace-nowrap"
+                      className="px-4 py-2 text-sm text-content-primary whitespace-nowrap"
                     >
                       {row[col] ?? ''}
                     </td>
@@ -214,7 +214,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
           <button
             onClick={() => setPage(1)}
             disabled={page === 1}
-            className="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+            className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
             aria-label="First page"
           >
             ← First
@@ -222,12 +222,12 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+            className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
             aria-label="Previous page"
           >
             ‹ Prev
           </button>
-          <span className="px-2 text-sm text-gray-600 dark:text-gray-300">
+          <span className="px-2 text-sm text-content-secondary">
             {totalPages != null
               ? `Page ${page} of ${totalPages}${totalForDisplay != null ? ` (${totalForDisplay} rows)` : ''}`
               : `Page ${page}`}
@@ -235,7 +235,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
           <button
             onClick={() => setPage((p) => p + 1)}
             disabled={!hasNext}
-            className="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+            className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
             aria-label="Next page"
           >
             Next ›
@@ -244,7 +244,7 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
             <button
               onClick={() => setPage(totalPages)}
               disabled={page === totalPages}
-              className="px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+              className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
               aria-label="Last page"
             >
               Last →
@@ -252,14 +252,14 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
           )}
         </div>
         <div className="flex items-center gap-1">
-          <label className="text-sm text-gray-500 dark:text-gray-400">Page size:</label>
+          <label className="text-sm text-content-muted">Page size:</label>
           <select
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value))
               setPage(1)
             }}
-            className="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1"
+            className="text-sm rounded border border-border-strong bg-surface-sunken text-content-primary px-2 py-1"
             aria-label="Page size"
           >
             {PAGE_SIZE_OPTIONS.map((n) => (

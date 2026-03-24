@@ -5,6 +5,7 @@ import { faHexagonNodes } from '@fortawesome/free-solid-svg-icons'
 import { useAuth } from '../context/AuthContext'
 import { ApiError, apiPost } from '../api/client'
 import type { TokenResponse } from '../api/types'
+import { LABEL_CLASS, INPUT_CLASS, ALERT_ERROR } from '../components/ui/formStyles'
 
 export default function Login() {
   const { login } = useAuth()
@@ -36,37 +37,31 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen flex items-center justify-center bg-surface-base">
       <div className="w-full max-w-sm">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="bg-surface-raised rounded-lg shadow-sm border border-border-base p-8">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-7 h-7 rounded bg-blue-600 flex items-center justify-center flex-shrink-0">
               <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
             </div>
-            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            <span className="text-base font-semibold text-content-primary">
               Bulk Loader
             </span>
           </div>
 
-          <h1 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-5">
+          <h1 className="text-sm font-medium text-content-secondary mb-5">
             Sign in to your account
           </h1>
 
           <form onSubmit={handleSubmit} noValidate>
             {error && (
-              <div
-                role="alert"
-                className="mb-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded px-3 py-2"
-              >
+              <div role="alert" className={`mb-4 ${ALERT_ERROR}`}>
                 {error}
               </div>
             )}
 
             <div className="mb-3">
-              <label
-                htmlFor="username"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-              >
+              <label htmlFor="username" className={LABEL_CLASS}>
                 Username
               </label>
               <input
@@ -76,15 +71,12 @@ export default function Login() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={INPUT_CLASS}
               />
             </div>
 
             <div className="mb-5">
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-              >
+              <label htmlFor="password" className={LABEL_CLASS}>
                 Password
               </label>
               <input
@@ -94,14 +86,14 @@ export default function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={INPUT_CLASS}
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2 text-sm font-medium text-content-inverse bg-accent hover:bg-accent-hover disabled:opacity-50 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-border-focus"
             >
               {loading ? 'Signing in…' : 'Sign in'}
             </button>

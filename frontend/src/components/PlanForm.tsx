@@ -113,9 +113,9 @@ export default function PlanForm({ form, formErrors, connections, onChange }: Pl
               type="checkbox"
               checked={form.abort_on_step_failure}
               onChange={(e) => onChange('abort_on_step_failure', e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="h-4 w-4 rounded border-border-strong text-blue-600 focus:ring-border-focus"
             />
-            <label htmlFor="plan-abort" className="text-sm font-medium text-gray-700">
+            <label htmlFor="plan-abort" className="text-sm font-medium text-content-secondary">
               Abort run if a step fails
             </label>
           </div>

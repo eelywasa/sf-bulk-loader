@@ -395,14 +395,14 @@ export default function Connections() {
     {
       key: 'name',
       header: 'Name',
-      render: (c) => <span className="font-medium text-gray-900">{c.name}</span>,
+      render: (c) => <span className="font-medium text-content-primary">{c.name}</span>,
     },
     { key: 'username', header: 'Username', render: (c) => <span>{c.username}</span> },
     {
       key: 'instance_url',
       header: 'Instance URL',
       render: (c) => (
-        <span className="font-mono text-xs text-gray-600 break-all">{c.instance_url}</span>
+        <span className="font-mono text-xs text-content-secondary break-all">{c.instance_url}</span>
       ),
     },
     {
@@ -417,7 +417,7 @@ export default function Connections() {
     {
       key: 'created_at',
       header: 'Created',
-      render: (c) => <span className="text-gray-500 text-sm">{formatDate(c.created_at)}</span>,
+      render: (c) => <span className="text-content-muted text-sm">{formatDate(c.created_at)}</span>,
     },
     {
       key: 'id',
@@ -466,25 +466,25 @@ export default function Connections() {
     {
       key: 'name',
       header: 'Name',
-      render: (c) => <span className="font-medium text-gray-900">{c.name}</span>,
+      render: (c) => <span className="font-medium text-content-primary">{c.name}</span>,
     },
-    { key: 'bucket', header: 'Bucket', render: (c) => <span className="font-mono text-xs text-gray-600">{c.bucket}</span> },
+    { key: 'bucket', header: 'Bucket', render: (c) => <span className="font-mono text-xs text-content-secondary">{c.bucket}</span> },
     {
       key: 'region',
       header: 'Region',
-      render: (c) => <span className="text-gray-600 text-sm">{c.region ?? '—'}</span>,
+      render: (c) => <span className="text-content-secondary text-sm">{c.region ?? '—'}</span>,
     },
     {
       key: 'root_prefix',
       header: 'Root Prefix',
       render: (c) => (
-        <span className="font-mono text-xs text-gray-500">{c.root_prefix ?? '—'}</span>
+        <span className="font-mono text-xs text-content-muted">{c.root_prefix ?? '—'}</span>
       ),
     },
     {
       key: 'created_at',
       header: 'Created',
-      render: (c) => <span className="text-gray-500 text-sm">{formatDate(c.created_at)}</span>,
+      render: (c) => <span className="text-content-muted text-sm">{formatDate(c.created_at)}</span>,
     },
     {
       key: 'id',
@@ -536,8 +536,8 @@ export default function Connections() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Connections</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-bold text-content-primary">Connections</h1>
+          <p className="mt-1 text-sm text-content-muted">
             Manage Salesforce org connections and S3 input sources.
           </p>
         </div>
@@ -547,10 +547,10 @@ export default function Connections() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h2 className="text-lg font-semibold text-content-primary">
               Salesforce Connections
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-content-muted">
               JWT Bearer auth — one entry per org.
             </p>
           </div>
@@ -564,7 +564,7 @@ export default function Connections() {
             aria-live="polite"
             className={clsx(
               'rounded-lg border p-4',
-              testResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200',
+              testResult.success ? 'bg-success-bg border-success-border' : 'bg-error-bg border-error-border',
             )}
           >
             <div className="flex items-start justify-between gap-4">
@@ -572,7 +572,7 @@ export default function Connections() {
                 <p
                   className={clsx(
                     'font-medium',
-                    testResult.success ? 'text-green-800' : 'text-red-800',
+                    testResult.success ? 'text-success-text' : 'text-error-text',
                   )}
                 >
                   {testResult.success ? '✓ Connection successful' : '✗ Connection failed'}
@@ -582,13 +582,13 @@ export default function Connections() {
                 <p
                   className={clsx(
                     'text-sm',
-                    testResult.success ? 'text-green-700' : 'text-red-700',
+                    testResult.success ? 'text-success-text' : 'text-error-text',
                   )}
                 >
                   {testResult.message}
                 </p>
                 {testResult.instanceUrl && (
-                  <p className="text-xs font-mono text-gray-600 break-all">
+                  <p className="text-xs font-mono text-content-secondary break-all">
                     {testResult.instanceUrl}
                   </p>
                 )}
@@ -597,7 +597,7 @@ export default function Connections() {
                 type="button"
                 aria-label="Dismiss test result"
                 onClick={() => setTestResult(null)}
-                className="shrink-0 text-gray-400 hover:text-gray-600 text-xl leading-none"
+                className="shrink-0 text-content-muted hover:text-content-secondary text-xl leading-none"
               >
                 ×
               </button>
@@ -615,7 +615,7 @@ export default function Connections() {
           </div>
         ) : loadError ? (
           <Card>
-            <p className="text-red-700 text-sm">
+            <p className="text-error-text text-sm">
               Failed to load connections:{' '}
               {loadError instanceof Error ? loadError.message : 'Unknown error'}
             </p>
@@ -634,10 +634,10 @@ export default function Connections() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h2 className="text-lg font-semibold text-content-primary">
               S3 Input Connections
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-content-muted">
               Remote S3 buckets used as CSV input sources for load steps.
             </p>
           </div>
@@ -652,8 +652,8 @@ export default function Connections() {
             className={clsx(
               'rounded-lg border p-4',
               inputTestResult.success
-                ? 'bg-green-50 border-green-200'
-                : 'bg-red-50 border-red-200',
+                ? 'bg-success-bg border-success-border'
+                : 'bg-error-bg border-error-border',
             )}
           >
             <div className="flex items-start justify-between gap-4">
@@ -661,7 +661,7 @@ export default function Connections() {
                 <p
                   className={clsx(
                     'font-medium',
-                    inputTestResult.success ? 'text-green-800' : 'text-red-800',
+                    inputTestResult.success ? 'text-success-text' : 'text-error-text',
                   )}
                 >
                   {inputTestResult.success ? '✓ Connection successful' : '✗ Connection failed'}
@@ -671,7 +671,7 @@ export default function Connections() {
                 <p
                   className={clsx(
                     'text-sm',
-                    inputTestResult.success ? 'text-green-700' : 'text-red-700',
+                    inputTestResult.success ? 'text-success-text' : 'text-error-text',
                   )}
                 >
                   {inputTestResult.message}
@@ -681,7 +681,7 @@ export default function Connections() {
                 type="button"
                 aria-label="Dismiss input test result"
                 onClick={() => setInputTestResult(null)}
-                className="shrink-0 text-gray-400 hover:text-gray-600 text-xl leading-none"
+                className="shrink-0 text-content-muted hover:text-content-secondary text-xl leading-none"
               >
                 ×
               </button>
@@ -699,7 +699,7 @@ export default function Connections() {
           </div>
         ) : inputLoadError ? (
           <Card>
-            <p className="text-red-700 text-sm">
+            <p className="text-error-text text-sm">
               Failed to load input connections:{' '}
               {inputLoadError instanceof Error ? inputLoadError.message : 'Unknown error'}
             </p>
@@ -867,9 +867,9 @@ export default function Connections() {
               type="checkbox"
               checked={form.is_sandbox}
               onChange={(e) => setField('is_sandbox', e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="h-4 w-4 rounded border-border-strong text-blue-600 focus:ring-border-focus"
             />
-            <label htmlFor="conn-sandbox" className="text-sm font-medium text-gray-700">
+            <label htmlFor="conn-sandbox" className="text-sm font-medium text-content-secondary">
               Sandbox org
             </label>
           </div>
@@ -901,7 +901,7 @@ export default function Connections() {
           </>
         }
       >
-        <p className="text-sm text-gray-700">
+        <p className="text-sm text-content-secondary">
           Are you sure you want to delete{' '}
           <span className="font-semibold">{deleteTarget?.name}</span>? This cannot be undone.
         </p>
@@ -1078,7 +1078,7 @@ export default function Connections() {
           </>
         }
       >
-        <p className="text-sm text-gray-700">
+        <p className="text-sm text-content-secondary">
           Are you sure you want to delete{' '}
           <span className="font-semibold">{inputDeleteTarget?.name}</span>? This cannot be undone.
         </p>
