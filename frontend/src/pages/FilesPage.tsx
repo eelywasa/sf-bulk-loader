@@ -5,7 +5,7 @@ import { faFolder, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { filesApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import type { InputConnection, InputDirectoryEntry } from '../api/types'
-import { Card, EmptyState } from '../components/ui'
+import { Card, CsvPreviewPanel, EmptyState } from '../components/ui'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -132,85 +132,6 @@ function PreviewEmpty() {
   )
 }
 
-function PreviewLoading() {
-  return (
-    <Card>
-      <div
-        className="flex items-center justify-center min-h-[200px]"
-        aria-label="Loading preview"
-      >
-        <div className="h-8 w-8 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
-      </div>
-    </Card>
-  )
-}
-
-function PreviewError({ message }: { message: string }) {
-  return (
-    <Card>
-      <div className="rounded-md bg-red-50 border border-red-200 p-4">
-        <p className="text-sm text-red-700">{message}</p>
-      </div>
-    </Card>
-  )
-}
-
-interface PreviewTableProps {
-  filename: string
-  header: string[]
-  rows: Record<string, string>[]
-  rowCount: number
-}
-
-function PreviewTable({ filename, header, rows, rowCount }: PreviewTableProps) {
-  return (
-    <Card>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">{filename}</h2>
-          <span className="text-sm text-gray-500">{rowCount.toLocaleString()} rows</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead>
-              <tr>
-                {header.map((col) => (
-                  <th
-                    key={col}
-                    scope="col"
-                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50"
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {rows.map((row, i) => (
-                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  {header.map((col) => (
-                    <td
-                      key={col}
-                      className="px-3 py-2 text-gray-700 whitespace-nowrap font-mono text-xs"
-                    >
-                      {row[col] ?? ''}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {rows.length < rowCount && (
-          <p className="text-xs text-gray-400 text-right">
-            Showing first {rows.length} of {rowCount.toLocaleString()} rows
-          </p>
-        )}
-      </div>
-    </Card>
-  )
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FilesPage() {
@@ -242,17 +163,6 @@ export default function FilesPage() {
   } = useQuery({
     queryKey: ['files', 'input', source, currentPath],
     queryFn: () => filesApi.listInput(currentPath, source),
-  })
-
-  const {
-    data: preview,
-    isLoading: previewLoading,
-    isError: previewError,
-    error: previewErr,
-  } = useQuery({
-    queryKey: ['files', 'preview', source, selectedFile],
-    queryFn: () => filesApi.previewInput(selectedFile!, 25, source),
-    enabled: !!selectedFile,
   })
 
   // ── Source selector (shown when input connections exist) ───────────────────
@@ -337,24 +247,27 @@ export default function FilesPage() {
 
   // ── Preview panel content ──────────────────────────────────────────────────
 
+  const selectedEntry =
+    selectedFile != null
+      ? entries.find(
+          (entry): entry is InputDirectoryEntry & { kind: 'file' } =>
+            entry.kind === 'file' && entry.path === selectedFile,
+        )
+      : null
+
   let previewPanel: React.ReactNode
 
   if (!selectedFile) {
     previewPanel = <PreviewEmpty />
-  } else if (previewLoading) {
-    previewPanel = <PreviewLoading />
-  } else if (previewError) {
-    const msg =
-      previewErr instanceof ApiError ? previewErr.message : 'Failed to load file preview'
-    previewPanel = <PreviewError message={msg} />
-  } else if (preview) {
+  } else {
     previewPanel = (
-      <PreviewTable
-        filename={preview.filename}
-        header={preview.header}
-        rows={preview.rows}
-        rowCount={preview.row_count}
-      />
+      <Card>
+        <CsvPreviewPanel
+          queryKey={['files', 'preview', source, selectedFile]}
+          fetchPage={(params) => filesApi.previewInput(selectedFile, params, source)}
+          filename={selectedEntry?.name}
+        />
+      </Card>
     )
   }
 

@@ -171,6 +171,11 @@ describe('PlanEditor', () => {
       filename: '',
       header: [],
       rows: [],
+      total_rows: null,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
       row_count: 0,
     })
   })
@@ -497,6 +502,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['ExternalId__c'],
       rows: [{ ExternalId__c: 'A-1' }],
+      total_rows: 1,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
       row_count: 1,
       source: 'ic-1',
       provider: 's3',
@@ -1053,6 +1063,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['Name', 'ExternalId__c'],
       rows: [],
+      total_rows: 0,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
       row_count: 0,
     })
     renderEditor('plan-1')
@@ -1070,6 +1085,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['Name', 'ExternalId__c', 'BillingCity'],
       rows: [],
+      total_rows: 0,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
       row_count: 0,
     })
     renderEditor('plan-1')
@@ -1092,6 +1112,11 @@ describe('PlanEditor', () => {
       filename: 'accounts.csv',
       header: ['Name', 'ExternalId__c'],
       rows: [],
+      total_rows: 0,
+      filtered_rows: null,
+      offset: 0,
+      limit: 1,
+      has_next: false,
       row_count: 0,
     })
     renderEditor('plan-1')

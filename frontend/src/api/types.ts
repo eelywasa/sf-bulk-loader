@@ -224,15 +224,6 @@ export interface InputDirectoryEntry {
   provider?: string
 }
 
-export interface InputFilePreview {
-  filename: string
-  header: string[]
-  rows: Record<string, string>[]
-  row_count: number
-  source?: string
-  provider?: string
-}
-
 export interface FilterRule {
   column: string
   value: string
@@ -253,4 +244,11 @@ export interface CsvPageResult {
   offset: number
   limit: number
   has_next: boolean
+}
+
+export interface InputFilePreview extends CsvPageResult {
+  filename: string
+  row_count: number
+  source?: string
+  provider?: string
 }

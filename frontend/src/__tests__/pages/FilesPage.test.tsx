@@ -53,6 +53,11 @@ const accountsPreview: InputFilePreview = {
     { Name: 'Acme Corp', ExternalId__c: 'ACCT-001', BillingCity: 'New York' },
     { Name: 'Globex', ExternalId__c: 'ACCT-002', BillingCity: 'Springfield' },
   ],
+  total_rows: 150,
+  filtered_rows: null,
+  offset: 0,
+  limit: 50,
+  has_next: true,
   row_count: 150,
 }
 
@@ -60,6 +65,11 @@ const widePreview: InputFilePreview = {
   filename: 'wide.csv',
   header: Array.from({ length: 20 }, (_, i) => `Column${i + 1}`),
   rows: [Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`Column${i + 1}`, `val${i}`]))],
+  total_rows: 1,
+  filtered_rows: null,
+  offset: 0,
+  limit: 50,
+  has_next: false,
   row_count: 1,
 }
 
@@ -252,17 +262,21 @@ describe('FilesPage', () => {
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
-    expect(filesApi.previewInput).toHaveBeenCalledWith('accounts.csv', 25, 'local')
+    expect(filesApi.previewInput).toHaveBeenCalledWith(
+      'accounts.csv',
+      { offset: 0, limit: 50, filters: [] },
+      'local',
+    )
   })
 
-  it('shows loading indicator while preview is fetching', async () => {
+  it('shows panel loading indicator while preview is fetching', async () => {
     const user = userEvent.setup()
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     vi.mocked(filesApi.previewInput).mockReturnValue(new Promise(() => {}))
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
-    expect(screen.getByLabelText('Loading preview')).toBeInTheDocument()
+    expect(screen.getByLabelText('Loading')).toBeInTheDocument()
   })
 
   it('removes "No file selected" once a file is clicked', async () => {
@@ -285,7 +299,7 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
     await waitFor(() => {
-      expect(screen.getByText('Failed to load file preview')).toBeInTheDocument()
+      expect(screen.getByText('Preview failed')).toBeInTheDocument()
     })
   })
 
@@ -306,7 +320,7 @@ describe('FilesPage', () => {
 
   // ── Preview data ───────────────────────────────────────────────────────────
 
-  it('shows the preview filename as a heading', async () => {
+  it('shows the preview filename label', async () => {
     const user = userEvent.setup()
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     vi.mocked(filesApi.previewInput).mockResolvedValue(accountsPreview)
@@ -314,11 +328,11 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'accounts.csv' })).toBeInTheDocument()
+      expect(screen.getAllByText('accounts.csv')[0]).toBeInTheDocument()
     })
   })
 
-  it('shows the row count', async () => {
+  it('shows pagination totals from the shared preview panel', async () => {
     const user = userEvent.setup()
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     vi.mocked(filesApi.previewInput).mockResolvedValue(accountsPreview)
@@ -326,7 +340,7 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
     await waitFor(() => {
-      expect(screen.getByText('150 rows')).toBeInTheDocument()
+      expect(screen.getByText('Page 1 of 3 (150 rows)')).toBeInTheDocument()
     })
   })
 
@@ -359,28 +373,81 @@ describe('FilesPage', () => {
     })
   })
 
-  it('shows truncation note when preview rows < total row count', async () => {
+  it('does not show the legacy truncation note', async () => {
     const user = userEvent.setup()
-    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
-    vi.mocked(filesApi.previewInput).mockResolvedValue(accountsPreview) // 2 rows shown, 150 total
-    renderFilesPage()
-    await waitFor(() => screen.getByText('accounts.csv'))
-    await user.click(screen.getByText('accounts.csv'))
-    await waitFor(() => {
-      expect(screen.getByText(/Showing first 2 of 150/)).toBeInTheDocument()
-    })
-  })
-
-  it('does not show truncation note when all rows are displayed', async () => {
-    const user = userEvent.setup()
-    const fullPreview: InputFilePreview = { ...accountsPreview, row_count: 2 }
+    const fullPreview: InputFilePreview = { ...accountsPreview, row_count: 2, total_rows: 2, has_next: false }
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     vi.mocked(filesApi.previewInput).mockResolvedValue(fullPreview)
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
-    await waitFor(() => screen.getByText('2 rows'))
+    await waitFor(() => screen.getByText('Page 1 of 1 (2 rows)'))
     expect(screen.queryByText(/Showing first/)).not.toBeInTheDocument()
+  })
+
+  it('paginates through the selected file with CsvPreviewPanel', async () => {
+    const user = userEvent.setup()
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    vi.mocked(filesApi.previewInput).mockImplementation(async (_filePath, params) => {
+      if (typeof params === 'number' || params == null) {
+        return accountsPreview
+      }
+      if (params.offset === 50) {
+        return {
+          ...accountsPreview,
+          rows: [{ Name: 'Initech', ExternalId__c: 'ACCT-051', BillingCity: 'Austin' }],
+          offset: 50,
+          has_next: true,
+          row_count: 1,
+        }
+      }
+      return accountsPreview
+    })
+
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    await waitFor(() =>
+      expect(filesApi.previewInput).toHaveBeenCalledWith(
+        'accounts.csv',
+        { offset: 0, limit: 50, filters: [] },
+        'local',
+      ),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+
+    await waitFor(() =>
+      expect(filesApi.previewInput).toHaveBeenCalledWith(
+        'accounts.csv',
+        { offset: 50, limit: 50, filters: [] },
+        'local',
+      ),
+    )
+  })
+
+  it('applies filters through the shared preview panel', async () => {
+    const user = userEvent.setup()
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    vi.mocked(filesApi.previewInput).mockResolvedValue(accountsPreview)
+
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    await waitFor(() => screen.getByText('Acme Corp'))
+
+    await user.click(screen.getByText('+ Add Filter'))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter column' }), 'Name')
+    await user.type(screen.getByRole('textbox', { name: 'Filter value' }), 'Acme')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(filesApi.previewInput).toHaveBeenLastCalledWith(
+        'accounts.csv',
+        { offset: 0, limit: 50, filters: [{ column: 'Name', value: 'Acme' }] },
+        'local',
+      ),
+    )
   })
 
   // ── Horizontal scroll ──────────────────────────────────────────────────────
@@ -451,6 +518,11 @@ describe('FilesPage', () => {
       filename: 'contacts.csv',
       header: ['FirstName', 'LastName', 'Email'],
       rows: [{ FirstName: 'Jane', LastName: 'Doe', Email: 'jane@example.com' }],
+      total_rows: 1,
+      filtered_rows: null,
+      offset: 0,
+      limit: 50,
+      has_next: false,
       row_count: 1,
     }
 
@@ -464,11 +536,25 @@ describe('FilesPage', () => {
     await user.click(screen.getByText('accounts.csv'))
     await waitFor(() => screen.getByRole('columnheader', { name: 'Name' }))
 
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    await waitFor(() =>
+      expect(filesApi.previewInput).toHaveBeenCalledWith(
+        'accounts.csv',
+        { offset: 50, limit: 50, filters: [] },
+        'local',
+      ),
+    )
+
     await user.click(screen.getByText('contacts.csv'))
     await waitFor(() => {
       expect(screen.getByRole('columnheader', { name: 'FirstName' })).toBeInTheDocument()
       expect(screen.getByText('jane@example.com')).toBeInTheDocument()
     })
+    expect(filesApi.previewInput).toHaveBeenLastCalledWith(
+      'contacts.csv',
+      { offset: 0, limit: 50, filters: [] },
+      'local',
+    )
   })
 
   // ── Directory entries ──────────────────────────────────────────────────────
@@ -635,6 +721,54 @@ describe('FilesPage', () => {
     })
   })
 
+  it('restarts preview state when source changes and a new file is selected', async () => {
+    const user = userEvent.setup()
+    const s3Files: InputDirectoryEntry[] = [
+      { name: 'remote.csv', kind: 'file', path: 'remote.csv', size_bytes: 1024, row_count: 10 },
+    ]
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValueOnce(fileList).mockResolvedValue(s3Files)
+    vi.mocked(filesApi.previewInput).mockImplementation(async (filePath, params) => ({
+      ...(filePath === 'remote.csv'
+        ? {
+            ...accountsPreview,
+            filename: 'remote.csv',
+            total_rows: 10,
+            has_next: false,
+            row_count: 1,
+            rows: [{ Name: 'Remote Row', ExternalId__c: 'ACCT-900', BillingCity: 'London' }],
+          }
+        : accountsPreview),
+      ...(typeof params === 'object' && params != null ? { offset: params.offset, limit: params.limit } : {}),
+    }))
+
+    renderFilesPage()
+    await waitFor(() => screen.getByText('accounts.csv'))
+    await user.click(screen.getByText('accounts.csv'))
+    await waitFor(() => screen.getByText('Acme Corp'))
+
+    await user.click(screen.getByRole('button', { name: 'Next page' }))
+    await waitFor(() =>
+      expect(filesApi.previewInput).toHaveBeenCalledWith(
+        'accounts.csv',
+        { offset: 50, limit: 50, filters: [] },
+        'local',
+      ),
+    )
+
+    await user.selectOptions(screen.getByLabelText('Source'), 'conn-s3-1')
+    await waitFor(() => screen.getByText('remote.csv'))
+    await user.click(screen.getByText('remote.csv'))
+
+    await waitFor(() =>
+      expect(filesApi.previewInput).toHaveBeenLastCalledWith(
+        'remote.csv',
+        { offset: 0, limit: 50, filters: [] },
+        'conn-s3-1',
+      ),
+    )
+  })
+
   it('shows generic empty state description for S3 source', async () => {
     const user = userEvent.setup()
     vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
@@ -672,6 +806,10 @@ describe('FilesPage', () => {
     await user.click(screen.getByText('2026'))
     await waitFor(() => screen.getByText('accounts.csv'))
     await user.click(screen.getByText('accounts.csv'))
-    expect(filesApi.previewInput).toHaveBeenCalledWith('2026/accounts.csv', 25, 'local')
+    expect(filesApi.previewInput).toHaveBeenCalledWith(
+      '2026/accounts.csv',
+      { offset: 0, limit: 50, filters: [] },
+      'local',
+    )
   })
 })

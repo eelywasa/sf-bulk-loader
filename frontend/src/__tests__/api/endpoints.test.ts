@@ -300,6 +300,33 @@ describe('jobsApi', () => {
   it('unprocessedCsvUrl returns correct path (no fetch)', () => {
     expect(jobsApi.unprocessedCsvUrl('j1')).toBe('/api/jobs/j1/unprocessed-csv')
   })
+
+  it('previewSuccessCsv serializes pagination params', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({}))
+    await jobsApi.previewSuccessCsv('j1', { offset: 50, limit: 100, filters: [] })
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/jobs/j1/success-csv/preview?limit=100&offset=50')
+  })
+
+  it('previewErrorCsv serializes filters as JSON', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({}))
+    await jobsApi.previewErrorCsv('j1', {
+      offset: 0,
+      limit: 50,
+      filters: [{ column: 'Name', value: 'Acme' }],
+    })
+    const { url } = captureLastFetch()
+    expect(url).toBe(
+      '/api/jobs/j1/error-csv/preview?limit=50&offset=0&filters=%5B%7B%22column%22%3A%22Name%22%2C%22value%22%3A%22Acme%22%7D%5D',
+    )
+  })
+
+  it('previewUnprocessedCsv defaults to first page when params are omitted', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({}))
+    await jobsApi.previewUnprocessedCsv('j1')
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/jobs/j1/unprocessed-csv/preview?limit=25&offset=0')
+  })
 })
 
 describe('filesApi', () => {
@@ -387,6 +414,30 @@ describe('filesApi', () => {
     await filesApi.previewInput('folder/accounts.csv', 10, 'ic-1')
     const { url } = captureLastFetch()
     expect(url).toBe('/api/files/input/folder/accounts.csv/preview?rows=10&source=ic-1')
+  })
+
+  it('previewInput serializes pagination params for shared panel usage', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({}))
+    await filesApi.previewInput('accounts.csv', { offset: 50, limit: 100, filters: [] }, 'local')
+    const { url } = captureLastFetch()
+    expect(url).toBe('/api/files/input/accounts.csv/preview?limit=100&offset=50')
+  })
+
+  it('previewInput serializes filters and remote source for shared panel usage', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson({}))
+    await filesApi.previewInput(
+      'folder/accounts.csv',
+      {
+        offset: 0,
+        limit: 50,
+        filters: [{ column: 'Name', value: 'Acme' }],
+      },
+      'ic-1',
+    )
+    const { url } = captureLastFetch()
+    expect(url).toBe(
+      '/api/files/input/folder/accounts.csv/preview?limit=50&offset=0&filters=%5B%7B%22column%22%3A%22Name%22%2C%22value%22%3A%22Acme%22%7D%5D&source=ic-1',
+    )
   })
 })
 
