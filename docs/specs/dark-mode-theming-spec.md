@@ -450,7 +450,7 @@ to update.
 
 ---
 
-## Ticket 7 — Connections Page
+## Ticket 7 — Connections Page — ✅ DONE
 
 ### Goal
 Migrate `Connections.tsx` to semantic tokens. This is the most form-heavy page and the first
