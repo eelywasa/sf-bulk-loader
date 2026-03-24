@@ -38,8 +38,8 @@ export function Progress({
     <div className={className}>
       {(label !== undefined || showValue) && (
         <div className="flex justify-between items-center mb-1">
-          {label !== undefined && <span className="text-xs text-gray-500">{label}</span>}
-          {showValue && <span className="text-xs font-medium text-gray-700">{clamped}%</span>}
+          {label !== undefined && <span className="text-xs text-content-muted">{label}</span>}
+          {showValue && <span className="text-xs font-medium text-content-secondary">{clamped}%</span>}
         </div>
       )}
       <div
@@ -48,7 +48,7 @@ export function Progress({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={label}
-        className={clsx('w-full bg-gray-200 rounded-full overflow-hidden', sizeClasses[size])}
+        className={clsx('w-full bg-surface-sunken rounded-full overflow-hidden', sizeClasses[size])}
       >
         <div
           className={clsx(

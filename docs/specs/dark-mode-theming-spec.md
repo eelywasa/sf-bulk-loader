@@ -24,6 +24,7 @@ building on the previous.
 | Shadow policy — overlays | Modals and dropdowns retain a shadow in both modes, using reduced opacity and blur in dark mode (`dark:shadow-black/40`) |
 | Form element styling | Consolidated into `src/components/ui/formStyles.ts` — shared constants imported by all pages and components |
 | Semantic state colours | Error/success/warning/info tokens defined in the token system; each has a bg, border, and text token pair |
+| Accent colour policy | Introduce semantic accent tokens for links, primary actions, and selected states; temporary raw Tailwind blues are allowed only where the spec explicitly permits them |
 | Migration approach | Token system first, then UI components, then pages — each ticket is independently verifiable |
 
 ---
@@ -41,23 +42,28 @@ use the `theme()` helper so Tailwind processes them at build time.
 | `--color-surface-base` | gray-50 | gray-950 | Page background |
 | `--color-surface-raised` | white | gray-900 | Cards, panels, table bodies |
 | `--color-surface-elevated` | white | gray-800 | Modals, dropdown panels |
+| `--color-surface-overlay` | white | gray-800 | Overlay surfaces that need explicit elevation semantics (toast, popover, modal variants) |
 | `--color-surface-sunken` | gray-100 | gray-900 | Input fields, code blocks, thead |
 | `--color-surface-hover` | gray-50 | gray-800 | Row/item hover |
-| `--color-surface-active` | gray-100 | gray-700 | Pressed/selected rows |
+| `--color-surface-active` | gray-100 | gray-700 | Pressed state |
+| `--color-surface-selected` | blue-50 | blue-950 | Persistent selected rows/items that should not rely on generic active styling |
 
 #### Content (text) tokens
 | Token | Light | Dark | Purpose |
 |---|---|---|---|
 | `--color-content-primary` | gray-900 | gray-100 | Headings, primary values |
 | `--color-content-secondary` | gray-600 | gray-300 | Secondary labels |
-| `--color-content-muted` | gray-500 | gray-400 | Captions, placeholders, metadata |
+| `--color-content-muted` | gray-500 | gray-400 | Captions and metadata |
+| `--color-content-placeholder` | gray-500 | gray-400 | Placeholder text inside form fields |
 | `--color-content-disabled` | gray-400 | gray-600 | Disabled controls |
 | `--color-content-inverse` | white | gray-900 | Text on solid-colour backgrounds |
 | `--color-content-link` | blue-600 | blue-400 | Anchor and link text |
+| `--color-content-selected` | blue-700 | blue-300 | Text/icons inside selected items |
 
 #### Border tokens
 | Token | Light | Dark | Purpose |
 |---|---|---|---|
+| `--color-border-subtle` | gray-100 | gray-800 | Very soft separators where `border-base` is too strong |
 | `--color-border-base` | gray-200 | gray-700 | Card borders, dividers, table lines |
 | `--color-border-strong` | gray-300 | gray-600 | Input borders, strong separators |
 | `--color-border-focus` | blue-500 | blue-400 | Focus rings |
@@ -80,6 +86,13 @@ Each state has three tokens: `bg`, `border`, `text`.
 | `--color-info-border` | blue-200 | blue-800 |
 | `--color-info-text` | blue-700 | blue-400 |
 
+#### Accent tokens
+| Token | Light | Dark | Purpose |
+|---|---|---|---|
+| `--color-accent` | blue-600 | blue-400 | Primary action and accent colour |
+| `--color-accent-hover` | blue-700 | blue-300 | Hover state for accent surfaces/text |
+| `--color-accent-soft` | blue-50 | blue-950 | Soft accent backgrounds and selections |
+
 ### Tailwind config extension
 
 The custom properties are exposed as Tailwind colour utilities in `tailwind.config.ts`:
@@ -92,22 +105,32 @@ theme: {
         base:     'var(--color-surface-base)',
         raised:   'var(--color-surface-raised)',
         elevated: 'var(--color-surface-elevated)',
+        overlay:  'var(--color-surface-overlay)',
         sunken:   'var(--color-surface-sunken)',
         hover:    'var(--color-surface-hover)',
         active:   'var(--color-surface-active)',
+        selected: 'var(--color-surface-selected)',
       },
       content: {
-        primary:   'var(--color-content-primary)',
-        secondary: 'var(--color-content-secondary)',
-        muted:     'var(--color-content-muted)',
-        disabled:  'var(--color-content-disabled)',
-        inverse:   'var(--color-content-inverse)',
-        link:      'var(--color-content-link)',
+        primary:     'var(--color-content-primary)',
+        secondary:   'var(--color-content-secondary)',
+        muted:       'var(--color-content-muted)',
+        placeholder: 'var(--color-content-placeholder)',
+        disabled:    'var(--color-content-disabled)',
+        inverse:     'var(--color-content-inverse)',
+        link:        'var(--color-content-link)',
+        selected:    'var(--color-content-selected)',
       },
       border: {
+        subtle: 'var(--color-border-subtle)',
         base:   'var(--color-border-base)',
         strong: 'var(--color-border-strong)',
         focus:  'var(--color-border-focus)',
+      },
+      accent: {
+        DEFAULT: 'var(--color-accent)',
+        hover:   'var(--color-accent-hover)',
+        soft:    'var(--color-accent-soft)',
       },
       error: {
         bg: 'var(--color-error-bg)', border: 'var(--color-error-border)', text: 'var(--color-error-text)',
@@ -127,7 +150,13 @@ theme: {
 ```
 
 This lets components write `bg-surface-raised text-content-primary border-border-base` — one
-class set that works in both modes without any `dark:` variants in component markup.
+class set that works in both modes without any ordinary colour `dark:` variants in component markup.
+
+### Guardrails for token usage
+- No component or page should introduce raw gray/white colour classes for ordinary theming once the token system exists.
+- Temporary raw Tailwind palette colours are allowed only for accent/fill cases explicitly permitted by this spec (for example, some primary buttons or progress fills).
+- If a raw accent colour starts being reused broadly, add a semantic accent token instead of spreading more raw palette classes.
+- Exceptional `dark:` usage is allowed only for non-token concerns such as overlay shadow tuning, browser-control quirks, or third-party component patching. These exceptions should be rare and commented inline.
 
 ### Existing dark: variants in already-themed files
 
@@ -135,11 +164,14 @@ class set that works in both modes without any `dark:` variants in component mar
 already carry explicit `dark:` variants. These files should be **migrated to token classes** as
 part of the relevant ticket, removing the `dark:` variants so the token system becomes the single
 source of truth. This is not optional — dual-maintaining inline dark variants and tokens will
-drift.
+drift. Assign ownership explicitly during implementation:
+- `AppShell.tsx` → container/shell work alongside Ticket 4 or a dedicated shell cleanup subtask
+- `ComboInput.tsx` → Ticket 2 shared-form-style adoption or Ticket 3 atomic input cleanup
+- `Login.tsx`, `FilePicker.tsx`, `CsvPreviewPanel.tsx` → whichever ticket owns the route/component that renders them; do not leave them as implied cleanup items
 
 ---
 
-## Ticket 1 — Design Token Foundation
+## Ticket 1 — Design Token Foundation — ✅ DONE
 
 ### Goal
 Establish the CSS custom property system and Tailwind config extension. No component changes.
@@ -153,9 +185,10 @@ Subsequent tickets depend on this being complete and correct.
 
 ### Implementation notes
 - Use `theme()` helper in CSS values so Tailwind colour values are resolved at build time (e.g.
-  `theme('colors.gray.50')`). Verify this is supported by the project's PostCSS setup.
+  `theme('colors.gray.50')`). Verify this is supported by the project's PostCSS setup. If it is not, fall back to literal hex/OKLCH values derived from the current Tailwind palette rather than blocking the refactor.
 - The `html.dark` block overrides every token defined in `:root` — no token should be left
   without a dark override.
+- Add a short comment block grouping tokens by semantic purpose (surface/content/border/state/accent) so future edits stay disciplined.
 - The base layer must also set `background-color` and `color` on `body` using the token values:
   ```css
   body {
@@ -178,7 +211,7 @@ Subsequent tickets depend on this being complete and correct.
 
 ---
 
-## Ticket 2 — Shared Form Styles
+## Ticket 2 — Shared Form Styles — ✅ DONE
 
 ### Goal
 Create a single shared constants file for all form element styling. Replace scattered inline
@@ -200,7 +233,7 @@ class strings in pages and components.
 export const LABEL_CLASS = 'block text-sm font-medium text-content-secondary mb-1'
 export const INPUT_CLASS =
   'w-full rounded-md border border-border-strong bg-surface-sunken text-content-primary ' +
-  'px-3 py-2 text-sm placeholder:text-content-muted ' +
+  'px-3 py-2 text-sm placeholder:text-content-placeholder ' +
   'focus:outline-none focus:ring-2 focus:ring-border-focus focus:border-transparent ' +
   'disabled:opacity-50 disabled:cursor-not-allowed'
 export const SELECT_CLASS =
@@ -210,6 +243,7 @@ export const SELECT_CLASS =
   'disabled:opacity-50 disabled:cursor-not-allowed'
 export const TEXTAREA_CLASS = INPUT_CLASS + ' resize-y'
 export const HELPER_TEXT_CLASS = 'mt-1 text-xs text-content-muted'
+export const FIELD_CONTAINER_CLASS = 'space-y-1'
 export const ERROR_TEXT_CLASS = 'mt-1 text-xs text-error-text'
 export const FIELD_ERROR_OUTLINE = 'border-error-border focus:ring-error-border'
 
@@ -227,6 +261,7 @@ export const ALERT_INFO = `${ALERT_BASE} bg-info-bg border-info-border text-info
 - `Connections.tsx` and `RunsPage.tsx` have inline form input strings; replace with shared
   constants.
 - Do not change form layout or field arrangement — only class strings.
+- Check browser autofill styling in both modes; if autofill text/background clashes with the token system, add a small targeted fix in the shared form styles layer rather than per-page overrides.
 - If any file uses a `<select>` without a class constant, apply `SELECT_CLASS`.
 
 ### Acceptance criteria
@@ -237,7 +272,7 @@ export const ALERT_INFO = `${ALERT_BASE} bg-info-bg border-info-border text-info
 
 ---
 
-## Ticket 3 — Atomic UI Components
+## Ticket 3 — Atomic UI Components — ✅ DONE
 
 ### Goal
 Migrate `Button`, `Badge`, `Progress`, and `EmptyState` to use semantic tokens. Remove any
@@ -252,14 +287,13 @@ existing `dark:` variants from these files.
 ### Implementation notes
 
 **Button**
-- `primary` variant: `bg-blue-600 hover:bg-blue-700` → these can stay as Tailwind palette
-  classes (the blue palette reads well in both modes) but ensure `text-content-inverse` is used
-  for the label.
+- `primary` variant: prefer semantic accent classes (`bg-accent hover:bg-accent-hover text-content-inverse`). If there is a short-term need to keep `bg-blue-600 hover:bg-blue-700`, treat that as a temporary bridge rather than the long-term target.
 - `secondary` variant: replace `bg-white text-gray-700 border-gray-300 hover:bg-gray-50` with
   `bg-surface-raised text-content-primary border-border-strong hover:bg-surface-hover`.
 - `ghost` variant: replace `text-gray-600 hover:bg-gray-100` with
   `text-content-secondary hover:bg-surface-hover`.
 - `danger` variant: label/icon text should use `text-content-inverse`; button bg can stay red.
+- For disabled button treatment, verify reduced opacity still leaves labels legible in dark mode; add a tokenised disabled surface/text treatment if opacity alone feels weak.
 - Focus ring: `focus:ring-border-focus` instead of `focus:ring-blue-500`.
 
 **Badge**
@@ -298,8 +332,8 @@ existing `dark:` variants from these files.
 ## Ticket 4 — Container UI Components
 
 ### Goal
-Migrate `Card`, `Modal`, `Tabs`, and `Toast` to use semantic tokens. Apply the overlay shadow
-policy to Modal.
+Migrate `Card`, `Modal`, `Tabs`, and `Toast` to use semantic tokens. Apply a shared overlay shadow
+policy to Modal and Toast.
 
 ### Affected files
 `frontend/src/components/ui/Card.tsx`
@@ -308,6 +342,8 @@ policy to Modal.
 `frontend/src/components/ui/Toast.tsx`
 
 ### Implementation notes
+
+Add a shared overlay shadow constant or utility (for example `OVERLAY_SHADOW_CLASS = 'shadow-xl shadow-black/10 dark:shadow-black/40'`) and reuse it anywhere an overlay panel needs depth.
 
 **Card**
 - Container: `bg-white border-gray-200` → `bg-surface-raised border-border-base`
@@ -342,7 +378,7 @@ policy to Modal.
 - Close button: `text-gray-400 hover:text-gray-600` → `text-content-muted hover:text-content-secondary`
 - Each variant's left-border accent colour (`border-l-4 border-red-500` etc.) can stay as-is —
   the coloured accent reads well in both modes.
-- Shadow: Toasts are overlay elements; apply `shadow-lg shadow-black/10 dark:shadow-black/40`.
+- Shadow: Toasts are overlay elements; apply the shared overlay shadow policy rather than inventing a separate local value.
 
 ### Acceptance criteria
 - All four components use only token classes (no unaccompanied `dark:`-less gray/white classes).
@@ -371,6 +407,7 @@ ticket directly improves all pages.
 - `<tbody>` hover: `hover:bg-gray-50` → `hover:bg-surface-hover`
 - Body `<td>` text: `text-gray-900` → `text-content-primary`
 - Empty-state message: `text-gray-400` → `text-content-muted`
+- If DataTable supports a persistent selected row state anywhere in the app, use `bg-surface-selected text-content-selected` rather than reusing hover or generic info-alert styling.
 - Column header borders: `border-gray-200` → `border-border-base`
 
 ### Acceptance criteria
@@ -401,6 +438,7 @@ to update.
 - Table row hover: `hover:bg-gray-50` → `hover:bg-surface-hover`
 - Row dividers: `divide-gray-200` / `divide-gray-100` → `divide-border-base`
 - Link text: `text-blue-600` → `text-content-link`
+- If the page includes a current-selection treatment distinct from hover, use selected-state tokens rather than stronger hover colours.
 - Cell text variants: `text-gray-600` / `text-gray-700` → `text-content-secondary`
 - Status colours in cells (`text-green-700`, `text-red-700`): → `text-success-text` /
   `text-error-text` respectively.
@@ -480,7 +518,7 @@ Migrate `PlansPage.tsx`, `PlanEditor.tsx`, `PlanForm.tsx`, `StepList.tsx`,
 
 **StepList**
 - Step row background and text: `bg-surface-raised text-content-primary`.
-- Step sequence badge: `bg-info-bg text-info-text`.
+- Step sequence badge: `bg-info-bg text-info-text` or `bg-accent-soft text-content-selected` if the info treatment feels too semantically loud in context.
 - Meta text (`text-gray-500`, `text-gray-400`): → `text-content-muted`.
 - Preview container states:
   - Loading/idle: `bg-surface-sunken`
@@ -590,13 +628,13 @@ mode support already; this ticket completes and migrates that to the token syste
 - Metadata values (`text-gray-900`): → `text-content-primary`
 - Error message panel: `ALERT_ERROR`
 - JSON payload block (`bg-gray-900 text-gray-100`): This is intentionally inverted (a dark
-  code-block aesthetic). Keep this styling as-is — it reads well in both modes.
+  code-block aesthetic). Keep this styling as-is — it reads well in both modes. This establishes a general rule that code/preformatted blocks may use a deliberately fixed high-contrast scheme where that is clearer than tokenised surface styling.
 - Download row containers: `bg-surface-sunken border-border-base`
 - Download button: use existing `Button` component variants.
 
 **FilesPage**
 - File list dividers: `divide-border-base`
-- Selected item: `bg-info-bg text-info-text` (currently `bg-blue-50 text-blue-700`).
+- Selected item: prefer `bg-surface-selected text-content-selected` (currently `bg-blue-50 text-blue-700`). Use info tokens only if the selected state is intended to read as informational, not merely selected.
 - Unselected hover: `hover:bg-surface-hover text-content-primary`
 - File metadata: `text-content-muted`
 - Source label and select: use `LABEL_CLASS` / `SELECT_CLASS` from `formStyles.ts`.
@@ -615,13 +653,26 @@ mode support already; this ticket completes and migrates that to the token syste
 
 ## Completion Criteria
 
+## Quality Gates and Verification
+
+Before sign-off, verify the following in both light and dark mode:
+- Body text, secondary text, muted text, and disabled text remain readable against their intended surfaces.
+- Focus rings are visible on forms, tabs, and buttons on both light and dark backgrounds.
+- Hover, active, and selected states are all visually distinguishable without relying solely on tiny border changes.
+- State panels (error/success/warning/info) are clearly distinguishable and not overly saturated.
+- Browser autofill does not introduce unreadable text/background combinations in inputs.
+- Modal, toast, and dropdown/popup surfaces read as overlays via elevated surface + border + restrained shadow.
+
+## Completion Criteria
+
 All ten tickets done means:
 - Every component and page uses only token classes or Tailwind palette classes that read well
   in both modes (e.g. blue accent colours).
-- No `dark:` variants remain in any component or page file — the token system is the single
-  source of truth.
+- No ordinary colour `dark:` variants remain in any component or page file — the token system is the single
+  source of truth. Rare documented exceptions may exist for shadow tuning, browser quirks, or third-party patching.
 - `AppShell.tsx`, `Login.tsx`, `FilePicker.tsx`, `CsvPreviewPanel.tsx`, and `ComboInput.tsx`
   have had their existing `dark:` variants migrated to tokens as part of their respective
   tickets.
 - `npm run build`, `npm run typecheck`, and `npm run test:run` all pass cleanly.
 - Both light and dark mode have been visually verified across all routes.
+- A final cleanup sweep has been completed for lingering `dark:` classes, raw `bg-white`/`text-gray-*`/`border-gray-*` theming classes, and duplicate local form-style constants.

@@ -39,7 +39,7 @@ describe('Button', () => {
   it('applies primary variant classes by default', () => {
     render(<Button>Primary</Button>)
     const btn = screen.getByRole('button')
-    expect(btn.className).toMatch(/bg-blue-600/)
+    expect(btn.className).toMatch(/bg-accent/)
   })
 
   it('applies danger variant classes', () => {
@@ -51,7 +51,7 @@ describe('Button', () => {
   it('applies secondary variant classes', () => {
     render(<Button variant="secondary">Cancel</Button>)
     const btn = screen.getByRole('button')
-    expect(btn.className).toMatch(/bg-white/)
+    expect(btn.className).toMatch(/bg-surface-raised/)
   })
 
   it('applies sm size classes', () => {

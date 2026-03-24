@@ -12,16 +12,16 @@ export interface EmptyStateProps {
 }
 
 function DefaultIcon() {
-  return <FontAwesomeIcon icon={faFolderOpen} className="h-12 w-12 text-gray-300 dark:text-gray-600" />
+  return <FontAwesomeIcon icon={faFolderOpen} className="h-12 w-12 text-content-disabled" />
 }
 
 export function EmptyState({ title, description, action, icon, className }: EmptyStateProps) {
   return (
     <div className={clsx('flex flex-col items-center justify-center py-12 px-4 text-center', className)}>
       <div className="mb-4">{icon ?? <DefaultIcon />}</div>
-      <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+      <h3 className="text-base font-semibold text-content-primary">{title}</h3>
       {description && (
-        <p className="mt-1 text-sm text-gray-500 max-w-sm">{description}</p>
+        <p className="mt-1 text-sm text-content-muted max-w-sm">{description}</p>
       )}
       {action && <div className="mt-4">{action}</div>}
     </div>

@@ -19,42 +19,49 @@ export type BadgeVariant =
   | 'in_progress'
   | 'job_complete'
 
+// ─── Variant → token mapping ───────────────────────────────────────────────────
+// Semantic variants map to state token classes so they work in both modes without
+// any dark: overrides. Neutral/pending/aborted use surface+muted since they have
+// no semantic state connotation. Blue-family statuses (running, uploading, etc.)
+// use info tokens. Fill colours for dots use the corresponding <state>-text token
+// so they stay saturated enough to be legible on the <state>-bg background.
 const variantClasses: Record<BadgeVariant, string> = {
-  success: 'bg-green-100 text-green-800',
-  warning: 'bg-orange-100 text-orange-800',
-  error: 'bg-red-100 text-red-800',
-  info: 'bg-blue-100 text-blue-800',
-  neutral: 'bg-gray-100 text-gray-700',
+  // Semantic states
+  success:              'bg-success-bg text-success-text',
+  warning:              'bg-warning-bg text-warning-text',
+  error:                'bg-error-bg text-error-text',
+  info:                 'bg-info-bg text-info-text',
+  neutral:              'bg-surface-sunken text-content-muted',
   // Run statuses
-  pending: 'bg-gray-100 text-gray-600',
-  running: 'bg-blue-100 text-blue-800',
-  completed: 'bg-green-100 text-green-800',
-  completed_with_errors: 'bg-orange-100 text-orange-800',
-  failed: 'bg-red-100 text-red-800',
-  aborted: 'bg-gray-100 text-gray-500',
+  pending:              'bg-surface-sunken text-content-muted',
+  running:              'bg-info-bg text-info-text',
+  completed:            'bg-success-bg text-success-text',
+  completed_with_errors:'bg-warning-bg text-warning-text',
+  failed:               'bg-error-bg text-error-text',
+  aborted:              'bg-surface-sunken text-content-muted',
   // Job statuses
-  uploading: 'bg-blue-100 text-blue-700',
-  upload_complete: 'bg-blue-100 text-blue-700',
-  in_progress: 'bg-blue-100 text-blue-800',
-  job_complete: 'bg-green-100 text-green-800',
+  uploading:            'bg-info-bg text-info-text',
+  upload_complete:      'bg-info-bg text-info-text',
+  in_progress:          'bg-info-bg text-info-text',
+  job_complete:         'bg-success-bg text-success-text',
 }
 
 const variantDot: Record<BadgeVariant, string> = {
-  success: 'bg-green-500',
-  warning: 'bg-orange-500',
-  error: 'bg-red-500',
-  info: 'bg-blue-500',
-  neutral: 'bg-gray-400',
-  pending: 'bg-gray-400',
-  running: 'bg-blue-500',
-  completed: 'bg-green-500',
-  completed_with_errors: 'bg-orange-500',
-  failed: 'bg-red-500',
-  aborted: 'bg-gray-400',
-  uploading: 'bg-blue-400',
-  upload_complete: 'bg-blue-400',
-  in_progress: 'bg-blue-500',
-  job_complete: 'bg-green-500',
+  success:              'bg-success-text',
+  warning:              'bg-warning-text',
+  error:                'bg-error-text',
+  info:                 'bg-info-text',
+  neutral:              'bg-content-muted',
+  pending:              'bg-content-muted',
+  running:              'bg-info-text',
+  completed:            'bg-success-text',
+  completed_with_errors:'bg-warning-text',
+  failed:               'bg-error-text',
+  aborted:              'bg-content-muted',
+  uploading:            'bg-info-text',
+  upload_complete:      'bg-info-text',
+  in_progress:          'bg-info-text',
+  job_complete:         'bg-success-text',
 }
 
 export interface BadgeProps {
