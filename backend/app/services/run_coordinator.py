@@ -8,6 +8,7 @@ Collaborates with :mod:`step_executor` for per-step work and
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
 import logging
 from datetime import datetime, timezone
@@ -265,6 +266,29 @@ async def _execute_run(
         len(steps),
         plan.max_parallel_jobs,
     )
+
+    # ── Pre-count total records across all steps ──────────────────────────────
+    try:
+        preflight_total = 0
+        for step in steps:
+            try:
+                storage = await _get_storage(step.input_connection_id, db)
+                rel_paths = storage.discover_files(step.csv_file_pattern)
+                for rel_path in rel_paths:
+                    with storage.open_text(rel_path) as fh:
+                        reader = csv.reader(fh)
+                        try:
+                            next(reader)  # skip header
+                        except StopIteration:
+                            continue
+                        preflight_total += sum(1 for _ in reader)
+            except Exception as exc:
+                logger.warning("Run %s: pre-count failed for step %s: %s", run_id, step.id, exc)
+        if preflight_total > 0:
+            run.total_records = preflight_total
+            await db.commit()
+    except Exception as exc:
+        logger.warning("Run %s: pre-count failed: %s", run_id, exc)
 
     # ── Obtain Salesforce access token ────────────────────────────────────────
     try:

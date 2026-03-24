@@ -41,16 +41,16 @@ export function RunSummaryCard({
 }: RunSummaryCardProps) {
   const liveSuccess = useMemo(() => jobs.reduce((n, j) => n + (j.records_successful ?? 0), 0), [jobs])
   const liveErrors = useMemo(() => jobs.reduce((n, j) => n + (j.records_failed ?? 0), 0), [jobs])
-  const liveTotal = liveSuccess + liveErrors
+  const liveTotal = useMemo(() => jobs.reduce((n, j) => n + (j.total_records ?? 0), 0), [jobs])
 
   const displaySuccess = run.total_success != null && !isLive ? run.total_success : liveSuccess
   const displayErrors = run.total_errors != null && !isLive ? run.total_errors : liveErrors
   const displayTotal =
-    run.total_records != null && !isLive
+    run.total_records != null
       ? run.total_records
       : liveTotal > 0
         ? liveTotal
-        : (run.total_records ?? null)
+        : null
 
   const successPct = useMemo(() => {
     if (!displayTotal || displayTotal === 0) return 0
