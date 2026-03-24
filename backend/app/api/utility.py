@@ -1,11 +1,13 @@
 """Utility API — file listing/preview, health check, and WebSocket run status."""
 
 import asyncio
+import json
 import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,7 +53,12 @@ class InputPreviewResponse(BaseModel):
     filename: str
     header: list[str]
     rows: list[dict[str, Optional[str]]]
-    row_count: int
+    total_rows: Optional[int]
+    filtered_rows: Optional[int]
+    offset: int
+    limit: int
+    has_next: bool
+    row_count: int        # deprecated — always len(rows); retained for migration compat
     source: str
     provider: str
 
@@ -101,12 +108,15 @@ async def list_input_files(
 @router.get("/api/files/input/{file_path:path}/preview", response_model=InputPreviewResponse)
 async def preview_input_file(
     file_path: str,
-    rows: int = Query(default=10, ge=1, le=1000),
+    limit: Optional[int] = Query(default=None, ge=1, le=500),
+    rows: Optional[int] = Query(default=None, ge=1, le=500),  # deprecated alias for limit
+    offset: int = Query(default=0, ge=0),
+    filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
     source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> InputPreviewResponse:
-    """Return the first *rows* data rows (plus header) of a CSV file."""
+    """Return a paginated page of data rows (plus header) from a CSV file."""
     try:
         storage = await get_storage(source, db)
     except InputConnectionNotFoundError as exc:
@@ -116,10 +126,38 @@ async def preview_input_file(
     except InputStorageError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    # Resolve effective limit: explicit limit > deprecated rows alias > default 50
+    effective_limit = limit if limit is not None else (rows if rows is not None else 50)
+
+    # Parse filters JSON
+    parsed_filters: list[dict[str, str]] | None = None
+    if filters is not None:
+        try:
+            parsed = json.loads(filters)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid filters JSON: {exc}",
+            ) from exc
+        if not isinstance(parsed, list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="filters must be a JSON array",
+            )
+        for item in parsed:
+            if not isinstance(item, dict) or "column" not in item or "value" not in item:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Each filter must be an object with 'column' and 'value' keys",
+                )
+        parsed_filters = parsed
+
     source_id = source or "local"
     provider = _resolve_provider(storage)
     try:
-        preview = storage.preview_file(file_path, rows)
+        preview = await run_in_threadpool(
+            storage.preview_file, file_path, effective_limit, offset, parsed_filters
+        )
     except InputStorageError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except FileNotFoundError:
@@ -134,7 +172,12 @@ async def preview_input_file(
         "filename": preview.filename,
         "header": preview.header,
         "rows": preview.rows,
-        "row_count": preview.row_count,
+        "total_rows": preview.total_rows,
+        "filtered_rows": preview.filtered_rows,
+        "offset": preview.offset,
+        "limit": preview.limit,
+        "has_next": preview.has_next,
+        "row_count": preview.row_count,  # deprecated
         "source": source_id,
         "provider": provider,
     }

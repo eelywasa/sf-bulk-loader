@@ -321,7 +321,7 @@ Exit criteria:
 
 ---
 
-### Ticket 2 — Extend Input File Preview API Endpoint
+### Ticket 2 — Extend Input File Preview API Endpoint — ✅ DONE
 
 Goal: expose pagination and filtering through the files API.
 
