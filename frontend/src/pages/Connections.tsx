@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Button, Card, Badge, Modal, DataTable, EmptyState, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
+import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from '../components/ui/formStyles'
 import { connectionsApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import type {
@@ -745,21 +746,16 @@ export default function Connections() {
         >
           {/* Validation error summary */}
           {formErrors.length > 0 && (
-            <div
-              role="alert"
-              className="rounded border border-red-200 bg-red-50 p-3 space-y-1"
-            >
+            <div role="alert" className={`${ALERT_ERROR} space-y-1`}>
               {formErrors.map((msg, i) => (
-                <p key={i} className="text-sm text-red-700">
-                  {msg}
-                </p>
+                <p key={i}>{msg}</p>
               ))}
             </div>
           )}
 
           {/* Name */}
           <div>
-            <label htmlFor="conn-name" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="conn-name" className={LABEL_CLASS}>
               Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -769,16 +765,13 @@ export default function Connections() {
               value={form.name}
               onChange={(e) => setField('name', e.target.value)}
               placeholder="Production"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={INPUT_CLASS}
             />
           </div>
 
           {/* Username */}
           <div>
-            <label
-              htmlFor="conn-username"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="conn-username" className={LABEL_CLASS}>
               Username <span className="text-red-500">*</span>
             </label>
             <input
@@ -788,23 +781,20 @@ export default function Connections() {
               value={form.username}
               onChange={(e) => setField('username', e.target.value)}
               placeholder="user@example.com"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={INPUT_CLASS}
             />
           </div>
 
           {/* Login URL */}
           <div>
-            <label
-              htmlFor="conn-login-url"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="conn-login-url" className={LABEL_CLASS}>
               Login URL <span className="text-red-500">*</span>
             </label>
             <select
               id="conn-login-url"
               value={LOGIN_URLS.some((u) => u.value === form.login_url) ? form.login_url : ''}
               onChange={(e) => handleLoginUrlChange(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={SELECT_CLASS}
             >
               {LOGIN_URLS.map((u) => (
                 <option key={u.value} value={u.value}>
@@ -819,10 +809,7 @@ export default function Connections() {
 
           {/* Instance URL */}
           <div>
-            <label
-              htmlFor="conn-instance-url"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="conn-instance-url" className={LABEL_CLASS}>
               Instance URL <span className="text-red-500">*</span>
             </label>
             <input
@@ -832,16 +819,13 @@ export default function Connections() {
               value={form.instance_url}
               onChange={(e) => setField('instance_url', e.target.value)}
               placeholder="https://myorg.my.salesforce.com"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={INPUT_CLASS}
             />
           </div>
 
           {/* Consumer Key */}
           <div>
-            <label
-              htmlFor="conn-client-id"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="conn-client-id" className={LABEL_CLASS}>
               Consumer Key (Client ID) <span className="text-red-500">*</span>
             </label>
             <input
@@ -851,16 +835,13 @@ export default function Connections() {
               value={form.client_id}
               onChange={(e) => setField('client_id', e.target.value)}
               placeholder="3MVG9..."
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={clsx(INPUT_CLASS, 'font-mono')}
             />
           </div>
 
           {/* Private Key */}
           <div>
-            <label
-              htmlFor="conn-private-key"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="conn-private-key" className={LABEL_CLASS}>
               Private Key (PEM)
               {!editingConn && <span className="text-red-500"> *</span>}
             </label>
@@ -875,7 +856,7 @@ export default function Connections() {
                   ? 'Leave blank to keep the existing private key'
                   : '-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----'
               }
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={clsx(TEXTAREA_CLASS, 'font-mono')}
             />
           </div>
 
@@ -954,20 +935,15 @@ export default function Connections() {
           noValidate
         >
           {inputFormErrors.length > 0 && (
-            <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 space-y-1">
+            <div role="alert" className={`${ALERT_ERROR} space-y-1`}>
               {inputFormErrors.map((msg, i) => (
-                <p key={i} className="text-sm text-red-700">
-                  {msg}
-                </p>
+                <p key={i}>{msg}</p>
               ))}
             </div>
           )}
 
           <div>
-            <label
-              htmlFor="ic-name"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="ic-name" className={LABEL_CLASS}>
               Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -977,15 +953,12 @@ export default function Connections() {
               value={inputForm.name}
               onChange={(e) => setInputField('name', e.target.value)}
               placeholder="My S3 Bucket"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={INPUT_CLASS}
             />
           </div>
 
           <div>
-            <label
-              htmlFor="ic-bucket"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="ic-bucket" className={LABEL_CLASS}>
               Bucket <span className="text-red-500">*</span>
             </label>
             <input
@@ -995,16 +968,13 @@ export default function Connections() {
               value={inputForm.bucket}
               onChange={(e) => setInputField('bucket', e.target.value)}
               placeholder="my-data-bucket"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={clsx(INPUT_CLASS, 'font-mono')}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label
-                htmlFor="ic-region"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <label htmlFor="ic-region" className={LABEL_CLASS}>
                 Region
               </label>
               <input
@@ -1013,14 +983,11 @@ export default function Connections() {
                 value={inputForm.region}
                 onChange={(e) => setInputField('region', e.target.value)}
                 placeholder="us-east-1"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={clsx(INPUT_CLASS, 'font-mono')}
               />
             </div>
             <div>
-              <label
-                htmlFor="ic-root-prefix"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <label htmlFor="ic-root-prefix" className={LABEL_CLASS}>
                 Root Prefix
               </label>
               <input
@@ -1029,16 +996,13 @@ export default function Connections() {
                 value={inputForm.root_prefix}
                 onChange={(e) => setInputField('root_prefix', e.target.value)}
                 placeholder="data/csvs/"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={clsx(INPUT_CLASS, 'font-mono')}
               />
             </div>
           </div>
 
           <div>
-            <label
-              htmlFor="ic-access-key-id"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="ic-access-key-id" className={LABEL_CLASS}>
               Access Key ID
               {!editingInputConn && <span className="text-red-500"> *</span>}
             </label>
@@ -1049,15 +1013,12 @@ export default function Connections() {
               value={inputForm.access_key_id}
               onChange={(e) => setInputField('access_key_id', e.target.value)}
               placeholder={editingInputConn ? 'Leave blank to keep existing' : 'AKIA...'}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={clsx(INPUT_CLASS, 'font-mono')}
             />
           </div>
 
           <div>
-            <label
-              htmlFor="ic-secret-access-key"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="ic-secret-access-key" className={LABEL_CLASS}>
               Secret Access Key
               {!editingInputConn && <span className="text-red-500"> *</span>}
             </label>
@@ -1068,15 +1029,12 @@ export default function Connections() {
               value={inputForm.secret_access_key}
               onChange={(e) => setInputField('secret_access_key', e.target.value)}
               placeholder={editingInputConn ? 'Leave blank to keep existing' : '••••••••'}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={clsx(INPUT_CLASS, 'font-mono')}
             />
           </div>
 
           <div>
-            <label
-              htmlFor="ic-session-token"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
+            <label htmlFor="ic-session-token" className={LABEL_CLASS}>
               Session Token
             </label>
             <input
@@ -1087,7 +1045,7 @@ export default function Connections() {
               placeholder={
                 editingInputConn ? 'Leave blank to keep existing (or clear it)' : 'Optional'
               }
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={clsx(INPUT_CLASS, 'font-mono')}
             />
           </div>
         </form>

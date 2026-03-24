@@ -3,7 +3,119 @@
 @tailwind utilities;
 
 @layer base {
+  /* ─── Design Tokens ────────────────────────────────────────────────────────
+     All custom properties are defined on :root (light) and overridden in
+     html.dark (dark). Use Tailwind utility classes (bg-surface-*, text-content-*,
+     border-border-*, etc.) rather than referencing these vars directly.
+  ─────────────────────────────────────────────────────────────────────────── */
+
+  :root {
+    /* Surface */
+    --color-surface-base:     theme('colors.gray.50');
+    --color-surface-raised:   theme('colors.white');
+    --color-surface-elevated: theme('colors.white');
+    --color-surface-overlay:  theme('colors.white');
+    --color-surface-sunken:   theme('colors.gray.100');
+    --color-surface-hover:    theme('colors.gray.50');
+    --color-surface-active:   theme('colors.gray.100');
+    --color-surface-selected: theme('colors.blue.50');
+
+    /* Content (text) */
+    --color-content-primary:     theme('colors.gray.900');
+    --color-content-secondary:   theme('colors.gray.600');
+    --color-content-muted:       theme('colors.gray.500');
+    --color-content-placeholder: theme('colors.gray.500');
+    --color-content-disabled:    theme('colors.gray.400');
+    --color-content-inverse:     theme('colors.white');
+    --color-content-link:        theme('colors.blue.600');
+    --color-content-selected:    theme('colors.blue.700');
+
+    /* Border */
+    --color-border-subtle: theme('colors.gray.100');
+    --color-border-base:   theme('colors.gray.200');
+    --color-border-strong: theme('colors.gray.300');
+    --color-border-focus:  theme('colors.blue.500');
+
+    /* State — error */
+    --color-error-bg:     theme('colors.red.50');
+    --color-error-border: theme('colors.red.200');
+    --color-error-text:   theme('colors.red.700');
+
+    /* State — success */
+    --color-success-bg:     theme('colors.green.50');
+    --color-success-border: theme('colors.green.200');
+    --color-success-text:   theme('colors.green.700');
+
+    /* State — warning */
+    --color-warning-bg:     theme('colors.amber.50');
+    --color-warning-border: theme('colors.amber.200');
+    --color-warning-text:   theme('colors.amber.700');
+
+    /* State — info */
+    --color-info-bg:     theme('colors.blue.50');
+    --color-info-border: theme('colors.blue.200');
+    --color-info-text:   theme('colors.blue.700');
+
+    /* Accent */
+    --color-accent:       theme('colors.blue.600');
+    --color-accent-hover: theme('colors.blue.700');
+    --color-accent-soft:  theme('colors.blue.50');
+  }
+
+  html.dark {
+    /* Surface */
+    --color-surface-base:     theme('colors.gray.950');
+    --color-surface-raised:   theme('colors.gray.900');
+    --color-surface-elevated: theme('colors.gray.800');
+    --color-surface-overlay:  theme('colors.gray.800');
+    --color-surface-sunken:   theme('colors.gray.900');
+    --color-surface-hover:    theme('colors.gray.800');
+    --color-surface-active:   theme('colors.gray.700');
+    --color-surface-selected: theme('colors.blue.950');
+
+    /* Content (text) */
+    --color-content-primary:     theme('colors.gray.100');
+    --color-content-secondary:   theme('colors.gray.300');
+    --color-content-muted:       theme('colors.gray.400');
+    --color-content-placeholder: theme('colors.gray.400');
+    --color-content-disabled:    theme('colors.gray.600');
+    --color-content-inverse:     theme('colors.gray.900');
+    --color-content-link:        theme('colors.blue.400');
+    --color-content-selected:    theme('colors.blue.300');
+
+    /* Border */
+    --color-border-subtle: theme('colors.gray.800');
+    --color-border-base:   theme('colors.gray.700');
+    --color-border-strong: theme('colors.gray.600');
+    --color-border-focus:  theme('colors.blue.400');
+
+    /* State — error */
+    --color-error-bg:     theme('colors.red.950');
+    --color-error-border: theme('colors.red.800');
+    --color-error-text:   theme('colors.red.400');
+
+    /* State — success */
+    --color-success-bg:     theme('colors.green.950');
+    --color-success-border: theme('colors.green.800');
+    --color-success-text:   theme('colors.green.400');
+
+    /* State — warning */
+    --color-warning-bg:     theme('colors.amber.950');
+    --color-warning-border: theme('colors.amber.800');
+    --color-warning-text:   theme('colors.amber.700');
+
+    /* State — info */
+    --color-info-bg:     theme('colors.blue.950');
+    --color-info-border: theme('colors.blue.800');
+    --color-info-text:   theme('colors.blue.400');
+
+    /* Accent */
+    --color-accent:       theme('colors.blue.400');
+    --color-accent-hover: theme('colors.blue.300');
+    --color-accent-soft:  theme('colors.blue.950');
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-surface-base text-content-primary antialiased;
   }
 }

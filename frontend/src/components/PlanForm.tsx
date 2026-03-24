@@ -1,7 +1,7 @@
-import clsx from 'clsx'
 import { Card } from './ui'
 import type { Connection } from '../api/types'
-import { INPUT_CLASS, LABEL_CLASS, type PlanFormData } from '../pages/planEditorUtils'
+import { type PlanFormData } from '../pages/planEditorUtils'
+import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from './ui/formStyles'
 
 interface PlanFormProps {
   form: PlanFormData
@@ -15,11 +15,9 @@ export default function PlanForm({ form, formErrors, connections, onChange }: Pl
     <Card title="Plan Details">
       <div className="space-y-4">
         {formErrors.length > 0 && (
-          <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 space-y-1">
+          <div role="alert" className={`${ALERT_ERROR} space-y-1`}>
             {formErrors.map((msg, i) => (
-              <p key={i} className="text-sm text-red-700">
-                {msg}
-              </p>
+              <p key={i}>{msg}</p>
             ))}
           </div>
         )}
@@ -52,7 +50,7 @@ export default function PlanForm({ form, formErrors, connections, onChange }: Pl
               value={form.description}
               onChange={(e) => onChange('description', e.target.value)}
               placeholder="Optional description"
-              className={clsx(INPUT_CLASS, 'resize-y')}
+              className={TEXTAREA_CLASS}
             />
           </div>
 
@@ -65,7 +63,7 @@ export default function PlanForm({ form, formErrors, connections, onChange }: Pl
               id="plan-connection"
               value={form.connection_id}
               onChange={(e) => onChange('connection_id', e.target.value)}
-              className={INPUT_CLASS}
+              className={SELECT_CLASS}
             >
               <option value="">Select a connection…</option>
               {connections?.map((c) => (

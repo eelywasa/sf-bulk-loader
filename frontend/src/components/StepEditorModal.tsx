@@ -2,7 +2,8 @@ import clsx from 'clsx'
 import { Button, Modal, ComboInput } from './ui'
 import FilePicker from './FilePicker'
 import type { InputConnection, LoadStep } from '../api/types'
-import { OPERATIONS, INPUT_CLASS, LABEL_CLASS, type StepFormData } from '../pages/planEditorUtils'
+import { OPERATIONS, type StepFormData } from '../pages/planEditorUtils'
+import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, HELPER_TEXT_CLASS, ALERT_ERROR } from './ui/formStyles'
 
 interface StepEditorModalProps {
   open: boolean
@@ -73,11 +74,9 @@ export default function StepEditorModal({
         noValidate
       >
         {stepFormErrors.length > 0 && (
-          <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 space-y-1">
+          <div role="alert" className={`${ALERT_ERROR} space-y-1`}>
             {stepFormErrors.map((msg, i) => (
-              <p key={i} className="text-sm text-red-700">
-                {msg}
-              </p>
+              <p key={i}>{msg}</p>
             ))}
           </div>
         )}
@@ -98,7 +97,7 @@ export default function StepEditorModal({
             inputClassName={INPUT_CLASS}
           />
           {connectionId === '' && (
-            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            <p className={HELPER_TEXT_CLASS}>
               Select a connection on the plan to load object suggestions.
             </p>
           )}
@@ -113,7 +112,7 @@ export default function StepEditorModal({
             id="step-operation"
             value={stepForm.operation}
             onChange={(e) => onChange('operation', e.target.value)}
-            className={INPUT_CLASS}
+            className={SELECT_CLASS}
           >
             {OPERATIONS.map((op) => (
               <option key={op.value} value={op.value}>
@@ -132,7 +131,7 @@ export default function StepEditorModal({
             id="step-input-source"
             value={stepForm.input_connection_id}
             onChange={(e) => onInputSourceChange(e.target.value)}
-            className={INPUT_CLASS}
+            className={SELECT_CLASS}
           >
             <option value="">Local files</option>
             {inputConnections.map((inputConnection) => (
@@ -191,7 +190,7 @@ export default function StepEditorModal({
               inputClassName={INPUT_CLASS}
             />
             {!patternIsLiteral && stepForm.csv_file_pattern.length > 0 && (
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+              <p className={HELPER_TEXT_CLASS}>
                 Enter a literal file path (no wildcards) to load column suggestions.
               </p>
             )}
@@ -217,7 +216,7 @@ export default function StepEditorModal({
         <div>
           <label htmlFor="step-assignment-rule" className={LABEL_CLASS}>
             Assignment Rule ID{' '}
-            <span className="text-sm text-gray-400 font-normal">(optional)</span>
+            <span className="text-sm font-normal text-content-muted">(optional)</span>
           </label>
           <input
             id="step-assignment-rule"

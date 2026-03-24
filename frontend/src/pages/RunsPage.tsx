@@ -6,6 +6,7 @@ import type { RunListParams } from '../api/endpoints'
 import type { LoadRun } from '../api/types'
 import { Card, Badge, Button, EmptyState } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
+import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS } from '../components/ui/formStyles'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -87,13 +88,13 @@ export default function RunsPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {/* Plan filter */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className={LABEL_CLASS}>
               Plan
             </label>
             <select
               value={planId}
               onChange={(e) => setPlanId(e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white py-1.5 px-3 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={SELECT_CLASS}
               aria-label="Filter by plan"
             >
               <option value="">All Plans</option>
@@ -107,13 +108,13 @@ export default function RunsPage() {
 
           {/* Status filter */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className={LABEL_CLASS}>
               Status
             </label>
             <select
               value={runStatus}
               onChange={(e) => setRunStatus(e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white py-1.5 px-3 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={SELECT_CLASS}
               aria-label="Filter by status"
             >
               <option value="">All Statuses</option>
@@ -127,28 +128,28 @@ export default function RunsPage() {
 
           {/* Started after */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className={LABEL_CLASS}>
               Started After
             </label>
             <input
               type="datetime-local"
               value={startedAfter}
               onChange={(e) => setStartedAfter(e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white py-1.5 px-3 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={INPUT_CLASS}
               aria-label="Started after"
             />
           </div>
 
           {/* Started before */}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className={LABEL_CLASS}>
               Started Before
             </label>
             <input
               type="datetime-local"
               value={startedBefore}
               onChange={(e) => setStartedBefore(e.target.value)}
-              className="block w-full rounded-md border border-gray-300 bg-white py-1.5 px-3 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={INPUT_CLASS}
               aria-label="Started before"
             />
           </div>
