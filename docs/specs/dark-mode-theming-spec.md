@@ -483,7 +483,7 @@ to use the shared `formStyles.ts` constants from Ticket 2 alongside the token sy
 
 ---
 
-## Ticket 8 — Plans Pages
+## Ticket 8 — Plans Pages — ✅ DONE
 
 ### Goal
 Migrate `PlansPage.tsx`, `PlanEditor.tsx`, `PlanForm.tsx`, `StepList.tsx`,

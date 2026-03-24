@@ -39,7 +39,7 @@ export default function StepList({
     >
       {steps.length === 0 ? (
         <div className="py-8 text-center">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-content-muted">
             No steps yet. Add a step to define what data to load.
           </p>
           <div className="mt-3">
@@ -49,7 +49,7 @@ export default function StepList({
           </div>
         </div>
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-border-base">
           {steps.map((step, idx) => {
             const preview = previews[step.id]
             return (
@@ -57,11 +57,11 @@ export default function StepList({
                 {/* Step row */}
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-info-bg text-xs font-semibold text-info-text">
                       {step.sequence}
                     </span>
                     <div className="min-w-0">
-                      <p className="font-medium text-gray-900 text-sm">
+                      <p className="font-medium text-content-primary text-sm">
                         {step.object_name}
                         <span className="ml-2">
                           <Badge variant={operationVariant(step.operation)}>
@@ -69,8 +69,8 @@ export default function StepList({
                           </Badge>
                         </span>
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5 font-mono truncate">
-                        <span className="not-italic font-sans text-gray-400 mr-1">
+                      <p className="text-xs text-content-muted mt-0.5 font-mono truncate">
+                        <span className="not-italic font-sans text-content-muted mr-1">
                           {step.input_connection_id
                             ? (inputConnections.find((c) => c.id === step.input_connection_id)?.name ?? 'S3')
                             : 'Local'}
@@ -79,7 +79,7 @@ export default function StepList({
                         {step.csv_file_pattern}
                       </p>
                       {step.external_id_field && (
-                        <p className="text-xs text-gray-400 mt-0.5">
+                        <p className="text-xs text-content-muted mt-0.5">
                           External ID: {step.external_id_field}
                         </p>
                       )}
@@ -127,30 +127,30 @@ export default function StepList({
                   <div
                     className={clsx(
                       'mt-3 ml-9 rounded-md p-3 text-sm',
-                      preview.status === 'loading' && 'bg-gray-50',
-                      preview.status === 'success' && 'bg-blue-50',
-                      preview.status === 'error' && 'bg-red-50',
+                      preview.status === 'loading' && 'bg-surface-sunken',
+                      preview.status === 'success' && 'bg-info-bg',
+                      preview.status === 'error' && 'bg-error-bg',
                     )}
                   >
                     {preview.status === 'loading' && (
-                      <span className="text-gray-500">Loading preview…</span>
+                      <span className="text-content-muted">Loading preview…</span>
                     )}
                     {preview.status === 'error' && (
-                      <span className="text-red-700">{preview.message}</span>
+                      <span className="text-error-text">{preview.message}</span>
                     )}
                     {preview.status === 'success' && (
                       <>
-                        <p className="font-medium text-blue-900">
+                        <p className="font-medium text-info-text">
                           {preview.data.matched_files.length} file(s) matched •{' '}
                           {preview.data.total_rows.toLocaleString()} total rows
                         </p>
                         {preview.data.matched_files.map((f) => (
-                          <p key={f.filename} className="text-xs text-blue-700 mt-1 font-mono">
+                          <p key={f.filename} className="text-xs text-info-text mt-1 font-mono">
                             {f.filename} — {f.row_count.toLocaleString()} rows
                           </p>
                         ))}
                         {preview.data.matched_files.length === 0 && (
-                          <p className="text-xs text-amber-600 mt-1">
+                          <p className="text-xs text-warning-text mt-1">
                             No files matched "{step.csv_file_pattern}"
                           </p>
                         )}
