@@ -1,6 +1,7 @@
 import React from 'react'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react'
 import clsx from 'clsx'
+import { OVERLAY_SHADOW_CLASS } from './formStyles'
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -41,20 +42,21 @@ export function Modal({
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
           className={clsx(
-            'bg-white rounded-lg shadow-xl w-full overflow-hidden',
+            'bg-surface-elevated rounded-lg w-full overflow-hidden',
+            OVERLAY_SHADOW_CLASS,
             sizeClasses[size],
           )}
         >
           {/* Header */}
           {(title || description) && (
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-border-base">
               {title && (
-                <DialogTitle className="text-lg font-semibold text-gray-900">
+                <DialogTitle className="text-lg font-semibold text-content-primary">
                   {title}
                 </DialogTitle>
               )}
               {description && (
-                <p className="mt-1 text-sm text-gray-500">{description}</p>
+                <p className="mt-1 text-sm text-content-muted">{description}</p>
               )}
             </div>
           )}
@@ -64,7 +66,7 @@ export function Modal({
 
           {/* Footer */}
           {footer && (
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-border-base bg-surface-sunken flex justify-end gap-3">
               {footer}
             </div>
           )}

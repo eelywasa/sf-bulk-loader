@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useState } from 'react'
 import clsx from 'clsx'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { OVERLAY_SHADOW_CLASS } from './formStyles'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
   faCircleCheck,
@@ -27,22 +28,22 @@ const ToastContext = createContext<ToastContextValue | null>(null)
 
 const toastStyles: Record<ToastType, { container: string; icon: string; faIcon: IconDefinition }> = {
   success: {
-    container: 'bg-white border-l-4 border-green-500',
+    container: 'bg-surface-elevated border border-border-base border-l-4 border-l-green-500',
     icon: 'text-green-500',
     faIcon: faCircleCheck,
   },
   error: {
-    container: 'bg-white border-l-4 border-red-500',
+    container: 'bg-surface-elevated border border-border-base border-l-4 border-l-red-500',
     icon: 'text-red-500',
     faIcon: faCircleXmark,
   },
   warning: {
-    container: 'bg-white border-l-4 border-orange-500',
+    container: 'bg-surface-elevated border border-border-base border-l-4 border-l-orange-500',
     icon: 'text-orange-500',
     faIcon: faTriangleExclamation,
   },
   info: {
-    container: 'bg-white border-l-4 border-blue-500',
+    container: 'bg-surface-elevated border border-border-base border-l-4 border-l-blue-500',
     icon: 'text-blue-500',
     faIcon: faCircleInfo,
   },
@@ -70,16 +71,17 @@ function ToastContainer({
             key={toast.id}
             role="alert"
             className={clsx(
-              'flex items-start gap-3 p-4 rounded shadow-lg',
+              'flex items-start gap-3 p-4 rounded',
+              OVERLAY_SHADOW_CLASS,
               style.container,
             )}
           >
             <FontAwesomeIcon icon={style.faIcon} className={clsx('flex-shrink-0 w-5 h-5', style.icon)} />
-            <p className="flex-1 text-sm text-gray-800">{toast.message}</p>
+            <p className="flex-1 text-sm text-content-primary">{toast.message}</p>
             <button
               onClick={() => onRemove(toast.id)}
               aria-label="Dismiss notification"
-              className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+              className="flex-shrink-0 text-content-muted hover:text-content-secondary transition-colors"
             >
               ×
             </button>

@@ -329,7 +329,7 @@ existing `dark:` variants from these files.
 
 ---
 
-## Ticket 4 — Container UI Components
+## Ticket 4 — Container UI Components — ✅ DONE
 
 ### Goal
 Migrate `Card`, `Modal`, `Tabs`, and `Toast` to use semantic tokens. Apply a shared overlay shadow
@@ -388,7 +388,7 @@ Add a shared overlay shadow constant or utility (for example `OVERLAY_SHADOW_CLA
 
 ---
 
-## Ticket 5 — DataTable
+## Ticket 5 — DataTable — ✅ DONE
 
 ### Goal
 Migrate `DataTable` to use semantic tokens. DataTable is used on every data page, so this

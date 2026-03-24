@@ -26,6 +26,10 @@ export const ERROR_TEXT_CLASS = 'mt-1 text-xs text-error-text'
 
 export const FIELD_ERROR_OUTLINE = 'border-error-border focus:ring-error-border'
 
+// Overlay shadow — apply to modals, toasts, and dropdown panels (not cards/rows)
+// dark: variant is an intentional exception for shadow-opacity tuning across modes
+export const OVERLAY_SHADOW_CLASS = 'shadow-xl shadow-black/10 dark:shadow-black/40'
+
 // Alert/banner blocks — use for inline error/success/warning/info panels
 const ALERT_BASE = 'rounded-md border px-4 py-3 text-sm'
 export const ALERT_ERROR   = `${ALERT_BASE} bg-error-bg border-error-border text-error-text`
