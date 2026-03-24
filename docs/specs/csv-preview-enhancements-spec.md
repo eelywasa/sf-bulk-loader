@@ -382,7 +382,7 @@ Exit criteria:
 
 ---
 
-### Ticket 4 — Build Shared `CsvPreviewPanel` Component
+### Ticket 4 — Build Shared `CsvPreviewPanel` Component — ✅ DONE
 
 Goal: implement the reusable frontend component that all CSV preview contexts will use.
 
