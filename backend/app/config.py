@@ -28,6 +28,8 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite+aiosqlite:////data/db/bulk_loader.db"
+    db_pool_size: int = 20
+    db_pool_max_overflow: int = 10
 
     # Salesforce defaults
     sf_api_version: str = "v62.0"
