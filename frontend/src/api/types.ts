@@ -248,7 +248,6 @@ export interface CsvPageResult {
 
 export interface InputFilePreview extends CsvPageResult {
   filename: string
-  row_count: number
   source?: string
   provider?: string
 }

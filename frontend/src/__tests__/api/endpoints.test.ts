@@ -325,7 +325,7 @@ describe('jobsApi', () => {
     vi.mocked(fetch).mockResolvedValue(mockJson({}))
     await jobsApi.previewUnprocessedCsv('j1')
     const { url } = captureLastFetch()
-    expect(url).toBe('/api/jobs/j1/unprocessed-csv/preview?limit=25&offset=0')
+    expect(url).toBe('/api/jobs/j1/unprocessed-csv/preview?limit=50&offset=0')
   })
 })
 
@@ -368,52 +368,52 @@ describe('filesApi', () => {
 
   it('previewInput omits source for local', async () => {
     vi.mocked(fetch).mockResolvedValue(mockJson({}))
-    await filesApi.previewInput('accounts.csv', 25)
+    await filesApi.previewInput('accounts.csv', { offset: 0, limit: 50, filters: [] })
     const { url } = captureLastFetch()
-    expect(url).toBe('/api/files/input/accounts.csv/preview?rows=25')
+    expect(url).toBe('/api/files/input/accounts.csv/preview?limit=50&offset=0')
   })
 
-  it('previewInput → GET /api/files/input/{filename}/preview?rows=25', async () => {
+  it('previewInput → GET /api/files/input/{filename}/preview?limit=50&offset=0', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      mockJson({ filename: 'accounts.csv', header: ['Name'], rows: [], row_count: 0 }),
+      mockJson({ filename: 'accounts.csv', header: ['Name'], rows: [] }),
     )
     await filesApi.previewInput('accounts.csv')
     const { url } = captureLastFetch()
-    expect(url).toBe('/api/files/input/accounts.csv/preview?rows=25')
+    expect(url).toBe('/api/files/input/accounts.csv/preview?limit=50&offset=0')
   })
 
   it('previewInput encodes filename with spaces', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      mockJson({ filename: 'my file.csv', header: [], rows: [], row_count: 0 }),
+      mockJson({ filename: 'my file.csv', header: [], rows: [] }),
     )
     await filesApi.previewInput('my file.csv')
     const { url } = captureLastFetch()
-    expect(url).toBe('/api/files/input/my%20file.csv/preview?rows=25')
+    expect(url).toBe('/api/files/input/my%20file.csv/preview?limit=50&offset=0')
   })
 
   it('previewInput with subdirectory path encodes each segment', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      mockJson({ filename: 'sub/my file.csv', header: [], rows: [], row_count: 0 }),
+      mockJson({ filename: 'sub/my file.csv', header: [], rows: [] }),
     )
     await filesApi.previewInput('sub/my file.csv')
     const { url } = captureLastFetch()
-    expect(url).toBe('/api/files/input/sub/my%20file.csv/preview?rows=25')
+    expect(url).toBe('/api/files/input/sub/my%20file.csv/preview?limit=50&offset=0')
   })
 
-  it('previewInput respects custom rows param', async () => {
+  it('previewInput serializes custom pagination params', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      mockJson({ filename: 'f.csv', header: [], rows: [], row_count: 0 }),
+      mockJson({ filename: 'f.csv', header: [], rows: [] }),
     )
-    await filesApi.previewInput('f.csv', 50)
+    await filesApi.previewInput('f.csv', { offset: 25, limit: 50, filters: [] })
     const { url } = captureLastFetch()
-    expect(url).toContain('rows=50')
+    expect(url).toBe('/api/files/input/f.csv/preview?limit=50&offset=25')
   })
 
   it('previewInput includes source for remote sources', async () => {
     vi.mocked(fetch).mockResolvedValue(mockJson({}))
-    await filesApi.previewInput('folder/accounts.csv', 10, 'ic-1')
+    await filesApi.previewInput('folder/accounts.csv', { offset: 0, limit: 10, filters: [] }, 'ic-1')
     const { url } = captureLastFetch()
-    expect(url).toBe('/api/files/input/folder/accounts.csv/preview?rows=10&source=ic-1')
+    expect(url).toBe('/api/files/input/folder/accounts.csv/preview?limit=10&offset=0&source=ic-1')
   })
 
   it('previewInput serializes pagination params for shared panel usage', async () => {

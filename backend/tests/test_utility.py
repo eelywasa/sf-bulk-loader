@@ -382,14 +382,13 @@ def test_preview_input_file_returns_rows(auth_client):
                 writer.writerow([f"Acme {i}", "Tech"])
 
         with patch("app.services.input_storage.settings.input_dir", tmpdir):
-            resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5")
+            resp = auth_client.get("/api/files/input/accounts.csv/preview?limit=5")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["filename"] == "accounts.csv"
     assert body["header"] == ["Name", "Industry"]
     assert len(body["rows"]) == 5
-    assert body["row_count"] == 5
     assert body["has_next"] is True   # file has 20 rows, limit=5
     assert body["offset"] == 0
     assert body["limit"] == 5
@@ -451,8 +450,8 @@ def test_preview_input_file_source_local_matches_default(auth_client):
             writer.writerow(["Name", "Industry"])
             writer.writerow(["Acme", "Tech"])
         with patch("app.services.input_storage.settings.input_dir", tmpdir):
-            default_resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5")
-            explicit_resp = auth_client.get("/api/files/input/accounts.csv/preview?rows=5&source=local")
+            default_resp = auth_client.get("/api/files/input/accounts.csv/preview?limit=5")
+            explicit_resp = auth_client.get("/api/files/input/accounts.csv/preview?limit=5&source=local")
 
     assert default_resp.status_code == 200
     assert explicit_resp.status_code == 200
@@ -466,12 +465,11 @@ def test_preview_input_file_remote_source_returns_source_and_provider(auth_clien
     )
 
     with patch("app.services.input_storage.boto3.client", return_value=client):
-        resp = auth_client.get(f"/api/files/input/accounts.csv/preview?rows=1&source={ic_id}")
+        resp = auth_client.get(f"/api/files/input/accounts.csv/preview?limit=1&source={ic_id}")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["filename"] == "accounts.csv"
-    assert body["row_count"] == 1
     assert body["has_next"] is True   # 2 data rows, limit=1
     assert body["offset"] == 0
     assert body["limit"] == 1
@@ -595,31 +593,6 @@ def test_preview_input_file_offset_returns_second_page(auth_client):
     assert len(body["rows"]) == 2
     assert body["rows"][0]["Name"] == "Row2"
     assert body["rows"][1]["Name"] == "Row3"
-
-
-def test_preview_input_file_rows_alias_still_works(auth_client):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _write_preview_csv(os.path.join(tmpdir, "data.csv"), rows=10)
-        with patch("app.services.input_storage.settings.input_dir", tmpdir):
-            resp = auth_client.get("/api/files/input/data.csv/preview?rows=3")
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["rows"]) == 3
-    assert body["limit"] == 3
-    assert body["row_count"] == 3  # deprecated field still present
-
-
-def test_preview_input_file_limit_takes_precedence_over_rows(auth_client):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _write_preview_csv(os.path.join(tmpdir, "data.csv"), rows=10)
-        with patch("app.services.input_storage.settings.input_dir", tmpdir):
-            resp = auth_client.get("/api/files/input/data.csv/preview?rows=5&limit=2")
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["rows"]) == 2
-    assert body["limit"] == 2
 
 
 def test_preview_input_file_filtered_request_returns_filtered_rows(auth_client):

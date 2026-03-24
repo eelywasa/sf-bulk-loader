@@ -58,7 +58,6 @@ class InputPreviewResponse(BaseModel):
     offset: int
     limit: int
     has_next: bool
-    row_count: int        # deprecated — always len(rows); retained for migration compat
     source: str
     provider: str
 
@@ -108,8 +107,7 @@ async def list_input_files(
 @router.get("/api/files/input/{file_path:path}/preview", response_model=InputPreviewResponse)
 async def preview_input_file(
     file_path: str,
-    limit: Optional[int] = Query(default=None, ge=1, le=500),
-    rows: Optional[int] = Query(default=None, ge=1, le=500),  # deprecated alias for limit
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
     source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
@@ -125,9 +123,6 @@ async def preview_input_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except InputStorageError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    # Resolve effective limit: explicit limit > deprecated rows alias > default 50
-    effective_limit = limit if limit is not None else (rows if rows is not None else 50)
 
     # Parse filters JSON
     parsed_filters: list[dict[str, str]] | None = None
@@ -155,9 +150,7 @@ async def preview_input_file(
     source_id = source or "local"
     provider = _resolve_provider(storage)
     try:
-        preview = await run_in_threadpool(
-            storage.preview_file, file_path, effective_limit, offset, parsed_filters
-        )
+        preview = await run_in_threadpool(storage.preview_file, file_path, limit, offset, parsed_filters)
     except InputStorageError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except FileNotFoundError:
@@ -177,7 +170,6 @@ async def preview_input_file(
         "offset": preview.offset,
         "limit": preview.limit,
         "has_next": preview.has_next,
-        "row_count": preview.row_count,  # deprecated
         "source": source_id,
         "provider": provider,
     }

@@ -58,7 +58,6 @@ const accountsPreview: InputFilePreview = {
   offset: 0,
   limit: 50,
   has_next: true,
-  row_count: 150,
 }
 
 const widePreview: InputFilePreview = {
@@ -70,7 +69,6 @@ const widePreview: InputFilePreview = {
   offset: 0,
   limit: 50,
   has_next: false,
-  row_count: 1,
 }
 
 // ─── Render helper ────────────────────────────────────────────────────────────
@@ -375,7 +373,7 @@ describe('FilesPage', () => {
 
   it('does not show the legacy truncation note', async () => {
     const user = userEvent.setup()
-    const fullPreview: InputFilePreview = { ...accountsPreview, row_count: 2, total_rows: 2, has_next: false }
+    const fullPreview: InputFilePreview = { ...accountsPreview, total_rows: 2, has_next: false }
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     vi.mocked(filesApi.previewInput).mockResolvedValue(fullPreview)
     renderFilesPage()
@@ -389,16 +387,12 @@ describe('FilesPage', () => {
     const user = userEvent.setup()
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     vi.mocked(filesApi.previewInput).mockImplementation(async (_filePath, params) => {
-      if (typeof params === 'number' || params == null) {
-        return accountsPreview
-      }
-      if (params.offset === 50) {
+      if (params?.offset === 50) {
         return {
           ...accountsPreview,
           rows: [{ Name: 'Initech', ExternalId__c: 'ACCT-051', BillingCity: 'Austin' }],
           offset: 50,
           has_next: true,
-          row_count: 1,
         }
       }
       return accountsPreview
@@ -523,7 +517,6 @@ describe('FilesPage', () => {
       offset: 0,
       limit: 50,
       has_next: false,
-      row_count: 1,
     }
 
     vi.mocked(filesApi.previewInput)
@@ -735,7 +728,6 @@ describe('FilesPage', () => {
             filename: 'remote.csv',
             total_rows: 10,
             has_next: false,
-            row_count: 1,
             rows: [{ Name: 'Remote Row', ExternalId__c: 'ACCT-900', BillingCity: 'London' }],
           }
         : accountsPreview),

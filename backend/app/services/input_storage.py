@@ -78,7 +78,6 @@ class InputPreview:
     offset: int                 # 0-based row offset (header not counted)
     limit: int                  # page size requested
     has_next: bool              # whether at least one more row exists after this page
-    row_count: int              # deprecated — always len(rows); retained for migration compat
 
 
 class BaseInputStorage(Protocol):
@@ -469,7 +468,6 @@ class LocalInputStorage:
                 offset=offset,
                 limit=limit,
                 has_next=has_next,
-                row_count=len(page_rows),
             )
 
         # Unfiltered path: read only what is needed.
@@ -496,7 +494,6 @@ class LocalInputStorage:
             offset=offset,
             limit=limit,
             has_next=has_next,
-            row_count=len(page_rows),
         )
 
     def discover_files(self, glob_pattern: str) -> list[str]:
@@ -715,7 +712,6 @@ class S3InputStorage:
                 offset=offset,
                 limit=limit,
                 has_next=has_next,
-                row_count=len(page_rows),
             )
 
         with self.open_text(path) as fh:
@@ -739,7 +735,6 @@ class S3InputStorage:
             offset=offset,
             limit=limit,
             has_next=has_next,
-            row_count=len(page_rows),
         )
 
     def discover_files(self, glob_pattern: str) -> list[str]:

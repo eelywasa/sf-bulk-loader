@@ -80,7 +80,6 @@ const successPreview: InputFilePreview = {
   offset: 0,
   limit: 50,
   has_next: true,
-  row_count: 1,
 }
 
 const errorPreview: InputFilePreview = {

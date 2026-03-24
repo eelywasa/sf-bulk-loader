@@ -176,7 +176,6 @@ describe('PlanEditor', () => {
       offset: 0,
       limit: 1,
       has_next: false,
-      row_count: 0,
     })
   })
 
@@ -507,7 +506,6 @@ describe('PlanEditor', () => {
       offset: 0,
       limit: 1,
       has_next: false,
-      row_count: 1,
       source: 'ic-1',
       provider: 's3',
     })
@@ -526,7 +524,11 @@ describe('PlanEditor', () => {
     await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts.csv')
 
     await waitFor(() => {
-      expect(filesApi.previewInput).toHaveBeenCalledWith('accounts.csv', 1, 'ic-1')
+      expect(filesApi.previewInput).toHaveBeenCalledWith(
+        'accounts.csv',
+        { offset: 0, limit: 1, filters: [] },
+        'ic-1',
+      )
     })
   })
 
@@ -1068,7 +1070,6 @@ describe('PlanEditor', () => {
       offset: 0,
       limit: 1,
       has_next: false,
-      row_count: 0,
     })
     renderEditor('plan-1')
     await waitFor(() => screen.getByText(/No steps yet/))
@@ -1090,7 +1091,6 @@ describe('PlanEditor', () => {
       offset: 0,
       limit: 1,
       has_next: false,
-      row_count: 0,
     })
     renderEditor('plan-1')
     await waitFor(() => screen.getByText(/No steps yet/))
@@ -1117,7 +1117,6 @@ describe('PlanEditor', () => {
       offset: 0,
       limit: 1,
       has_next: false,
-      row_count: 0,
     })
     renderEditor('plan-1')
     await waitFor(() => screen.getByText(/No steps yet/))

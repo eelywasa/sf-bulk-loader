@@ -150,7 +150,7 @@ export const jobsApi = {
 
 function buildPreviewQuery(params?: CsvFetchParams): string {
   const query = new URLSearchParams()
-  const normalized = params ?? { offset: 0, limit: 25, filters: [] }
+  const normalized = params ?? { offset: 0, limit: 50, filters: [] }
 
   query.set('limit', String(normalized.limit))
   query.set('offset', String(normalized.offset))
@@ -165,43 +165,19 @@ function buildPreviewPath(filePath: string): string {
   return filePath.split('/').map(encodeURIComponent).join('/')
 }
 
-function normalizeFilePreviewArgs(
-  preview: number | CsvFetchParams | undefined,
-  source: string | undefined,
-): { params: URLSearchParams; source: string } {
-  const params = new URLSearchParams()
-
-  if (typeof preview === 'number' || preview == null) {
-    params.set('rows', String(preview ?? 25))
-    return { params, source: source ?? 'local' }
-  }
-
-  params.set('limit', String(preview.limit))
-  params.set('offset', String(preview.offset))
-  if (preview.filters.length > 0) {
-    params.set('filters', JSON.stringify(preview.filters))
-  }
-  return { params, source: source ?? 'local' }
-}
-
-function previewInput(filePath: string, rows?: number, source?: string): Promise<InputFilePreview>
 function previewInput(
   filePath: string,
-  params: CsvFetchParams,
-  source?: string,
-): Promise<InputFilePreview>
-function previewInput(
-  filePath: string,
-  preview?: number | CsvFetchParams,
+  params?: CsvFetchParams,
   source?: string,
 ): Promise<InputFilePreview> {
-  const { params, source: effectiveSource } = normalizeFilePreviewArgs(preview, source)
+  const query = new URLSearchParams(buildPreviewQuery(params))
+  const effectiveSource = source ?? 'local'
   if (effectiveSource !== 'local') {
-    params.set('source', effectiveSource)
+    query.set('source', effectiveSource)
   }
 
   return api.get<InputFilePreview>(
-    `/api/files/input/${buildPreviewPath(filePath)}/preview?${params.toString()}`,
+    `/api/files/input/${buildPreviewPath(filePath)}/preview?${query.toString()}`,
   )
 }
 

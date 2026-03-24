@@ -301,7 +301,6 @@ def test_preview_success_csv_returns_header_and_rows(auth_client):
     assert body["limit"] == 50  # default
     assert body["total_rows"] is None
     assert body["filtered_rows"] is None
-    assert body["row_count"] == 3  # deprecated compat field
 
 
 def test_preview_success_csv_has_next_true(auth_client):
@@ -373,29 +372,6 @@ def test_preview_success_csv_offset_returns_second_page(auth_client):
     assert body["rows"][0]["sf__Id"] == "row2"
     assert body["rows"][1]["sf__Id"] == "row3"
     assert body["has_next"] is False
-
-
-def test_preview_success_csv_rows_alias_still_works(auth_client):
-    _, plan_id, run_id = _setup_run(auth_client)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _write_csv(
-            os.path.join(tmpdir, "success.csv"),
-            ["sf__Id"],
-            [{"sf__Id": str(i)} for i in range(5)],
-        )
-        job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
-
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
-            resp = auth_client.get(f"/api/jobs/{job_id}/success-csv/preview?rows=2")
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["rows"]) == 2
-    assert body["limit"] == 2
-    assert body["row_count"] == 2
 
 
 def test_preview_success_csv_filtered_returns_filtered_rows(auth_client):

@@ -417,7 +417,7 @@ Exit criteria:
 
 ---
 
-### Ticket 5 — Integrate `CsvPreviewPanel` into FilesPage
+### Ticket 5 — Integrate `CsvPreviewPanel` into FilesPage — ✅ DONE
 
 Goal: replace the bespoke `PreviewTable` component in `FilesPage` with `CsvPreviewPanel`.
 
@@ -448,7 +448,7 @@ Exit criteria:
 
 ---
 
-### Ticket 6 — Integrate `CsvPreviewPanel` into JobDetail
+### Ticket 6 — Integrate `CsvPreviewPanel` into JobDetail — ✅ DONE
 
 Goal: replace the inline table in `JobDetail`'s `LogSection` with `CsvPreviewPanel`.
 
@@ -475,7 +475,7 @@ Exit criteria:
 
 ---
 
-### Ticket 7 — Remove Deprecated Preview Compatibility Fields
+### Ticket 7 — Remove Deprecated Preview Compatibility Fields — ✅ DONE
 
 Goal: remove temporary compatibility shims after all frontend consumers have migrated.
 

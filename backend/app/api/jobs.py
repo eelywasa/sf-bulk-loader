@@ -132,7 +132,6 @@ def _preview_csv(
         "offset": offset,
         "limit": limit,
         "has_next": has_next,
-        "row_count": len(page_rows),  # deprecated compat field
     }
 
 
@@ -202,49 +201,43 @@ async def download_unprocessed_csv(job_id: str, db: AsyncSession = Depends(get_d
 @router.get("/api/jobs/{job_id}/success-csv/preview")
 async def preview_success_csv(
     job_id: str,
-    limit: Optional[int] = Query(default=None, ge=1, le=500),
-    rows: Optional[int] = Query(default=None, ge=1, le=500),  # deprecated alias
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
-    effective_limit = limit if limit is not None else (rows if rows is not None else 50)
     parsed_filters = _parse_filters_param(filters)
     return await run_in_threadpool(
-        _preview_csv, job.success_file_path, "Success CSV", effective_limit, offset, parsed_filters
+        _preview_csv, job.success_file_path, "Success CSV", limit, offset, parsed_filters
     )
 
 
 @router.get("/api/jobs/{job_id}/error-csv/preview")
 async def preview_error_csv(
     job_id: str,
-    limit: Optional[int] = Query(default=None, ge=1, le=500),
-    rows: Optional[int] = Query(default=None, ge=1, le=500),  # deprecated alias
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
-    effective_limit = limit if limit is not None else (rows if rows is not None else 50)
     parsed_filters = _parse_filters_param(filters)
     return await run_in_threadpool(
-        _preview_csv, job.error_file_path, "Error CSV", effective_limit, offset, parsed_filters
+        _preview_csv, job.error_file_path, "Error CSV", limit, offset, parsed_filters
     )
 
 
 @router.get("/api/jobs/{job_id}/unprocessed-csv/preview")
 async def preview_unprocessed_csv(
     job_id: str,
-    limit: Optional[int] = Query(default=None, ge=1, le=500),
-    rows: Optional[int] = Query(default=None, ge=1, le=500),  # deprecated alias
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
-    effective_limit = limit if limit is not None else (rows if rows is not None else 50)
     parsed_filters = _parse_filters_param(filters)
     return await run_in_threadpool(
-        _preview_csv, job.unprocessed_file_path, "Unprocessed records CSV", effective_limit, offset, parsed_filters
+        _preview_csv, job.unprocessed_file_path, "Unprocessed records CSV", limit, offset, parsed_filters
     )

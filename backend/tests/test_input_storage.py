@@ -164,7 +164,6 @@ def test_preview_file_returns_header_and_rows(tmp_path):
     assert preview.filename == "data.csv"
     assert preview.header == ["Name", "Value"]
     assert len(preview.rows) == 5
-    assert preview.row_count == 5
     assert preview.offset == 0
     assert preview.limit == 5
     assert preview.has_next is True
@@ -592,7 +591,6 @@ def test_s3_preview_file_returns_rows():
 
     assert preview.filename == "accounts.csv"
     assert preview.header == ["Name", "Value"]
-    assert preview.row_count == 1
     assert preview.rows[0]["Name"] == "Acme"
     assert preview.has_next is True
     assert preview.offset == 0
