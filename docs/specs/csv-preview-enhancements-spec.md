@@ -351,7 +351,7 @@ Exit criteria:
 
 ---
 
-### Ticket 3 — Extend Job Result CSV Preview Endpoints
+### Ticket 3 — Extend Job Result CSV Preview Endpoints — ✅ DONE
 
 Goal: add the same pagination and filtering capability to the job result CSV endpoints.
 
