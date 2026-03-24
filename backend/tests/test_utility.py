@@ -24,10 +24,11 @@ _IC = {
 
 class _FakeS3Body:
     def __init__(self, data: bytes) -> None:
-        self._data = data
+        import io
+        self._buf = io.BytesIO(data)
 
-    def read(self) -> bytes:
-        return self._data
+    def read(self, n: int = -1) -> bytes:
+        return self._buf.read(n)
 
 
 class _FakePaginator:
@@ -85,7 +86,7 @@ def _create_input_connection(auth_client) -> str:
 class _PreviewOSErrorStorage:
     provider = "local"
 
-    def preview_file(self, path: str, rows: int):
+    def preview_file(self, path: str, limit: int = 50, offset: int = 0, filters=None):
         raise OSError("disk error")
 
     def list_entries(self, path: str = ""):

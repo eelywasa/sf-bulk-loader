@@ -68,12 +68,17 @@ class InputEntry:
 
 @dataclass
 class InputPreview:
-    """First N rows of a CSV file returned by :meth:`LocalInputStorage.preview_file`."""
+    """Paginated CSV preview returned by :meth:`BaseInputStorage.preview_file`."""
 
     filename: str
     header: list[str]
-    rows: list[dict]
-    row_count: int  # number of preview rows returned (≤ requested limit)
+    rows: list[dict]            # rows for the current page only
+    total_rows: int | None      # exact total file rows when known without an extra scan
+    filtered_rows: int | None   # total rows matching active filters; None when no filters
+    offset: int                 # 0-based row offset (header not counted)
+    limit: int                  # page size requested
+    has_next: bool              # whether at least one more row exists after this page
+    row_count: int              # deprecated — always len(rows); retained for migration compat
 
 
 class BaseInputStorage(Protocol):
@@ -83,7 +88,13 @@ class BaseInputStorage(Protocol):
 
     def list_entries(self, path: str = "") -> list[InputEntry]: ...
 
-    def preview_file(self, path: str, rows: int) -> InputPreview: ...
+    def preview_file(
+        self,
+        path: str,
+        limit: int = 50,
+        offset: int = 0,
+        filters: list[dict[str, str]] | None = None,
+    ) -> InputPreview: ...
 
     def discover_files(self, glob_pattern: str) -> list[str]: ...
 
@@ -182,6 +193,61 @@ def _sort_entries(entries: list[InputEntry]) -> list[InputEntry]:
     dirs = sorted((e for e in entries if e.kind == "directory"), key=lambda e: e.name)
     files = sorted((e for e in entries if e.kind == "file"), key=lambda e: e.name)
     return dirs + files
+
+
+def _validate_filters(
+    header: list[str],
+    filters: list[dict[str, str]],
+) -> list[tuple[str, str]]:
+    """Validate and normalise filter dicts into ``(column, value)`` tuples.
+
+    Args:
+        header: CSV column names from the file being previewed.
+        filters: Raw filter list from the caller; each entry must be a dict with
+            ``"column"`` and ``"value"`` string keys.
+
+    Returns:
+        List of ``(column, value)`` tuples ready for :func:`_row_matches`.
+
+    Raises:
+        :exc:`InputStorageError`: If any filter is malformed, references an unknown
+            column, has a blank column name, or duplicates a column.
+    """
+    seen: set[str] = set()
+    result: list[tuple[str, str]] = []
+    for f in filters:
+        if not isinstance(f, dict) or "column" not in f or "value" not in f:
+            raise InputStorageError(
+                "Each filter must be an object with 'column' and 'value' keys"
+            )
+        col = f["column"]
+        val = f["value"]
+        if not col:
+            raise InputStorageError("Filter column name must not be blank")
+        if col not in header:
+            raise InputStorageError(
+                f"Filter column {col!r} is not present in the file header"
+            )
+        if col in seen:
+            raise InputStorageError(
+                f"Duplicate filter column {col!r}; each column may appear at most once"
+            )
+        seen.add(col)
+        result.append((col, val))
+    return result
+
+
+def _row_matches(row: dict, filter_tuples: list[tuple[str, str]]) -> bool:
+    """Return True if *row* satisfies every filter in *filter_tuples*.
+
+    Each filter is a case-insensitive substring match: the filter value must be
+    contained within the cell value.  A ``None`` or missing cell never matches a
+    non-empty filter value.
+    """
+    return all(
+        fval.lower() in (row.get(fcol) or "").lower()
+        for fcol, fval in filter_tuples
+    )
 
 
 # ── S3 streaming helper ───────────────────────────────────────────────────────
@@ -338,21 +404,33 @@ class LocalInputStorage:
 
         return _sort_entries(entries)
 
-    def preview_file(self, path: str, rows: int) -> InputPreview:
-        """Return the first *rows* data rows (plus header) of a CSV file.
+    def preview_file(
+        self,
+        path: str,
+        limit: int = 50,
+        offset: int = 0,
+        filters: list[dict[str, str]] | None = None,
+    ) -> InputPreview:
+        """Return a paginated, optionally filtered page of rows from a CSV file.
 
         Uses :func:`detect_encoding` so files encoded as cp1252 or latin-1 are
-        handled correctly (unlike the previous hard-coded ``utf-8-sig`` approach).
+        handled correctly.
 
         Args:
             path: Relative path to the CSV file.
-            rows: Maximum number of data rows to return.
+            limit: Maximum number of data rows to return for this page.
+            offset: 0-based row offset into the (filtered) result set; header
+                row is not counted.
+            filters: Optional list of ``{"column": str, "value": str}`` dicts.
+                Each filter is a case-insensitive substring match.  All filters
+                are ANDed.  Validated against the file header before scanning.
 
         Returns:
-            :class:`InputPreview` with header, preview rows, and row count.
+            :class:`InputPreview` with pagination metadata.
 
         Raises:
-            :exc:`InputStorageError`: If *path* is invalid or attempts traversal.
+            :exc:`InputStorageError`: If *path* is invalid, traversal is
+                attempted, or a filter references an unknown / duplicate column.
             :exc:`FileNotFoundError`: If *path* does not exist or is not a file.
             :exc:`OSError`: If the file cannot be read.
         """
@@ -363,16 +441,62 @@ class LocalInputStorage:
             raise FileNotFoundError(f"File not found: {path!r}")
 
         enc = detect_encoding(resolved)
+
+        active_filters = [f for f in (filters or []) if f]
+
+        if active_filters:
+            # Filtered path: full scan required to count matches accurately.
+            with open(resolved, newline="", encoding=enc) as fh:
+                reader = csv.DictReader(fh)
+                header = list(reader.fieldnames or [])
+                filter_tuples = _validate_filters(header, active_filters)
+                total_scanned = 0
+                match_count = 0
+                page_rows: list[dict] = []
+                for row in reader:
+                    total_scanned += 1
+                    if _row_matches(row, filter_tuples):
+                        if match_count >= offset and len(page_rows) < limit:
+                            page_rows.append(dict(row))
+                        match_count += 1
+            has_next = match_count > offset + limit
+            return InputPreview(
+                filename=path,
+                header=header,
+                rows=page_rows,
+                total_rows=total_scanned,
+                filtered_rows=match_count,
+                offset=offset,
+                limit=limit,
+                has_next=has_next,
+                row_count=len(page_rows),
+            )
+
+        # Unfiltered path: read only what is needed.
         with open(resolved, newline="", encoding=enc) as fh:
             reader = csv.DictReader(fh)
             header = list(reader.fieldnames or [])
-            preview_rows = [dict(row) for _, row in zip(range(rows), reader)]
-
+            # Advance past offset rows without storing them.
+            for _ in zip(range(offset), reader):
+                pass
+            # Read limit + 1 rows so we can detect whether another page exists.
+            buffer: list[dict] = []
+            for row in reader:
+                buffer.append(dict(row))
+                if len(buffer) == limit + 1:
+                    break
+        has_next = len(buffer) > limit
+        page_rows = buffer[:limit]
         return InputPreview(
             filename=path,
             header=header,
-            rows=preview_rows,
-            row_count=len(preview_rows),
+            rows=page_rows,
+            total_rows=None,
+            filtered_rows=None,
+            offset=offset,
+            limit=limit,
+            has_next=has_next,
+            row_count=len(page_rows),
         )
 
     def discover_files(self, glob_pattern: str) -> list[str]:
@@ -539,18 +663,83 @@ class S3InputStorage:
 
         return _sort_entries(entries)
 
-    def preview_file(self, path: str, rows: int) -> InputPreview:
-        raw = self._get_object_bytes(path)
-        enc = detect_encoding_from_bytes(raw)
-        with io.StringIO(raw.decode(enc)) as fh:
+    def preview_file(
+        self,
+        path: str,
+        limit: int = 50,
+        offset: int = 0,
+        filters: list[dict[str, str]] | None = None,
+    ) -> InputPreview:
+        """Return a paginated, optionally filtered page of rows from an S3 CSV object.
+
+        Uses :meth:`open_text` for streaming so the full object is never loaded
+        into memory at once.
+
+        Args:
+            path: Source-relative path to the S3 object.
+            limit: Maximum number of data rows to return for this page.
+            offset: 0-based row offset into the (filtered) result set.
+            filters: Optional list of ``{"column": str, "value": str}`` dicts.
+
+        Returns:
+            :class:`InputPreview` with pagination metadata.
+
+        Raises:
+            :exc:`InputStorageError`: If *path* is invalid or a filter is invalid.
+            :exc:`FileNotFoundError`: If the S3 object does not exist.
+        """
+        filename = self._safe_relative_path(path)
+        active_filters = [f for f in (filters or []) if f]
+
+        if active_filters:
+            with self.open_text(path) as fh:
+                reader = csv.DictReader(fh)
+                header = list(reader.fieldnames or [])
+                filter_tuples = _validate_filters(header, active_filters)
+                total_scanned = 0
+                match_count = 0
+                page_rows: list[dict] = []
+                for row in reader:
+                    total_scanned += 1
+                    if _row_matches(row, filter_tuples):
+                        if match_count >= offset and len(page_rows) < limit:
+                            page_rows.append(dict(row))
+                        match_count += 1
+            has_next = match_count > offset + limit
+            return InputPreview(
+                filename=filename,
+                header=header,
+                rows=page_rows,
+                total_rows=total_scanned,
+                filtered_rows=match_count,
+                offset=offset,
+                limit=limit,
+                has_next=has_next,
+                row_count=len(page_rows),
+            )
+
+        with self.open_text(path) as fh:
             reader = csv.DictReader(fh)
             header = list(reader.fieldnames or [])
-            preview_rows = [dict(row) for _, row in zip(range(rows), reader)]
+            for _ in zip(range(offset), reader):
+                pass
+            buffer: list[dict] = []
+            for row in reader:
+                buffer.append(dict(row))
+                if len(buffer) == limit + 1:
+                    break
+        has_next = len(buffer) > limit
+        page_rows = buffer[:limit]
         return InputPreview(
-            filename=self._safe_relative_path(path),
+            filename=filename,
             header=header,
-            rows=preview_rows,
-            row_count=len(preview_rows),
+            rows=page_rows,
+            total_rows=None,
+            filtered_rows=None,
+            offset=offset,
+            limit=limit,
+            has_next=has_next,
+            row_count=len(page_rows),
         )
 
     def discover_files(self, glob_pattern: str) -> list[str]:

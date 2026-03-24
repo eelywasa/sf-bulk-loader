@@ -160,30 +160,36 @@ def test_list_entries_missing_base_returns_empty(tmp_path):
 def test_preview_file_returns_header_and_rows(tmp_path):
     _write_csv(str(tmp_path / "data.csv"), rows=20)
     storage = LocalInputStorage(str(tmp_path))
-    preview = storage.preview_file("data.csv", rows=5)
+    preview = storage.preview_file("data.csv", limit=5)
     assert preview.filename == "data.csv"
     assert preview.header == ["Name", "Value"]
     assert len(preview.rows) == 5
     assert preview.row_count == 5
+    assert preview.offset == 0
+    assert preview.limit == 5
+    assert preview.has_next is True
+    assert preview.total_rows is None
+    assert preview.filtered_rows is None
 
 
 def test_preview_file_respects_row_limit(tmp_path):
     _write_csv(str(tmp_path / "data.csv"), rows=3)
     storage = LocalInputStorage(str(tmp_path))
-    preview = storage.preview_file("data.csv", rows=100)
+    preview = storage.preview_file("data.csv", limit=100)
     assert len(preview.rows) == 3  # only 3 data rows exist
+    assert preview.has_next is False
 
 
 def test_preview_file_traversal_raises(tmp_path):
     storage = LocalInputStorage(str(tmp_path))
     with pytest.raises(InputStorageError):
-        storage.preview_file("../secret.csv", rows=10)
+        storage.preview_file("../secret.csv", limit=10)
 
 
 def test_preview_file_not_found_raises(tmp_path):
     storage = LocalInputStorage(str(tmp_path))
     with pytest.raises(FileNotFoundError):
-        storage.preview_file("nonexistent.csv", rows=10)
+        storage.preview_file("nonexistent.csv", limit=10)
 
 
 def test_preview_file_cp1252_encoding(tmp_path):
@@ -192,7 +198,7 @@ def test_preview_file_cp1252_encoding(tmp_path):
     # Write header + 1 row with a cp1252-specific byte
     csv_path.write_bytes(b"Name\nCaf\x80\n")
     storage = LocalInputStorage(str(tmp_path))
-    preview = storage.preview_file("cp1252.csv", rows=10)
+    preview = storage.preview_file("cp1252.csv", limit=10)
     assert preview.header == ["Name"]
     assert len(preview.rows) == 1
 
@@ -202,9 +208,185 @@ def test_preview_file_latin1_encoding(tmp_path):
     csv_path = tmp_path / "latin1.csv"
     csv_path.write_bytes(b"Name\n\x81\n")
     storage = LocalInputStorage(str(tmp_path))
-    preview = storage.preview_file("latin1.csv", rows=10)
+    preview = storage.preview_file("latin1.csv", limit=10)
     assert preview.header == ["Name"]
     assert len(preview.rows) == 1
+
+
+# ── preview_file pagination ────────────────────────────────────────────────────
+
+
+def test_preview_unfiltered_has_next_true(tmp_path):
+    _write_csv(str(tmp_path / "data.csv"), rows=10)
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=5, offset=0)
+    assert len(preview.rows) == 5
+    assert preview.has_next is True
+    assert preview.offset == 0
+    assert preview.limit == 5
+
+
+def test_preview_unfiltered_last_page_has_next_false(tmp_path):
+    _write_csv(str(tmp_path / "data.csv"), rows=10)
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=5, offset=5)
+    assert len(preview.rows) == 5
+    assert preview.has_next is False
+
+
+def test_preview_unfiltered_middle_page(tmp_path):
+    """Rows at offset 5 of a 15-row file should be rows 6–10."""
+    path = str(tmp_path / "data.csv")
+    # Write CSV with predictable Name values: row-0, row-1, …
+    with open(path, "w", newline="") as fh:
+        import csv as _csv
+        w = _csv.writer(fh)
+        w.writerow(["Name", "Value"])
+        for i in range(15):
+            w.writerow([f"row-{i}", str(i)])
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=5, offset=5)
+    assert len(preview.rows) == 5
+    assert preview.rows[0]["Name"] == "row-5"
+    assert preview.rows[4]["Name"] == "row-9"
+    assert preview.has_next is True
+
+
+def test_preview_unfiltered_offset_beyond_file(tmp_path):
+    _write_csv(str(tmp_path / "data.csv"), rows=3)
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=10, offset=100)
+    assert preview.rows == []
+    assert preview.has_next is False
+
+
+def test_preview_unfiltered_exact_limit_fit(tmp_path):
+    """When file row count equals limit exactly, has_next must be False."""
+    _write_csv(str(tmp_path / "data.csv"), rows=5)
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=5, offset=0)
+    assert len(preview.rows) == 5
+    assert preview.has_next is False
+
+
+# ── preview_file filtering ─────────────────────────────────────────────────────
+
+
+def _write_named_csv(path: str, names: list[str]) -> None:
+    """Write a CSV with Name and Value columns where Name is taken from *names*."""
+    import csv as _csv
+    with open(path, "w", newline="") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["Name", "Value"])
+        for i, name in enumerate(names):
+            w.writerow([name, str(i)])
+
+
+def test_preview_filtered_matches_subset(tmp_path):
+    _write_named_csv(str(tmp_path / "data.csv"), ["Acme", "Beta", "Acme Corp", "Gamma"])
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=10, filters=[{"column": "Name", "value": "Acme"}])
+    assert preview.filtered_rows == 2
+    assert len(preview.rows) == 2
+    assert all("Acme" in r["Name"] for r in preview.rows)
+    assert preview.has_next is False
+
+
+def test_preview_filtered_no_matches(tmp_path):
+    _write_named_csv(str(tmp_path / "data.csv"), ["Alpha", "Beta", "Gamma"])
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=10, filters=[{"column": "Name", "value": "Zzz"}])
+    assert preview.filtered_rows == 0
+    assert preview.rows == []
+    assert preview.has_next is False
+
+
+def test_preview_filtered_case_insensitive(tmp_path):
+    _write_named_csv(str(tmp_path / "data.csv"), ["acme", "BETA", "Acme Corp"])
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=10, filters=[{"column": "Name", "value": "ACME"}])
+    assert preview.filtered_rows == 2
+    assert len(preview.rows) == 2
+
+
+def test_preview_filtered_multi_column_and(tmp_path):
+    """Only rows matching ALL filters should be returned."""
+    import csv as _csv
+    path = str(tmp_path / "data.csv")
+    with open(path, "w", newline="") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["Name", "Status"])
+        w.writerow(["Acme", "open"])    # matches both filters
+        w.writerow(["Acme", "closed"])  # Name matches but Status does not
+        w.writerow(["Beta", "open"])    # Status matches but Name does not
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file(
+        "data.csv",
+        limit=10,
+        filters=[{"column": "Name", "value": "Acme"}, {"column": "Status", "value": "open"}],
+    )
+    assert preview.filtered_rows == 1
+    assert preview.rows[0]["Name"] == "Acme"
+    assert preview.rows[0]["Status"] == "open"
+
+
+def test_preview_filtered_total_rows_populated(tmp_path):
+    """total_rows should reflect the full file row count from the filtered scan."""
+    _write_named_csv(str(tmp_path / "data.csv"), ["Acme", "Beta", "Gamma", "Acme2"])
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file("data.csv", limit=10, filters=[{"column": "Name", "value": "Acme"}])
+    assert preview.total_rows == 4  # full file has 4 data rows
+
+
+def test_preview_filtered_pagination_window(tmp_path):
+    """offset and limit should slice the matched rows correctly."""
+    names = [f"Acme-{i}" for i in range(10)] + ["Beta"] * 5
+    _write_named_csv(str(tmp_path / "data.csv"), names)
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file(
+        "data.csv", limit=3, offset=3, filters=[{"column": "Name", "value": "Acme"}]
+    )
+    assert preview.filtered_rows == 10
+    assert len(preview.rows) == 3
+    assert preview.rows[0]["Name"] == "Acme-3"
+    assert preview.rows[2]["Name"] == "Acme-5"
+    assert preview.has_next is True
+
+
+def test_preview_filtered_has_next_false_at_last_page(tmp_path):
+    names = [f"Acme-{i}" for i in range(5)]
+    _write_named_csv(str(tmp_path / "data.csv"), names)
+    storage = LocalInputStorage(str(tmp_path))
+    preview = storage.preview_file(
+        "data.csv", limit=3, offset=3, filters=[{"column": "Name", "value": "Acme"}]
+    )
+    assert len(preview.rows) == 2
+    assert preview.has_next is False
+
+
+def test_preview_filter_unknown_column_raises(tmp_path):
+    _write_csv(str(tmp_path / "data.csv"), rows=3)
+    storage = LocalInputStorage(str(tmp_path))
+    with pytest.raises(InputStorageError, match="not present in the file header"):
+        storage.preview_file("data.csv", limit=10, filters=[{"column": "NoSuchCol", "value": "x"}])
+
+
+def test_preview_filter_blank_column_raises(tmp_path):
+    _write_csv(str(tmp_path / "data.csv"), rows=3)
+    storage = LocalInputStorage(str(tmp_path))
+    with pytest.raises(InputStorageError, match="must not be blank"):
+        storage.preview_file("data.csv", limit=10, filters=[{"column": "", "value": "x"}])
+
+
+def test_preview_filter_duplicate_column_raises(tmp_path):
+    _write_csv(str(tmp_path / "data.csv"), rows=3)
+    storage = LocalInputStorage(str(tmp_path))
+    with pytest.raises(InputStorageError, match="Duplicate filter column"):
+        storage.preview_file(
+            "data.csv",
+            limit=10,
+            filters=[{"column": "Name", "value": "a"}, {"column": "Name", "value": "b"}],
+        )
 
 
 # ── discover_files ────────────────────────────────────────────────────────────
@@ -406,12 +588,17 @@ def test_s3_preview_file_returns_rows():
             access_key_id="ak",
             secret_access_key="sk",
         )
-        preview = storage.preview_file("accounts.csv", rows=1)
+        preview = storage.preview_file("accounts.csv", limit=1)
 
     assert preview.filename == "accounts.csv"
     assert preview.header == ["Name", "Value"]
     assert preview.row_count == 1
     assert preview.rows[0]["Name"] == "Acme"
+    assert preview.has_next is True
+    assert preview.offset == 0
+    assert preview.limit == 1
+    assert preview.total_rows is None
+    assert preview.filtered_rows is None
 
 
 def test_s3_preview_file_missing_object_raises_file_not_found():
@@ -432,7 +619,7 @@ def test_s3_preview_file_missing_object_raises_file_not_found():
             secret_access_key="sk",
         )
         with pytest.raises(FileNotFoundError, match="File not found"):
-            storage.preview_file("accounts.csv", rows=5)
+            storage.preview_file("accounts.csv", limit=5)
 
 
 def test_s3_discover_files_matches_glob():
@@ -621,3 +808,144 @@ async def test_get_storage_unsupported_provider_raises():
 
     with pytest.raises(InputStorageError, match="Unsupported input connection provider"):
         await get_storage("ic-1", db=_FakeDB())
+
+
+# ── S3 preview_file pagination and filtering ──────────────────────────────────
+
+
+def _make_s3_storage(object_map: dict):
+    """Return a patched S3InputStorage backed by *object_map* bytes."""
+    client = _FakeS3Client(object_map=object_map)
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+    # Re-enter patch context for method calls
+    patcher = patch("app.services.input_storage.boto3.client", return_value=client)
+    patcher.start()
+    return storage, patcher
+
+
+def test_s3_preview_unfiltered_has_next_true():
+    client = _FakeS3Client(
+        object_map={"data/file.csv": b"Name,Value\nAlpha,1\nBeta,2\nGamma,3\n"}
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        preview = storage.preview_file("file.csv", limit=1, offset=0)
+
+    assert len(preview.rows) == 1
+    assert preview.rows[0]["Name"] == "Alpha"
+    assert preview.has_next is True
+    assert preview.total_rows is None
+    assert preview.filtered_rows is None
+
+
+def test_s3_preview_unfiltered_pagination_offset():
+    client = _FakeS3Client(
+        object_map={"data/file.csv": b"Name,Value\nAlpha,1\nBeta,2\nGamma,3\n"}
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        preview = storage.preview_file("file.csv", limit=1, offset=1)
+
+    assert len(preview.rows) == 1
+    assert preview.rows[0]["Name"] == "Beta"
+    assert preview.has_next is True
+
+
+def test_s3_preview_unfiltered_last_page_has_next_false():
+    client = _FakeS3Client(
+        object_map={"data/file.csv": b"Name,Value\nAlpha,1\nBeta,2\nGamma,3\n"}
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        preview = storage.preview_file("file.csv", limit=2, offset=1)
+
+    assert len(preview.rows) == 2
+    assert preview.rows[0]["Name"] == "Beta"
+    assert preview.has_next is False
+
+
+def test_s3_preview_filtered_matches():
+    client = _FakeS3Client(
+        object_map={"data/file.csv": b"Name,Value\nAcme,1\nBeta,2\nAcme Corp,3\n"}
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        preview = storage.preview_file(
+            "file.csv", limit=10, filters=[{"column": "Name", "value": "Acme"}]
+        )
+
+    assert preview.filtered_rows == 2
+    assert len(preview.rows) == 2
+    assert all("Acme" in r["Name"] for r in preview.rows)
+    assert preview.has_next is False
+    assert preview.total_rows == 3
+
+
+def test_s3_preview_filtered_no_matches():
+    client = _FakeS3Client(
+        object_map={"data/file.csv": b"Name,Value\nAlpha,1\nBeta,2\n"}
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        preview = storage.preview_file(
+            "file.csv", limit=10, filters=[{"column": "Name", "value": "Zzz"}]
+        )
+
+    assert preview.filtered_rows == 0
+    assert preview.rows == []
+    assert preview.has_next is False
+
+
+def test_s3_preview_filter_unknown_column_raises():
+    client = _FakeS3Client(
+        object_map={"data/file.csv": b"Name,Value\nAlpha,1\n"}
+    )
+    with patch("app.services.input_storage.boto3.client", return_value=client):
+        storage = S3InputStorage(
+            bucket="bucket",
+            root_prefix="data/",
+            region="us-east-1",
+            access_key_id="ak",
+            secret_access_key="sk",
+        )
+        with pytest.raises(InputStorageError, match="not present in the file header"):
+            storage.preview_file(
+                "file.csv", limit=10, filters=[{"column": "NoSuchCol", "value": "x"}]
+            )
