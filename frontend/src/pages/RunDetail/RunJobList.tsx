@@ -10,7 +10,7 @@ interface RunJobListProps {
 
 export function RunJobList({ jobs, runId }: RunJobListProps) {
   if (jobs.length === 0) {
-    return <p className="px-4 py-3 text-sm text-gray-400 italic">No jobs started yet.</p>
+    return <p className="px-4 py-3 text-sm text-content-muted italic">No jobs started yet.</p>
   }
 
   return (
@@ -18,25 +18,25 @@ export function RunJobList({ jobs, runId }: RunJobListProps) {
       {jobs.map((job) => (
         <div
           key={job.id}
-          className="flex items-start justify-between px-4 py-3 text-sm hover:bg-gray-50"
+          className="flex items-start justify-between px-4 py-3 text-sm hover:bg-surface-hover"
         >
           <div className="flex flex-col gap-1 min-w-0 flex-1">
             <div className="flex items-center gap-3 flex-wrap min-w-0">
-              <span className="text-xs text-gray-500 font-mono shrink-0">
+              <span className="text-xs text-content-muted font-mono shrink-0">
                 Part {job.partition_index}
               </span>
               <Badge variant={job.status as BadgeVariant}>{job.status}</Badge>
               {job.records_processed != null && (
-                <span className="text-gray-600">
+                <span className="text-content-secondary">
                   {job.records_processed} processed
                   {(job.records_failed ?? 0) > 0 && (
-                    <span className="text-red-600 ml-1">· {job.records_failed} failed</span>
+                    <span className="text-error-text ml-1">· {job.records_failed} failed</span>
                   )}
                 </span>
               )}
               {job.error_message && (
                 <span
-                  className="text-red-500 text-xs truncate max-w-[20rem]"
+                  className="text-error-text text-xs truncate max-w-[20rem]"
                   title={job.error_message}
                 >
                   {job.error_message}
@@ -56,7 +56,7 @@ export function RunJobList({ jobs, runId }: RunJobListProps) {
           </div>
           <Link
             to={`/runs/${runId}/jobs/${job.id}`}
-            className="ml-2 text-blue-600 hover:underline text-xs shrink-0"
+            className="ml-2 text-content-link hover:underline text-xs shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
             Details

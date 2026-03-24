@@ -16,8 +16,8 @@ function Stat({
 }) {
   return (
     <div>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={clsx('text-lg font-semibold text-gray-900', valueClass)}>{value}</div>
+      <div className="text-xs text-content-muted">{label}</div>
+      <div className={clsx('text-lg font-semibold text-content-primary', valueClass)}>{value}</div>
     </div>
   )
 }
@@ -66,10 +66,10 @@ export function RunSummaryCard({
   }, [run.status, displayErrors])
 
   return (
-    <div className="sticky top-0 z-10 bg-white border border-gray-200 rounded-lg px-6 py-4 shadow-sm space-y-3">
+    <div className="sticky top-0 z-10 bg-surface-raised border border-border-base rounded-lg px-6 py-4 shadow-sm space-y-3">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl font-bold text-gray-900">
+          <h1 className="text-xl font-bold text-content-primary">
             Run <span className="font-mono text-base">{run.id}</span>
           </h1>
           <Badge variant={run.status} dot>
@@ -91,11 +91,11 @@ export function RunSummaryCard({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Total Records" value={displayTotal ?? '—'} />
-        <Stat label="Successes" value={displaySuccess} valueClass="text-green-700" />
+        <Stat label="Successes" value={displaySuccess} valueClass="text-success-text" />
         <Stat
           label="Errors"
           value={displayErrors}
-          valueClass={displayErrors > 0 ? 'text-red-700' : undefined}
+          valueClass={displayErrors > 0 ? 'text-error-text' : undefined}
         />
         <Stat label="Elapsed" value={formatElapsed(run.started_at, run.completed_at)} />
       </div>
@@ -109,19 +109,19 @@ export function RunSummaryCard({
         />
       )}
 
-      <div className="flex gap-6 text-xs text-gray-500 flex-wrap">
+      <div className="flex gap-6 text-xs text-content-muted flex-wrap">
         <span>Started: {formatDate(run.started_at)}</span>
         {run.completed_at && <span>Completed: {formatDate(run.completed_at)}</span>}
         {run.initiated_by && <span>By: {run.initiated_by}</span>}
         {planDetail && (
-          <Link to={`/plans/${run.load_plan_id}`} className="text-blue-600 hover:underline">
+          <Link to={`/plans/${run.load_plan_id}`} className="text-content-link hover:underline">
             Plan: {planDetail.name}
           </Link>
         )}
       </div>
 
       {run.error_summary && (
-        <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-1.5">
+        <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">
           {run.error_summary.auth_error ?? 'An error occurred during execution.'}
         </p>
       )}

@@ -544,7 +544,7 @@ Migrate `PlansPage.tsx`, `PlanEditor.tsx`, `PlanForm.tsx`, `StepList.tsx`,
 
 ---
 
-## Ticket 9 — Runs Pages
+## Ticket 9 — Runs Pages — ✅ DONE
 
 ### Goal
 Migrate `RunsPage.tsx`, `RunDetail.tsx`, and its sub-components (`RunSummaryCard`,

@@ -33,32 +33,32 @@ export function RunStepPanel({
     stepStatus.label === 'failed' || (stepStatus.label === 'complete' && totalFailed > 0)
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
+    <div className="border border-border-base rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-surface-sunken">
         <button
           type="button"
-          className="flex items-center gap-3 flex-wrap min-w-0 flex-1 text-left hover:bg-gray-100 rounded"
+          className="flex items-center gap-3 flex-wrap min-w-0 flex-1 text-left hover:bg-surface-hover rounded"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           aria-label={`Step ${step.sequence}: ${step.object_name}`}
         >
-          <span className="text-xs font-mono font-semibold text-gray-500 shrink-0">
+          <span className="text-xs font-mono font-semibold text-content-muted shrink-0">
             #{step.sequence}
           </span>
-          <span className="font-medium text-gray-900 truncate">{step.object_name}</span>
+          <span className="font-medium text-content-primary truncate">{step.object_name}</span>
           <Badge variant="neutral" className="capitalize">
             {step.operation}
           </Badge>
           <Badge variant={stepStatus.variant}>{stepStatus.label}</Badge>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-content-muted">
             {jobs.length} job{jobs.length !== 1 ? 's' : ''}
           </span>
           {jobs.length > 0 && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-content-muted">
               {totalProcessed} processed · {totalFailed} failed
             </span>
           )}
-          <span className="ml-2 text-gray-400 shrink-0 text-xs">{expanded ? '▲' : '▼'}</span>
+          <span className="ml-2 text-content-muted shrink-0 text-xs">{expanded ? '▲' : '▼'}</span>
         </button>
         {!isLive && hasRetryableJobs && onRetry && (
           <Button
@@ -77,7 +77,7 @@ export function RunStepPanel({
       </div>
 
       {expanded && (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-border-base">
           <RunJobList jobs={jobs} runId={runId} />
         </div>
       )}
