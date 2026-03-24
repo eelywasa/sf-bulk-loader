@@ -18,6 +18,7 @@ User-facing documentation lives in `docs/`:
 - `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)
 - `docs/usage.md` — using the app (Salesforce setup, CSV format, load plans)
 - `docs/development.md` — local dev, tests, migrations
+- `docs/ui-conventions.md` — frontend design token system, component usage, form styling rules. **Must be kept in sync with the code** — any change to tokens, `formStyles.ts`, or shared UI components requires a corresponding update to this file in the same task.
 - `docs/specs/` — architecture and feature specs (not user-facing)
 
 When implementing tickets that require documentation changes, add to or update the

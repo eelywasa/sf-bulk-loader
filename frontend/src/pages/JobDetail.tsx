@@ -6,6 +6,7 @@ import { ApiError } from '../api/client'
 import type { CsvFetchParams, JobStatus } from '../api/types'
 import { Badge, Button, Card, CsvPreviewPanel, Tabs } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
+import { ALERT_ERROR } from '../components/ui/formStyles'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,8 +42,8 @@ function basename(path: string): string {
 function MetaField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{label}</dt>
-      <dd className="text-sm text-gray-900">{children}</dd>
+      <dt className="text-xs font-medium text-content-muted uppercase tracking-wide mb-1">{label}</dt>
+      <dd className="text-sm text-content-primary">{children}</dd>
     </div>
   )
 }
@@ -67,29 +68,29 @@ function LogSection({
   filename,
 }: LogSectionProps) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-border-base rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-3 bg-surface-sunken border-b border-border-base">
         <div>
-          <p className="text-sm font-medium text-gray-900">{label}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+          <p className="text-sm font-medium text-content-primary">{label}</p>
+          <p className="text-xs text-content-muted mt-0.5">{description}</p>
         </div>
         {available ? (
           <a
             href={downloadHref}
             download
-            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-surface-raised border border-border-strong text-content-primary hover:bg-surface-hover transition-colors"
           >
             ↓ Download
           </a>
         ) : (
-          <span className="shrink-0 text-sm text-gray-400 italic">Not available</span>
+          <span className="shrink-0 text-sm text-content-disabled italic">Not available</span>
         )}
       </div>
 
       {/* Preview */}
       {!available ? (
-        <p className="px-4 py-3 text-sm text-gray-400 italic">No file generated for this job.</p>
+        <p className="px-4 py-3 text-sm text-content-disabled italic">No file generated for this job.</p>
       ) : (
         <div className="px-4 py-4">
           <CsvPreviewPanel queryKey={queryKey} fetchPage={fetchPage} filename={filename} />
@@ -123,8 +124,8 @@ export default function JobDetail() {
     const message = error instanceof ApiError ? error.message : 'Failed to load job details'
     return (
       <div className="p-6 space-y-4">
-        <div className="rounded-md bg-red-50 border border-red-200 p-4">
-          <p className="text-sm text-red-700">{message}</p>
+        <div className={ALERT_ERROR}>
+          <p>{message}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate(`/runs/${runId}`)}>
           Back to Run
@@ -152,7 +153,7 @@ export default function JobDetail() {
       {job.error_message && (
         <div className="col-span-full">
           <MetaField label="Error Message">
-            <p className="text-sm text-red-700 font-mono whitespace-pre-wrap">{job.error_message}</p>
+            <p className="text-sm text-error-text font-mono whitespace-pre-wrap">{job.error_message}</p>
           </MetaField>
         </div>
       )}
@@ -179,7 +180,7 @@ export default function JobDetail() {
     )
   } else {
     payloadContent = (
-      <p className="text-sm text-gray-400 italic py-4">
+      <p className="text-sm text-content-disabled italic py-4">
         Not available — no Salesforce API response recorded for this job.
       </p>
     )
@@ -229,19 +230,19 @@ export default function JobDetail() {
     <div className="p-6 space-y-6">
       {/* Breadcrumb + title */}
       <div>
-        <nav className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-          <Link to="/runs" className="hover:text-gray-900 transition-colors">
+        <nav className="flex items-center gap-2 text-sm text-content-muted mb-1">
+          <Link to="/runs" className="hover:text-content-primary transition-colors">
             Runs
           </Link>
           <span aria-hidden="true">›</span>
-          <Link to={`/runs/${runId}`} className="hover:text-gray-900 transition-colors">
+          <Link to={`/runs/${runId}`} className="hover:text-content-primary transition-colors">
             Run {runId ? truncateId(runId) : '…'}
           </Link>
           <span aria-hidden="true">›</span>
-          <span className="text-gray-900">Job {jobId ? truncateId(jobId) : '…'}</span>
+          <span className="text-content-primary">Job {jobId ? truncateId(jobId) : '…'}</span>
         </nav>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Job Detail</h1>
+          <h1 className="text-2xl font-bold text-content-primary">Job Detail</h1>
           {job && (
             <Badge variant={jobStatusVariant(job.status)} dot>
               {job.status}

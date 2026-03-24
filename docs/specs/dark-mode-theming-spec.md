@@ -418,7 +418,7 @@ ticket directly improves all pages.
 
 ---
 
-## Ticket 6 — Dashboard Page
+## Ticket 6 — Dashboard Page — ✅ DONE
 
 ### Goal
 Migrate `Dashboard.tsx` to semantic tokens. This is a self-contained page with no sub-components
@@ -610,7 +610,7 @@ Migrate `RunsPage.tsx`, `RunDetail.tsx`, and its sub-components (`RunSummaryCard
 
 ---
 
-## Ticket 10 — JobDetail and FilesPage
+## Ticket 10 — JobDetail and FilesPage — ✅ DONE
 
 ### Goal
 Migrate `JobDetail.tsx` and `FilesPage.tsx` to semantic tokens. Both pages have partial dark

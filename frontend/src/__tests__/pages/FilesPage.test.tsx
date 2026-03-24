@@ -485,7 +485,7 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByText('accounts.csv'))
     const btn = screen.getByRole('button', { name: /accounts\.csv/ })
     await user.click(btn)
-    expect(btn).toHaveClass('bg-blue-50')
+    expect(btn).toHaveClass('bg-surface-selected')
   })
 
   it('marks the selected file list item as aria-selected', async () => {

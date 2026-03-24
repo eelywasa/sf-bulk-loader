@@ -7,6 +7,9 @@ It is based on:
 - The UI canvas spec (design + UX intent).
 - The **Frontend API Audit** (actual endpoint map, gaps, and recommended frontend plan).
 
+For design token usage, component conventions, form styling rules, and theming guidance,
+see **`docs/ui-conventions.md`**. All frontend work must follow those conventions.
+
 ---
 
 ## 1) Target stack + constraints

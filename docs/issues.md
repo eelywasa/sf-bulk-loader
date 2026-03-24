@@ -31,7 +31,7 @@ Many elements use light-mode Tailwind colour classes without corresponding `dark
 
 ---
 
-### Duplicate CTA on empty Connections page
+### ~~Duplicate CTA on empty Connections page~~ ✅ RESOLVED
 
 When the Connections page has no Salesforce connections or no input file connections, an
 empty-state CTA button is shown in the centre of the table area alongside the persistent
@@ -43,7 +43,7 @@ header button, which is always visible regardless of state.
 
 ---
 
-### Table overflows viewport horizontally; action buttons inaccessible
+### ~~Table overflows viewport horizontally; action buttons inaccessible~~ ✅ RESOLVED
 
 **Affects:** Connections page (likely all pages that render `DataTable` with many/wide columns)
 **Distributions:** Both Electron and self-hosted

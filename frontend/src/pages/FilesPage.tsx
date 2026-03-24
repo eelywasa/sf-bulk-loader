@@ -6,6 +6,7 @@ import { filesApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import type { InputConnection, InputDirectoryEntry } from '../api/types'
 import { Card, CsvPreviewPanel, EmptyState } from '../components/ui'
+import { ALERT_ERROR, LABEL_CLASS, SELECT_CLASS } from '../components/ui/formStyles'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
       <button
         type="button"
         onClick={() => onNavigate('')}
-        className={`transition-colors ${segments.length === 0 ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300'}`}
+        className={`transition-colors ${segments.length === 0 ? 'font-semibold text-content-primary' : 'text-content-link hover:text-accent-hover'}`}
       >
         Input Files
       </button>
@@ -39,14 +40,14 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
         const isLast = i === segments.length - 1
         return (
           <span key={segPath} className="flex items-center gap-1">
-            <FontAwesomeIcon icon={faChevronRight} className="text-gray-400 dark:text-gray-500 text-xs" />
+            <FontAwesomeIcon icon={faChevronRight} className="text-content-muted text-xs" />
             {isLast ? (
-              <span className="font-semibold text-gray-900 dark:text-gray-100">{seg}</span>
+              <span className="font-semibold text-content-primary">{seg}</span>
             ) : (
               <button
                 type="button"
                 onClick={() => onNavigate(segPath)}
-                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                className="text-content-link hover:text-accent-hover transition-colors"
               >
                 {seg}
               </button>
@@ -70,7 +71,7 @@ interface FileListProps {
 function FileList({ entries, selected, onSelect, onNavigate }: FileListProps) {
   return (
     <Card padding={false}>
-      <ul role="listbox" aria-label="Input files" className="divide-y divide-gray-100">
+      <ul role="listbox" aria-label="Input files" className="divide-y divide-border-base">
         {entries.map((entry) => {
           const isSelected = entry.kind === 'file' && selected === entry.path
           return (
@@ -86,8 +87,8 @@ function FileList({ entries, selected, onSelect, onNavigate }: FileListProps) {
                 }
                 className={`w-full text-left px-4 py-3 transition-colors flex items-center gap-3 ${
                   isSelected
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'hover:bg-gray-50 text-gray-900'
+                    ? 'bg-surface-selected text-content-selected'
+                    : 'hover:bg-surface-hover text-content-primary'
                 }`}
               >
                 {entry.kind === 'directory' && (
@@ -100,7 +101,7 @@ function FileList({ entries, selected, onSelect, onNavigate }: FileListProps) {
                 <span className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">{entry.name}</p>
                   {entry.kind === 'file' && (entry.size_bytes != null || entry.row_count != null) && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    <p className="text-xs text-content-muted mt-0.5">
                       {[
                         entry.size_bytes != null ? formatFileSize(entry.size_bytes) : null,
                         entry.row_count != null ? `${entry.row_count.toLocaleString()} rows` : null,
@@ -169,14 +170,14 @@ export default function FilesPage() {
 
   const sourceSelector = inputConnections.length > 0 ? (
     <div className="mt-3 flex items-center gap-2">
-      <label htmlFor="source-select" className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
+      <label htmlFor="source-select" className={LABEL_CLASS + ' mb-0 shrink-0'}>
         Source
       </label>
       <select
         id="source-select"
         value={source}
         onChange={(e) => handleSourceChange(e.target.value)}
-        className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className={SELECT_CLASS + ' w-auto'}
       >
         <option value="local">Local files</option>
         {inputConnections.map((conn) => (
@@ -207,14 +208,14 @@ export default function FilesPage() {
     return (
       <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Input Files</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
+          <p className="mt-1 text-sm text-content-muted">
             Browse and preview CSV files in the input directory.
           </p>
           {sourceSelector}
         </div>
-        <div className="rounded-md bg-red-50 border border-red-200 p-4">
-          <p className="text-sm text-red-700">{message}</p>
+        <div className={ALERT_ERROR}>
+          <p>{message}</p>
         </div>
       </div>
     )
@@ -226,8 +227,8 @@ export default function FilesPage() {
     return (
       <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Input Files</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
+          <p className="mt-1 text-sm text-content-muted">
             Browse and preview CSV files in the input directory.
           </p>
           {sourceSelector}
