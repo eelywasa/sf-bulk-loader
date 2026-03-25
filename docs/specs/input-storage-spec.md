@@ -832,7 +832,7 @@ Exit criteria:
 
 ### 11. Stage 1 and Stage 2 Regression Pass
 
-Status: **Pending**
+Status: **Completed** — ✅ DONE
 
 Goal: stabilize the combined browsing plus execution feature set.
 

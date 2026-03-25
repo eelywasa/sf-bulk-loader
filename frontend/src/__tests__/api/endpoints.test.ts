@@ -106,6 +106,44 @@ describe('inputConnectionsApi', () => {
     expect(init.method).toBe('GET')
     expect(result).toEqual([inputConnection])
   })
+
+  it('create → POST /api/input-connections/ with body', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson(inputConnection))
+    const payload = { name: 'S3 Source', provider: 's3' as const, bucket: 'my-bucket', access_key_id: 'AKIA', secret_access_key: 'secret' }
+    const result = await inputConnectionsApi.create(payload)
+    const { url, init } = captureLastFetch()
+    expect(url).toBe('/api/input-connections/')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual(payload)
+    expect(result).toEqual(inputConnection)
+  })
+
+  it('update → PUT /api/input-connections/{id} with body', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockJson(inputConnection))
+    await inputConnectionsApi.update('ic1', { name: 'Renamed S3' })
+    const { url, init } = captureLastFetch()
+    expect(url).toBe('/api/input-connections/ic1')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body as string)).toEqual({ name: 'Renamed S3' })
+  })
+
+  it('delete → DELETE /api/input-connections/{id}', async () => {
+    vi.mocked(fetch).mockResolvedValue(mockEmpty())
+    await inputConnectionsApi.delete('ic1')
+    const { url, init } = captureLastFetch()
+    expect(url).toBe('/api/input-connections/ic1')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('test → POST /api/input-connections/{id}/test', async () => {
+    const testResp = { success: true, message: 'Bucket accessible' }
+    vi.mocked(fetch).mockResolvedValue(mockJson(testResp))
+    const result = await inputConnectionsApi.test('ic1')
+    const { url, init } = captureLastFetch()
+    expect(url).toBe('/api/input-connections/ic1/test')
+    expect(init.method).toBe('POST')
+    expect(result).toEqual(testResp)
+  })
 })
 
 // ─── Load Plans ───────────────────────────────────────────────────────────────
