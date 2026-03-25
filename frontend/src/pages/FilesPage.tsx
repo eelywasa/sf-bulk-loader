@@ -187,6 +187,11 @@ export default function FilesPage() {
     </div>
   ) : null
 
+  const sourceDescription =
+    source === 'local'
+      ? 'Browse and preview CSV files in the input directory.'
+      : 'Browse and preview CSV files from the selected input source.'
+
   // ── Loading state ──────────────────────────────────────────────────────────
 
   if (filesLoading) {
@@ -210,7 +215,7 @@ export default function FilesPage() {
         <div>
           <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
           <p className="mt-1 text-sm text-content-muted">
-            Browse and preview CSV files in the input directory.
+            {sourceDescription}
           </p>
           {sourceSelector}
         </div>
@@ -229,7 +234,7 @@ export default function FilesPage() {
         <div>
           <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
           <p className="mt-1 text-sm text-content-muted">
-            Browse and preview CSV files in the input directory.
+            {sourceDescription}
           </p>
           {sourceSelector}
         </div>
@@ -279,7 +284,7 @@ export default function FilesPage() {
       <div>
         <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
         <p className="mt-1 text-sm text-content-muted">
-          Browse and preview CSV files in the input directory.
+          {sourceDescription}
         </p>
         {sourceSelector}
       </div>
