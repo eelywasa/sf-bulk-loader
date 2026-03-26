@@ -77,6 +77,23 @@ const run3: LoadRun = {
   is_retry: false,
 }
 
+// 11 runs to trigger pagination (PAGE_SIZE = 10)
+function makeRuns(count: number): LoadRun[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `run-${String(i).padStart(8, '0')}-1111-2222-3333-444455556666`,
+    load_plan_id: 'plan-1',
+    status: 'completed' as const,
+    started_at: `2024-03-${String(i + 1).padStart(2, '0')}T10:00:00Z`,
+    completed_at: null,
+    total_records: 100,
+    total_success: 100,
+    total_errors: 0,
+    initiated_by: null,
+    error_summary: null,
+    is_retry: false,
+  }))
+}
+
 // ─── Render helper ─────────────────────────────────────────────────────────────
 
 function renderRunsPage() {
@@ -313,6 +330,77 @@ describe('RunsPage', () => {
     renderRunsPage()
     await waitFor(() => {
       expect(screen.getByText('failed')).toBeInTheDocument()
+    })
+  })
+
+  // ── Pagination ───────────────────────────────────────────────────────────────
+
+  it('does not show pagination controls when runs fit on one page', async () => {
+    vi.mocked(runsApi.list).mockResolvedValue([run1, run2, run3])
+    renderRunsPage()
+    await waitFor(() => screen.getByText('aaaabbbb…'))
+    expect(screen.queryByRole('button', { name: /previous page/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /next page/i })).not.toBeInTheDocument()
+  })
+
+  it('shows pagination controls when runs exceed page size', async () => {
+    vi.mocked(runsApi.list).mockResolvedValue(makeRuns(11))
+    renderRunsPage()
+    await waitFor(() => screen.getByRole('button', { name: /next page/i }))
+    expect(screen.getByRole('button', { name: /previous page/i })).toBeInTheDocument()
+    expect(screen.getByText('1 / 2')).toBeInTheDocument()
+  })
+
+  it('shows only the first 10 runs on page 1', async () => {
+    const runs = makeRuns(11)
+    vi.mocked(runsApi.list).mockResolvedValue(runs)
+    renderRunsPage()
+    await waitFor(() => screen.getByRole('button', { name: /next page/i }))
+    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(10)
+    expect(screen.getByText('1–10 of 11 runs')).toBeInTheDocument()
+  })
+
+  it('navigates to page 2 and shows the remaining run', async () => {
+    const user = userEvent.setup()
+    vi.mocked(runsApi.list).mockResolvedValue(makeRuns(11))
+    renderRunsPage()
+    await waitFor(() => screen.getByRole('button', { name: /next page/i }))
+
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+
+    expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(1)
+    expect(screen.getByText('11–11 of 11 runs')).toBeInTheDocument()
+    expect(screen.getByText('2 / 2')).toBeInTheDocument()
+  })
+
+  it('disables Prev on page 1 and Next on last page', async () => {
+    const user = userEvent.setup()
+    vi.mocked(runsApi.list).mockResolvedValue(makeRuns(11))
+    renderRunsPage()
+    await waitFor(() => screen.getByRole('button', { name: /next page/i }))
+
+    expect(screen.getByRole('button', { name: /previous page/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /next page/i })).not.toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+
+    expect(screen.getByRole('button', { name: /previous page/i })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /next page/i })).toBeDisabled()
+  })
+
+  it('resets to page 1 when a filter is changed', async () => {
+    const user = userEvent.setup()
+    vi.mocked(runsApi.list).mockResolvedValue(makeRuns(11))
+    renderRunsPage()
+    await waitFor(() => screen.getByRole('button', { name: /next page/i }))
+
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    expect(screen.getByText('2 / 2')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'completed')
+
+    await waitFor(() => {
+      expect(screen.queryByText('2 / 2')).not.toBeInTheDocument()
     })
   })
 })
