@@ -155,7 +155,7 @@ export default function AppShell() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-base">
+    <div className="flex h-dvh overflow-hidden bg-surface-base">
       {/* Sidebar */}
       <aside className={clsx(
         'group/sidebar bg-surface-raised border-r border-border-base flex flex-col flex-shrink-0 transition-all duration-200',
