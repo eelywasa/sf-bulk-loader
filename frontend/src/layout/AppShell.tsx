@@ -14,6 +14,7 @@ import {
   faFolderOpen,
   faGear,
   faChevronDown,
+  faChevronLeft,
   faChevronRight,
   faCheck,
   faRightFromBracket,
@@ -40,7 +41,7 @@ const themeOptions: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
 ]
 
-function SettingsMenu() {
+function SettingsMenu({ collapsed }: { collapsed: boolean }) {
   const { theme, setTheme } = useTheme()
   const [open, setOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
@@ -69,16 +70,23 @@ function SettingsMenu() {
     <div ref={menuRef} className="relative px-3 py-3 border-t border-border-base">
       <button
         onClick={() => { setOpen(v => !v); setThemeOpen(false) }}
-        className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-content-secondary hover:bg-surface-hover hover:text-content-primary transition-colors"
+        className={clsx(
+          'w-full flex items-center rounded text-sm text-content-secondary hover:bg-surface-hover hover:text-content-primary transition-colors',
+          collapsed ? 'justify-center py-3' : 'gap-2 px-2 py-1.5'
+        )}
+        title={collapsed ? 'Settings' : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="Settings"
       >
         <FontAwesomeIcon icon={faGear} className="w-4 h-4 flex-shrink-0" />
-        <span className="flex-1 text-left font-medium">Settings</span>
-        <FontAwesomeIcon
-          icon={faChevronDown}
-          className={clsx('w-3.5 h-3.5 transition-transform', open && 'rotate-180')}
-        />
+        {!collapsed && <span className="flex-1 text-left font-medium">Settings</span>}
+        {!collapsed && (
+          <FontAwesomeIcon
+            icon={faChevronDown}
+            className={clsx('w-3.5 h-3.5 transition-transform', open && 'rotate-180')}
+          />
+        )}
       </button>
 
       {/* Settings popover — floats above the button */}
@@ -131,22 +139,56 @@ function SettingsMenu() {
 export default function AppShell() {
   const { user, logout, authRequired } = useAuth()
   const displayName = user?.display_name ?? user?.username ?? null
+  const [collapsed, setCollapsed] = useState(() =>
+    localStorage.getItem('sidebarCollapsed') === 'true'
+  )
+
+  function toggleCollapsed() {
+    const next = !collapsed
+    setCollapsed(next)
+    localStorage.setItem('sidebarCollapsed', String(next))
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface-base">
       {/* Sidebar */}
-      <aside className="w-56 bg-surface-raised border-r border-border-base flex flex-col flex-shrink-0">
+      <aside className={clsx(
+        'group/sidebar bg-surface-raised border-r border-border-base flex flex-col flex-shrink-0 transition-all duration-200 overflow-hidden',
+        collapsed ? 'w-14' : 'w-56'
+      )}>
         {/* Logo/brand */}
-        <div className="px-5 py-4 border-b border-border-base">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center">
+        {collapsed ? (
+          <button
+            onClick={toggleCollapsed}
+            className="px-3 py-4 border-b border-border-base flex items-center justify-center text-content-muted hover:text-content-primary transition-colors"
+            aria-label="Expand sidebar"
+          >
+            <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center group-hover/sidebar:hidden">
               <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-semibold text-content-primary leading-tight">
-              Bulk Loader
-            </span>
+            <div className="w-6 h-6 hidden group-hover/sidebar:flex items-center justify-center">
+              <FontAwesomeIcon icon={faChevronRight} className="w-4 h-4" />
+            </div>
+          </button>
+        ) : (
+          <div className="px-3 py-4 border-b border-border-base flex items-center justify-between min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-sm font-semibold text-content-primary leading-tight truncate">
+                Bulk Loader
+              </span>
+            </div>
+            <button
+              onClick={toggleCollapsed}
+              className="w-5 h-5 flex items-center justify-center text-content-muted hover:text-content-primary transition-colors flex-shrink-0"
+              aria-label="Collapse sidebar"
+            >
+              <FontAwesomeIcon icon={faChevronLeft} className="w-3 h-3" />
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 py-3" aria-label="Main navigation">
@@ -155,9 +197,11 @@ export default function AppShell() {
               key={item.path}
               to={item.path}
               end={item.end}
+              title={collapsed ? item.label : undefined}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors duration-100',
+                  'flex items-center text-sm font-medium transition-colors duration-100',
+                  collapsed ? 'justify-center py-2.5' : 'gap-3 px-5 py-2.5',
                   isActive
                     ? 'bg-accent-soft text-content-selected border-r-2 border-accent'
                     : 'text-content-secondary hover:bg-surface-hover hover:text-content-primary',
@@ -165,13 +209,13 @@ export default function AppShell() {
               }
             >
               <FontAwesomeIcon icon={item.icon} className="w-4 h-4 flex-shrink-0" />
-              {item.label}
+              {!collapsed && item.label}
             </NavLink>
           ))}
         </nav>
 
-        {/* Settings menu (replaces version string) */}
-        <SettingsMenu />
+        {/* Settings menu */}
+        <SettingsMenu collapsed={collapsed} />
       </aside>
 
       {/* Main content */}
