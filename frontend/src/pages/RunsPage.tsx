@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { runsApi, plansApi } from '../api/endpoints'
@@ -75,8 +75,13 @@ export default function RunsPage() {
 
   const plans = plansQuery.data ?? []
   const runs = runsQuery.data ?? []
-  const totalPages = Math.ceil(runs.length / PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(runs.length / PAGE_SIZE))
   const paginatedRuns = runs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // Sync page state when a refetch causes the dataset to shrink
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
