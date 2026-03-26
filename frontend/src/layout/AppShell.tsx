@@ -89,9 +89,14 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
         )}
       </button>
 
-      {/* Settings popover — floats above the button */}
+      {/* Settings popover — floats above when expanded, flies right when collapsed */}
       {open && (
-        <div className="absolute bottom-full left-3 right-3 mb-1 bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 overflow-visible">
+        <div className={clsx(
+          'absolute bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 overflow-visible min-w-[160px]',
+          collapsed
+            ? 'bottom-0 left-full ml-2'
+            : 'bottom-full left-3 right-3 mb-1'
+        )}>
           {/* Theme row */}
           <div className="relative">
             <button
@@ -153,7 +158,7 @@ export default function AppShell() {
     <div className="flex h-screen overflow-hidden bg-surface-base">
       {/* Sidebar */}
       <aside className={clsx(
-        'group/sidebar bg-surface-raised border-r border-border-base flex flex-col flex-shrink-0 transition-all duration-200 overflow-hidden',
+        'group/sidebar bg-surface-raised border-r border-border-base flex flex-col flex-shrink-0 transition-all duration-200',
         collapsed ? 'w-14' : 'w-56'
       )}>
         {/* Logo/brand */}
@@ -191,7 +196,7 @@ export default function AppShell() {
         )}
 
         {/* Navigation */}
-        <nav className="flex-1 py-3" aria-label="Main navigation">
+        <nav className="flex-1 py-3 overflow-hidden" aria-label="Main navigation">
           {navItems.map((item) => (
             <NavLink
               key={item.path}

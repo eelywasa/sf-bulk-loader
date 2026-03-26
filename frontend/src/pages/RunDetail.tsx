@@ -109,7 +109,7 @@ export default function RunDetail() {
           </p>
         )}
         {sortedSteps.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {sortedSteps.map((step) => (
               <RunStepPanel
                 key={step.id}
