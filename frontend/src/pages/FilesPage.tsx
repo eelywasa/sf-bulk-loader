@@ -298,7 +298,7 @@ export default function FilesPage() {
           onSelect={setSelectedFile}
           onNavigate={handleNavigate}
         />
-        <div>{previewPanel}</div>
+        <div className="min-w-0">{previewPanel}</div>
       </div>
     </div>
   )

@@ -172,7 +172,7 @@ describe('AppShell', () => {
 
   it('renders the logo icon in the brand area', () => {
     const { container } = renderAppShell()
-    const brand = container.querySelector('.px-5.py-4')
+    const brand = container.querySelector('.px-3.py-4')
     expect(brand?.querySelector('svg')).toBeInTheDocument()
   })
 
@@ -203,6 +203,63 @@ describe('AppShell', () => {
     renderAppShell('/', MOCK_USER_DISPLAY)
     await waitFor(() => {
       expect(screen.getByText('Alice Admin')).toBeInTheDocument()
+    })
+  })
+
+  describe('collapsible sidebar', () => {
+    it('renders the collapse toggle button', () => {
+      renderAppShell()
+      expect(screen.getByRole('button', { name: /collapse sidebar/i })).toBeInTheDocument()
+    })
+
+    it('hides nav labels and brand text when collapsed', async () => {
+      const user = userEvent.setup()
+      renderAppShell()
+      await user.click(screen.getByRole('button', { name: /collapse sidebar/i }))
+      expect(screen.queryByText('Bulk Loader')).not.toBeInTheDocument()
+      expect(screen.queryByText('Dashboard')).not.toBeInTheDocument()
+      expect(screen.queryByText('Connections')).not.toBeInTheDocument()
+    })
+
+    it('shows expand button after collapsing', async () => {
+      const user = userEvent.setup()
+      renderAppShell()
+      await user.click(screen.getByRole('button', { name: /collapse sidebar/i }))
+      expect(screen.getByRole('button', { name: /expand sidebar/i })).toBeInTheDocument()
+    })
+
+    it('restores nav labels when expanded again', async () => {
+      const user = userEvent.setup()
+      renderAppShell()
+      await user.click(screen.getByRole('button', { name: /collapse sidebar/i }))
+      await user.click(screen.getByRole('button', { name: /expand sidebar/i }))
+      expect(screen.getByText('Bulk Loader')).toBeInTheDocument()
+      expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    })
+
+    it('persists collapsed state to localStorage', async () => {
+      const user = userEvent.setup()
+      renderAppShell()
+      await user.click(screen.getByRole('button', { name: /collapse sidebar/i }))
+      expect(localStorage.getItem('sidebarCollapsed')).toBe('true')
+    })
+
+    it('reads collapsed state from localStorage on mount', () => {
+      localStorage.setItem('sidebarCollapsed', 'true')
+      renderAppShell()
+      expect(screen.queryByText('Bulk Loader')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /expand sidebar/i })).toBeInTheDocument()
+    })
+
+    it('nav icons are still present when collapsed', async () => {
+      const user = userEvent.setup()
+      renderAppShell()
+      await user.click(screen.getByRole('button', { name: /collapse sidebar/i }))
+      const nav = screen.getByRole('navigation', { name: 'Main navigation' })
+      const links = within(nav).getAllByRole('link')
+      links.forEach((link) => {
+        expect(link.querySelector('svg')).toBeInTheDocument()
+      })
     })
   })
 

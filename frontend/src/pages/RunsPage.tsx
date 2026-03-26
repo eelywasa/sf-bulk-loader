@@ -30,6 +30,8 @@ function formatDate(iso: string | null | undefined): string {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 10
+
 export default function RunsPage() {
   const navigate = useNavigate()
 
@@ -38,6 +40,7 @@ export default function RunsPage() {
   const [runStatus, setRunStatus] = useState('')
   const [startedAfter, setStartedAfter] = useState('')
   const [startedBefore, setStartedBefore] = useState('')
+  const [page, setPage] = useState(1)
 
   function buildFilters(): RunListParams {
     return {
@@ -53,6 +56,7 @@ export default function RunsPage() {
     setRunStatus('')
     setStartedAfter('')
     setStartedBefore('')
+    setPage(1)
   }
 
   const filters = buildFilters()
@@ -71,6 +75,8 @@ export default function RunsPage() {
 
   const plans = plansQuery.data ?? []
   const runs = runsQuery.data ?? []
+  const totalPages = Math.ceil(runs.length / PAGE_SIZE)
+  const paginatedRuns = runs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -93,7 +99,7 @@ export default function RunsPage() {
             </label>
             <select
               value={planId}
-              onChange={(e) => setPlanId(e.target.value)}
+              onChange={(e) => { setPlanId(e.target.value); setPage(1) }}
               className={SELECT_CLASS}
               aria-label="Filter by plan"
             >
@@ -113,7 +119,7 @@ export default function RunsPage() {
             </label>
             <select
               value={runStatus}
-              onChange={(e) => setRunStatus(e.target.value)}
+              onChange={(e) => { setRunStatus(e.target.value); setPage(1) }}
               className={SELECT_CLASS}
               aria-label="Filter by status"
             >
@@ -134,7 +140,7 @@ export default function RunsPage() {
             <input
               type="datetime-local"
               value={startedAfter}
-              onChange={(e) => setStartedAfter(e.target.value)}
+              onChange={(e) => { setStartedAfter(e.target.value); setPage(1) }}
               className={INPUT_CLASS}
               aria-label="Started after"
             />
@@ -148,7 +154,7 @@ export default function RunsPage() {
             <input
               type="datetime-local"
               value={startedBefore}
-              onChange={(e) => setStartedBefore(e.target.value)}
+              onChange={(e) => { setStartedBefore(e.target.value); setPage(1) }}
               className={INPUT_CLASS}
               aria-label="Started before"
             />
@@ -212,7 +218,7 @@ export default function RunsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-base">
-                {runs.map((run) => {
+                {paginatedRuns.map((run) => {
                   const plan = plans.find((p) => p.id === run.load_plan_id)
                   return (
                     <tr
@@ -260,6 +266,35 @@ export default function RunsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {runsQuery.isSuccess && totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border-base">
+            <span className="text-sm text-content-muted">
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, runs.length)} of {runs.length} runs
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
+                aria-label="Previous page"
+              >
+                ‹ Prev
+              </button>
+              <span className="px-2 text-sm text-content-secondary">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
+                aria-label="Next page"
+              >
+                Next ›
+              </button>
+            </div>
           </div>
         )}
       </Card>

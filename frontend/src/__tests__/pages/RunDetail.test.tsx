@@ -589,9 +589,9 @@ describe('RunDetail', () => {
     expect(screen.queryByRole('button', { name: 'Retry Failed Records' })).not.toBeInTheDocument()
   })
 
-  // ── Progress bar ──────────────────────────────────────────────────────────────
+  // ── Progress bars ─────────────────────────────────────────────────────────────
 
-  it('renders progress bar when total_records is set', async () => {
+  it('renders run-level progress bar when total_records is set', async () => {
     vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
     vi.mocked(runsApi.jobs).mockResolvedValue([])
     vi.mocked(plansApi.get).mockResolvedValue(planDetail)
@@ -600,5 +600,34 @@ describe('RunDetail', () => {
     await waitFor(() => {
       expect(screen.getByRole('progressbar')).toBeInTheDocument()
     })
+  })
+
+  it('renders step-level progress bar when step has jobs with total_records', async () => {
+    const jobWithTotals: JobRecord = {
+      ...jobComplete,
+      total_records: 1000,
+      records_processed: 800,
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobWithTotals])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      // Run-level + step-level progress bars
+      expect(screen.getAllByRole('progressbar').length).toBeGreaterThanOrEqual(2)
+    })
+  })
+
+  it('does not render step-level progress bar when step has no jobs', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByText('Account'))
+
+    // Only the run-level progress bar should be present
+    expect(screen.getAllByRole('progressbar')).toHaveLength(1)
   })
 })

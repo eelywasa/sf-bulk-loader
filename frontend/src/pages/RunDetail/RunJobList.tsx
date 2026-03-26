@@ -10,7 +10,7 @@ interface RunJobListProps {
 
 export function RunJobList({ jobs, runId }: RunJobListProps) {
   if (jobs.length === 0) {
-    return <p className="px-4 py-3 text-sm text-content-muted italic">No jobs started yet.</p>
+    return <p className="px-5 py-4 text-sm text-content-muted italic">No jobs started yet.</p>
   }
 
   return (
@@ -18,49 +18,60 @@ export function RunJobList({ jobs, runId }: RunJobListProps) {
       {jobs.map((job) => (
         <div
           key={job.id}
-          className="flex items-start justify-between px-4 py-3 text-sm hover:bg-surface-hover"
+          className="px-5 py-4 text-sm hover:bg-surface-hover"
         >
-          <div className="flex flex-col gap-1 min-w-0 flex-1">
-            <div className="flex items-center gap-3 flex-wrap min-w-0">
+          {/* Top row: identity + Details link */}
+          <div className="flex items-center justify-between gap-3 min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-wrap">
               <span className="text-xs text-content-muted font-mono shrink-0">
                 Part {job.partition_index}
               </span>
               <Badge variant={job.status as BadgeVariant}>{job.status}</Badge>
-              {job.records_processed != null && (
-                <span className="text-content-secondary">
-                  {job.records_processed} processed
-                  {(job.records_failed ?? 0) > 0 && (
-                    <span className="text-error-text ml-1">· {job.records_failed} failed</span>
-                  )}
-                </span>
-              )}
-              {job.error_message && (
-                <span
-                  className="text-error-text text-xs truncate max-w-[20rem]"
-                  title={job.error_message}
-                >
-                  {job.error_message}
-                </span>
+            </div>
+            <Link
+              to={`/runs/${runId}/jobs/${job.id}`}
+              className="text-content-link hover:underline text-xs shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Details
+            </Link>
+          </div>
+
+          {/* Bottom row: stats + error + progress */}
+          {(job.records_processed != null || job.error_message) && (
+            <div className="mt-2 flex flex-col gap-1.5 pl-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                {job.records_processed != null && (
+                  <span className="text-xs text-content-secondary">
+                    {job.records_processed.toLocaleString()} processed
+                    {(job.records_failed ?? 0) > 0 && (
+                      <span className="text-error-text ml-1">
+                        · {job.records_failed!.toLocaleString()} failed
+                      </span>
+                    )}
+                  </span>
+                )}
+                {job.error_message && (
+                  <span
+                    className="text-error-text text-xs truncate max-w-[24rem]"
+                    title={job.error_message}
+                  >
+                    {job.error_message}
+                  </span>
+                )}
+              </div>
+              {job.status === 'in_progress' && (job.total_records ?? 0) > 0 && (
+                <Progress
+                  value={Math.round(((job.records_processed ?? 0) / job.total_records!) * 100)}
+                  label={`${(job.records_processed ?? 0).toLocaleString()} / ${job.total_records!.toLocaleString()} records`}
+                  showValue
+                  color="blue"
+                  size="sm"
+                  className="max-w-xs"
+                />
               )}
             </div>
-            {job.status === 'in_progress' && (job.total_records ?? 0) > 0 && (
-              <Progress
-                value={Math.round(((job.records_processed ?? 0) / job.total_records!) * 100)}
-                label={`${(job.records_processed ?? 0).toLocaleString()} / ${job.total_records!.toLocaleString()} records`}
-                showValue
-                color="blue"
-                size="sm"
-                className="max-w-xs"
-              />
-            )}
-          </div>
-          <Link
-            to={`/runs/${runId}/jobs/${job.id}`}
-            className="ml-2 text-content-link hover:underline text-xs shrink-0"
-            onClick={(e) => e.stopPropagation()}
-          >
-            Details
-          </Link>
+          )}
         </div>
       ))}
     </>
