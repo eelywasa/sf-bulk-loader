@@ -223,11 +223,32 @@ describe('JobDetail', () => {
     })
   })
 
-  it('shows SF job ID in Overview', async () => {
+  it('shows SF job ID as plain text when sf_instance_url is absent', async () => {
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
     await waitFor(() => {
       expect(screen.getByText('sf-xyz-456')).toBeInTheDocument()
+    })
+    // Should not be a link when there is no instance URL
+    expect(screen.queryByRole('link', { name: 'sf-xyz-456' })).not.toBeInTheDocument()
+  })
+
+  it('shows SF job ID as a link to Salesforce when sf_instance_url is present', async () => {
+    const jobWithInstanceUrl: JobRecord = {
+      ...jobComplete,
+      sf_instance_url: 'https://myorg.salesforce.com',
+    }
+    vi.mocked(jobsApi.get).mockResolvedValue(jobWithInstanceUrl)
+    renderJobDetail()
+    await waitFor(() => {
+      const link = screen.getByRole('link', { name: 'sf-xyz-456' })
+      expect(link).toBeInTheDocument()
+      expect(link).toHaveAttribute(
+        'href',
+        'https://myorg.salesforce.com/lightning/setup/AsyncApiJobStatus/page?address=%2Fsf-xyz-456',
+      )
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     })
   })
 

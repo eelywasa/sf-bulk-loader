@@ -10,11 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
 from app.models.job import JobRecord, JobStatus
+from app.models.load_run import LoadRun
+from app.models.load_plan import LoadPlan
 from app.schemas.job import JobResponse
 from app.services.auth import get_current_user
 from app.services.input_storage import InputStorageError, _validate_filters, _row_matches
@@ -176,8 +179,26 @@ async def list_jobs(
 
 
 @router.get("/api/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> JobRecord:
-    return await _get_job_or_404(job_id, db)
+async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> JobResponse:
+    result = await db.execute(
+        select(JobRecord)
+        .options(
+            joinedload(JobRecord.load_run)
+            .joinedload(LoadRun.load_plan)
+            .joinedload(LoadPlan.connection)
+        )
+        .where(JobRecord.id == job_id)
+    )
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    response = JobResponse.model_validate(job)
+    try:
+        instance_url = job.load_run.load_plan.connection.instance_url
+        response = response.model_copy(update={"sf_instance_url": instance_url})
+    except AttributeError:
+        pass
+    return response
 
 
 @router.get("/api/jobs/{job_id}/success-csv")

@@ -11,6 +11,7 @@ class JobResponse(BaseModel):
     load_run_id: str
     load_step_id: str
     sf_job_id: Optional[str] = None
+    sf_instance_url: Optional[str] = None
     partition_index: int
     status: JobStatus
     records_processed: Optional[int] = None

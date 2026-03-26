@@ -134,6 +134,15 @@ def test_get_job_returns_detail(auth_client):
     assert body["records_processed"] == 100
 
 
+def test_get_job_includes_sf_instance_url(auth_client):
+    """sf_instance_url is populated from the connection via the run → plan → connection chain."""
+    _, plan_id, run_id = _setup_run(auth_client)
+    job_ids = _seed_jobs(plan_id, run_id, n=1)
+    resp = auth_client.get(f"/api/jobs/{job_ids[0]}")
+    assert resp.status_code == 200
+    assert resp.json()["sf_instance_url"] == "https://myorg.my.salesforce.com"
+
+
 def test_get_job_not_found_returns_404(auth_client):
     assert auth_client.get("/api/jobs/nonexistent").status_code == 404
 
