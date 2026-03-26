@@ -1,13 +1,19 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ConnectionBase(BaseModel):
     name: str
     instance_url: str
     login_url: str
+
+    @field_validator("instance_url")
+    @classmethod
+    def strip_trailing_slash(cls, v: str) -> str:
+        return v.rstrip("/")
+
     client_id: str
     username: str
     is_sandbox: bool = False
@@ -20,6 +26,12 @@ class ConnectionCreate(ConnectionBase):
 class ConnectionUpdate(BaseModel):
     name: Optional[str] = None
     instance_url: Optional[str] = None
+
+    @field_validator("instance_url")
+    @classmethod
+    def strip_trailing_slash(cls, v: Optional[str]) -> Optional[str]:
+        return v.rstrip("/") if v is not None else v
+
     login_url: Optional[str] = None
     client_id: Optional[str] = None
     private_key: Optional[str] = None  # Plain PEM; encrypted at rest

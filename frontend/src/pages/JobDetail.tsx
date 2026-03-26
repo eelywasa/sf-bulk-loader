@@ -139,7 +139,20 @@ export default function JobDetail() {
   const overviewContent = job ? (
     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 py-2">
       <MetaField label="Job ID (internal)">{job.id}</MetaField>
-      <MetaField label="Salesforce Job ID">{job.sf_job_id ?? '—'}</MetaField>
+      <MetaField label="Salesforce Job ID">
+        {job.sf_job_id && job.sf_instance_url ? (
+          <a
+            href={`${job.sf_instance_url}/lightning/setup/AsyncApiJobStatus/page?address=%2F${job.sf_job_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-mono"
+          >
+            {job.sf_job_id}
+          </a>
+        ) : (
+          job.sf_job_id ?? '—'
+        )}
+      </MetaField>
       <MetaField label="Partition Index">{job.partition_index}</MetaField>
       <MetaField label="Status">
         <Badge variant={jobStatusVariant(job.status)} dot>

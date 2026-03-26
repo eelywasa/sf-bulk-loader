@@ -179,6 +179,7 @@ export interface JobRecord {
   load_run_id: string
   load_step_id: string
   sf_job_id?: string | null
+  sf_instance_url?: string | null
   partition_index: number
   status: JobStatus
   records_processed?: number | null
