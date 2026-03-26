@@ -7,7 +7,13 @@
 #   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
 #
 # The ./data/db volume from docker-compose.yml is unused when PostgreSQL is active.
-# Database credentials can be changed here or overridden via .env.
+#
+# ⚠️  IMPORTANT — change the default credentials before deploying to any non-local environment.
+# The values below are for local development only. Update POSTGRES_PASSWORD and the
+# DATABASE_URL password to a strong, unique value, or set them via a .env file:
+#
+#   POSTGRES_PASSWORD=your-strong-password
+#   DATABASE_URL=postgresql+asyncpg://bulk_loader:your-strong-password@postgres:5432/bulk_loader
 
 services:
   postgres:
@@ -15,7 +21,7 @@ services:
     environment:
       POSTGRES_DB: bulk_loader
       POSTGRES_USER: bulk_loader
-      POSTGRES_PASSWORD: bulk_loader
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bulk_loader}  # Change for non-local deployments
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -27,7 +33,7 @@ services:
 
   backend:
     environment:
-      DATABASE_URL: postgresql+asyncpg://bulk_loader:bulk_loader@postgres:5432/bulk_loader
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://bulk_loader:bulk_loader@postgres:5432/bulk_loader}
     depends_on:
       postgres:
         condition: service_healthy
