@@ -31,7 +31,7 @@ Browser ──▶ nginx (port 80, HTTP — default)
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-org/sf-bulk-loader.git
+git clone https://github.com/eelywasa/sf-bulk-loader.git
 cd sf-bulk-loader
 cp .env.example .env          # set ADMIN_USERNAME and ADMIN_PASSWORD
 mkdir -p data/input data/output data/db
