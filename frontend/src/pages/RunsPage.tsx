@@ -75,8 +75,9 @@ export default function RunsPage() {
 
   const plans = plansQuery.data ?? []
   const runs = runsQuery.data ?? []
-  const totalPages = Math.ceil(runs.length / PAGE_SIZE)
-  const paginatedRuns = runs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(runs.length / PAGE_SIZE))
+  const clampedPage = Math.min(page, totalPages)
+  const paginatedRuns = runs.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE)
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -272,23 +273,23 @@ export default function RunsPage() {
         {runsQuery.isSuccess && totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border-base">
             <span className="text-sm text-content-muted">
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, runs.length)} of {runs.length} runs
+              {(clampedPage - 1) * PAGE_SIZE + 1}–{Math.min(clampedPage * PAGE_SIZE, runs.length)} of {runs.length} runs
             </span>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
+                disabled={clampedPage === 1}
                 className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
                 aria-label="Previous page"
               >
                 ‹ Prev
               </button>
               <span className="px-2 text-sm text-content-secondary">
-                {page} / {totalPages}
+                {clampedPage} / {totalPages}
               </span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
+                disabled={clampedPage === totalPages}
                 className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
                 aria-label="Next page"
               >

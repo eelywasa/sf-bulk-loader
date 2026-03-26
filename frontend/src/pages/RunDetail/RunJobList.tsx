@@ -38,7 +38,7 @@ export function RunJobList({ jobs, runId }: RunJobListProps) {
           </div>
 
           {/* Bottom row: stats + error + progress */}
-          {(job.records_processed != null || job.error_message) && (
+          {(job.records_processed != null || job.error_message || (job.status === 'in_progress' && (job.total_records ?? 0) > 0)) && (
             <div className="mt-2 flex flex-col gap-1.5 pl-0">
               <div className="flex items-center gap-2 flex-wrap">
                 {job.records_processed != null && (
