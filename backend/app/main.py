@@ -4,6 +4,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
+from app.observability.logging_config import configure_logging
+
+configure_logging(settings)
+
 logger = logging.getLogger(__name__)
 
 from app.api.auth import router as auth_router
@@ -15,7 +20,6 @@ from app.api.load_runs import router as load_runs_router
 from app.api.load_steps import router as load_steps_router
 from app.api.utility import router as utility_router
 from app.api.utility import ws_router
-from app.config import settings
 from app.database import AsyncSessionLocal, engine
 from app.services.auth import seed_admin
 
