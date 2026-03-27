@@ -18,6 +18,11 @@ step_id, job_record_id, sf_job_id, load_plan_id, input_connection_id) are
 passed through automatically when present on the LogRecord via the logging
 `extra={}` kwarg. This makes the formatter forward-compatible with the context
 propagation work planned for later observability tickets.
+
+RequestContextFilter is also attached to the root handler by configure_logging().
+It reads request_id from the async ContextVar set by RequestIDMiddleware and
+injects it into every LogRecord so all log calls within a request automatically
+carry the correlation ID, with no changes needed at individual call sites.
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ import logging
 import sys
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+
+from app.observability.context import get_request_id
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -47,6 +54,7 @@ _PASSTHROUGH_FIELDS = (
     "input_connection_id",
     "route",
     "method",
+    "status_code",
     "duration_ms",
 )
 
@@ -106,6 +114,21 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
+class RequestContextFilter(logging.Filter):
+    """Inject the current request_id into every LogRecord.
+
+    Reads from the async ContextVar set by RequestIDMiddleware so the value
+    is automatically scoped to the active request without any changes to
+    individual logging call sites. Returns None when called outside a request
+    context (e.g. background tasks, startup logs).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "request_id"):
+            record.request_id = get_request_id()
+        return True
+
+
 def configure_logging(settings: "Settings") -> None:
     """Apply centralized logging configuration.
 
@@ -128,6 +151,7 @@ def configure_logging(settings: "Settings") -> None:
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
+    handler.addFilter(RequestContextFilter())
 
     root = logging.getLogger()
     root.setLevel(level)

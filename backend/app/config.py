@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["plain", "json"] = "plain"
     service_name: str = "sf-bulk-loader-backend"
+    request_id_header_name: str = "X-Request-ID"
     encryption_key: str = ""
     encryption_key_file: str = "/data/db/encryption.key"
 

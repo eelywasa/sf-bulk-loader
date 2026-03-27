@@ -11,7 +11,25 @@ Docker deployment.
 The full specification is in `salesforce-bulk-loader-spec.md`. Always refer to it for architectural decisions, data model, API design, and build order.
 For the UI extra guidance can be found in `frontend-claude-runbook.md`. Treat it as an authority — if other docs conflict, follow the runbook.
 
-Active spec files live in `docs/specs/`. Mark each ticket as complete by appending `— ✅ DONE` to its heading when it is fully implemented. When all tickets in a spec file have been fully implemented, move the file to `docs/specs/implemented/`.
+Active spec files live in `docs/specs/`. Ticket status is tracked in Jira — do not mark tickets as done in the spec files themselves.
+
+## Jira Workflow
+
+Tickets are tracked in Jira project **SFBL** at `matthew-jenkin.atlassian.net`. Use the Jira MCP tools to manage ticket state as you work.
+
+**When starting a ticket:**
+1. If a plan has been produced, post it as a comment on the Jira issue using `jira_add_comment` before writing any code
+2. Transition the Jira issue to **In Progress** using `jira_transition_issue`
+3. Begin implementation
+
+**When completing a ticket:**
+1. Run backend tests (`cd backend && pytest`) and frontend tests (`cd frontend && npm run test:run`) and note results
+2. Transition the Jira issue to **Done** using `jira_transition_issue`
+3. Add a comment to the Jira issue using `jira_add_comment` summarising:
+   - What was implemented
+   - Key files changed
+   - Test results (pass/fail counts)
+   - Any notable decisions or deviations from the spec
 
 ## Documentation Structure
 User-facing documentation lives in `docs/`:
