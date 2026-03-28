@@ -175,6 +175,22 @@ Before implementing such a ticket, work through the checklist in `docs/observabi
 - Does the new path introduce an execution boundary needing a custom span?
 - Do any new error paths or exception handlers comply with `sanitization.py` rules?
 
+## Pull Request Review Comments
+
+When addressing review comments on a PR (automated or human), always reply directly
+to each comment thread after the fix is in place. Use the GitHub API via `gh`:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr}/comments \
+  -X POST \
+  -f body="Your reply text" \
+  -F in_reply_to={comment_id}
+```
+
+The reply should briefly describe what was changed and why, so reviewers (and future
+readers of the thread) can confirm the fix without digging through the diff. Do this
+as the final step of remediating each comment — not as a batch at the end.
+
 ## Code Standards
 - Python: async/await throughout, type hints on all function signatures, Pydantic schemas, SQLAlchemy 2.0 `mapped_column` style.
 - Frontend: functional components with hooks, Tailwind for styling (no separate CSS files).
