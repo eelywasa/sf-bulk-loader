@@ -1,0 +1,181 @@
+"""Optional OpenTelemetry-compatible tracing for workflow execution boundaries.
+
+Tracing is disabled by default (tracing_enabled=False in config). When disabled,
+a NoOpTracerProvider is installed so all span calls are zero-overhead no-ops.
+
+When enabled, a real TracerProvider is set up with optional OTLP export.
+FastAPI and httpx are auto-instrumented, and custom workflow spans are created
+around run/step/partition execution boundaries.
+
+Usage in execution services:
+
+    from app.observability import tracing
+
+    with tracing.run_span(run_id, load_plan_id) as span:
+        span.set_attribute("outcome.code", outcome_code)
+        ...
+
+    with tracing.step_span(step_id, object_name, operation) as span:
+        ...
+
+    with tracing.partition_span(job_record_id) as span:
+        span.set_attribute("salesforce.job.id", sf_job_id)  # once known
+        ...
+"""
+
+from __future__ import annotations
+
+import logging
+from contextlib import contextmanager
+from typing import Generator
+
+from opentelemetry import trace
+from opentelemetry.trace import NonRecordingSpan, Span, StatusCode
+
+logger = logging.getLogger(__name__)
+
+_configured = False
+
+
+def configure_tracing(settings) -> None:
+    """Set up the global TracerProvider from application settings.
+
+    Must be called once at startup before the FastAPI app is created.
+    Safe to call multiple times (idempotent after first call).
+    """
+    global _configured
+    if _configured:
+        return
+    _configured = True
+
+    if not settings.tracing_enabled:
+        from opentelemetry.trace import NoOpTracerProvider
+
+        trace.set_tracer_provider(NoOpTracerProvider())
+        logger.debug("Tracing disabled — NoOpTracerProvider installed")
+        return
+
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, TraceIdRatioBased
+
+    ratio = getattr(settings, "trace_sample_ratio", 1.0)
+    sampler = ALWAYS_ON if ratio >= 1.0 else TraceIdRatioBased(ratio)
+    provider = TracerProvider(sampler=sampler)
+
+    otlp_endpoint = getattr(settings, "otlp_endpoint", None)
+    if otlp_endpoint:
+        try:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+            exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+            provider.add_span_processor(BatchSpanProcessor(exporter))
+            logger.info("Tracing: OTLP exporter configured for %s", otlp_endpoint)
+        except ImportError:
+            logger.warning(
+                "otlp_endpoint is set but opentelemetry-exporter-otlp is not installed. "
+                "Install opentelemetry-exporter-otlp to export traces."
+            )
+
+    trace.set_tracer_provider(provider)
+
+    try:
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        HTTPXClientInstrumentor().instrument()
+        logger.debug("Tracing: httpx auto-instrumented")
+    except Exception as exc:
+        logger.warning("Tracing: httpx instrumentation failed: %s", exc)
+
+    logger.info(
+        "Tracing enabled (sample_ratio=%.2f, otlp=%s)",
+        ratio,
+        otlp_endpoint or "none",
+    )
+
+
+def instrument_fastapi_app(app) -> None:
+    """Instrument a FastAPI app with OpenTelemetry middleware.
+
+    Must be called after the FastAPI app instance is created.
+    Does nothing when tracing is disabled.
+    """
+    if isinstance(trace.get_tracer_provider(), trace.ProxyTracerProvider):
+        return
+    try:
+        from opentelemetry.trace import NoOpTracerProvider
+
+        if isinstance(trace.get_tracer_provider(), NoOpTracerProvider):
+            return
+    except Exception:
+        return
+
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        FastAPIInstrumentor.instrument_app(app)
+        logger.debug("Tracing: FastAPI auto-instrumented")
+    except Exception as exc:
+        logger.warning("Tracing: FastAPI instrumentation failed: %s", exc)
+
+
+def _get_tracer() -> trace.Tracer:
+    return trace.get_tracer("sf-bulk-loader")
+
+
+@contextmanager
+def run_span(run_id: str, load_plan_id: str) -> Generator[Span, None, None]:
+    """Context manager that creates a span for a full run execution."""
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("run.execute") as span:
+        span.set_attribute("run.id", run_id)
+        span.set_attribute("load_plan.id", load_plan_id)
+        try:
+            yield span
+        except Exception as exc:
+            if not isinstance(span, NonRecordingSpan):
+                span.record_exception(exc)
+                span.set_status(StatusCode.ERROR, str(exc))
+            raise
+
+
+@contextmanager
+def step_span(
+    step_id: str, object_name: str, operation: str
+) -> Generator[Span, None, None]:
+    """Context manager that creates a span for a single step execution."""
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("step.execute") as span:
+        span.set_attribute("step.id", step_id)
+        span.set_attribute("object.name", object_name)
+        span.set_attribute("operation", operation)
+        try:
+            yield span
+        except Exception as exc:
+            if not isinstance(span, NonRecordingSpan):
+                span.record_exception(exc)
+                span.set_status(StatusCode.ERROR, str(exc))
+            raise
+
+
+@contextmanager
+def partition_span(job_record_id: str) -> Generator[Span, None, None]:
+    """Context manager that creates a span for a single partition/job execution.
+
+    The caller should set ``salesforce.job.id`` on the returned span once the
+    Salesforce job ID is known::
+
+        with tracing.partition_span(job_record_id) as span:
+            sf_job_id = await bulk_client.create_job(...)
+            span.set_attribute("salesforce.job.id", sf_job_id)
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("partition.execute") as span:
+        span.set_attribute("job_record.id", job_record_id)
+        try:
+            yield span
+        except Exception as exc:
+            if not isinstance(span, NonRecordingSpan):
+                span.record_exception(exc)
+                span.set_status(StatusCode.ERROR, str(exc))
+            raise

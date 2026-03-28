@@ -5,11 +5,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.observability.error_monitoring import configure_error_monitoring
 from app.observability.logging_config import configure_logging
 from app.observability.metrics_middleware import MetricsMiddleware
 from app.observability.middleware import RequestIDMiddleware
+from app.observability.tracing import configure_tracing, instrument_fastapi_app
 
 configure_logging(settings)
+configure_tracing(settings)
+configure_error_monitoring(settings)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +63,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+instrument_fastapi_app(app)
 
 app.add_middleware(
     CORSMiddleware,

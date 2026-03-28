@@ -115,6 +115,49 @@ curl http://127.0.0.1:8000/api/health
 
 ---
 
+## Observability
+
+### Structured logging
+
+Set `LOG_FORMAT=json` in `.env` to enable structured JSON logging (one JSON object per line on stdout). This is the default for deployed environments. Local development uses plain text by default.
+
+Set `LOG_LEVEL=DEBUG` to see detailed request and workflow logs.
+
+### Health endpoints
+
+Three health endpoints are available:
+
+- `GET /api/health/live` — liveness probe (no dependency checks, always fast)
+- `GET /api/health/ready` — readiness probe (checks database connectivity; returns 503 if unavailable)
+- `GET /api/health/dependencies` — operator view of per-dependency health
+
+Docker Compose uses `/api/health/ready` for its health check. The legacy `/api/health` endpoint is preserved for backward compatibility.
+
+### Optional tracing
+
+OpenTelemetry-compatible tracing can be enabled via `.env`:
+
+```env
+TRACING_ENABLED=true
+TRACE_SAMPLE_RATIO=1.0            # 0.0 to 1.0; 1.0 = sample all
+OTLP_ENDPOINT=http://localhost:4317  # optional; omit to create spans without export
+```
+
+When enabled, framework auto-instrumentation is active for FastAPI and httpx. Custom workflow spans are created for run, step, and partition/job execution boundaries.
+
+### Optional error monitoring
+
+Sentry-compatible error monitoring can be enabled via `.env`:
+
+```env
+ERROR_MONITORING_ENABLED=true
+ERROR_MONITORING_DSN=https://<key>@<org>.ingest.sentry.io/<project>
+```
+
+Sensitive data is scrubbed before events are transmitted (authorization headers, private keys, passwords, tokens). Correlation context (run_id, step_id, request_id) is attached to captured exceptions automatically.
+
+---
+
 ## Running Tests
 
 ### Backend

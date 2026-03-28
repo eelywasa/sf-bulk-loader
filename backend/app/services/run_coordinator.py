@@ -43,8 +43,10 @@ from app.observability.context import (
     run_id_ctx_var,
     step_id_ctx_var,
 )
+from app.observability.error_monitoring import capture_exception
 from app.observability.events import OutcomeCode, RunEvent, StepEvent
 from app.observability.metrics import record_run_completed, record_run_started
+from app.observability import tracing
 from app.services.salesforce_auth import get_access_token as _default_get_token
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
 
@@ -55,8 +57,24 @@ _DbFactory = Callable[[], AsyncSession]
 
 async def execute_run(run_id: str) -> None:
     """Background entry point: run a LoadRun end-to-end."""
-    async with AsyncSessionLocal() as db:
-        await _execute_run(run_id, db, db_factory=AsyncSessionLocal)
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.trace import NonRecordingSpan
+
+    tracer = tracing._get_tracer()
+    with tracer.start_as_current_span("run.execute") as span:
+        span.set_attribute("run.id", run_id)
+        try:
+            async with AsyncSessionLocal() as db:
+                await _execute_run(run_id, db, db_factory=AsyncSessionLocal)
+        except Exception as exc:
+            logger.exception(
+                "execute_run: unhandled exception for run %s",
+                run_id,
+                extra={"run_id": run_id, "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION},
+            )
+            if not isinstance(span, NonRecordingSpan):
+                span.record_exception(exc)
+            capture_exception(exc, outcome_code=OutcomeCode.UNEXPECTED_EXCEPTION)
 
 
 async def execute_retry_run(
@@ -283,6 +301,13 @@ async def _execute_run(
     run_id_ctx_var.set(run_id)
     load_plan_id_ctx_var.set(str(plan.id))
 
+    # Enrich the current tracing span with plan context once the run is loaded.
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.trace import NonRecordingSpan
+    _cur_span = otel_trace.get_current_span()
+    if not isinstance(_cur_span, NonRecordingSpan):
+        _cur_span.set_attribute("load_plan.id", str(plan.id))
+
     # ── Mark run as running ───────────────────────────────────────────────────
     run.status = RunStatus.running
     run.started_at = datetime.now(timezone.utc)
@@ -421,6 +446,27 @@ async def _execute_run(
                 step_failed=step_failed,
             )
 
+            # Emit a structured progress event for observability (SFBL-59).
+            steps_completed = steps.index(step) + 1
+            logger.info(
+                "Run %s: progress after step %d/%d — success=%d errors=%d",
+                run_id,
+                steps_completed,
+                len(steps),
+                run_total_success,
+                run_total_errors,
+                extra={
+                    "event_name": RunEvent.PROGRESS_UPDATED,
+                    "run_id": run_id,
+                    "load_plan_id": str(plan.id),
+                    "steps_total": len(steps),
+                    "steps_completed": steps_completed,
+                    "records_processed": run_total_records,
+                    "records_succeeded": run_total_success,
+                    "records_failed": run_total_errors,
+                },
+            )
+
             if step_failed:
                 any_step_failed = True
                 logger.warning(
@@ -472,6 +518,8 @@ async def _execute_run(
     )
     outcome = OutcomeCode.DEGRADED if any_step_failed else OutcomeCode.OK
     record_run_completed(final_status.value, time.perf_counter() - _run_start)
+    if not isinstance(_cur_span, NonRecordingSpan):
+        _cur_span.set_attribute("outcome.code", outcome)
     logger.info(
         "Run %s completed (%s): records=%d success=%d errors=%d",
         run_id,

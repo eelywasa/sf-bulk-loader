@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     log_format: Literal["plain", "json"] = "plain"
     service_name: str = "sf-bulk-loader-backend"
     request_id_header_name: str = "X-Request-ID"
+
+    # Health checks
+    health_enable_dependency_checks: bool = True
+
+    # Tracing (SFBL-56)
+    tracing_enabled: bool = False
+    trace_sample_ratio: float = 1.0
+    otlp_endpoint: str | None = None
+
+    # Error monitoring (SFBL-58)
+    error_monitoring_enabled: bool = False
+    error_monitoring_dsn: str | None = None
     encryption_key: str = ""
     encryption_key_file: str = "/data/db/encryption.key"
 

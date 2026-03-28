@@ -22,6 +22,7 @@ from app.models.load_step import LoadStep
 from app.observability.context import input_connection_id_ctx_var, step_id_ctx_var
 from app.observability.events import JobEvent, OutcomeCode, StepEvent
 from app.observability.metrics import record_step_completed
+from app.observability import tracing
 from app.services.csv_processor import partition_csv as _default_partition
 from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
 from app.services.partition_executor import process_partition
@@ -71,17 +72,19 @@ async def execute_step(
     )
 
     try:
-        return await _execute_step(
-            run_id=run_id,
-            step=step,
-            bulk_client=bulk_client,
-            db=db,
-            semaphore=semaphore,
-            db_factory=db_factory,
-            _get_storage=_get_storage,
-            _partition=_partition,
-            _process=_process,
-        )
+        with tracing.step_span(str(step.id), step.object_name, step.operation.value) as span:
+            result = await _execute_step(
+                run_id=run_id,
+                step=step,
+                bulk_client=bulk_client,
+                db=db,
+                semaphore=semaphore,
+                db_factory=db_factory,
+                _get_storage=_get_storage,
+                _partition=_partition,
+                _process=_process,
+            )
+            return result
     finally:
         step_id_ctx_var.reset(_step_id_token)
         input_connection_id_ctx_var.reset(_conn_id_token)
