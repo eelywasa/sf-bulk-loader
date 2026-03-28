@@ -2,25 +2,45 @@
 
 All ``ws_manager.broadcast`` calls are centralised here so the rest of the
 execution engine never touches the WebSocket layer directly.
+
+WebSocket messages are a **projection** of the canonical event taxonomy defined
+in :mod:`app.observability.events`. Each payload carries ``event_name`` (a
+dot-separated canonical name) and ``outcome_code`` where the terminal outcome
+is known at publish time. The frontend hook does not route on these fields; it
+invalidates React Query caches on every non-keepalive message.
 """
 
 from __future__ import annotations
 
+from app.observability.events import JobEvent, OutcomeCode, RunEvent, StepEvent
 from app.utils.ws_manager import ws_manager
 
 
 async def publish_run_started(run_id: str) -> None:
-    await ws_manager.broadcast(run_id, {"event": "run_started", "run_id": run_id})
+    await ws_manager.broadcast(
+        run_id,
+        {"event_name": RunEvent.STARTED, "run_id": run_id},
+    )
 
 
 async def publish_run_failed(run_id: str, *, error: str) -> None:
     await ws_manager.broadcast(
-        run_id, {"event": "run_failed", "run_id": run_id, "error": error}
+        run_id,
+        {
+            "event_name": RunEvent.FAILED,
+            "outcome_code": OutcomeCode.FAILED,
+            "run_id": run_id,
+            "error": error,
+        },
     )
 
 
 async def publish_run_aborted(run_id: str, *, reason: str | None = None) -> None:
-    payload: dict = {"event": "run_aborted", "run_id": run_id}
+    payload: dict = {
+        "event_name": RunEvent.ABORTED,
+        "outcome_code": OutcomeCode.ABORTED,
+        "run_id": run_id,
+    }
     if reason is not None:
         payload["reason"] = reason
     await ws_manager.broadcast(run_id, payload)
@@ -34,10 +54,12 @@ async def publish_run_completed(
     total_success: int,
     total_errors: int,
 ) -> None:
+    outcome = OutcomeCode.DEGRADED if total_errors > 0 else OutcomeCode.OK
     await ws_manager.broadcast(
         run_id,
         {
-            "event": "run_completed",
+            "event_name": RunEvent.COMPLETED,
+            "outcome_code": outcome,
             "run_id": run_id,
             "status": status,
             "total_records": total_records,
@@ -57,7 +79,7 @@ async def publish_step_started(
     await ws_manager.broadcast(
         run_id,
         {
-            "event": "step_started",
+            "event_name": StepEvent.STARTED,
             "run_id": run_id,
             "step_id": step_id,
             "object_name": object_name,
@@ -76,10 +98,13 @@ async def publish_step_completed(
     records_failed: int,
     step_failed: bool,
 ) -> None:
+    event_name = StepEvent.THRESHOLD_EXCEEDED if step_failed else StepEvent.COMPLETED
+    outcome = OutcomeCode.STEP_THRESHOLD_EXCEEDED if step_failed else OutcomeCode.OK
     await ws_manager.broadcast(
         run_id,
         {
-            "event": "step_completed",
+            "event_name": event_name,
+            "outcome_code": outcome,
             "run_id": run_id,
             "step_id": step_id,
             "object_name": object_name,
@@ -103,7 +128,7 @@ async def publish_job_status_change(
     total_records: int | None = None,
 ) -> None:
     payload: dict = {
-        "event": "job_status_change",
+        "event_name": JobEvent.STATUS_CHANGED,
         "run_id": run_id,
         "step_id": step_id,
         "job_id": job_id,
