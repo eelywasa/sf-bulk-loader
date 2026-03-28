@@ -11,6 +11,7 @@ import asyncio
 import csv
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -43,6 +44,7 @@ from app.observability.context import (
     step_id_ctx_var,
 )
 from app.observability.events import OutcomeCode, RunEvent, StepEvent
+from app.observability.metrics import record_run_completed, record_run_started
 from app.services.salesforce_auth import get_access_token as _default_get_token
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
 
@@ -286,6 +288,9 @@ async def _execute_run(
     run.started_at = datetime.now(timezone.utc)
     await db.commit()
 
+    record_run_started()
+    _run_start = time.perf_counter()
+
     await publish_run_started(run_id)
     logger.info(
         "Run %s started: plan=%s steps=%d max_parallel_jobs=%d",
@@ -443,6 +448,7 @@ async def _execute_run(
                     run.total_success = run_total_success
                     run.total_errors = run_total_errors
                     await db.commit()
+                    record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
                     await publish_run_aborted(run_id, reason="step_failure_threshold")
                     return
 
@@ -465,6 +471,7 @@ async def _execute_run(
         total_errors=run_total_errors,
     )
     outcome = OutcomeCode.DEGRADED if any_step_failed else OutcomeCode.OK
+    record_run_completed(final_status.value, time.perf_counter() - _run_start)
     logger.info(
         "Run %s completed (%s): records=%d success=%d errors=%d",
         run_id,

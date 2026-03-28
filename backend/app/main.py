@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.observability.logging_config import configure_logging
+from app.observability.metrics_middleware import MetricsMiddleware
 from app.observability.middleware import RequestIDMiddleware
 
 configure_logging(settings)
@@ -66,6 +67,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestIDMiddleware, settings=settings)
 
 # REST routers — each owns its own prefix

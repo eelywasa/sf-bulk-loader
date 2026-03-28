@@ -23,12 +23,26 @@ from app.services.input_storage import (
     UnsupportedInputProviderError,
     get_storage,
 )
+from app.observability.metrics import ws_active_connections
 from app.utils.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["utility"])
 ws_router = APIRouter(tags=["websocket"])
+
+
+# ── Metrics endpoint ────────────────────────────────────────────────────────────
+
+
+@router.get("/metrics", include_in_schema=False)
+async def metrics_endpoint():
+    """Expose Prometheus-compatible metrics for scraping."""
+    from fastapi.responses import Response
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
 
 
 # ── File endpoints ─────────────────────────────────────────────────────────────

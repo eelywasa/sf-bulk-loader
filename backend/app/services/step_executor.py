@@ -15,10 +15,13 @@ from typing import Callable
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import time
+
 from app.models.job import JobRecord, JobStatus
 from app.models.load_step import LoadStep
 from app.observability.context import input_connection_id_ctx_var, step_id_ctx_var
 from app.observability.events import JobEvent, OutcomeCode, StepEvent
+from app.observability.metrics import record_step_completed
 from app.services.csv_processor import partition_csv as _default_partition
 from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
 from app.services.partition_executor import process_partition
@@ -129,6 +132,7 @@ async def _execute_step(
         )
         return 0, 0
 
+    _step_start = time.perf_counter()
     logger.info(
         "Run %s step %s: %d file(s) [%s] → %d partition(s)",
         run_id,
@@ -213,4 +217,16 @@ async def _execute_step(
             total_errors += errors
         # None is returned on early-exit paths (abort, create_job failure, etc.)
 
+    step_final_status = "failed" if total_errors > 0 and total_success == 0 else (
+        "completed_with_errors" if total_errors > 0 else "completed"
+    )
+    record_step_completed(
+        object_name=step.object_name,
+        operation=step.operation.value,
+        final_status=step_final_status,
+        duration_seconds=time.perf_counter() - _step_start,
+        records_processed=total_success + total_errors,
+        records_succeeded=total_success,
+        records_failed=total_errors,
+    )
     return total_success, total_errors

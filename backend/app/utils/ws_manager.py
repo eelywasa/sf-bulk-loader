@@ -15,6 +15,8 @@ from typing import Dict, List
 
 from fastapi import WebSocket
 
+from app.observability.metrics import ws_active_connections
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +31,7 @@ class WebSocketManager:
         """Accept and register a WebSocket connection for a run."""
         await websocket.accept()
         self._connections.setdefault(run_id, []).append(websocket)
+        ws_active_connections.inc()
         logger.debug("WebSocket connected for run %s (%d total)", run_id, len(self._connections[run_id]))
 
     def disconnect(self, run_id: str, websocket: WebSocket) -> None:
@@ -36,6 +39,7 @@ class WebSocketManager:
         subscribers = self._connections.get(run_id, [])
         if websocket in subscribers:
             subscribers.remove(websocket)
+            ws_active_connections.dec()
         if not subscribers:
             self._connections.pop(run_id, None)
         logger.debug("WebSocket disconnected for run %s", run_id)
