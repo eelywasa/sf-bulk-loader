@@ -36,6 +36,7 @@ User-facing documentation lives in `docs/`:
 - `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)
 - `docs/usage.md` — using the app (Salesforce setup, CSV format, load plans)
 - `docs/development.md` — local dev, tests, migrations
+- `docs/observability.md` — observability baseline reference: event taxonomy, metrics, spans, DoD checklist. **Read this before implementing any ticket that touches workflow behaviour.**
 - `docs/ui-conventions.md` — frontend design token system, component usage, form styling rules. **Must be kept in sync with the code** — any change to tokens, `formStyles.ts`, or shared UI components requires a corresponding update to this file in the same task.
 - `docs/specs/` — architecture and feature specs (not user-facing)
 
@@ -158,6 +159,21 @@ Connection → LoadPlan → LoadStep → JobRecord
 - asyncio for background tasks (no Celery).
 - CSV streaming with Python's `csv` module (no pandas).
 - Authentication is required for hosted profiles (`self_hosted`, `aws_hosted`). Desktop profile (`auth_mode=none`) bypasses login — controlled via `APP_DISTRIBUTION` in `.env`.
+
+## Observability Definition of Done
+
+Any ticket that introduces or materially changes run/step/job lifecycle behaviour,
+Salesforce interaction flows, storage flows, retry behaviour, or terminal outcomes
+**must** include observability updates as part of the same ticket. This is not optional.
+
+Before implementing such a ticket, work through the checklist in `docs/observability.md`:
+- Are new canonical event names needed? Add them to `app/observability/events.py`.
+- Are new outcome codes needed? Add them to `OutcomeCode` in the same file.
+- Do new log sites use `event_name` and `outcome_code` in `extra={}`?
+- Are correlation IDs propagated into new async scopes via ContextVars?
+- Which metrics should increment? Update `app/observability/metrics.py`.
+- Does the new path introduce an execution boundary needing a custom span?
+- Do any new error paths or exception handlers comply with `sanitization.py` rules?
 
 ## Code Standards
 - Python: async/await throughout, type hints on all function signatures, Pydantic schemas, SQLAlchemy 2.0 `mapped_column` style.

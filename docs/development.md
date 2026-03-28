@@ -117,6 +117,10 @@ curl http://127.0.0.1:8000/api/health
 
 ## Observability
 
+For the full developer reference — event taxonomy, metrics, spans, how to extend each
+layer, and the Definition of Done checklist for future feature work — see
+[`docs/observability.md`](observability.md).
+
 ### Structured logging
 
 Set `LOG_FORMAT=json` in `.env` to enable structured JSON logging (one JSON object per line on stdout). This is the default for deployed environments. Local development uses plain text by default.
