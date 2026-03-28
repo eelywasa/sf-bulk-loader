@@ -11,13 +11,32 @@ Docker deployment.
 The full specification is in `salesforce-bulk-loader-spec.md`. Always refer to it for architectural decisions, data model, API design, and build order.
 For the UI extra guidance can be found in `frontend-claude-runbook.md`. Treat it as an authority — if other docs conflict, follow the runbook.
 
-Active spec files live in `docs/specs/`. Mark each ticket as complete by appending `— ✅ DONE` to its heading when it is fully implemented. When all tickets in a spec file have been fully implemented, move the file to `docs/specs/implemented/`.
+Active spec files live in `docs/specs/`. Ticket status is tracked in Jira — do not mark tickets as done in the spec files themselves.
+
+## Jira Workflow
+
+Tickets are tracked in Jira project **SFBL** at `matthew-jenkin.atlassian.net`. Use the Jira MCP tools to manage ticket state as you work.
+
+**When starting a ticket:**
+1. If a plan has been produced, post it as a comment on the Jira issue using `jira_add_comment` before writing any code
+2. Transition the Jira issue to **In Progress** using `jira_transition_issue`
+3. Begin implementation
+
+**When completing a ticket:**
+1. Run backend tests (`cd backend && pytest`) and frontend tests (`cd frontend && npm run test:run`) and note results
+2. Transition the Jira issue to **Done** using `jira_transition_issue`
+3. Add a comment to the Jira issue using `jira_add_comment` summarising:
+   - What was implemented
+   - Key files changed
+   - Test results (pass/fail counts)
+   - Any notable decisions or deviations from the spec
 
 ## Documentation Structure
 User-facing documentation lives in `docs/`:
 - `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)
 - `docs/usage.md` — using the app (Salesforce setup, CSV format, load plans)
 - `docs/development.md` — local dev, tests, migrations
+- `docs/observability.md` — observability baseline reference: event taxonomy, metrics, spans, DoD checklist. **Read this before implementing any ticket that touches workflow behaviour.**
 - `docs/ui-conventions.md` — frontend design token system, component usage, form styling rules. **Must be kept in sync with the code** — any change to tokens, `formStyles.ts`, or shared UI components requires a corresponding update to this file in the same task.
 - `docs/specs/` — architecture and feature specs (not user-facing)
 
@@ -140,6 +159,37 @@ Connection → LoadPlan → LoadStep → JobRecord
 - asyncio for background tasks (no Celery).
 - CSV streaming with Python's `csv` module (no pandas).
 - Authentication is required for hosted profiles (`self_hosted`, `aws_hosted`). Desktop profile (`auth_mode=none`) bypasses login — controlled via `APP_DISTRIBUTION` in `.env`.
+
+## Observability Definition of Done
+
+Any ticket that introduces or materially changes run/step/job lifecycle behaviour,
+Salesforce interaction flows, storage flows, retry behaviour, or terminal outcomes
+**must** include observability updates as part of the same ticket. This is not optional.
+
+Before implementing such a ticket, work through the checklist in `docs/observability.md`:
+- Are new canonical event names needed? Add them to `app/observability/events.py`.
+- Are new outcome codes needed? Add them to `OutcomeCode` in the same file.
+- Do new log sites use `event_name` and `outcome_code` in `extra={}`?
+- Are correlation IDs propagated into new async scopes via ContextVars?
+- Which metrics should increment? Update `app/observability/metrics.py`.
+- Does the new path introduce an execution boundary needing a custom span?
+- Do any new error paths or exception handlers comply with `sanitization.py` rules?
+
+## Pull Request Review Comments
+
+When addressing review comments on a PR (automated or human), always reply directly
+to each comment thread after the fix is in place. Use the GitHub API via `gh`:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr}/comments \
+  -X POST \
+  -f body="Your reply text" \
+  -F in_reply_to={comment_id}
+```
+
+The reply should briefly describe what was changed and why, so reviewers (and future
+readers of the thread) can confirm the fix without digging through the diff. Do this
+as the final step of remediating each comment — not as a batch at the end.
 
 ## Code Standards
 - Python: async/await throughout, type hints on all function signatures, Pydantic schemas, SQLAlchemy 2.0 `mapped_column` style.

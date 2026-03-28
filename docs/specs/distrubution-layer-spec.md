@@ -1,5 +1,7 @@
 # Spec: Distribution Layer for the Salesforce Bulk Loader
 
+**Jira Epic: SFBL-11**
+
 ## Overview
 
 This spec covers introducing a first-class **distribution layer** for the Salesforce Bulk Loader so the same core application can be delivered in multiple forms without forking core business logic.
@@ -636,7 +638,7 @@ Primary outcome:
 
 These tickets are ordered and dependency-aware so they can be handed to Claude incrementally while preserving coherence.
 
-### 1. Define Distribution Profile and Shared Config Model — ✅ DONE
+### 1. Define Distribution Profile and Shared Config Model — ✅ DONE (SFBL-26)
 
 Goal: introduce an explicit runtime/distribution abstraction that the rest of the implementation can build upon.
 
@@ -657,7 +659,7 @@ Exit criteria:
 - application can start with explicit distribution profiles
 - current deployment continues to work unchanged or with minimal env updates
 
-### 2. Refactor Frontend and Backend for Profile-Aware Runtime Configuration — ✅ DONE
+### 2. Refactor Frontend and Backend for Profile-Aware Runtime Configuration — ✅ DONE (SFBL-27)
 
 Goal: remove hardcoded assumptions that the app is always browser-served behind the current container topology.
 
@@ -677,7 +679,7 @@ Exit criteria:
 - runtime profile controls core behavior through explicit config
 - business logic remains largely distribution-agnostic
 
-### 3. Introduce Multi-Engine Persistence Support for Hosted and Desktop Modes — ✅ DONE
+### 3. Introduce Multi-Engine Persistence Support for Hosted and Desktop Modes — ✅ DONE (SFBL-29)
 
 Goal: support SQLite and PostgreSQL deliberately rather than accidentally.
 
@@ -699,7 +701,7 @@ Exit criteria:
 - desktop path remains valid with SQLite
 - database portability risks are documented and tested
 
-### 4. Implement Self-Hosted Docker Distribution Hardening — ✅ DONE
+### 4. Implement Self-Hosted Docker Distribution Hardening — ✅ DONE (SFBL-31)
 
 Goal: establish Docker as the first fully supported distribution model.
 
@@ -722,7 +724,7 @@ Exit criteria:
 - SQLite quick start works end-to-end
 - PostgreSQL variant is supported and documented
 
-### 5. Implement Hosted Auth Policy for Self-Hosted and AWS Skeleton — ✅ DONE
+### 5. Implement Hosted Auth Policy for Self-Hosted and AWS Skeleton — ✅ DONE (SFBL-33)
 
 Goal: make hosted auth behavior explicit and shared across hosted distributions.
 
@@ -742,7 +744,7 @@ Exit criteria:
 - hosted profiles share one explicit auth behavior
 - desktop no-auth and hosted auth are clearly separated
 
-### 6. Implement Transport/TLS Policy by Distribution — ✅ DONE
+### 6. Implement Transport/TLS Policy by Distribution — ✅ DONE (SFBL-34)
 
 Goal: make transport expectations explicit by distribution rather than implied by deployment history.
 
@@ -766,7 +768,7 @@ Exit criteria:
 - self-hosted HTTP quick start remains easy
 - public-facing recommendations are explicit
 
-### 7. Implement Electron Packaging Skeleton — ✅ DONE
+### 7. Implement Electron Packaging Skeleton — ✅ DONE (SFBL-37)
 
 Goal: create the second supported distribution target with no-login desktop behavior.
 
@@ -789,7 +791,7 @@ Exit criteria:
 - desktop runs without login
 - desktop architecture does not require reworking core services
 
-### 8. Implement Desktop Secrets and Workspace Behavior — ✅ DONE
+### 8. Implement Desktop Secrets and Workspace Behavior — ✅ DONE (SFBL-39)
 
 Goal: make desktop-specific local behavior explicit and safe enough for MVP.
 
@@ -809,7 +811,7 @@ Exit criteria:
 - desktop distribution has a defined storage/secrets model
 - future secure-store enhancement is documented, not forgotten
 
-### 9. Implement AWS Distribution Skeleton — ✅ DONE
+### 9. Implement AWS Distribution Skeleton — ✅ DONE (SFBL-42)
 
 Goal: ensure the architecture supports later AWS delivery without requiring major redesign.
 
@@ -831,7 +833,7 @@ Exit criteria:
 - AWS is represented in the architecture and config model
 - Docker/Electron choices do not block later ECS/Fargate delivery
 
-### 10. Add Cross-Distribution Build/Test/Release Workflows — ✅ DONE
+### 10. Add Cross-Distribution Build/Test/Release Workflows — ✅ DONE (SFBL-45)
 
 ## Goal
 
@@ -1097,7 +1099,7 @@ The CI workflow (`ci-electron.yml`) verifies that Electron bootstraps correctly 
 that electron-builder can produce a `.app`. The following work is required before that `.app` is
 truly user-distributable.
 
-### 1. Path handling for packaged mode (`electron/main.js`) — ✅ DONE
+### 1. Path handling for packaged mode (`electron/main.js`) — ✅ DONE (SFBL-49)
 
 `main.js` currently uses dev-relative paths:
 
@@ -1117,7 +1119,7 @@ const BACKEND_DIR = path.join(resourcesPath, 'backend')
 
 `process.resourcesPath` is cross-platform; the same fix covers Windows and Linux.
 
-### 2. Backend and frontend bundling (`electron/package.json`) — ✅ DONE
+### 2. Backend and frontend bundling (`electron/package.json`) — ✅ DONE (SFBL-50)
 
 electron-builder's `"files"` currently only bundles `main.js` and `preload.js`. The backend
 Python source and the built frontend assets must be included via `extraResources`:
@@ -1143,7 +1145,7 @@ matching the path fix in §1.
 installed and accessible on PATH. For a fully self-contained installer, the backend should be
 compiled with PyInstaller into a single binary bundled alongside the app.
 
-### 3. macOS code signing and notarization
+### 3. macOS code signing and notarization (SFBL-52)
 
 Unsigned `.app` bundles are quarantined by Gatekeeper on macOS 10.15+. Users must right-click →
 Open, which is unsuitable for general distribution.
@@ -1171,7 +1173,7 @@ The entitlements plist must grant `com.apple.security.cs.allow-unsigned-executab
 **GitHub Actions secrets needed:** `MACOS_CERTIFICATE_P12`, `MACOS_CERTIFICATE_PASSWORD`,
 `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
 
-### 4. Windows packaging (deferred)
+### 4. Windows packaging (deferred) (SFBL-54)
 
 **Installer target:** NSIS (default electron-builder Windows target). EV (Extended Validation)
 code-signing certificate strongly recommended — bypasses SmartScreen immediately. Standard OV
@@ -1196,7 +1198,7 @@ const venvUvicorn = path.join(BACKEND_DIR, venvBin, `uvicorn${ext}`)
 }
 ```
 
-### 5. Linux packaging (deferred)
+### 5. Linux packaging (deferred) (SFBL-55)
 
 **Targets:** AppImage (portable, no install required), deb (Debian/Ubuntu), rpm (Fedora/RHEL).
 
@@ -1217,7 +1219,7 @@ export DISPLAY=:99
 
 Code signing is not required on Linux, but AppImages can be GPG-signed for integrity verification.
 
-### 6. Auto-update (deferred)
+### 6. Auto-update (deferred) (SFBL-57)
 
 `electron-updater` (bundled with electron-builder) provides automatic in-app updates from GitHub
 Releases. Requires `publish` config in electron-builder and code signing to be in place before
@@ -1225,7 +1227,7 @@ it is useful.
 
 ---
 
-### 11. Regression and Security Hardening Pass
+### 11. Regression and Security Hardening Pass (SFBL-47)
 
 Goal: validate that adding the distribution layer has not fragmented the product.
 

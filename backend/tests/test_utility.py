@@ -716,3 +716,103 @@ def test_websocket_responds_to_ping(client):
         ws.send_json({"type": "ping"})
         pong = ws.receive_json()
         assert pong["type"] == "pong"
+
+
+# ── Health endpoint tests (SFBL-53) ────────────────────────────────────────────
+
+
+class TestHealthLive:
+    def test_returns_200_ok(self, client):
+        response = client.get("/api/health/live")
+        assert response.status_code == 200
+
+    def test_returns_status_ok(self, client):
+        response = client.get("/api/health/live")
+        data = response.json()
+        assert data["status"] == "ok"
+
+    def test_no_auth_required(self, client):
+        """Liveness endpoint must be unauthenticated."""
+        response = client.get("/api/health/live")
+        assert response.status_code == 200
+
+    def test_does_not_require_database(self, client):
+        """Liveness must not perform any DB I/O."""
+        with patch("app.api.utility._check_database") as mock_check:
+            response = client.get("/api/health/live")
+        mock_check.assert_not_called()
+        assert response.status_code == 200
+
+
+class TestHealthReady:
+    def test_returns_200_when_db_healthy(self, client):
+        response = client.get("/api/health/ready")
+        assert response.status_code == 200
+
+    def test_returns_status_ok_when_healthy(self, client):
+        response = client.get("/api/health/ready")
+        data = response.json()
+        assert data["status"] == "ok"
+
+    def test_returns_503_when_db_unavailable(self, client):
+        from sqlalchemy.exc import OperationalError
+
+        with patch("app.api.utility._check_database", return_value=("failed", "connection refused")):
+            response = client.get("/api/health/ready")
+        assert response.status_code == 503
+
+    def test_returns_failed_status_when_db_unavailable(self, client):
+        with patch("app.api.utility._check_database", return_value=("failed", "connection refused")):
+            response = client.get("/api/health/ready")
+        data = response.json()
+        assert data["status"] == "failed"
+
+    def test_includes_database_error_detail_on_failure(self, client):
+        with patch("app.api.utility._check_database", return_value=("failed", "connection refused")):
+            response = client.get("/api/health/ready")
+        data = response.json()
+        assert "database" in data
+        assert "connection refused" in data["database"]
+
+
+class TestHealthDependencies:
+    def test_returns_200_when_all_healthy(self, client):
+        response = client.get("/api/health/dependencies")
+        assert response.status_code == 200
+
+    def test_returns_ok_overall_when_db_healthy(self, client):
+        response = client.get("/api/health/dependencies")
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["dependencies"]["database"]["status"] == "ok"
+
+    def test_returns_503_when_db_unavailable(self, client):
+        with patch("app.api.utility._check_database", return_value=("failed", "SELECT 1 failed")):
+            response = client.get("/api/health/dependencies")
+        assert response.status_code == 503
+
+    def test_returns_failed_overall_when_db_unavailable(self, client):
+        with patch("app.api.utility._check_database", return_value=("failed", "SELECT 1 failed")):
+            response = client.get("/api/health/dependencies")
+        data = response.json()
+        assert data["status"] == "failed"
+        assert data["dependencies"]["database"]["status"] == "failed"
+
+    def test_includes_database_dependency(self, client):
+        response = client.get("/api/health/dependencies")
+        data = response.json()
+        assert "dependencies" in data
+        assert "database" in data["dependencies"]
+
+    def test_dependency_checks_disabled(self, client):
+        from app.config import settings
+
+        original = settings.health_enable_dependency_checks
+        try:
+            settings.health_enable_dependency_checks = False
+            response = client.get("/api/health/dependencies")
+            data = response.json()
+        finally:
+            settings.health_enable_dependency_checks = original
+        assert response.status_code == 200
+        assert data["dependencies"]["database"]["status"] == "ok"

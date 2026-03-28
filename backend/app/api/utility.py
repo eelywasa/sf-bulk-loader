@@ -23,12 +23,27 @@ from app.services.input_storage import (
     UnsupportedInputProviderError,
     get_storage,
 )
+from app.observability.events import OutcomeCode, SystemEvent
+from app.observability.metrics import ws_active_connections
 from app.utils.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["utility"])
 ws_router = APIRouter(tags=["websocket"])
+
+
+# ── Metrics endpoint ────────────────────────────────────────────────────────────
+
+
+@router.get("/metrics", include_in_schema=False)
+async def metrics_endpoint():
+    """Expose Prometheus-compatible metrics for scraping."""
+    from fastapi.responses import Response
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
 
 
 # ── File endpoints ─────────────────────────────────────────────────────────────
@@ -203,9 +218,89 @@ async def runtime_config() -> RuntimeConfigResponse:
 # ── Health check ───────────────────────────────────────────────────────────────
 
 
+async def _check_database(db: AsyncSession) -> tuple[str, str | None]:
+    """Run a lightweight DB ping. Returns (status, error_detail)."""
+    try:
+        await db.execute(text("SELECT 1"))
+        return OutcomeCode.OK, None
+    except Exception as exc:
+        return OutcomeCode.FAILED, str(exc)
+
+
+@router.get("/api/health/live", include_in_schema=False)
+async def health_live() -> Dict[str, Any]:
+    """Liveness probe: process is alive and can serve requests.
+
+    Fast — no dependency checks. Fails only if the process itself is broken.
+    """
+    logger.debug("Liveness check", extra={"event_name": SystemEvent.HEALTH_CHECKED,
+                                          "outcome_code": OutcomeCode.OK})
+    return {"status": OutcomeCode.OK}
+
+
+@router.get("/api/health/ready", include_in_schema=False)
+async def health_ready(db: AsyncSession = Depends(get_db)) -> Any:
+    """Readiness probe: service is ready to receive traffic.
+
+    Checks database connectivity. Returns 503 if the database is unavailable.
+    """
+    from fastapi.responses import JSONResponse
+
+    db_status, db_error = await _check_database(db)
+    overall = OutcomeCode.OK if db_status == OutcomeCode.OK else OutcomeCode.FAILED
+    logger.info(
+        "Readiness check: %s",
+        overall,
+        extra={"event_name": SystemEvent.HEALTH_CHECKED, "outcome_code": overall},
+    )
+    payload: Dict[str, Any] = {"status": overall}
+    if db_error:
+        payload["database"] = db_error
+    if overall != OutcomeCode.OK:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
+
+
+@router.get("/api/health/dependencies", include_in_schema=False)
+async def health_dependencies(db: AsyncSession = Depends(get_db)) -> Any:
+    """Dependency health: per-dependency status for operator inspection.
+
+    Returns detailed view of each dependency with ok/degraded/failed status.
+    """
+    from fastapi.responses import JSONResponse
+
+    deps: Dict[str, Any] = {}
+
+    if settings.health_enable_dependency_checks:
+        db_status, db_error = await _check_database(db)
+        deps["database"] = {"status": db_status}
+        if db_error:
+            deps["database"]["detail"] = db_error
+    else:
+        deps["database"] = {"status": OutcomeCode.OK, "detail": "dependency checks disabled"}
+
+    overall = (
+        OutcomeCode.OK
+        if all(d.get("status") == OutcomeCode.OK for d in deps.values())
+        else OutcomeCode.FAILED
+    )
+    logger.info(
+        "Dependency health check: %s",
+        overall,
+        extra={"event_name": SystemEvent.HEALTH_CHECKED, "outcome_code": overall},
+    )
+    payload: Dict[str, Any] = {"status": overall, "dependencies": deps}
+    if overall != OutcomeCode.OK:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
+
+
 @router.get("/api/health")
 async def health_check(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
-    """Return application health: DB connectivity and basic config."""
+    """Return application health: DB connectivity and basic config.
+
+    Kept for backward compatibility. Prefer /api/health/ready for readiness checks.
+    """
     db_status = "ok"
     try:
         await db.execute(text("SELECT 1"))

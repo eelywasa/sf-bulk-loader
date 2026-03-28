@@ -18,6 +18,9 @@ certs/
 # Node
 node_modules/
 
+# Electron build output — rebuilt locally, never committed
+electron/dist/
+
 # Electron build intermediates (iconset PNGs — only the compiled .icns is committed)
 electron/build/icon.iconset/
 

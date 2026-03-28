@@ -1,5 +1,7 @@
 # Spec: Authentication for the Salesforce Bulk Loader
 
+**Jira Epic: SFBL-10**
+
 ## Overview
 
 The app currently has **zero authentication**. All API endpoints and frontend routes are publicly accessible to anyone with network access. This spec covers adding user authentication in two delivery stages:
@@ -426,7 +428,7 @@ No other route/auth scaffolding changes are required in Stage 2.
 
 These tickets are intended to be small enough to execute incrementally while still producing coherent checkpoints. They are ordered and dependency-aware so you can hand them to Claude one at a time.
 
-### 1. Add Backend User Model and Auth Configuration
+### 1. Add Backend User Model and Auth Configuration (SFBL-17)
 
 Goal: create the persistence and configuration foundation for authentication.
 
@@ -453,7 +455,7 @@ Exit criteria:
 - database migrates successfully
 - application imports cleanly with the new model/config
 
-### 2. Add Backend Password and JWT Utilities
+### 2. Add Backend Password and JWT Utilities (SFBL-18)
 
 Goal: create reusable auth primitives before wiring any routes.
 
@@ -482,7 +484,7 @@ Exit criteria:
 - valid tokens resolve active users
 - invalid, expired, or malformed tokens fail with `401`
 
-### 3. Add Auth API Endpoints
+### 3. Add Auth API Endpoints (SFBL-19)
 
 Goal: expose local login/session inspection endpoints without yet protecting the rest of the app.
 
@@ -511,7 +513,7 @@ Exit criteria:
 - seeded or test-created local user can log in
 - `me` returns the correct user for a valid token
 
-### 4. Implement Startup Admin Seed
+### 4. Implement Startup Admin Seed (SFBL-20)
 
 Goal: make a fresh environment usable without manual database editing.
 
@@ -538,7 +540,7 @@ Exit criteria:
 - brand-new database starts with one admin when env vars are present
 - startup fails fast when first-boot env vars are missing
 
-### 5. Protect Existing REST API Routes
+### 5. Protect Existing REST API Routes (SFBL-21)
 
 Goal: require authentication across the existing backend API while keeping health checks public.
 
@@ -564,7 +566,7 @@ Exit criteria:
 - anonymous access to protected REST endpoints returns `401`
 - authenticated requests continue to pass existing functional tests
 
-### 6. Tie Load Run Identity to Authenticated User
+### 6. Tie Load Run Identity to Authenticated User (SFBL-22)
 
 Goal: make run audit information derive from the authenticated session.
 
@@ -586,7 +588,7 @@ Exit criteria:
 
 - new runs record the authenticated username in `initiated_by`
 
-### 7. Protect the Run WebSocket Endpoint
+### 7. Protect the Run WebSocket Endpoint (SFBL-23)
 
 Goal: close the remaining anonymous real-time access path.
 
@@ -610,7 +612,7 @@ Exit criteria:
 - anonymous socket connections are rejected
 - valid token connections are accepted
 
-### 8. Add Frontend Auth Context and Session Bootstrap
+### 8. Add Frontend Auth Context and Session Bootstrap (SFBL-24)
 
 Goal: introduce shared client-side session state before changing routing.
 
@@ -635,7 +637,7 @@ Exit criteria:
 - frontend can restore an existing session on page refresh
 - invalid stored token is cleared cleanly
 
-### 9. Update Frontend API Client for Auth Headers and 401 Handling
+### 9. Update Frontend API Client for Auth Headers and 401 Handling (SFBL-25)
 
 Goal: make all API calls auth-aware.
 
@@ -659,7 +661,7 @@ Exit criteria:
 - authenticated requests send bearer tokens
 - expired sessions are cleared without noisy redirect behavior for anonymous users
 
-### 10. Add Login Page and Protected Routing
+### 10. Add Login Page and Protected Routing (SFBL-28)
 
 Goal: enforce authentication in the browser and make sign-in possible end-to-end.
 
@@ -685,7 +687,7 @@ Exit criteria:
 - anonymous users are redirected to `/login`
 - successful login returns the user to the intended destination
 
-### 11. Add User Identity and Logout Controls to the Shell
+### 11. Add User Identity and Logout Controls to the Shell (SFBL-30)
 
 Goal: surface authenticated state in the main application chrome.
 
@@ -705,7 +707,7 @@ Exit criteria:
 - authenticated user identity is visible in the UI
 - logout consistently clears session state
 
-### 12. Stage 1 Hardening and Regression Pass
+### 12. Stage 1 Hardening and Regression Pass (SFBL-32)
 
 Goal: stabilize the completed local-auth implementation for deployment.
 
@@ -730,7 +732,7 @@ Exit criteria:
 - Stage 1 is documented, tested, and deployable
 - no known anonymous access gaps remain in HTTP or WebSocket paths
 
-### 13. Add SAML Readiness Hooks
+### 13. Add SAML Readiness Hooks (SFBL-35)
 
 Goal: prepare the Stage 1 codebase so SAML can be added without structural rework.
 
@@ -753,7 +755,7 @@ Exit criteria:
 
 - login page and backend contracts are ready for a second login method
 
-### 14. Add Backend Entra SAML Flow
+### 14. Add Backend Entra SAML Flow (SFBL-38)
 
 Goal: add SAML login to the backend on top of the existing JWT session model.
 
@@ -780,7 +782,7 @@ Exit criteria:
 
 - Entra-authenticated users can receive app JWTs through the ACS flow
 
-### 15. Add Frontend Microsoft Sign-In Flow
+### 15. Add Frontend Microsoft Sign-In Flow (SFBL-41)
 
 Goal: complete the browser-side portion of Entra SAML sign-in.
 
@@ -800,7 +802,7 @@ Exit criteria:
 
 - Entra sign-in works end-to-end from login page through authenticated app session
 
-### 16. Stage 2 Documentation and Validation
+### 16. Stage 2 Documentation and Validation (SFBL-44)
 
 Goal: finalize the SAML feature for rollout.
 

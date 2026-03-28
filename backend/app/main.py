@@ -4,6 +4,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
+from app.observability.error_monitoring import configure_error_monitoring
+from app.observability.logging_config import configure_logging
+from app.observability.metrics_middleware import MetricsMiddleware
+from app.observability.middleware import RequestIDMiddleware
+from app.observability.tracing import configure_tracing, instrument_fastapi_app
+
+configure_logging(settings)
+configure_tracing(settings)
+configure_error_monitoring(settings)
+
 logger = logging.getLogger(__name__)
 
 from app.api.auth import router as auth_router
@@ -15,7 +26,6 @@ from app.api.load_runs import router as load_runs_router
 from app.api.load_steps import router as load_steps_router
 from app.api.utility import router as utility_router
 from app.api.utility import ws_router
-from app.config import settings
 from app.database import AsyncSessionLocal, engine
 from app.services.auth import seed_admin
 
@@ -53,6 +63,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+instrument_fastapi_app(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,6 +72,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(RequestIDMiddleware, settings=settings)
 
 # REST routers — each owns its own prefix
 app.include_router(auth_router)

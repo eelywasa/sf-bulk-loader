@@ -1,5 +1,7 @@
 # Spec: Input Connections and Cloud Storage for the Salesforce Bulk Loader
 
+**Jira Epic: SFBL-16**
+
 ## Overview
 
 The app currently supports input files only from the local filesystem under the configured input directory. This spec covers expanding the system so input files can come from multiple sources:
@@ -541,7 +543,7 @@ Maintenance note:
 
 - when a ticket is completed, update this section in the same change set to mark its status and keep the spec aligned with the implementation state
 
-### 1. Add Backend Input Connection Model and Migration
+### 1. Add Backend Input Connection Model and Migration (SFBL-79)
 
 Status: **Completed**
 
@@ -569,7 +571,7 @@ Exit criteria:
 - database migrates successfully
 - application imports cleanly with the new model
 
-### 2. Add Backend Input Connection Schemas and CRUD/Test API
+### 2. Add Backend Input Connection Schemas and CRUD/Test API (SFBL-80)
 
 Status: **Completed**
 
@@ -597,7 +599,7 @@ Exit criteria:
 
 - input connections can be created, listed, updated, deleted, and tested
 
-### 3. Add Backend Input Storage Abstraction
+### 3. Add Backend Input Storage Abstraction (SFBL-81)
 
 Status: **Completed**
 
@@ -625,7 +627,7 @@ Exit criteria:
 
 - storage consumers can request list/preview/discover behavior without branching on provider details
 
-### 4. Make Files API Source-Aware
+### 4. Make Files API Source-Aware (SFBL-82)
 
 Status: **Completed**
 
@@ -651,7 +653,7 @@ Exit criteria:
 
 - local and S3 sources can both be browsed and previewed through the files API
 
-### 5. Expand Frontend Connections Page for Input Connections
+### 5. Expand Frontend Connections Page for Input Connections (SFBL-83)
 
 Status: **Completed**
 
@@ -685,7 +687,7 @@ Exit criteria:
 
 - users can manage S3 input connections from the browser
 
-### 6. Make Files Page Source-Aware
+### 6. Make Files Page Source-Aware (SFBL-84)
 
 Status: **Completed**
 
@@ -712,7 +714,7 @@ Exit criteria:
 
 - Files page supports browsing local files and S3-backed sources
 
-### 7. Add Step-Level Input Source Selection
+### 7. Add Step-Level Input Source Selection (SFBL-85)
 
 Status: **Completed**
 
@@ -743,7 +745,7 @@ Exit criteria:
 
 - each step can select local or a configured remote input connection
 
-### 8. Make Step Preview Source-Aware
+### 8. Make Step Preview Source-Aware (SFBL-86)
 
 Status: **Completed**
 
@@ -771,7 +773,7 @@ Exit criteria:
 
 - step preview returns correct matched files and row counts for local and S3-backed steps
 
-### 9. Refactor CSV Processing Around Provider-Neutral Inputs
+### 9. Refactor CSV Processing Around Provider-Neutral Inputs (SFBL-87)
 
 Status: **Completed**
 
@@ -799,7 +801,7 @@ Exit criteria:
 
 - CSV processing no longer assumes every input is a local path
 
-### 10. Make Orchestrator Execution Source-Aware
+### 10. Make Orchestrator Execution Source-Aware (SFBL-88)
 
 Status: **Completed**
 
@@ -830,7 +832,7 @@ Exit criteria:
 
 - runs can execute end-to-end using either local files or S3-backed input sources
 
-### 11. Stage 1 and Stage 2 Regression Pass
+### 11. Stage 1 and Stage 2 Regression Pass (SFBL-89)
 
 Status: **Completed** — ✅ DONE
 
@@ -855,9 +857,9 @@ Exit criteria:
 - remote workflows are documented, tested, and operational
 - CSV preview enhancements are covered by the same regression pass rather than treated as a prerequisite to it
 
-### 12. Provider Generalization Follow-Up
+### 12. Provider Generalization Follow-Up (SFBL-90)
 
-Status: **Pending**
+Status: **Cancelled**
 
 Goal: prepare the S3 implementation so future providers can be added cleanly.
 

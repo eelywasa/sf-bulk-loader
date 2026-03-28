@@ -1,0 +1,152 @@
+{
+  "/BulkLoader-staging-Data/InputBucketName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "InputBucketName"
+    }
+  ],
+  "/BulkLoader-staging-Data/OutputBucketName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "OutputBucketName"
+    }
+  ],
+  "/BulkLoader-staging-Data/RdsEndpoint": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "RdsEndpoint"
+    }
+  ],
+  "/BulkLoader-staging-Data/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    }
+  ],
+  "/BulkLoader-staging-Data/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    }
+  ],
+  "/BulkLoader-staging-Data/DbSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DbSecurityGroupE9D701AD"
+    }
+  ],
+  "/BulkLoader-staging-Data/DbSecurityGroup/from BulkLoaderstagingNetworkBackendServiceSecurityGroupDFEA6688:5432": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DbSecurityGroupfromBulkLoaderstagingNetworkBackendServiceSecurityGroupDFEA66885432EFA88113"
+    }
+  ],
+  "/BulkLoader-staging-Data/Database/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseB269D8BB"
+    }
+  ],
+  "/BulkLoader-staging-Data/InputBucket/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "InputBucket3BF8630A"
+    }
+  ],
+  "/BulkLoader-staging-Data/OutputBucket/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "OutputBucket7114EB27"
+    }
+  ],
+  "/BulkLoader-staging-Data/EncryptionKeySecret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "EncryptionKeySecretE7F1DBEA"
+    }
+  ],
+  "/BulkLoader-staging-Data/JwtSecretKeySecret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "JwtSecretKeySecretAD69F8F2"
+    }
+  ],
+  "/BulkLoader-staging-Data/DatabaseUrlSecret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseUrlSecretFA7DE062"
+    }
+  ],
+  "/BulkLoader-staging-Data/AdminPasswordSecret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AdminPasswordSecret47C701F9"
+    }
+  ],
+  "/BulkLoader-staging-Data/Exports/Output{\"Fn::GetAtt\":[\"InputBucket3BF8630A\",\"Arn\"]}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputFnGetAttInputBucket3BF8630AArnB4CC1184"
+    }
+  ],
+  "/BulkLoader-staging-Data/Exports/Output{\"Fn::GetAtt\":[\"OutputBucket7114EB27\",\"Arn\"]}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputFnGetAttOutputBucket7114EB27Arn67D5716D"
+    }
+  ],
+  "/BulkLoader-staging-Data/Exports/Output{\"Ref\":\"EncryptionKeySecretE7F1DBEA\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefEncryptionKeySecretE7F1DBEA62B42E60"
+    }
+  ],
+  "/BulkLoader-staging-Data/Exports/Output{\"Ref\":\"JwtSecretKeySecretAD69F8F2\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefJwtSecretKeySecretAD69F8F22EB380BE"
+    }
+  ],
+  "/BulkLoader-staging-Data/Exports/Output{\"Ref\":\"DatabaseUrlSecretFA7DE062\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefDatabaseUrlSecretFA7DE06246075C80"
+    }
+  ],
+  "/BulkLoader-staging-Data/Exports/Output{\"Ref\":\"AdminPasswordSecret47C701F9\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefAdminPasswordSecret47C701F9D9C55712"
+    }
+  ],
+  "/BulkLoader-staging-Data/Database/SubnetGroup/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSubnetGroup7D60F180"
+    }
+  ],
+  "/BulkLoader-staging-Data/Database/Secret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BulkLoaderstagingDataDatabaseSecretA909FC8D3fdaad7efa858a3daf9490cf0a702aeb"
+    }
+  ],
+  "/BulkLoader-staging-Data/InputBucket/Policy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "InputBucketPolicy84EF9809"
+    }
+  ],
+  "/BulkLoader-staging-Data/OutputBucket/Policy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "OutputBucketPolicyAE009DDC"
+    }
+  ],
+  "/BulkLoader-staging-Data/Database/Secret/Attachment/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecretAttachmentE5D1B020"
+    }
+  ]
+}

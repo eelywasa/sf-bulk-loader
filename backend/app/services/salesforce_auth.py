@@ -131,15 +131,23 @@ async def _exchange_jwt(
     )
 
     if response.status_code != 200:
+        # Truncate the error body to avoid inadvertently logging assertion or
+        # token material that Salesforce may echo in error responses (SFBL-60).
+        safe_body = response.text[:200] if response.text else ""
         raise AuthError(
             f"Salesforce token exchange failed "
-            f"[{response.status_code}]: {response.text}"
+            f"[{response.status_code}]: {safe_body}"
         )
 
     body = response.json()
     access_token: Optional[str] = body.get("access_token")
     if not access_token:
-        raise AuthError(f"No access_token in Salesforce response: {body}")
+        # Log only the response field names — never the values — to avoid
+        # leaking any token or credential fields that may be present (SFBL-60).
+        raise AuthError(
+            f"No access_token in Salesforce response "
+            f"(fields present: {sorted(body.keys())})"
+        )
 
     expiry = datetime.now(tz=timezone.utc) + timedelta(seconds=_TOKEN_LIFETIME_SECONDS)
     return access_token, expiry

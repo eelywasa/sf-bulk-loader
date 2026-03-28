@@ -11,6 +11,7 @@ import asyncio
 import csv
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -36,6 +37,16 @@ from app.services.run_event_publisher import (
     publish_step_completed,
     publish_step_started,
 )
+from app.observability.context import (
+    input_connection_id_ctx_var,
+    load_plan_id_ctx_var,
+    run_id_ctx_var,
+    step_id_ctx_var,
+)
+from app.observability.error_monitoring import capture_exception
+from app.observability.events import OutcomeCode, RunEvent, StepEvent
+from app.observability.metrics import record_run_completed, record_run_started
+from app.observability import tracing
 from app.services.salesforce_auth import get_access_token as _default_get_token
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
 
@@ -46,8 +57,24 @@ _DbFactory = Callable[[], AsyncSession]
 
 async def execute_run(run_id: str) -> None:
     """Background entry point: run a LoadRun end-to-end."""
-    async with AsyncSessionLocal() as db:
-        await _execute_run(run_id, db, db_factory=AsyncSessionLocal)
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.trace import NonRecordingSpan
+
+    tracer = tracing._get_tracer()
+    with tracer.start_as_current_span("run.execute") as span:
+        span.set_attribute("run.id", run_id)
+        try:
+            async with AsyncSessionLocal() as db:
+                await _execute_run(run_id, db, db_factory=AsyncSessionLocal)
+        except Exception as exc:
+            logger.exception(
+                "execute_run: unhandled exception for run %s",
+                run_id,
+                extra={"run_id": run_id, "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION},
+            )
+            if not isinstance(span, NonRecordingSpan):
+                span.record_exception(exc)
+            capture_exception(exc, outcome_code=OutcomeCode.UNEXPECTED_EXCEPTION)
 
 
 async def execute_retry_run(
@@ -74,17 +101,24 @@ async def execute_retry_run(
         )
         run = result.scalar_one_or_none()
         if run is None:
-            logger.error("execute_retry_run: LoadRun %s not found", run_id)
+            logger.error("execute_retry_run: LoadRun %s not found", run_id,
+                         extra={"run_id": run_id})
             return
 
         step_result = await db.execute(select(LoadStep).where(LoadStep.id == step_id))
         step = step_result.scalar_one_or_none()
         if step is None:
-            logger.error("execute_retry_run: LoadStep %s not found", step_id)
+            logger.error("execute_retry_run: LoadStep %s not found", step_id,
+                         extra={"run_id": run_id, "step_id": step_id})
             await _mark_run_failed(run_id, db)
             return
 
         plan: LoadPlan = run.load_plan
+
+        # Bind workflow context for this background task.
+        run_id_ctx_var.set(run_id)
+        step_id_ctx_var.set(step_id)
+        load_plan_id_ctx_var.set(str(plan.id))
 
         # ── Mark run as running ───────────────────────────────────────────────
         run.status = RunStatus.running
@@ -97,13 +131,18 @@ async def execute_retry_run(
             run_id,
             step_id,
             len(partitions),
+            extra={"event_name": RunEvent.STARTED, "run_id": run_id,
+                   "step_id": step_id, "load_plan_id": str(plan.id)},
         )
 
         # ── Obtain Salesforce access token ────────────────────────────────────
         try:
             access_token = await _get_token(db, plan.connection)
         except Exception as exc:
-            logger.error("Retry run %s: failed to obtain access token: %s", run_id, exc)
+            logger.error("Retry run %s: failed to obtain access token: %s", run_id, exc,
+                         extra={"event_name": RunEvent.FAILED,
+                                "outcome_code": OutcomeCode.AUTH_ERROR,
+                                "run_id": run_id})
             await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
             await publish_run_failed(run_id, error=str(exc))
             return
@@ -155,6 +194,7 @@ async def execute_retry_run(
                     run_id,
                     i,
                     res,
+                    extra={"run_id": run_id},
                 )
             elif isinstance(res, tuple):
                 success, errors = res
@@ -180,6 +220,7 @@ async def execute_retry_run(
             total_success=total_success,
             total_errors=total_errors,
         )
+        retry_outcome = OutcomeCode.DEGRADED if total_errors > 0 else OutcomeCode.OK
         logger.info(
             "Retry run %s completed (%s): records=%d success=%d errors=%d",
             run_id,
@@ -187,6 +228,8 @@ async def execute_retry_run(
             total_records,
             total_success,
             total_errors,
+            extra={"event_name": RunEvent.COMPLETED, "outcome_code": retry_outcome,
+                   "run_id": run_id, "load_plan_id": str(plan.id)},
         )
 
 
@@ -247,16 +290,31 @@ async def _execute_run(
     )
     run = result.scalar_one_or_none()
     if run is None:
-        logger.error("execute_run: LoadRun %s not found", run_id)
+        logger.error("execute_run: LoadRun %s not found", run_id,
+                     extra={"run_id": run_id})
         return
 
     plan: LoadPlan = run.load_plan
     steps: list[LoadStep] = sorted(plan.load_steps, key=lambda s: s.sequence)
 
+    # Bind workflow context for this background task (task-scoped, no reset needed).
+    run_id_ctx_var.set(run_id)
+    load_plan_id_ctx_var.set(str(plan.id))
+
+    # Enrich the current tracing span with plan context once the run is loaded.
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.trace import NonRecordingSpan
+    _cur_span = otel_trace.get_current_span()
+    if not isinstance(_cur_span, NonRecordingSpan):
+        _cur_span.set_attribute("load_plan.id", str(plan.id))
+
     # ── Mark run as running ───────────────────────────────────────────────────
     run.status = RunStatus.running
     run.started_at = datetime.now(timezone.utc)
     await db.commit()
+
+    record_run_started()
+    _run_start = time.perf_counter()
 
     await publish_run_started(run_id)
     logger.info(
@@ -265,6 +323,8 @@ async def _execute_run(
         plan.id,
         len(steps),
         plan.max_parallel_jobs,
+        extra={"event_name": RunEvent.STARTED, "run_id": run_id,
+               "load_plan_id": str(plan.id)},
     )
 
     # ── Pre-count total records across all steps ──────────────────────────────
@@ -283,20 +343,25 @@ async def _execute_run(
                             continue
                         preflight_total += sum(1 for _ in reader)
             except Exception as exc:
-                logger.warning("Run %s: pre-count failed for step %s: %s", run_id, step.id, exc)
+                logger.warning("Run %s: pre-count failed for step %s: %s", run_id, step.id, exc,
+                               extra={"run_id": run_id, "step_id": str(step.id)})
         if preflight_total > 0:
             run.total_records = preflight_total
             await db.commit()
     except Exception as exc:
-        logger.warning("Run %s: pre-count failed: %s", run_id, exc)
+        logger.warning("Run %s: pre-count failed: %s", run_id, exc,
+                       extra={"run_id": run_id})
 
     # ── Obtain Salesforce access token ────────────────────────────────────────
     try:
         access_token = await _get_token(db, plan.connection)
     except Exception as exc:
-        logger.error("Run %s: failed to obtain access token: %s", run_id, exc)
+        logger.error("Run %s: failed to obtain access token: %s", run_id, exc,
+                     extra={"event_name": RunEvent.FAILED, "outcome_code": OutcomeCode.AUTH_ERROR,
+                            "run_id": run_id})
         await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
         await publish_run_failed(run_id, error=str(exc))
+        record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
         return
 
     semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
@@ -311,8 +376,12 @@ async def _execute_run(
             # Reload run to detect external abort before starting next step.
             await db.refresh(run)
             if run.status == RunStatus.aborted:
-                logger.info("Run %s: aborted before step %s", run_id, step.id)
+                logger.info("Run %s: aborted before step %s", run_id, step.id,
+                            extra={"event_name": RunEvent.ABORTED,
+                                   "outcome_code": OutcomeCode.ABORTED,
+                                   "run_id": run_id, "step_id": str(step.id)})
                 await publish_run_aborted(run_id)
+                record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
                 return
 
             await publish_step_started(
@@ -327,6 +396,8 @@ async def _execute_run(
                 step.sequence,
                 step.operation.value,
                 step.object_name,
+                extra={"event_name": StepEvent.STARTED, "run_id": run_id,
+                       "step_id": str(step.id)},
             )
 
             try:
@@ -346,11 +417,15 @@ async def _execute_run(
                     run_id,
                     step.id,
                     exc,
+                    extra={"event_name": RunEvent.FAILED,
+                           "outcome_code": OutcomeCode.STORAGE_ERROR,
+                           "run_id": run_id, "step_id": str(step.id)},
                 )
                 await _mark_run_failed(
                     run_id, db, error_summary={"storage_error": str(exc)}
                 )
                 await publish_run_failed(run_id, error=str(exc))
+                record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
                 return
 
             total_step_records = step_success + step_errors
@@ -374,6 +449,27 @@ async def _execute_run(
                 step_failed=step_failed,
             )
 
+            # Emit a structured progress event for observability (SFBL-59).
+            steps_completed = steps.index(step) + 1
+            logger.info(
+                "Run %s: progress after step %d/%d — success=%d errors=%d",
+                run_id,
+                steps_completed,
+                len(steps),
+                run_total_success,
+                run_total_errors,
+                extra={
+                    "event_name": RunEvent.PROGRESS_UPDATED,
+                    "run_id": run_id,
+                    "load_plan_id": str(plan.id),
+                    "steps_total": len(steps),
+                    "steps_completed": steps_completed,
+                    "records_processed": run_total_records,
+                    "records_succeeded": run_total_success,
+                    "records_failed": run_total_errors,
+                },
+            )
+
             if step_failed:
                 any_step_failed = True
                 logger.warning(
@@ -382,11 +478,17 @@ async def _execute_run(
                     step.id,
                     error_rate * 100,
                     plan.error_threshold_pct,
+                    extra={"event_name": StepEvent.THRESHOLD_EXCEEDED,
+                           "outcome_code": OutcomeCode.STEP_THRESHOLD_EXCEEDED,
+                           "run_id": run_id, "step_id": str(step.id)},
                 )
                 if plan.abort_on_step_failure:
                     logger.error(
                         "Run %s: aborting after step failure (abort_on_step_failure=True)",
                         run_id,
+                        extra={"event_name": RunEvent.ABORTED,
+                               "outcome_code": OutcomeCode.STEP_THRESHOLD_EXCEEDED,
+                               "run_id": run_id, "step_id": str(step.id)},
                     )
                     await _abort_remaining_jobs(run_id, db, bulk_client)
                     run.status = RunStatus.aborted
@@ -395,6 +497,7 @@ async def _execute_run(
                     run.total_success = run_total_success
                     run.total_errors = run_total_errors
                     await db.commit()
+                    record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
                     await publish_run_aborted(run_id, reason="step_failure_threshold")
                     return
 
@@ -416,6 +519,10 @@ async def _execute_run(
         total_success=run_total_success,
         total_errors=run_total_errors,
     )
+    outcome = OutcomeCode.DEGRADED if any_step_failed else OutcomeCode.OK
+    record_run_completed(final_status.value, time.perf_counter() - _run_start)
+    if not isinstance(_cur_span, NonRecordingSpan):
+        _cur_span.set_attribute("outcome.code", outcome)
     logger.info(
         "Run %s completed (%s): records=%d success=%d errors=%d",
         run_id,
@@ -423,6 +530,8 @@ async def _execute_run(
         run_total_records,
         run_total_success,
         run_total_errors,
+        extra={"event_name": RunEvent.COMPLETED, "outcome_code": outcome,
+               "run_id": run_id, "load_plan_id": str(plan.id)},
     )
 
 
@@ -456,6 +565,7 @@ async def _abort_remaining_jobs(
                     run_id,
                     job.sf_job_id,
                     exc,
+                    extra={"run_id": run_id, "sf_job_id": job.sf_job_id},
                 )
         job.status = JobStatus.aborted
         job.completed_at = datetime.now(timezone.utc)

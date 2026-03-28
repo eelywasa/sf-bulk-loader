@@ -380,7 +380,7 @@ async def test_run_aborted_when_error_threshold_exceeded(db: AsyncSession, tmp_p
 
     await db.refresh(run)
     assert run.status == RunStatus.aborted
-    assert any(e.get("event") == "run_aborted" for e in broadcast_events)
+    assert any(e.get("event_name") == "run.aborted" for e in broadcast_events)
 
 
 async def test_error_threshold_exceeded_no_abort(db: AsyncSession, tmp_path):
@@ -748,11 +748,11 @@ async def test_run_started_and_completed_events_broadcast(db: AsyncSession, tmp_
     ):
         await _execute_run(run.id, db, db_factory=db_factory)
 
-    event_types = [e["event"] for e in events]
-    assert "run_started" in event_types
-    assert "step_started" in event_types
-    assert "step_completed" in event_types
-    assert "run_completed" in event_types
+    event_types = [e["event_name"] for e in events]
+    assert "run.started" in event_types
+    assert "step.started" in event_types
+    assert "step.completed" in event_types
+    assert "run.completed" in event_types
 
 
 async def test_pending_jobs_aborted_when_run_aborted_mid_step(tmp_path):
@@ -855,7 +855,7 @@ async def test_mid_poll_progress_persisted(db: AsyncSession, tmp_path):
     # A mid-poll job_status_change event with records_processed=50 should have been broadcast.
     in_progress_events = [
         e for e in broadcast_events
-        if e.get("event") == "job_status_change" and e.get("status") == "in_progress"
+        if e.get("event_name") == "job.status_changed" and e.get("status") == "in_progress"
     ]
     assert any(e.get("records_processed") == 50 for e in in_progress_events), (
         f"Expected in_progress broadcast with records_processed=50; got: {in_progress_events}"

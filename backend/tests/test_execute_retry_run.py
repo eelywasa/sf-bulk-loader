@@ -388,9 +388,9 @@ async def test_execute_retry_run_broadcasts_run_started_and_completed(db: AsyncS
             _BulkClient=_make_bulk_cls(),
         )
 
-    event_names = [e.get("event") for e in events]
-    assert "run_started" in event_names
-    assert any(e in event_names for e in ("run_completed",))
+    event_names = [e.get("event_name") for e in events]
+    assert "run.started" in event_names
+    assert "run.completed" in event_names
 
 
 async def test_execute_retry_run_transitions_pending_to_running(db: AsyncSession):
