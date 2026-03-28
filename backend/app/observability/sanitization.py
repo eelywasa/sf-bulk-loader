@@ -47,9 +47,12 @@ Public API
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from opentelemetry.trace import NonRecordingSpan, Span, StatusCode
+if TYPE_CHECKING:
+    # Only imported for type-checking — opentelemetry is optional on the
+    # desktop distribution which uses a slim requirements-desktop.txt.
+    from opentelemetry.trace import Span
 
 # ── Sensitive key registry ────────────────────────────────────────────────────
 
@@ -151,7 +154,15 @@ def safe_record_exception(span: Span, exc: BaseException) -> None:
     avoid capturing any local variable values that might include secrets.
     Use standard exception logging (via the logging module with exc_info=True)
     for full tracebacks instead.
+
+    opentelemetry is imported lazily so this module remains importable on the
+    desktop distribution which does not include opentelemetry in its deps.
     """
+    try:
+        from opentelemetry.trace import NonRecordingSpan, StatusCode
+    except ImportError:
+        return
+
     if isinstance(span, NonRecordingSpan):
         return
     span.set_attribute("exception.type", type(exc).__name__)
