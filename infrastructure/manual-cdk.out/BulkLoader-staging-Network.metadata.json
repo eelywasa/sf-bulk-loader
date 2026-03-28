@@ -1,0 +1,188 @@
+{
+  "/BulkLoader-staging-Network/VpcId": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcId"
+    }
+  ],
+  "/BulkLoader-staging-Network/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    }
+  ],
+  "/BulkLoader-staging-Network/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Vpc8378EB38"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIGWD7BA715C"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcVPCGWBF912B6E"
+    }
+  ],
+  "/BulkLoader-staging-Network/AlbSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbSecurityGroup86A59E99"
+    }
+  ],
+  "/BulkLoader-staging-Network/BackendServiceSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BackendServiceSecurityGroupF0F7037A"
+    }
+  ],
+  "/BulkLoader-staging-Network/BackendServiceSecurityGroup/from BulkLoaderstagingNetworkAlbSecurityGroup14F6CC55:8000": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BackendServiceSecurityGroupfromBulkLoaderstagingNetworkAlbSecurityGroup14F6CC558000E9D86240"
+    }
+  ],
+  "/BulkLoader-staging-Network/Exports/Output{\"Ref\":\"Vpc8378EB38\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpc8378EB38272D6E3A"
+    }
+  ],
+  "/BulkLoader-staging-Network/Exports/Output{\"Fn::GetAtt\":[\"BackendServiceSecurityGroupF0F7037A\",\"GroupId\"]}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputFnGetAttBackendServiceSecurityGroupF0F7037AGroupIdDB2C982C"
+    }
+  ],
+  "/BulkLoader-staging-Network/Exports/Output{\"Ref\":\"VpcIsolatedSubnet1SubnetE48C5737\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpcIsolatedSubnet1SubnetE48C57379FE391D3"
+    }
+  ],
+  "/BulkLoader-staging-Network/Exports/Output{\"Ref\":\"VpcIsolatedSubnet2Subnet16364B91\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpcIsolatedSubnet2Subnet16364B914643ED68"
+    }
+  ],
+  "/BulkLoader-staging-Network/Exports/Output{\"Fn::GetAtt\":[\"AlbSecurityGroup86A59E99\",\"GroupId\"]}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputFnGetAttAlbSecurityGroup86A59E99GroupIdE3A37BC7"
+    }
+  ],
+  "/BulkLoader-staging-Network/Exports/Output{\"Ref\":\"VpcPublicSubnet1Subnet5C2D37C4\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpcPublicSubnet1Subnet5C2D37C4FFA2B456"
+    }
+  ],
+  "/BulkLoader-staging-Network/Exports/Output{\"Ref\":\"VpcPublicSubnet2Subnet691E08A3\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpcPublicSubnet2Subnet691E08A351552740"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet1Subnet5C2D37C4"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet1RouteTable6C95E38E"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet1RouteTableAssociation97140677"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet1DefaultRoute3DA9E72A"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet2Subnet691E08A3"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet2RouteTable94F7E489"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet2RouteTableAssociationDD5762D8"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/PublicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcPublicSubnet2DefaultRoute97F91067"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/IsolatedSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIsolatedSubnet1SubnetE48C5737"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/IsolatedSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIsolatedSubnet1RouteTable4771E3E5"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/IsolatedSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIsolatedSubnet1RouteTableAssociationD300FCBB"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/IsolatedSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIsolatedSubnet2Subnet16364B91"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/IsolatedSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIsolatedSubnet2RouteTable1D30AF7D"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/IsolatedSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIsolatedSubnet2RouteTableAssociationF7B18CCA"
+    }
+  ],
+  "/BulkLoader-staging-Network/Vpc/S3GatewayEndpoint/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcS3GatewayEndpoint68BA86CD"
+    }
+  ]
+}

@@ -19,6 +19,8 @@ from app.config import settings
 from app.models.job import JobRecord, JobStatus
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
+from app.observability.context import job_record_id_ctx_var, sf_job_id_ctx_var
+from app.observability.events import JobEvent, OutcomeCode, SalesforceEvent
 from app.services.result_persistence import download_and_persist_results
 from app.services.run_event_publisher import publish_job_status_change
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient, _TERMINAL_STATES
@@ -47,10 +49,14 @@ async def process_partition(
     Returns:
         ``(success_count, error_count)`` — ``(0, 0)`` on early-exit failure paths.
     """
+    # Bind job-scoped context so every log call in this task carries the IDs.
+    job_record_id_ctx_var.set(job_record_id)
+
     async with db_factory() as db:
         job_rec = await db.get(JobRecord, job_record_id)
         if job_rec is None:
-            logger.error("process_partition: JobRecord %s not found", job_record_id)
+            logger.error("process_partition: JobRecord %s not found", job_record_id,
+                         extra={"run_id": run_id, "job_record_id": job_record_id})
             return 0, 0
 
         async with semaphore:
@@ -80,6 +86,10 @@ async def process_partition(
                     step.id,
                     job_rec.partition_index,
                     exc,
+                    extra={"event_name": SalesforceEvent.BULK_JOB_FAILED,
+                           "outcome_code": OutcomeCode.SALESFORCE_API_ERROR,
+                           "run_id": run_id, "step_id": str(step.id),
+                           "job_record_id": job_record_id},
                 )
                 job_rec.status = JobStatus.failed
                 job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "") + (f"\nResponse: {exc.body}" if exc.body else "")
@@ -94,6 +104,7 @@ async def process_partition(
                 return 0, 0
 
             job_rec.sf_job_id = sf_job_id
+            sf_job_id_ctx_var.set(sf_job_id)
             await db.commit()
             await publish_job_status_change(
                 run_id,
@@ -114,6 +125,10 @@ async def process_partition(
                     step.id,
                     job_rec.partition_index,
                     exc,
+                    extra={"event_name": SalesforceEvent.BULK_JOB_FAILED,
+                           "outcome_code": OutcomeCode.SALESFORCE_API_ERROR,
+                           "run_id": run_id, "step_id": str(step.id),
+                           "job_record_id": job_record_id, "sf_job_id": sf_job_id},
                 )
                 job_rec.status = JobStatus.failed
                 job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "")
@@ -184,6 +199,10 @@ async def process_partition(
                             job_rec.partition_index,
                             sf_job_id,
                             settings.sf_job_timeout_minutes,
+                            extra={"event_name": SalesforceEvent.BULK_JOB_POLLED,
+                                   "outcome_code": OutcomeCode.TIMEOUT,
+                                   "run_id": run_id, "step_id": str(step.id),
+                                   "job_record_id": job_record_id, "sf_job_id": sf_job_id},
                         )
                         timeout_warned = True
 
@@ -197,6 +216,10 @@ async def process_partition(
                     step.id,
                     job_rec.partition_index,
                     exc,
+                    extra={"event_name": SalesforceEvent.BULK_JOB_FAILED,
+                           "outcome_code": OutcomeCode.SALESFORCE_API_ERROR,
+                           "run_id": run_id, "step_id": str(step.id),
+                           "job_record_id": job_record_id, "sf_job_id": sf_job_id},
                 )
                 job_rec.status = JobStatus.failed
                 job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "")
@@ -242,6 +265,13 @@ async def process_partition(
                 records_processed=records_processed,
                 records_failed=records_failed,
             )
+            _job_event = (
+                JobEvent.COMPLETED if terminal_state == "JobComplete" else JobEvent.FAILED
+            )
+            _job_outcome = OutcomeCode.OK if terminal_state == "JobComplete" else (
+                OutcomeCode.ABORTED if terminal_state == "Aborted"
+                else OutcomeCode.SALESFORCE_API_ERROR
+            )
             logger.info(
                 "Run %s step %s partition %d: %s (processed=%d, failed=%d)",
                 run_id,
@@ -250,5 +280,8 @@ async def process_partition(
                 terminal_state,
                 records_processed,
                 records_failed,
+                extra={"event_name": _job_event, "outcome_code": _job_outcome,
+                       "run_id": run_id, "step_id": str(step.id),
+                       "job_record_id": job_record_id, "sf_job_id": sf_job_id},
             )
             return records_processed - records_failed, records_failed

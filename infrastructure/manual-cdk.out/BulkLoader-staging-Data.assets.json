@@ -1,0 +1,20 @@
+{
+  "version": "52.0.0",
+  "files": {
+    "3f520adb3e5c55289ba4788de6effc6bc2c3b05f9a9a7b5b17a0bc85223b40db": {
+      "displayName": "BulkLoader-staging-Data Template",
+      "source": {
+        "path": "BulkLoader-staging-Data.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "current_account-current_region-5d3dd08d": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "3f520adb3e5c55289ba4788de6effc6bc2c3b05f9a9a7b5b17a0bc85223b40db.json",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

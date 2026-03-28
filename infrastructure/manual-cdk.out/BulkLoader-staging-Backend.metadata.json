@@ -1,0 +1,146 @@
+{
+  "/BulkLoader-staging-Backend/CorsOriginsParam.Parameter": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CorsOriginsParamParameter"
+    }
+  ],
+  "/BulkLoader-staging-Backend/LogLevelParam.Parameter": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "LogLevelParamParameter"
+    }
+  ],
+  "/BulkLoader-staging-Backend/AdminUsernameParam.Parameter": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AdminUsernameParamParameter"
+    }
+  ],
+  "/BulkLoader-staging-Backend/BackendAliasRecord": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BackendAliasRecord"
+    }
+  ],
+  "/BulkLoader-staging-Backend/AlbDnsName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbDnsName"
+    }
+  ],
+  "/BulkLoader-staging-Backend/BackendOriginDomainName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BackendOriginDomainName"
+    }
+  ],
+  "/BulkLoader-staging-Backend/EcrRepositoryUri": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "EcrRepositoryUri"
+    }
+  ],
+  "/BulkLoader-staging-Backend/EcsClusterName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "EcsClusterName"
+    }
+  ],
+  "/BulkLoader-staging-Backend/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    }
+  ],
+  "/BulkLoader-staging-Backend/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    }
+  ],
+  "/BulkLoader-staging-Backend/BackendRepository/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BackendRepository9B711290"
+    }
+  ],
+  "/BulkLoader-staging-Backend/BackendLogGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BackendLogGroupDA10F1B2"
+    }
+  ],
+  "/BulkLoader-staging-Backend/Cluster/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ClusterEB0386A7"
+    }
+  ],
+  "/BulkLoader-staging-Backend/Cluster/Cluster": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Cluster3DA9CCBA"
+    }
+  ],
+  "/BulkLoader-staging-Backend/TaskRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskRole30FC0FBB"
+    }
+  ],
+  "/BulkLoader-staging-Backend/TaskDef/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskDef54694570"
+    }
+  ],
+  "/BulkLoader-staging-Backend/Alb/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Alb16C2F182"
+    }
+  ],
+  "/BulkLoader-staging-Backend/Service/Service": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceD69D759B"
+    }
+  ],
+  "/BulkLoader-staging-Backend/TaskRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskRoleDefaultPolicy07FC53DE"
+    }
+  ],
+  "/BulkLoader-staging-Backend/TaskDef/ExecutionRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskDefExecutionRoleB4775C97"
+    }
+  ],
+  "/BulkLoader-staging-Backend/Alb/HttpsListener/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbHttpsListener2ADA614F"
+    }
+  ],
+  "/BulkLoader-staging-Backend/Alb/HttpListener/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbHttpListener00C8B33E"
+    }
+  ],
+  "/BulkLoader-staging-Backend/TaskDef/ExecutionRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TaskDefExecutionRoleDefaultPolicy0DBB737A"
+    }
+  ],
+  "/BulkLoader-staging-Backend/Alb/HttpsListener/BackendTargetGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbHttpsListenerBackendTargetGroupDCE9E56C"
+    }
+  ]
+}

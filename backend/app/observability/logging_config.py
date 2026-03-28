@@ -33,7 +33,15 @@ import sys
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from app.observability.context import get_request_id
+from app.observability.context import (
+    get_request_id,
+    input_connection_id_ctx_var,
+    job_record_id_ctx_var,
+    load_plan_id_ctx_var,
+    run_id_ctx_var,
+    sf_job_id_ctx_var,
+    step_id_ctx_var,
+)
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -114,6 +122,31 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
+class WorkflowContextFilter(logging.Filter):
+    """Inject workflow correlation IDs from ContextVars into every LogRecord.
+
+    Reads run_id, step_id, job_record_id, sf_job_id, load_plan_id, and
+    input_connection_id from their respective ContextVars. Values are None
+    outside a workflow scope (e.g. during startup or HTTP-only requests).
+    Does not overwrite fields already set explicitly via extra={}.
+    """
+
+    _VARS = (
+        ("run_id", run_id_ctx_var),
+        ("step_id", step_id_ctx_var),
+        ("job_record_id", job_record_id_ctx_var),
+        ("sf_job_id", sf_job_id_ctx_var),
+        ("load_plan_id", load_plan_id_ctx_var),
+        ("input_connection_id", input_connection_id_ctx_var),
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        for field, var in self._VARS:
+            if not hasattr(record, field):
+                setattr(record, field, var.get())
+        return True
+
+
 class RequestContextFilter(logging.Filter):
     """Inject the current request_id into every LogRecord.
 
@@ -151,6 +184,7 @@ def configure_logging(settings: "Settings") -> None:
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
+    handler.addFilter(WorkflowContextFilter())
     handler.addFilter(RequestContextFilter())
 
     root = logging.getLogger()

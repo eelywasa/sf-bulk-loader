@@ -1,5 +1,7 @@
 # Spec: Dark Mode and Theming Refactor
 
+**Jira Epic: SFBL-15**
+
 ## Overview
 
 The application has a working light/dark/system theme toggle (AppShell settings menu) and
@@ -171,7 +173,7 @@ drift. Assign ownership explicitly during implementation:
 
 ---
 
-## Ticket 1 — Design Token Foundation — ✅ DONE
+## Ticket 1 — Design Token Foundation — ✅ DONE (SFBL-69)
 
 ### Goal
 Establish the CSS custom property system and Tailwind config extension. No component changes.
@@ -211,7 +213,7 @@ Subsequent tickets depend on this being complete and correct.
 
 ---
 
-## Ticket 2 — Shared Form Styles — ✅ DONE
+## Ticket 2 — Shared Form Styles — ✅ DONE (SFBL-70)
 
 ### Goal
 Create a single shared constants file for all form element styling. Replace scattered inline
@@ -272,7 +274,7 @@ export const ALERT_INFO = `${ALERT_BASE} bg-info-bg border-info-border text-info
 
 ---
 
-## Ticket 3 — Atomic UI Components — ✅ DONE
+## Ticket 3 — Atomic UI Components — ✅ DONE (SFBL-71)
 
 ### Goal
 Migrate `Button`, `Badge`, `Progress`, and `EmptyState` to use semantic tokens. Remove any
@@ -329,7 +331,7 @@ existing `dark:` variants from these files.
 
 ---
 
-## Ticket 4 — Container UI Components — ✅ DONE
+## Ticket 4 — Container UI Components — ✅ DONE (SFBL-72)
 
 ### Goal
 Migrate `Card`, `Modal`, `Tabs`, and `Toast` to use semantic tokens. Apply a shared overlay shadow
@@ -388,7 +390,7 @@ Add a shared overlay shadow constant or utility (for example `OVERLAY_SHADOW_CLA
 
 ---
 
-## Ticket 5 — DataTable — ✅ DONE
+## Ticket 5 — DataTable — ✅ DONE (SFBL-73)
 
 ### Goal
 Migrate `DataTable` to use semantic tokens. DataTable is used on every data page, so this
@@ -418,7 +420,7 @@ ticket directly improves all pages.
 
 ---
 
-## Ticket 6 — Dashboard Page — ✅ DONE
+## Ticket 6 — Dashboard Page — ✅ DONE (SFBL-74)
 
 ### Goal
 Migrate `Dashboard.tsx` to semantic tokens. This is a self-contained page with no sub-components
@@ -450,7 +452,7 @@ to update.
 
 ---
 
-## Ticket 7 — Connections Page — ✅ DONE
+## Ticket 7 — Connections Page — ✅ DONE (SFBL-75)
 
 ### Goal
 Migrate `Connections.tsx` to semantic tokens. This is the most form-heavy page and the first
@@ -483,7 +485,7 @@ to use the shared `formStyles.ts` constants from Ticket 2 alongside the token sy
 
 ---
 
-## Ticket 8 — Plans Pages — ✅ DONE
+## Ticket 8 — Plans Pages — ✅ DONE (SFBL-76)
 
 ### Goal
 Migrate `PlansPage.tsx`, `PlanEditor.tsx`, `PlanForm.tsx`, `StepList.tsx`,
@@ -544,7 +546,7 @@ Migrate `PlansPage.tsx`, `PlanEditor.tsx`, `PlanForm.tsx`, `StepList.tsx`,
 
 ---
 
-## Ticket 9 — Runs Pages — ✅ DONE
+## Ticket 9 — Runs Pages — ✅ DONE (SFBL-77)
 
 ### Goal
 Migrate `RunsPage.tsx`, `RunDetail.tsx`, and its sub-components (`RunSummaryCard`,
@@ -610,7 +612,7 @@ Migrate `RunsPage.tsx`, `RunDetail.tsx`, and its sub-components (`RunSummaryCard
 
 ---
 
-## Ticket 10 — JobDetail and FilesPage — ✅ DONE
+## Ticket 10 — JobDetail and FilesPage — ✅ DONE (SFBL-78)
 
 ### Goal
 Migrate `JobDetail.tsx` and `FilesPage.tsx` to semantic tokens. Both pages have partial dark

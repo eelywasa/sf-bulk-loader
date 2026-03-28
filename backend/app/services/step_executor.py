@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job import JobRecord, JobStatus
 from app.models.load_step import LoadStep
+from app.observability.context import input_connection_id_ctx_var, step_id_ctx_var
+from app.observability.events import JobEvent, OutcomeCode, StepEvent
 from app.services.csv_processor import partition_csv as _default_partition
 from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
 from app.services.partition_executor import process_partition
@@ -58,6 +60,43 @@ async def execute_step(
             accessed.  The caller (run_coordinator) is responsible for marking
             the run as failed.
     """
+    # Bind step-scoped context so all log calls (including those in spawned
+    # partition tasks) carry step_id and input_connection_id automatically.
+    _step_id_token = step_id_ctx_var.set(str(step.id))
+    _conn_id_token = input_connection_id_ctx_var.set(
+        str(step.input_connection_id) if step.input_connection_id else None
+    )
+
+    try:
+        return await _execute_step(
+            run_id=run_id,
+            step=step,
+            bulk_client=bulk_client,
+            db=db,
+            semaphore=semaphore,
+            db_factory=db_factory,
+            _get_storage=_get_storage,
+            _partition=_partition,
+            _process=_process,
+        )
+    finally:
+        step_id_ctx_var.reset(_step_id_token)
+        input_connection_id_ctx_var.reset(_conn_id_token)
+
+
+async def _execute_step(
+    *,
+    run_id: str,
+    step: LoadStep,
+    bulk_client: SalesforceBulkClient,
+    db: AsyncSession,
+    semaphore: asyncio.Semaphore,
+    db_factory: _DbFactory,
+    _get_storage: Callable = _default_get_storage,
+    _partition: Callable = _default_partition,
+    _process: Callable = process_partition,
+) -> tuple[int, int]:
+    """Inner implementation of execute_step (called after ContextVars are bound)."""
     # ── 1. Resolve storage and discover CSV files ─────────────────────────────
     storage = await _get_storage(step.input_connection_id, db)
     rel_paths = storage.discover_files(step.csv_file_pattern)
@@ -68,6 +107,8 @@ async def execute_step(
             step.id,
             step.csv_file_pattern,
             storage.provider,
+            extra={"event_name": StepEvent.COMPLETED, "outcome_code": OutcomeCode.OK,
+                   "run_id": run_id, "step_id": str(step.id)},
         )
         return 0, 0
 
@@ -83,6 +124,8 @@ async def execute_step(
             "Run %s step %s: files matched but yielded no data rows — skipping",
             run_id,
             step.id,
+            extra={"event_name": StepEvent.COMPLETED, "outcome_code": OutcomeCode.OK,
+                   "run_id": run_id, "step_id": str(step.id)},
         )
         return 0, 0
 
@@ -93,6 +136,8 @@ async def execute_step(
         len(rel_paths),
         storage.provider,
         len(partitions),
+        extra={"event_name": StepEvent.STARTED, "run_id": run_id,
+               "step_id": str(step.id)},
     )
 
     # ── 3. Create JobRecord rows ──────────────────────────────────────────────
@@ -158,6 +203,9 @@ async def execute_step(
                 step.id,
                 i,
                 res,
+                extra={"event_name": JobEvent.FAILED,
+                       "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION,
+                       "run_id": run_id, "step_id": str(step.id)},
             )
         elif isinstance(res, tuple):
             success, errors = res

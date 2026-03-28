@@ -1,5 +1,7 @@
 # Spec: CSV Preview Pagination, Search, and Filtering
 
+**Jira Epic: SFBL-14**
+
 ## Overview
 
 The app currently shows a fixed 25-row preview whenever a CSV file is displayed. This spec
@@ -287,7 +289,7 @@ Displayed below the table:
 Maintenance note: when a ticket is completed, append `— ✅ DONE` to its heading and update this
 section to reflect the implementation state.
 
-### Ticket 1 — Extend Storage Abstraction for Pagination and Filtering — ✅ DONE
+### Ticket 1 — Extend Storage Abstraction for Pagination and Filtering — ✅ DONE (SFBL-61)
 
 Goal: update the provider-neutral contract and both storage implementations to support offset,
 limit, and column filters.
@@ -321,7 +323,7 @@ Exit criteria:
 
 ---
 
-### Ticket 2 — Extend Input File Preview API Endpoint — ✅ DONE
+### Ticket 2 — Extend Input File Preview API Endpoint — ✅ DONE (SFBL-63)
 
 Goal: expose pagination and filtering through the files API.
 
@@ -351,7 +353,7 @@ Exit criteria:
 
 ---
 
-### Ticket 3 — Extend Job Result CSV Preview Endpoints — ✅ DONE
+### Ticket 3 — Extend Job Result CSV Preview Endpoints — ✅ DONE (SFBL-64)
 
 Goal: add the same pagination and filtering capability to the job result CSV endpoints.
 
@@ -382,7 +384,7 @@ Exit criteria:
 
 ---
 
-### Ticket 4 — Build Shared `CsvPreviewPanel` Component — ✅ DONE
+### Ticket 4 — Build Shared `CsvPreviewPanel` Component — ✅ DONE (SFBL-65)
 
 Goal: implement the reusable frontend component that all CSV preview contexts will use.
 
@@ -417,7 +419,7 @@ Exit criteria:
 
 ---
 
-### Ticket 5 — Integrate `CsvPreviewPanel` into FilesPage — ✅ DONE
+### Ticket 5 — Integrate `CsvPreviewPanel` into FilesPage — ✅ DONE (SFBL-66)
 
 Goal: replace the bespoke `PreviewTable` component in `FilesPage` with `CsvPreviewPanel`.
 
@@ -448,7 +450,7 @@ Exit criteria:
 
 ---
 
-### Ticket 6 — Integrate `CsvPreviewPanel` into JobDetail — ✅ DONE
+### Ticket 6 — Integrate `CsvPreviewPanel` into JobDetail — ✅ DONE (SFBL-67)
 
 Goal: replace the inline table in `JobDetail`'s `LogSection` with `CsvPreviewPanel`.
 
@@ -475,7 +477,7 @@ Exit criteria:
 
 ---
 
-### Ticket 7 — Remove Deprecated Preview Compatibility Fields — ✅ DONE
+### Ticket 7 — Remove Deprecated Preview Compatibility Fields — ✅ DONE (SFBL-68)
 
 Goal: remove temporary compatibility shims after all frontend consumers have migrated.
 

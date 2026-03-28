@@ -1,5 +1,7 @@
 # Spec: Refactoring and Test Rationalisation Backlog
 
+**Jira Epic: SFBL-1**
+
 ## Overview
 
 The application has reached the point where adding features directly on top of the current structure will increase delivery cost and regression risk. This document captures the main refactoring and rationalisation work that should be considered before the next substantial feature wave.
@@ -150,7 +152,7 @@ Relevant files:
 
 This is the highest-value refactoring stage. It should happen before another major execution or input-source feature.
 
-### 1. Split the orchestrator into explicit collaborators
+### 1. Split the orchestrator into explicit collaborators (SFBL-2)
 
 Target shape:
 
@@ -174,7 +176,7 @@ Expected outcome:
 - easier unit tests for step-level and partition-level logic
 - clearer ownership for future features such as source-aware execution or partial reruns
 
-### 2. Introduce a single input-file service boundary
+### 2. Introduce a single input-file service boundary (SFBL-3)
 
 Create one backend service layer responsible for:
 
@@ -198,7 +200,7 @@ Goals:
 - reuse the traversal protections already present in `csv_processor`
 - prepare the codebase for source-aware storage work without another round of rewiring
 
-### 3. Move business rules out of routers and into domain services
+### 3. Move business rules out of routers and into domain services (SFBL-4)
 
 Initial candidates:
 
@@ -219,7 +221,7 @@ Goals:
 
 ## Stage 2: Rationalise Frontend Structure
 
-### 4. Break `PlanEditor` into feature components and hooks
+### 4. Break `PlanEditor` into feature components and hooks (SFBL-5)
 
 Suggested split:
 
@@ -237,7 +239,7 @@ Goals:
 - make file-picker behaviour reusable
 - enable narrower tests that do not require mocking the entire page
 
-### 5. Break `RunDetail` into a live-run container plus presentational sections
+### 5. Break `RunDetail` into a live-run container plus presentational sections (SFBL-6)
 
 Suggested split:
 
@@ -253,7 +255,7 @@ Goals:
 - make retry/abort actions independently testable
 - simplify future additions such as richer progress metrics or event timelines
 
-### 6. Decide on one live-update model
+### 6. Decide on one live-update model (SFBL-7)
 
 Options:
 
@@ -272,7 +274,7 @@ Goals:
 
 ## Stage 3: Contract and Model Clean-up
 
-### 7. Normalise backend response and persistence contracts
+### 7. Normalise backend response and persistence contracts (SFBL-8)
 
 Candidates for rationalisation:
 
@@ -286,7 +288,7 @@ Goals:
 - one clear owner for aggregate totals
 - fewer "special case" branches in pages and routes
 
-### 8. Introduce a small API URL/query builder layer in the frontend
+### 8. Introduce a small API URL/query builder layer in the frontend (SFBL-9)
 
 Goals:
 
