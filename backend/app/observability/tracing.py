@@ -30,7 +30,9 @@ from contextlib import contextmanager
 from typing import Generator
 
 from opentelemetry import trace
-from opentelemetry.trace import NonRecordingSpan, Span, StatusCode
+from opentelemetry.trace import Span
+
+from app.observability.sanitization import safe_record_exception
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +135,7 @@ def run_span(run_id: str, load_plan_id: str) -> Generator[Span, None, None]:
         try:
             yield span
         except Exception as exc:
-            if not isinstance(span, NonRecordingSpan):
-                span.record_exception(exc)
-                span.set_status(StatusCode.ERROR, str(exc))
+            safe_record_exception(span, exc)
             raise
 
 
@@ -152,9 +152,7 @@ def step_span(
         try:
             yield span
         except Exception as exc:
-            if not isinstance(span, NonRecordingSpan):
-                span.record_exception(exc)
-                span.set_status(StatusCode.ERROR, str(exc))
+            safe_record_exception(span, exc)
             raise
 
 
@@ -175,7 +173,5 @@ def partition_span(job_record_id: str) -> Generator[Span, None, None]:
         try:
             yield span
         except Exception as exc:
-            if not isinstance(span, NonRecordingSpan):
-                span.record_exception(exc)
-                span.set_status(StatusCode.ERROR, str(exc))
+            safe_record_exception(span, exc)
             raise

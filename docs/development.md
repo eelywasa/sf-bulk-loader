@@ -156,6 +156,39 @@ ERROR_MONITORING_DSN=https://<key>@<org>.ingest.sentry.io/<project>
 
 Sensitive data is scrubbed before events are transmitted (authorization headers, private keys, passwords, tokens). Correlation context (run_id, step_id, request_id) is attached to captured exceptions automatically.
 
+### Sensitive telemetry handling (SFBL-60)
+
+All observability channels — logs, traces, metrics, and error monitoring — must comply with the telemetry hygiene rules defined in `backend/app/observability/sanitization.py`.
+
+**Prohibited content** — must never appear in any telemetry signal:
+
+- Salesforce access tokens and OAuth assertion JWTs
+- RSA private keys (PEM) or Fernet encryption keys
+- Passwords, secrets, or API keys
+- `Authorization` request headers or any header matching `SCRUBBED_KEYS`
+- Raw CSV row data (input or output)
+
+**Allowed content** — safe to include in telemetry:
+
+- Stable entity IDs: `run_id`, `step_id`, `job_record_id`, `sf_job_id`, `load_plan_id`, `input_connection_id`, `request_id`
+- Salesforce object names and operation types
+- HTTP status codes, method names, and URL paths (not query strings)
+- Record counts and byte sizes
+- Outcome codes from `app.observability.events.OutcomeCode`
+- Exception types and sanitized exception messages
+
+**Shared helpers** available from `app.observability.sanitization`:
+
+| Helper | Purpose |
+|---|---|
+| `SCRUBBED_KEYS` | Frozenset of lower-cased key names that must be redacted |
+| `scrub_dict(d)` | Return a copy of `d` with sensitive keys replaced by `[REDACTED]` |
+| `scrub_headers(h)` | Same as `scrub_dict` but typed for HTTP header dicts |
+| `safe_exc_message(exc)` | Sanitize an exception message — strips JWT and Bearer token patterns |
+| `safe_record_exception(span, exc)` | Record an exception on an OTel span without leaking token data |
+
+When adding new integration paths, error handlers, or exception types, use these helpers rather than logging raw response bodies or exception strings that may include auth material.
+
 ---
 
 ## Running Tests

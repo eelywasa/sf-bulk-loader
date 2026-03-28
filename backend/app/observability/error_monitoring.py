@@ -7,12 +7,10 @@ To enable, set in .env:
     ERROR_MONITORING_ENABLED=true
     ERROR_MONITORING_DSN=https://<key>@<org>.ingest.sentry.io/<project>
 
-Sanitization rules (SFBL-60 baseline):
-- Authorization headers are redacted before events are sent.
-- Keys matching the scrubbed-keys set are replaced with [REDACTED] in request
-  headers and extra context.
-- Raw CSV data, private keys, tokens, and passwords must never appear in spans
-  or exception extras; the before_send hook enforces this.
+Sanitization rules are enforced via the shared sanitization module (SFBL-60).
+See app.observability.sanitization for the full list of prohibited telemetry
+content. The before_send hook scrubs all request headers and extra context
+fields that match SCRUBBED_KEYS before any event is transmitted to Sentry.
 """
 
 from __future__ import annotations
@@ -20,48 +18,24 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.observability.sanitization import SCRUBBED_KEYS, scrub_dict, scrub_headers
+
 logger = logging.getLogger(__name__)
 
 _enabled = False
-
-_SCRUBBED_KEYS: frozenset[str] = frozenset(
-    {
-        "authorization",
-        "x-salesforce-token",
-        "private_key",
-        "private-key",
-        "encryption_key",
-        "encryption-key",
-        "password",
-        "secret",
-        "token",
-        "jwt",
-        "api_key",
-        "api-key",
-    }
-)
 
 
 def _scrub_event(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:
     """Sentry before_send hook — redact sensitive fields before transmission."""
     if request := event.get("request"):
         if headers := request.get("headers"):
-            event["request"]["headers"] = {
-                k: "[REDACTED]" if k.lower() in _SCRUBBED_KEYS else v
-                for k, v in headers.items()
-            }
+            event["request"]["headers"] = scrub_headers(headers)
         if data := request.get("data"):
             if isinstance(data, dict):
-                event["request"]["data"] = {
-                    k: "[REDACTED]" if k.lower() in _SCRUBBED_KEYS else v
-                    for k, v in data.items()
-                }
+                event["request"]["data"] = scrub_dict(data)
 
     if extra := event.get("extra"):
-        event["extra"] = {
-            k: "[REDACTED]" if k.lower() in _SCRUBBED_KEYS else v
-            for k, v in extra.items()
-        }
+        event["extra"] = scrub_dict(extra)
 
     return event
 
