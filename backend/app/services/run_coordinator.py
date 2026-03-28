@@ -361,6 +361,7 @@ async def _execute_run(
                             "run_id": run_id})
         await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
         await publish_run_failed(run_id, error=str(exc))
+        record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
         return
 
     semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
@@ -380,6 +381,7 @@ async def _execute_run(
                                    "outcome_code": OutcomeCode.ABORTED,
                                    "run_id": run_id, "step_id": str(step.id)})
                 await publish_run_aborted(run_id)
+                record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
                 return
 
             await publish_step_started(
@@ -423,6 +425,7 @@ async def _execute_run(
                     run_id, db, error_summary={"storage_error": str(exc)}
                 )
                 await publish_run_failed(run_id, error=str(exc))
+                record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
                 return
 
             total_step_records = step_success + step_errors

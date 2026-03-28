@@ -26,13 +26,16 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         start = time.perf_counter()
-        response = await call_next(request)
-        duration = time.perf_counter() - start
-
-        method = request.method
-        status_class = f"{response.status_code // 100}xx"
-
-        http_requests_total.labels(method=method, status_class=status_class).inc()
-        http_request_duration_seconds.labels(method=method).observe(duration)
-
-        return response
+        status_code = 500  # default; overwritten on success
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception:
+            raise
+        finally:
+            duration = time.perf_counter() - start
+            method = request.method
+            status_class = f"{status_code // 100}xx"
+            http_requests_total.labels(method=method, status_class=status_class).inc()
+            http_request_duration_seconds.labels(method=method).observe(duration)

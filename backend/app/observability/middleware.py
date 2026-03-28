@@ -48,7 +48,26 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
         try:
             response = await call_next(request)
+            duration_ms = round((time.perf_counter() - start) * 1000, 1)
+            response.headers[self._header_name] = request_id
+            logger.info(
+                "request completed",
+                extra={
+                    "event_name": "http.request",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "route": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                },
+            )
+            return response
         except Exception:
+            # In FastAPI, route-level exceptions are converted to responses by
+            # ExceptionMiddleware before reaching this middleware, so this path
+            # fires only for infra-level failures. Build a 500 response so that
+            # the request ID header is still included in the error reply —
+            # correlation is most valuable when things go wrong.
             duration_ms = round((time.perf_counter() - start) * 1000, 1)
             logger.exception(
                 "request failed with unhandled exception",
@@ -60,23 +79,9 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
                     "duration_ms": duration_ms,
                 },
             )
-            raise
+            return Response(
+                status_code=500,
+                headers={self._header_name: request_id},
+            )
         finally:
             request_id_ctx_var.reset(token)
-
-        duration_ms = round((time.perf_counter() - start) * 1000, 1)
-        response.headers[self._header_name] = request_id
-
-        logger.info(
-            "request completed",
-            extra={
-                "event_name": "http.request",
-                "request_id": request_id,
-                "method": request.method,
-                "route": request.url.path,
-                "status_code": response.status_code,
-                "duration_ms": duration_ms,
-            },
-        )
-
-        return response
