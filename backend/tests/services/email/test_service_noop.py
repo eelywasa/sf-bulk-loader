@@ -124,6 +124,29 @@ class TestIdempotency:
         assert send_count == 1
 
     @pytest.mark.asyncio
+    async def test_concurrent_insert_race_resolves_to_same_row(self):
+        """Two concurrent sends sharing an idempotency_key must both succeed
+        and return the same row, even if both pass the pre-insert read.
+
+        This simulates the race where two requests observe "no existing row"
+        and both attempt to insert — the UNIQUE constraint fires on the
+        loser, who must recover by re-reading rather than 500-ing.
+        """
+        import asyncio
+
+        svc = _service()
+        key = "race-key-001"
+
+        results = await asyncio.gather(
+            svc.send(_msg(), category=EmailCategory.SYSTEM, idempotency_key=key),
+            svc.send(_msg(), category=EmailCategory.SYSTEM, idempotency_key=key),
+            svc.send(_msg(), category=EmailCategory.SYSTEM, idempotency_key=key),
+        )
+        # All three must converge on the same row id — no IntegrityError bubbled up.
+        ids = {r.id for r in results}
+        assert len(ids) == 1
+
+    @pytest.mark.asyncio
     async def test_unique_keys_create_separate_rows(self):
         svc = _service()
         first = await svc.send(

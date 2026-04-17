@@ -231,7 +231,7 @@ class EmailService:
         )
 
         async with self._session_factory() as session:
-            # Step 1 — idempotency check
+            # Step 1 — idempotency check (fast path: existing row, no race)
             if idempotency_key is not None:
                 existing = await delivery_log.get_by_idempotency_key(
                     session, idempotency_key
@@ -251,14 +251,51 @@ class EmailService:
             # persistent throughout. The session is committed inside each
             # delivery_log helper, so by the time we close it, all writes
             # are durable.
-            delivery = await delivery_log.insert(
-                session,
-                msg=msg,
-                backend_name=self._backend.name,
-                category=category,
-                template=template,
-                idempotency_key=idempotency_key,
-            )
+            #
+            # The read-then-insert above is a best-effort fast path only.
+            # `email_delivery.idempotency_key` carries a UNIQUE constraint,
+            # so two concurrent requests sharing a key can both pass the read
+            # and race the insert. We catch IntegrityError below and resolve
+            # by re-reading: the loser of the race returns the winner's row,
+            # preserving idempotent semantics without a 500.
+            from sqlalchemy.exc import IntegrityError
+
+            try:
+                delivery = await delivery_log.insert(
+                    session,
+                    msg=msg,
+                    backend_name=self._backend.name,
+                    category=category,
+                    template=template,
+                    idempotency_key=idempotency_key,
+                )
+            except IntegrityError:
+                if idempotency_key is None:
+                    raise
+                await session.rollback()
+                existing = await delivery_log.get_by_idempotency_key(
+                    session, idempotency_key
+                )
+                if existing is None:
+                    # Key absent after conflict — something else violated a
+                    # different unique constraint; re-raise is the right
+                    # behaviour but the original exception is already gone,
+                    # so surface a clear error.
+                    raise RuntimeError(
+                        "IntegrityError on email_delivery insert but no row "
+                        f"found for idempotency_key={idempotency_key!r}"
+                    )
+                logger.info(
+                    "Idempotent send: lost insert race, returning winner row",
+                    extra={
+                        "event_name": EmailEvent.SEND_REQUESTED,
+                        "outcome_code": OutcomeCode.OK,
+                        "delivery_id": existing.id,
+                        "idempotency_key": idempotency_key,
+                    },
+                )
+                return existing
+
             delivery = await self._attempt(session, delivery, msg)
 
         return delivery

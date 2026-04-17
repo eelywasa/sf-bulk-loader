@@ -179,13 +179,13 @@ export class EmailRenderFailureError extends Error {
  * token-injection logic from client.ts.
  */
 export async function postEmailTest(req: EmailTestRequest): Promise<EmailTestResponse> {
-  const { ApiError, getStoredToken } = await import('./client')
+  const { ApiError, getStoredToken, BASE_URL } = await import('./client')
 
   const headers = new Headers({ 'Content-Type': 'application/json' })
   const token = getStoredToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  const response = await fetch('/api/admin/email/test', {
+  const response = await fetch(`${BASE_URL}/api/admin/email/test`, {
     method: 'POST',
     headers,
     body: JSON.stringify(req),

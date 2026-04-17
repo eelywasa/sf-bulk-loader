@@ -1,6 +1,6 @@
 import type { ApiValidationError } from './types'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? ''
+export const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
 // ─── Token storage helpers ────────────────────────────────────────────────────
 
