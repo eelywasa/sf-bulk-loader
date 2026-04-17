@@ -31,7 +31,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings as _settings
 from app.models.email_delivery import EmailDelivery
+from app.observability.events import EmailEvent, OutcomeCode
+from app.observability.metrics import (
+    _assert_email_reason,
+    email_claim_lost_total,
+    email_retry_total,
+    email_send_duration_seconds,
+    email_send_total,
+)
 from app.observability.sanitization import safe_exc_message
+from app.observability.tracing import email_send_span
 from app.services.email import delivery_log
 from app.services.email.backends.base import BackendResult, EmailBackend
 from app.services.email.backends.noop import NoopBackend
@@ -91,7 +100,8 @@ def init_email_service(
     logger.info(
         "Email service initialised",
         extra={
-            "event_name": "email.service.initialised",  # TODO(SFBL-142): replace with EmailEvent constant
+            "event_name": EmailEvent.SERVICE_INITIALISED,
+            "outcome_code": OutcomeCode.OK,
             "backend": backend_name,
         },
     )
@@ -126,6 +136,31 @@ def _backoff_seconds(attempt_idx: int) -> float:
     raw = min(base * (2**attempt_idx), cap)
     jitter = random.uniform(0, base)
     return raw + jitter
+
+
+# ── Outcome code helper ──────────────────────────────────────────────────────
+
+
+def _email_outcome_code(backend_name: str, reason: "EmailErrorReason") -> str:
+    """Map a backend name + error reason to an OutcomeCode string.
+
+    Decision (SFBL-142):
+    - Permanent auth errors → AUTH_ERROR (mirrors Salesforce auth outcome code)
+    - Permanent config errors → EMAIL_CONFIG_ERROR
+    - SMTP backend failures → EMAIL_SMTP_ERROR
+    - SES backend failures → EMAIL_SES_ERROR
+    - All other / noop → OK (noop never fails; unknown falls to FAILED)
+    - Transient (retry scheduled) → OK (retry is not a terminal failure outcome)
+    """
+    if reason == EmailErrorReason.PERMANENT_AUTH:
+        return OutcomeCode.AUTH_ERROR
+    if reason == EmailErrorReason.PERMANENT_CONFIG:
+        return OutcomeCode.EMAIL_CONFIG_ERROR
+    if backend_name == "smtp":
+        return OutcomeCode.EMAIL_SMTP_ERROR
+    if backend_name == "ses":
+        return OutcomeCode.EMAIL_SES_ERROR
+    return OutcomeCode.FAILED
 
 
 # ── EmailService ──────────────────────────────────────────────────────────────
@@ -169,7 +204,8 @@ class EmailService:
         logger.info(
             "Email send requested",
             extra={
-                "event_name": "email.send.requested",  # TODO(SFBL-142): replace with EmailEvent constant
+                "event_name": EmailEvent.SEND_REQUESTED,
+                "outcome_code": OutcomeCode.OK,
                 "backend": self._backend.name,
                 "category": category.value,
             },
@@ -252,85 +288,153 @@ class EmailService:
 
         Returns the refreshed delivery row.
         """
-        result: BackendResult = await self._backend.send(msg)
+        import time
 
-        accepted = result.get("accepted", False)
-        transient = result.get("transient", False)
-        reason_raw = result.get("reason")
-        error_detail = result.get("error_detail")
-        provider_message_id = result.get("provider_message_id")
+        backend_name = self._backend.name
+        category_value = delivery.category
+        template_value = delivery.template
+        to_domain_value = delivery.to_domain
+        attempt_number = delivery.attempts + 1  # 1-based for span/logs
 
-        if accepted:
-            if self._backend.name == "noop":
-                await delivery_log.mark_skipped(session, delivery)
-                logger.info(
-                    "Email send skipped (noop backend)",
+        t_start = time.monotonic()
+
+        with email_send_span(
+            backend=backend_name,
+            category=category_value,
+            template=template_value,
+            to_domain=to_domain_value,
+            attempt=attempt_number,
+        ) as span:
+            result: BackendResult = await self._backend.send(msg)
+
+            elapsed = time.monotonic() - t_start
+
+            accepted = result.get("accepted", False)
+            transient = result.get("transient", False)
+            reason_raw = result.get("reason")
+            error_detail = result.get("error_detail")
+            provider_message_id = result.get("provider_message_id")
+
+            if accepted:
+                if backend_name == "noop":
+                    await delivery_log.mark_skipped(session, delivery)
+                    email_send_total.labels(
+                        backend=backend_name,
+                        category=category_value,
+                        status="skipped",
+                    ).inc()
+                    email_send_duration_seconds.labels(
+                        backend=backend_name,
+                        category=category_value,
+                    ).observe(elapsed)
+                    logger.info(
+                        "Email send skipped (noop backend)",
+                        extra={
+                            "event_name": EmailEvent.SEND_SKIPPED,
+                            "outcome_code": OutcomeCode.OK,
+                            "delivery_id": delivery.id,
+                            "backend": backend_name,
+                            "category": category_value,
+                        },
+                    )
+                else:
+                    await delivery_log.mark_sent(session, delivery, provider_message_id)
+                    email_send_total.labels(
+                        backend=backend_name,
+                        category=category_value,
+                        status="sent",
+                    ).inc()
+                    email_send_duration_seconds.labels(
+                        backend=backend_name,
+                        category=category_value,
+                    ).observe(elapsed)
+                    logger.info(
+                        "Email send succeeded",
+                        extra={
+                            "event_name": EmailEvent.SEND_SUCCEEDED,
+                            "outcome_code": OutcomeCode.OK,
+                            "delivery_id": delivery.id,
+                            "backend": backend_name,
+                            "category": category_value,
+                        },
+                    )
+                return delivery
+
+            # Failure path
+            reason: EmailErrorReason = (
+                reason_raw if isinstance(reason_raw, EmailErrorReason)
+                else EmailErrorReason.UNKNOWN
+            )
+            safe_detail = safe_exc_message(Exception(error_detail)) if error_detail else None
+
+            # Record failure span attributes (span-only — provider_error_code never goes to metrics)
+            span.set_attribute("email.reason", reason.value)
+            if error_detail:
+                span.set_attribute("email.provider_error_code", error_detail)
+
+            # Map reason + backend to outcome code
+            outcome_code = _email_outcome_code(backend_name, reason)
+
+            email_send_duration_seconds.labels(
+                backend=backend_name,
+                category=category_value,
+            ).observe(elapsed)
+
+            attempts_after = delivery.attempts + 1
+            can_retry = transient and reason.is_transient() and attempts_after < delivery.max_attempts
+
+            if can_retry:
+                delay = _backoff_seconds(delivery.attempts)
+                next_at = datetime.fromtimestamp(
+                    datetime.now(tz=timezone.utc).timestamp() + delay,
+                    tz=timezone.utc,
+                )
+                await delivery_log.mark_failed(
+                    session, delivery, reason, safe_detail, next_attempt_at=next_at
+                )
+                email_send_total.labels(
+                    backend=backend_name,
+                    category=category_value,
+                    status="pending",
+                ).inc()
+                email_retry_total.labels(
+                    backend=backend_name,
+                    reason=_assert_email_reason(reason.value),
+                ).inc()
+                logger.warning(
+                    "Email send failed (transient); retry scheduled",
                     extra={
-                        "event_name": "email.send.skipped",  # TODO(SFBL-142): replace with EmailEvent constant
+                        "event_name": EmailEvent.SEND_RETRIED,
+                        "outcome_code": OutcomeCode.OK,
                         "delivery_id": delivery.id,
-                        "backend": self._backend.name,
-                        "category": delivery.category,
+                        "backend": backend_name,
+                        "reason": reason.value,
+                        "attempts": delivery.attempts,
+                        "next_attempt_at": next_at.isoformat(),
                     },
+                )
+                asyncio.create_task(
+                    self._retry_loop(delivery.id, msg),
+                    name=f"email_retry_{delivery.id}",
                 )
             else:
-                await delivery_log.mark_sent(session, delivery, provider_message_id)
-                logger.info(
-                    "Email send succeeded",
+                await delivery_log.mark_failed(session, delivery, reason, safe_detail)
+                email_send_total.labels(
+                    backend=backend_name,
+                    category=category_value,
+                    status="failed",
+                ).inc()
+                logger.warning(
+                    "Email send failed (terminal)",
                     extra={
-                        "event_name": "email.send.succeeded",  # TODO(SFBL-142): replace with EmailEvent constant
+                        "event_name": EmailEvent.SEND_FAILED,
+                        "outcome_code": outcome_code,
                         "delivery_id": delivery.id,
-                        "backend": self._backend.name,
-                        "category": delivery.category,
+                        "backend": backend_name,
+                        "reason": reason.value,
+                        "attempts": delivery.attempts,
                     },
                 )
-            return delivery
-
-        # Failure path
-        reason: EmailErrorReason = (
-            reason_raw if isinstance(reason_raw, EmailErrorReason)
-            else EmailErrorReason.UNKNOWN
-        )
-        safe_detail = error_detail  # error_detail already sanitised by backend
-
-        attempts_after = delivery.attempts + 1
-        can_retry = transient and reason.is_transient() and attempts_after < delivery.max_attempts
-
-        if can_retry:
-            delay = _backoff_seconds(delivery.attempts)
-            next_at = datetime.fromtimestamp(
-                datetime.now(tz=timezone.utc).timestamp() + delay,
-                tz=timezone.utc,
-            )
-            await delivery_log.mark_failed(
-                session, delivery, reason, safe_detail, next_attempt_at=next_at
-            )
-            logger.warning(
-                "Email send failed (transient); retry scheduled",
-                extra={
-                    "event_name": "email.send.retried",  # TODO(SFBL-142): replace with EmailEvent constant
-                    "delivery_id": delivery.id,
-                    "backend": self._backend.name,
-                    "reason": reason.value,
-                    "attempts": delivery.attempts,
-                    "next_attempt_at": next_at.isoformat(),
-                },
-            )
-            asyncio.create_task(
-                self._retry_loop(delivery.id, msg),
-                name=f"email_retry_{delivery.id}",
-            )
-        else:
-            await delivery_log.mark_failed(session, delivery, reason, safe_detail)
-            logger.warning(
-                "Email send failed (terminal)",
-                extra={
-                    "event_name": "email.send.failed",  # TODO(SFBL-142): replace with EmailEvent constant
-                    "delivery_id": delivery.id,
-                    "backend": self._backend.name,
-                    "reason": reason.value,
-                    "attempts": delivery.attempts,
-                },
-            )
 
         return delivery
 
@@ -376,10 +480,12 @@ class EmailService:
             )
 
             if claimed is None:
+                email_claim_lost_total.labels(backend=self._backend.name).inc()
                 logger.info(
                     "Email retry claim lost; another worker has the row",
                     extra={
-                        "event_name": "email.send.claim_lost",  # TODO(SFBL-142): replace with EmailEvent constant
+                        "event_name": EmailEvent.SEND_CLAIM_LOST,
+                        "outcome_code": OutcomeCode.OK,
                         "delivery_id": delivery_id,
                         "backend": self._backend.name,
                     },

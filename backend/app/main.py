@@ -17,6 +17,7 @@ configure_error_monitoring(settings)
 
 logger = logging.getLogger(__name__)
 
+from app.observability.events import EmailEvent, OutcomeCode
 from app.api.auth import router as auth_router
 from app.api.connections import router as connections_router
 from app.api.input_connections import router as input_connections_router
@@ -50,7 +51,8 @@ async def lifespan(app: FastAPI):
     logger.info(
         "Email boot-sweep completed",
         extra={
-            "event_name": "email.boot_sweep.completed",  # TODO(SFBL-142): replace with EmailEvent constant
+            "event_name": EmailEvent.BOOT_SWEEP_COMPLETED,
+            "outcome_code": OutcomeCode.OK if reaped == 0 else OutcomeCode.DEGRADED,
             "reaped_count": reaped,
         },
     )

@@ -34,6 +34,7 @@ from typing import Any, Mapping
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, meta, select_autoescape
 from jinja2 import Template as JinjaTemplate
 
+from app.observability.events import EmailEvent, OutcomeCode
 from app.services.email.errors import EmailRenderError
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,8 @@ def _handle_manifest_failure(is_auth: bool, name: str, reason: str, registry: di
     logger.error(
         "Email template failed to load",
         extra={
-            "event_name": "email.template.load_failed",  # TODO(SFBL-142): replace with EmailEvent constant
+            "event_name": EmailEvent.TEMPLATE_LOAD_FAILED,
+            "outcome_code": OutcomeCode.EMAIL_TEMPLATE_LOAD_FAILED,
             "template_name": name,
             "reason": reason,
         },

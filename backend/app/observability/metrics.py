@@ -156,6 +156,63 @@ def record_run_preflight_failure(reason: str) -> None:
     run_preflight_failures_total.labels(reason=reason).inc()
 
 
+# ── Email delivery metrics ────────────────────────────────────────────────────
+#
+# Cardinality ceiling: 3 (backend) × 3 (category) × 4 (status) × 9 (reason)
+# = 324 series maximum across all four email metrics combined.
+#
+# backend values : "noop" | "smtp" | "ses"
+# category values: EmailCategory enum — "auth" | "notification" | "system"
+# status values  : "sent" | "failed" | "skipped" | "pending"
+# reason values  : EmailErrorReason enum — exactly 9 values
+
+email_send_total = Counter(
+    "sfbl_email_send_total",
+    "Number of email send attempts, by backend / category / status.",
+    ["backend", "category", "status"],
+)
+
+email_send_duration_seconds = Histogram(
+    "sfbl_email_send_duration_seconds",
+    "Duration of email send attempts in seconds.",
+    ["backend", "category"],
+    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0),
+)
+
+email_retry_total = Counter(
+    "sfbl_email_retry_total",
+    "Number of email retry attempts classified by failure reason.",
+    ["backend", "reason"],
+)
+
+email_claim_lost_total = Counter(
+    "sfbl_email_claim_lost_total",
+    "Number of email deliveries where a retry task lost the CAS claim to another worker.",
+    ["backend"],
+)
+
+
+# ── Email metric helpers ──────────────────────────────────────────────────────
+
+
+def _assert_email_reason(reason: str) -> str:
+    """Validate that *reason* is a member of EmailErrorReason enum.
+
+    Raises ValueError for any raw provider code (e.g. ``"smtp_5xx"``) that
+    has not been normalised through the classification table. Raw provider codes
+    must never appear as metric labels — they belong in span attributes and logs.
+    """
+    # Import lazily to avoid a module-level circular import.
+    from app.services.email.errors import EmailErrorReason
+
+    if reason not in {r.value for r in EmailErrorReason}:
+        raise ValueError(
+            f"reason {reason!r} is not a valid EmailErrorReason value. "
+            "Normalise via backend.classify() before recording metrics."
+        )
+    return reason
+
+
 def record_bulk_job_poll_timeout() -> None:
     """Increment the Bulk API job poll-timeout counter (SFBL-111)."""
     bulk_job_poll_timeout_total.inc()
