@@ -157,6 +157,55 @@ def step_span(
 
 
 @contextmanager
+def email_send_span(
+    *,
+    backend: str,
+    category: str,
+    template: str | None,
+    to_domain: str,
+    attempt: int,
+) -> Generator[Span, None, None]:
+    """Context manager that creates a span for a single email send attempt.
+
+    The caller may set additional attributes on the yielded span after the
+    send completes:
+
+    - ``email.reason`` — the ``EmailErrorReason`` value on failure; omit on success.
+    - ``email.provider_error_code`` — raw provider error code on failure
+      (e.g. ``"SES:Throttling"``, ``"SMTP:421"``). **Span-only** — never a
+      metric label. Omit on success.
+
+    Example::
+
+        with tracing.email_send_span(
+            backend="smtp",
+            category="auth",
+            template="auth/password_reset",
+            to_domain="example.com",
+            attempt=1,
+        ) as span:
+            result = await backend.send(msg)
+            if not result["accepted"]:
+                span.set_attribute("email.reason", result["reason"].value)
+                if result.get("error_detail"):
+                    span.set_attribute("email.provider_error_code", result["error_detail"])
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("email.send") as span:
+        span.set_attribute("email.backend", backend)
+        span.set_attribute("email.category", category)
+        if template is not None:
+            span.set_attribute("email.template", template)
+        span.set_attribute("email.to_domain", to_domain)
+        span.set_attribute("email.attempt", attempt)
+        try:
+            yield span
+        except Exception as exc:
+            safe_record_exception(span, exc)
+            raise
+
+
+@contextmanager
 def partition_span(job_record_id: str) -> Generator[Span, None, None]:
     """Context manager that creates a span for a single partition/job execution.
 

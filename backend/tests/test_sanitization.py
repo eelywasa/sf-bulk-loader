@@ -220,3 +220,73 @@ class TestSafeRecordException:
         safe_record_exception(span, exc)
         calls = {c.args[0]: c.args[1] for c in span.set_attribute.call_args_list}
         assert calls["exception.message"] == "simple error with no tokens"
+
+
+# ── Email-specific SCRUBBED_KEYS additions (SFBL-142) ────────────────────────
+
+
+class TestEmailScrubbedKeys:
+    """New keys added for the email service must be present and redacted."""
+
+    def test_contains_email_smtp_password(self):
+        assert "email_smtp_password" in SCRUBBED_KEYS
+
+    def test_contains_ses_secret_access_key(self):
+        assert "ses_secret_access_key" in SCRUBBED_KEYS
+
+    def test_contains_aws_secret_access_key(self):
+        assert "aws_secret_access_key" in SCRUBBED_KEYS
+
+    def test_contains_to(self):
+        assert "to" in SCRUBBED_KEYS
+
+    def test_contains_to_addr(self):
+        assert "to_addr" in SCRUBBED_KEYS
+
+    def test_contains_recipient(self):
+        assert "recipient" in SCRUBBED_KEYS
+
+    def test_contains_recipients(self):
+        assert "recipients" in SCRUBBED_KEYS
+
+    def test_contains_reset_url(self):
+        assert "reset_url" in SCRUBBED_KEYS
+
+    def test_contains_confirm_url(self):
+        assert "confirm_url" in SCRUBBED_KEYS
+
+    def test_scrub_dict_redacts_reset_url(self):
+        result = scrub_dict({"reset_url": "https://example.com/reset?token=abc123"})
+        assert result["reset_url"] == "[REDACTED]"
+
+    def test_scrub_dict_redacts_to_addr(self):
+        result = scrub_dict({"to_addr": "user@example.com"})
+        assert result["to_addr"] == "[REDACTED]"
+
+    def test_scrub_dict_redacts_smtp_password(self):
+        result = scrub_dict({"email_smtp_password": "hunter2"})
+        assert result["email_smtp_password"] == "[REDACTED]"
+
+    def test_scrub_dict_redacts_confirm_url(self):
+        result = scrub_dict({"confirm_url": "https://example.com/confirm?t=xyz"})
+        assert result["confirm_url"] == "[REDACTED]"
+
+    def test_scrub_dict_redacts_recipient(self):
+        result = scrub_dict({"recipient": "alice@example.com"})
+        assert result["recipient"] == "[REDACTED]"
+
+    def test_all_new_keys_are_lowercase(self):
+        email_keys = {
+            "email_smtp_password",
+            "ses_secret_access_key",
+            "aws_secret_access_key",
+            "to",
+            "to_addr",
+            "recipient",
+            "recipients",
+            "reset_url",
+            "confirm_url",
+        }
+        for key in email_keys:
+            assert key == key.lower(), f"Key must be lowercase: {key!r}"
+            assert key in SCRUBBED_KEYS, f"Key not found in SCRUBBED_KEYS: {key!r}"
