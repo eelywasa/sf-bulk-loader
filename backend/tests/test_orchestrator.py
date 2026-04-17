@@ -1392,6 +1392,47 @@ async def test_cancelled_step_marks_run_aborted_and_re_raises(
     assert run.status == RunStatus.aborted
 
 
+async def test_cancelled_during_token_fetch_marks_run_aborted(
+    db: AsyncSession, tmp_path
+):
+    """Addresses Codex P2 on PR #35: if ``asyncio.CancelledError`` fires
+    OUTSIDE the step loop (e.g. during token fetch, preflight I/O, or step
+    event publishing), the outer handler must still mark the run aborted
+    before re-raising. Without this, the finally backstop would misclassify
+    it as ``failed`` with ``unknown_exit``."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    async def cancel_during_token_fetch(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    with (
+        patch(
+            "app.services.orchestrator.get_access_token",
+            new=cancel_during_token_fetch,
+        ),
+        patch(
+            "app.services.orchestrator.SalesforceBulkClient",
+            return_value=_make_bulk_client_mock(),
+        ),
+        patch(
+            "app.services.orchestrator.get_storage",
+            new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"])),
+        ),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await _execute_run(run.id, db, db_factory=make_db_factory(db))
+
+    await db.refresh(run)
+    # Must be aborted, NOT failed/unknown_exit.
+    assert run.status == RunStatus.aborted
+
+
 async def test_backstop_marks_stuck_running_as_failed(db: AsyncSession):
     """SFBL-112: ``_backstop_mark_failed_if_running`` must flip a still-``running``
     run to ``failed`` with an ``unknown_exit`` marker. This is the final safety

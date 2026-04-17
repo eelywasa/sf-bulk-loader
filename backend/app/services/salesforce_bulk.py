@@ -434,6 +434,17 @@ class SalesforceBulkClient:
                 return state
 
             if max_poll_seconds > 0 and (time.monotonic() - start) >= max_poll_seconds:
+                # Best-effort abort on Salesforce so the remote ingest job
+                # doesn't keep running after we've given up locally. Any abort
+                # failure is logged but NOT re-raised — the caller still gets
+                # the BulkJobPollTimeout.
+                try:
+                    await self.abort_job(sf_job_id)
+                except BulkAPIError as abort_exc:
+                    logger.warning(
+                        "Best-effort abort of timed-out job %s failed: %s",
+                        sf_job_id, abort_exc,
+                    )
                 raise BulkJobPollTimeout(
                     f"poll_job timed out for {sf_job_id} after {max_poll_seconds}s "
                     f"(last state={state})",

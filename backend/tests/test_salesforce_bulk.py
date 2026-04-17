@@ -663,6 +663,73 @@ class TestPollJobTimeout:
         assert isinstance(exc_info.value, BulkAPIError)
 
     @pytest.mark.asyncio
+    async def test_timeout_attempts_best_effort_abort_before_raising(
+        self, bulk_client: SalesforceBulkClient, mock_http: AsyncMock
+    ) -> None:
+        """Addresses Codex P2 on PR #35: when ``poll_job`` raises
+        ``BulkJobPollTimeout`` it must first attempt a best-effort
+        ``abort_job`` on Salesforce so the remote ingest job doesn't keep
+        running after we've given up locally."""
+        # First request: poll status (returns InProgress); second request:
+        # the abort_job PATCH (returns 200).
+        responses = [
+            make_response(200, {"state": "InProgress"}),
+            make_response(200, {"state": "Aborted"}),  # abort_job response
+        ]
+        mock_http.request = AsyncMock(side_effect=responses)
+        monotonic_values = iter([0.0, 10.0, 20.0])
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch(
+                "app.services.salesforce_bulk.time.monotonic",
+                side_effect=lambda: next(monotonic_values),
+            ),
+            patch("app.services.salesforce_bulk.settings") as mock_settings,
+        ):
+            mock_settings.sf_poll_interval_initial = 5
+            mock_settings.sf_poll_interval_max = 30
+            mock_settings.sf_job_max_poll_seconds = 10
+
+            with pytest.raises(BulkJobPollTimeout):
+                await bulk_client.poll_job(JOB_ID)
+
+        # Two HTTP calls: the poll, then the abort.
+        assert mock_http.request.await_count == 2
+        abort_call = mock_http.request.await_args_list[1]
+        assert abort_call.args[0] == "PATCH"
+        assert abort_call.args[1].endswith(f"/jobs/ingest/{JOB_ID}")
+
+    @pytest.mark.asyncio
+    async def test_timeout_abort_failure_does_not_mask_timeout(
+        self, bulk_client: SalesforceBulkClient, mock_http: AsyncMock
+    ) -> None:
+        """If the best-effort ``abort_job`` itself fails, ``poll_job`` must
+        still raise ``BulkJobPollTimeout`` (not the abort error) so callers
+        see the original failure mode."""
+        responses = [
+            make_response(200, {"state": "InProgress"}),
+            make_response(404, content=b"abort failed"),  # abort_job fails (4xx, no retry)
+        ]
+        mock_http.request = AsyncMock(side_effect=responses)
+        monotonic_values = iter([0.0, 10.0, 20.0])
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch(
+                "app.services.salesforce_bulk.time.monotonic",
+                side_effect=lambda: next(monotonic_values),
+            ),
+            patch("app.services.salesforce_bulk.settings") as mock_settings,
+        ):
+            mock_settings.sf_poll_interval_initial = 5
+            mock_settings.sf_poll_interval_max = 30
+            mock_settings.sf_job_max_poll_seconds = 10
+
+            with pytest.raises(BulkJobPollTimeout):
+                await bulk_client.poll_job(JOB_ID)
+
+    @pytest.mark.asyncio
     async def test_zero_cap_disables_timeout(
         self, bulk_client: SalesforceBulkClient, mock_http: AsyncMock
     ) -> None:

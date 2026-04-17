@@ -353,9 +353,27 @@ async def _execute_run(
             NonRecordingSpan=NonRecordingSpan,
         )
     except asyncio.CancelledError:
-        # Bubbled from inside the body (e.g. the step-loop handler re-raised).
-        # The body has already published the aborted event and marked status;
-        # still, re-raise so the surrounding task shutdown proceeds normally.
+        # Cancellation can fire anywhere in the body — including phases the
+        # step-loop handler does NOT cover (preflight I/O, token fetch, step
+        # event publishing). If the step-loop handler already marked the run
+        # aborted, ``_mark_run_aborted_fresh`` is idempotent (overwrites
+        # completed_at with a fresh value but status was already aborted).
+        # If not, this is where the transition happens. Without this,
+        # cancellations in those phases would reach the ``finally`` backstop
+        # with status still ``running`` and be misclassified as ``failed`` /
+        # ``unknown_exit`` rather than ``aborted``.
+        logger.warning(
+            "Run %s: cancelled — marking run aborted before re-raising",
+            run_id,
+            extra={"event_name": RunEvent.ABORTED,
+                   "outcome_code": OutcomeCode.ABORTED,
+                   "run_id": run_id},
+        )
+        await _mark_run_aborted_fresh(run_id, db_factory)
+        try:
+            await publish_run_aborted(run_id, reason="cancelled")
+        except Exception:  # pragma: no cover - best-effort
+            pass
         raise
     finally:
         # Backstop: re-fetch run in a fresh session and, if still ``running``,
