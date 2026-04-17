@@ -169,6 +169,7 @@ import {
   INPUT_CLASS,
   SELECT_CLASS,
   TEXTAREA_CLASS,
+  CHECKBOX_CLASS,
   HELPER_TEXT_CLASS,
   ERROR_TEXT_CLASS,
   FIELD_ERROR_OUTLINE,
@@ -209,6 +210,18 @@ import {
 // Inline success panel
 <div className={ALERT_SUCCESS}>Connection test passed.</div>
 ```
+
+### Checkbox
+
+```tsx
+<label className="flex items-center gap-2 cursor-pointer select-none">
+  <input type="checkbox" checked={checked} onChange={…} className={CHECKBOX_CLASS} />
+  <span className="text-sm text-content-primary">{label}</span>
+</label>
+```
+
+`CHECKBOX_CLASS` uses `border-border-strong` for the border and `text-accent` for the
+checked-state fill colour, so it adapts to both themes without `dark:` variants.
 
 ### Rules
 

@@ -30,6 +30,10 @@ export const FIELD_ERROR_OUTLINE = 'border-error-border focus:ring-error-border'
 // dark: variant is an intentional exception for shadow-opacity tuning across modes
 export const OVERLAY_SHADOW_CLASS = 'shadow-xl shadow-black/10 dark:shadow-black/40'
 
+// Checkbox input — use for all checkbox inputs; text-accent sets the checked-state fill colour
+export const CHECKBOX_CLASS =
+  'h-4 w-4 rounded border-border-strong text-accent focus:ring-border-focus'
+
 // Alert/banner blocks — use for inline error/success/warning/info panels
 const ALERT_BASE = 'rounded-md border px-4 py-3 text-sm'
 export const ALERT_ERROR   = `${ALERT_BASE} bg-error-bg border-error-border text-error-text`
