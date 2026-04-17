@@ -26,6 +26,7 @@ Event categories
 - SalesforceEvent — Salesforce integration layer events
 - StorageEvent — file storage (input/output) events
 - SystemEvent  — infrastructure and connectivity events
+- EmailEvent   — outbound email delivery lifecycle events
 
 Outcome taxonomy
 ----------------
@@ -107,6 +108,20 @@ class SystemEvent:
     EXCEPTION_UNHANDLED = "exception.unhandled"
 
 
+class EmailEvent:
+    """Outbound email delivery lifecycle events."""
+
+    SEND_REQUESTED = "email.send.requested"
+    SEND_SUCCEEDED = "email.send.succeeded"
+    SEND_FAILED = "email.send.failed"
+    SEND_RETRIED = "email.send.retried"
+    SEND_SKIPPED = "email.send.skipped"
+    SEND_CLAIM_LOST = "email.send.claim_lost"
+    TEMPLATE_LOAD_FAILED = "email.template.load_failed"
+    BOOT_SWEEP_COMPLETED = "email.boot_sweep.completed"
+    SERVICE_INITIALISED = "email.service.initialised"
+
+
 class OutcomeCode:
     """Machine-readable outcome codes for logs, events, and traces.
 
@@ -132,6 +147,14 @@ class OutcomeCode:
     dependency_unavailable  — external service not reachable
     configuration_error  — missing or invalid application configuration
     job_poll_timeout     — Bulk API job exceeded ``sf_job_max_poll_seconds`` cap
+
+    Email codes
+    ~~~~~~~~~~~
+    email_smtp_error          — SMTP backend delivery failure
+    email_ses_error           — SES backend delivery failure
+    email_render_error        — Jinja2 template render / subject-safety failure
+    email_config_error        — Email backend misconfiguration (missing host, auth, etc.)
+    email_template_load_failed — Template failed to load at startup
     """
 
     # Baseline
@@ -154,3 +177,10 @@ class OutcomeCode:
     DEPENDENCY_UNAVAILABLE = "dependency_unavailable"
     CONFIGURATION_ERROR = "configuration_error"
     JOB_POLL_TIMEOUT = "job_poll_timeout"
+
+    # Email
+    EMAIL_SMTP_ERROR = "email_smtp_error"
+    EMAIL_SES_ERROR = "email_ses_error"
+    EMAIL_RENDER_ERROR = "email_render_error"
+    EMAIL_CONFIG_ERROR = "email_config_error"
+    EMAIL_TEMPLATE_LOAD_FAILED = "email_template_load_failed"

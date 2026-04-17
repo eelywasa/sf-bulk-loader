@@ -95,6 +95,39 @@ and increments `sfbl_bulk_job_poll_timeout_total`. See SFBL-111.
 `health.checked` · `websocket.connected` · `websocket.disconnected` · `websocket.error`
 `exception.unhandled`
 
+### Email events
+
+Emitted by `app.services.email.service`, `app.services.email.templates`, and
+`app.main` (boot sweep). Import from `app.observability.events.EmailEvent`.
+
+| Constant | Value | Description |
+|---|---|---|
+| `EmailEvent.SEND_REQUESTED` | `email.send.requested` | A send was initiated (before first backend call) |
+| `EmailEvent.SEND_SUCCEEDED` | `email.send.succeeded` | Backend accepted the message; status→`sent` |
+| `EmailEvent.SEND_FAILED` | `email.send.failed` | Terminal failure — permanent error or retries exhausted |
+| `EmailEvent.SEND_RETRIED` | `email.send.retried` | Transient failure; retry task scheduled |
+| `EmailEvent.SEND_SKIPPED` | `email.send.skipped` | Noop backend; no network send performed |
+| `EmailEvent.SEND_CLAIM_LOST` | `email.send.claim_lost` | Retry task lost CAS race to another worker |
+| `EmailEvent.TEMPLATE_LOAD_FAILED` | `email.template.load_failed` | Non-auth template failed to load at startup |
+| `EmailEvent.BOOT_SWEEP_COMPLETED` | `email.boot_sweep.completed` | Boot-sweep reaped stale pending rows |
+| `EmailEvent.SERVICE_INITIALISED` | `email.service.initialised` | Email service singleton initialised |
+
+Email metrics have a combined cardinality ceiling of **324 series** across all
+four counters/histograms: 3 backends × 3 categories × 4 statuses × 9 error
+reasons. See `backend/tests/test_email_cardinality.py` for the enforcement test.
+
+The `email.send` span (in `app.observability.tracing.email_send_span`) records
+`email.backend`, `email.category`, `email.template`, `email.to_domain`, and
+`email.attempt` as attributes. On failure it additionally records `email.reason`
+(the `EmailErrorReason` enum value) and `email.provider_error_code` (the raw
+provider code, e.g. `"SES:Throttling"` — **span-only**, never a metric label).
+
+The `/api/health/dependencies` endpoint includes an `email` entry:
+- `noop` backend → always `healthy` (no probe).
+- `smtp` / `ses` backends → TCP connect (SMTP) or cached `GetSendQuota` (SES).
+  Failure → `degraded` (not `unhealthy`), because email is not strictly required
+  for app functionality.
+
 ---
 
 ## Outcome codes (quick reference)
@@ -122,6 +155,13 @@ OutcomeCode.STEP_THRESHOLD_EXCEEDED
 OutcomeCode.DEPENDENCY_UNAVAILABLE
 OutcomeCode.CONFIGURATION_ERROR
 OutcomeCode.JOB_POLL_TIMEOUT      # Bulk API job exceeded sf_job_max_poll_seconds
+
+# Email
+OutcomeCode.EMAIL_SMTP_ERROR          # SMTP backend delivery failure
+OutcomeCode.EMAIL_SES_ERROR           # SES backend delivery failure
+OutcomeCode.EMAIL_RENDER_ERROR        # Template render / subject-safety failure
+OutcomeCode.EMAIL_CONFIG_ERROR        # Email backend misconfiguration
+OutcomeCode.EMAIL_TEMPLATE_LOAD_FAILED  # Template failed to load at startup
 ```
 
 ### Unhandled-exception funnel (SFBL-112)
