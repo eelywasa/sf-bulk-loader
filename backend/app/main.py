@@ -18,6 +18,7 @@ configure_error_monitoring(settings)
 logger = logging.getLogger(__name__)
 
 from app.observability.events import EmailEvent, OutcomeCode
+from app.api.admin_email import router as admin_email_router
 from app.api.auth import router as auth_router
 from app.api.connections import router as connections_router
 from app.api.input_connections import router as input_connections_router
@@ -98,6 +99,9 @@ app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestIDMiddleware, settings=settings)
 
 # REST routers — each owns its own prefix
+# Admin email router is only available on hosted profiles (not desktop)
+if settings.auth_mode != "none":
+    app.include_router(admin_email_router)
 app.include_router(auth_router)
 app.include_router(connections_router)
 app.include_router(input_connections_router)
