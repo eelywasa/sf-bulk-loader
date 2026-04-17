@@ -120,10 +120,31 @@ export function RunSummaryCard({
         )}
       </div>
 
-      {run.error_summary && (
+      {run.error_summary?.auth_error && (
         <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">
-          {run.error_summary.auth_error ?? 'An error occurred during execution.'}
+          {run.error_summary.auth_error}
         </p>
+      )}
+
+      {run.error_summary?.preflight_warnings && run.error_summary.preflight_warnings.length > 0 && (
+        <div
+          role="status"
+          aria-label="Preflight warnings"
+          className="text-xs text-warning-text bg-warning-bg rounded px-3 py-1.5 space-y-1"
+        >
+          <p className="font-medium">
+            Total records is approximate — preflight could not count {run.error_summary.preflight_warnings.length}{' '}
+            {run.error_summary.preflight_warnings.length === 1 ? 'step' : 'steps'}.
+          </p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {run.error_summary.preflight_warnings.map((w) => (
+              <li key={w.step_id}>
+                <span className="font-mono">{w.step_id}</span>: {w.error}{' '}
+                <span className="text-content-muted">({w.outcome_code})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )

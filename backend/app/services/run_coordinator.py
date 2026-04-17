@@ -45,7 +45,11 @@ from app.observability.context import (
 )
 from app.observability.error_monitoring import capture_exception
 from app.observability.events import OutcomeCode, RunEvent, StepEvent
-from app.observability.metrics import record_run_completed, record_run_started
+from app.observability.metrics import (
+    record_run_completed,
+    record_run_preflight_failure,
+    record_run_started,
+)
 from app.observability import tracing
 from app.services.salesforce_auth import get_access_token as _default_get_token
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
@@ -328,6 +332,10 @@ async def _execute_run(
     )
 
     # ── Pre-count total records across all steps ──────────────────────────────
+    # Failures here do NOT abort the run — we proceed with an approximate count
+    # and surface warnings on the run record so operators can see that the
+    # displayed total_records is incomplete. See SFBL-110.
+    preflight_warnings: list[dict] = []
     try:
         preflight_total = 0
         for step in steps:
@@ -342,15 +350,51 @@ async def _execute_run(
                         except StopIteration:
                             continue
                         preflight_total += sum(1 for _ in reader)
+            except InputStorageError as exc:
+                logger.warning(
+                    "Run %s: pre-count failed for step %s (storage error): %s",
+                    run_id, step.id, exc,
+                    extra={"event_name": RunEvent.PREFLIGHT_FAILED,
+                           "outcome_code": OutcomeCode.STORAGE_ERROR,
+                           "run_id": run_id, "step_id": str(step.id)},
+                )
+                record_run_preflight_failure(OutcomeCode.STORAGE_ERROR)
+                preflight_warnings.append({
+                    "step_id": str(step.id),
+                    "outcome_code": OutcomeCode.STORAGE_ERROR,
+                    "error": str(exc),
+                })
             except Exception as exc:
-                logger.warning("Run %s: pre-count failed for step %s: %s", run_id, step.id, exc,
-                               extra={"run_id": run_id, "step_id": str(step.id)})
+                logger.warning(
+                    "Run %s: pre-count failed for step %s (unexpected): %s",
+                    run_id, step.id, exc,
+                    extra={"event_name": RunEvent.PREFLIGHT_FAILED,
+                           "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION,
+                           "run_id": run_id, "step_id": str(step.id)},
+                )
+                record_run_preflight_failure(OutcomeCode.UNEXPECTED_EXCEPTION)
+                preflight_warnings.append({
+                    "step_id": str(step.id),
+                    "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION,
+                    "error": str(exc),
+                })
         if preflight_total > 0:
             run.total_records = preflight_total
+        if preflight_warnings:
+            _merge_run_error_summary(run, {"preflight_warnings": preflight_warnings})
+        if preflight_total > 0 or preflight_warnings:
             await db.commit()
     except Exception as exc:
-        logger.warning("Run %s: pre-count failed: %s", run_id, exc,
-                       extra={"run_id": run_id})
+        # Belt-and-braces catch in case anything outside the per-step loop fails
+        # (e.g. db.commit itself). Still structured, still non-fatal.
+        logger.warning(
+            "Run %s: pre-count block failed: %s",
+            run_id, exc,
+            extra={"event_name": RunEvent.PREFLIGHT_FAILED,
+                   "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION,
+                   "run_id": run_id},
+        )
+        record_run_preflight_failure(OutcomeCode.UNEXPECTED_EXCEPTION)
 
     # ── Obtain Salesforce access token ────────────────────────────────────────
     try:
@@ -582,13 +626,37 @@ async def _abort_remaining_jobs(
     await db.commit()
 
 
+def _merge_run_error_summary(run: LoadRun, updates: dict) -> None:
+    """Shallow-merge ``updates`` into ``run.error_summary`` (JSON string column).
+
+    Preserves existing keys (e.g. preflight warnings already recorded) when a
+    later failure path writes new keys (e.g. ``auth_error``). Callers must still
+    commit the session.
+    """
+    existing: dict = {}
+    if run.error_summary:
+        try:
+            parsed = json.loads(run.error_summary)
+            if isinstance(parsed, dict):
+                existing = parsed
+        except (json.JSONDecodeError, ValueError):
+            existing = {}
+    existing.update(updates)
+    run.error_summary = json.dumps(existing)
+
+
 async def _mark_run_failed(
     run_id: str,
     db: AsyncSession,
     *,
     error_summary: Optional[dict] = None,
 ) -> None:
-    """Mark a run as ``failed`` with an optional JSON error summary."""
+    """Mark a run as ``failed`` with an optional JSON error summary.
+
+    If ``error_summary`` is supplied, its keys are shallow-merged into any
+    existing ``error_summary`` JSON on the run (e.g. preflight warnings written
+    earlier in the run lifecycle). See ``_merge_run_error_summary``.
+    """
     result = await db.execute(select(LoadRun).where(LoadRun.id == run_id))
     run = result.scalar_one_or_none()
     if run is None:
@@ -596,5 +664,5 @@ async def _mark_run_failed(
     run.status = RunStatus.failed
     run.completed_at = datetime.now(timezone.utc)
     if error_summary:
-        run.error_summary = json.dumps(error_summary)
+        _merge_run_error_summary(run, error_summary)
     await db.commit()

@@ -61,6 +61,15 @@ logger.info(
 
 ### Run events
 `run.created` · `run.started` · `run.completed` · `run.failed` · `run.aborted` · `run.progress.updated`
+`run.preflight.started` · `run.preflight.completed` · `run.preflight.failed`
+
+Preflight events cover the pre-count phase that runs before the main step loop.
+A `run.preflight.failed` log record is emitted with a matching `outcome_code`
+(`storage_error` for `InputStorageError`, `unexpected_exception` otherwise) for
+each step that cannot be counted. Preflight failures are **non-fatal** — the
+run proceeds with an approximate `total_records`, and warnings are surfaced on
+`LoadRun.error_summary.preflight_warnings` for the UI to render. The counter
+`sfbl_run_preflight_failures_total{reason}` increments once per failing step.
 
 ### Step events
 `step.started` · `step.completed` · `step.failed` · `step.threshold_exceeded`

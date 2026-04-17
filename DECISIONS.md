@@ -246,3 +246,49 @@ connections. Only non-empty values are included in the PATCH payload.
 **Why — `provider` hardcoded to `'s3'`:** Only one input provider is implemented. Adding a
 dropdown for a single option is YAGNI and creates a false impression of extensibility. When a
 second provider is added, the form can be extended then.
+
+---
+
+## 014 — Preflight warnings surfaced via `LoadRun.error_summary` (no new column)
+
+**Decision:** Non-fatal warnings raised during the pre-count preflight phase (e.g. storage
+unavailable for one step, malformed CSV) are stored in the existing `LoadRun.error_summary`
+JSON column under a typed `preflight_warnings` list, rather than on a dedicated new column.
+
+**Why:** `error_summary` is already the frontend's single channel for run-level context/problem
+state. The UI already conditionally renders it on the run detail page. Adding a new column
+would require an Alembic migration, a new API field, and a second rendering surface for
+conceptually-the-same category of information ("things the UI should show about this run's
+execution context"). The existing column is `Text` holding arbitrary JSON, so extension is
+additive.
+
+**How it stays typed:** `RunErrorSummary` (Pydantic, `extra="ignore"`) gains a
+`PreflightWarning` sub-model and a `preflight_warnings: Optional[List[PreflightWarning]]`
+field. Older runs with `error_summary=None` still parse correctly. The frontend `RunErrorSummary`
+TS interface mirrors the Pydantic schema.
+
+**Trade-off:** Conflates "terminal failure context" (`auth_error`) with "non-fatal warnings"
+in a single blob. Accepted because the UI already treats them uniformly as "things to render",
+and the typed sub-models keep semantics explicit.
+
+---
+
+## 015 — `_mark_run_failed` merges into `error_summary` (does not overwrite)
+
+**Decision:** `_mark_run_failed` shallow-merges the supplied `error_summary` dict into any
+existing JSON already stored on the run, rather than overwriting it. A helper
+`_merge_run_error_summary(run, updates)` encapsulates the merge.
+
+**Why:** Preflight warnings are written into `error_summary` *before* the main step loop
+starts. If a subsequent failure (e.g. auth error, storage error during execution) called
+`_mark_run_failed` with a fresh dict, the previous `json.dumps(error_summary)` assignment
+would wipe the warnings out, losing non-fatal context that operators need to interpret the
+terminal failure. Merge semantics preserve all written keys.
+
+**Behaviour preserved:** Callers of `_mark_run_failed` that used to set a single-key dict
+against a previously-`None` column see no change — merge against an empty dict reduces to the
+old assignment. The only visible change is *when* prior keys exist, which is exactly the case
+the preflight path creates.
+
+**Related:** This helper is the plumbing that SFBL-112 will lean on when funnelling unhandled
+step exceptions through `_mark_run_failed`.
