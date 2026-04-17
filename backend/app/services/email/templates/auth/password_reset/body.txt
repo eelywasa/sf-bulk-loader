@@ -1,0 +1,12 @@
+{% extends "base/layout.txt" %}
+{% block content %}
+Hello {{ user_display_name }},
+
+You requested a password reset for your Salesforce Bulk Loader account.
+
+Reset your password here: {{ reset_url }}
+
+This link expires in {{ expires_in_minutes }} minutes.
+
+If you did not request this, you can safely ignore this email.
+{% endblock %}

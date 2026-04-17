@@ -39,7 +39,8 @@ from app.services.email.errors import EmailErrorReason
 from app.services.email.message import EmailCategory, EmailMessage
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Mapping
+    from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +204,40 @@ class EmailService:
             delivery = await self._attempt(session, delivery, msg)
 
         return delivery
+
+    async def send_template(
+        self,
+        template_name: str,
+        context: "Mapping[str, Any]",
+        *,
+        to: str,
+        category: EmailCategory,
+        reply_to: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> "EmailDelivery":
+        """Render *template_name* with *context* and deliver to *to*.
+
+        Delegates template rendering to ``app.services.email.templates.render``
+        and then calls ``self.send()``.  Raises ``EmailRenderError`` if the
+        template is missing, invalid, or the rendered subject fails a safety
+        check — before any delivery attempt is made.
+        """
+        from app.services.email.templates import render  # local import avoids circular dep at module level
+
+        subject, text_body, html_body = render(template_name, context)
+        msg = EmailMessage(
+            to=to,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+            reply_to=reply_to,
+        )
+        return await self.send(
+            msg,
+            category=category,
+            template=template_name,
+            idempotency_key=idempotency_key,
+        )
 
     async def _attempt(
         self,

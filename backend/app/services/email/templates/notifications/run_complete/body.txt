@@ -1,0 +1,16 @@
+{% extends "base/layout.txt" %}
+{% block content %}
+Load run complete: {{ plan_name }}
+
+Run ID:   {{ run_id }}
+Status:   {{ status }}
+Started:  {{ started_at }}
+Ended:    {{ ended_at }}
+
+Results:
+  Total rows:   {{ total_rows }}
+  Succeeded:    {{ success_rows }}
+  Failed:       {{ failed_rows }}
+
+View run details: {{ run_url }}
+{% endblock %}
