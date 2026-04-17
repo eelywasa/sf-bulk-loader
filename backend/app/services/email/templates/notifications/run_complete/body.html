@@ -1,0 +1,17 @@
+{% extends "base/layout.html" %}
+{% block content %}
+<h2>Load Run Complete: {{ plan_name }}</h2>
+<table style="border-collapse: collapse; width: 100%;">
+  <tr><td style="padding: 4px 8px; font-weight: bold;">Run ID</td><td style="padding: 4px 8px;">{{ run_id }}</td></tr>
+  <tr><td style="padding: 4px 8px; font-weight: bold;">Status</td><td style="padding: 4px 8px;">{{ status }}</td></tr>
+  <tr><td style="padding: 4px 8px; font-weight: bold;">Started</td><td style="padding: 4px 8px;">{{ started_at }}</td></tr>
+  <tr><td style="padding: 4px 8px; font-weight: bold;">Ended</td><td style="padding: 4px 8px;">{{ ended_at }}</td></tr>
+</table>
+<h3>Results</h3>
+<table style="border-collapse: collapse; width: 100%;">
+  <tr><td style="padding: 4px 8px; font-weight: bold;">Total rows</td><td style="padding: 4px 8px;">{{ total_rows }}</td></tr>
+  <tr><td style="padding: 4px 8px; font-weight: bold;">Succeeded</td><td style="padding: 4px 8px;">{{ success_rows }}</td></tr>
+  <tr><td style="padding: 4px 8px; font-weight: bold;">Failed</td><td style="padding: 4px 8px;">{{ failed_rows }}</td></tr>
+</table>
+<p><a href="{{ run_url }}">View run details</a></p>
+{% endblock %}
