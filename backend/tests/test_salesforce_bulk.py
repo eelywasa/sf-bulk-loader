@@ -21,7 +21,11 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import httpx
 import pytest
 
-from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
+from app.services.salesforce_bulk import (
+    BulkAPIError,
+    BulkJobPollTimeout,
+    SalesforceBulkClient,
+)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -619,6 +623,76 @@ class TestPollJob:
 
         with pytest.raises(BulkAPIError, match="poll_job failed"):
             await bulk_client.poll_job(JOB_ID)
+
+
+class TestPollJobTimeout:
+    """SFBL-111: poll_job must raise BulkJobPollTimeout when the job does not
+    reach a terminal state within ``sf_job_max_poll_seconds``."""
+
+    @pytest.mark.asyncio
+    async def test_raises_bulk_job_poll_timeout_when_cap_exceeded(
+        self, bulk_client: SalesforceBulkClient, mock_http: AsyncMock
+    ) -> None:
+        # Job stays InProgress forever.
+        mock_http.request = AsyncMock(
+            return_value=make_response(200, {"state": "InProgress"})
+        )
+
+        # Simulate wall-clock progression: first call at t=0, next at t=10 (cap).
+        monotonic_values = iter([0.0, 10.0, 20.0])
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch(
+                "app.services.salesforce_bulk.time.monotonic",
+                side_effect=lambda: next(monotonic_values),
+            ),
+            patch("app.services.salesforce_bulk.settings") as mock_settings,
+        ):
+            mock_settings.sf_poll_interval_initial = 5
+            mock_settings.sf_poll_interval_max = 30
+            mock_settings.sf_job_max_poll_seconds = 10
+
+            with pytest.raises(BulkJobPollTimeout) as exc_info:
+                await bulk_client.poll_job(JOB_ID)
+
+        assert exc_info.value.last_state == "InProgress"
+        assert "timed out" in str(exc_info.value)
+        # BulkJobPollTimeout is a subclass of BulkAPIError so existing handlers
+        # still catch it.
+        assert isinstance(exc_info.value, BulkAPIError)
+
+    @pytest.mark.asyncio
+    async def test_zero_cap_disables_timeout(
+        self, bulk_client: SalesforceBulkClient, mock_http: AsyncMock
+    ) -> None:
+        """``sf_job_max_poll_seconds=0`` preserves the prior unbounded behaviour:
+        polling continues until the job transitions to a terminal state."""
+        responses = [
+            make_response(200, {"state": "InProgress"}),
+            make_response(200, {"state": "InProgress"}),
+            make_response(200, {"state": "JobComplete"}),
+        ]
+        mock_http.request = AsyncMock(side_effect=responses)
+
+        # Even if wall-clock advances dramatically, no timeout fires with cap=0.
+        monotonic_values = iter([0.0, 10_000.0, 20_000.0, 30_000.0])
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch(
+                "app.services.salesforce_bulk.time.monotonic",
+                side_effect=lambda: next(monotonic_values),
+            ),
+            patch("app.services.salesforce_bulk.settings") as mock_settings,
+        ):
+            mock_settings.sf_poll_interval_initial = 5
+            mock_settings.sf_poll_interval_max = 30
+            mock_settings.sf_job_max_poll_seconds = 0
+
+            state = await bulk_client.poll_job(JOB_ID)
+
+        assert state == "JobComplete"
 
 
 # ── Results endpoints ─────────────────────────────────────────────────────────

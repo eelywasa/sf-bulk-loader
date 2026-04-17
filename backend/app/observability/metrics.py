@@ -133,6 +133,12 @@ sf_rate_limited_total = Counter(
     "Total number of Salesforce rate-limit (429) responses received.",
 )
 
+bulk_job_poll_timeout_total = Counter(
+    "sfbl_bulk_job_poll_timeout_total",
+    "Total number of Bulk API jobs that exceeded the configured poll timeout "
+    "(sf_job_max_poll_seconds) and were marked failed by the client.",
+)
+
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -148,6 +154,11 @@ def record_run_preflight_failure(reason: str) -> None:
     (e.g. ``"storage_error"``, ``"unexpected_exception"``).
     """
     run_preflight_failures_total.labels(reason=reason).inc()
+
+
+def record_bulk_job_poll_timeout() -> None:
+    """Increment the Bulk API job poll-timeout counter (SFBL-111)."""
+    bulk_job_poll_timeout_total.inc()
 
 
 def record_run_completed(final_status: str, duration_seconds: float) -> None:

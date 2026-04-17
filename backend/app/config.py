@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     sf_poll_interval_initial: int = 5
     sf_poll_interval_max: int = 30
     sf_job_timeout_minutes: int = 30
+    # Absolute wall-clock cap on a single Bulk API job's polling loop. When
+    # exceeded, the job is marked failed (best-effort abort on Salesforce) and
+    # the run continues with remaining partitions. Set to 0 to opt out and
+    # preserve the previous unbounded behaviour. See SFBL-111.
+    sf_job_max_poll_seconds: int = 3600
 
     # Partitioning defaults
     default_partition_size: int = 10_000

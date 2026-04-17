@@ -250,7 +250,8 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 | `SF_API_VERSION` | `v62.0` | Salesforce REST API version. |
 | `SF_POLL_INTERVAL_INITIAL` | `5` | Starting poll interval (s) for Bulk API job status. |
 | `SF_POLL_INTERVAL_MAX` | `30` | Maximum poll interval (s) after exponential backoff. |
-| `SF_JOB_TIMEOUT_MINUTES` | `30` | Warning threshold for long-running jobs. |
+| `SF_JOB_TIMEOUT_MINUTES` | `30` | Soft warning threshold for long-running jobs. Logs once at the threshold, continues polling. |
+| `SF_JOB_MAX_POLL_SECONDS` | `3600` | Hard cap on a single Bulk API job's poll loop. When exceeded the job is marked failed (best-effort `abort_job` on Salesforce) and the run continues with remaining partitions. Set to `0` to disable (unbounded polling). |
 | `DEFAULT_PARTITION_SIZE` | `10000` | Records per Bulk API job partition. |
 | `MAX_PARTITION_SIZE` | `100000000` | Hard upper limit on partition size. |
 | `INPUT_DIR` | `/data/input` | Container path for source CSVs (read-only). |

@@ -83,6 +83,7 @@ class SalesforceEvent:
     BULK_JOB_POLLED = "salesforce.bulk_job.polled"
     BULK_JOB_COMPLETED = "salesforce.bulk_job.completed"
     BULK_JOB_FAILED = "salesforce.bulk_job.failed"
+    BULK_JOB_POLL_TIMEOUT = "salesforce.bulk_job.poll_timeout"
     REQUEST_RETRIED = "salesforce.request.retried"
     RATE_LIMITED = "salesforce.rate_limited"
 
@@ -130,6 +131,7 @@ class OutcomeCode:
     step_threshold_exceeded — error rate exceeded configured threshold
     dependency_unavailable  — external service not reachable
     configuration_error  — missing or invalid application configuration
+    job_poll_timeout     — Bulk API job exceeded ``sf_job_max_poll_seconds`` cap
     """
 
     # Baseline
@@ -151,3 +153,4 @@ class OutcomeCode:
     STEP_THRESHOLD_EXCEEDED = "step_threshold_exceeded"
     DEPENDENCY_UNAVAILABLE = "dependency_unavailable"
     CONFIGURATION_ERROR = "configuration_error"
+    JOB_POLL_TIMEOUT = "job_poll_timeout"

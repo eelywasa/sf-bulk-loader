@@ -1144,3 +1144,296 @@ async def test_local_source_used_when_no_input_connection_id(db: AsyncSession, t
     get_storage_mock.assert_awaited()
     call_args = get_storage_mock.call_args_list
     assert any(args[0][0] is None for args in call_args)
+
+
+class _PartitionAsyncioProxy:
+    """Drop-in replacement for the ``asyncio`` reference on the
+    ``partition_executor`` module that gives the test control over
+    ``get_event_loop().time()`` without globally replacing ``asyncio``
+    (which would break aiosqlite). All other attributes (``CancelledError``,
+    ``Semaphore``, …) delegate to the real asyncio module.
+    """
+
+    def __init__(self, time_iter):
+        import asyncio as _real_asyncio
+        self._real = _real_asyncio
+        self._fake_loop = MagicMock()
+        self._fake_loop.time = MagicMock(side_effect=lambda: next(time_iter))
+
+    def get_event_loop(self):
+        return self._fake_loop
+
+    async def sleep(self, *_args, **_kwargs):
+        return None
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+async def test_poll_timeout_marks_job_failed_and_emits_metric(
+    db: AsyncSession, tmp_path, caplog
+):
+    """SFBL-111: when the Bulk API poll loop exceeds ``sf_job_max_poll_seconds``
+    the JobRecord is marked failed, the ``sfbl_bulk_job_poll_timeout_total``
+    counter increments, a canonical log record is emitted with
+    ``event_name=salesforce.bulk_job.poll_timeout`` +
+    ``outcome_code=job_poll_timeout``, and ``abort_job`` is attempted on a
+    best-effort basis."""
+    import logging
+    from app.observability.events import OutcomeCode, SalesforceEvent
+    from app.observability.metrics import bulk_job_poll_timeout_total
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    bulk_mock = _make_bulk_client_mock()
+    bulk_mock.poll_job_once = AsyncMock(
+        return_value=("InProgress", 0, 0, {"state": "InProgress"})
+    )
+    db_factory = make_db_factory(db)
+
+    # loop_start reads at 0s, each elapsed check returns 100s → exceeds 10s cap
+    # on the first iteration.
+    proxy = _PartitionAsyncioProxy(iter([0.0] + [100.0] * 20))
+
+    before = bulk_job_poll_timeout_total._value.get()
+
+    with (
+        caplog.at_level(logging.ERROR, logger="app.services.partition_executor"),
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch(
+            "app.services.orchestrator.get_storage",
+            new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"])),
+        ),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch("app.services.partition_executor.asyncio", proxy),
+        patch("app.services.partition_executor.settings") as mock_pe_settings,
+    ):
+        mock_pe_settings.sf_poll_interval_initial = 5
+        mock_pe_settings.sf_poll_interval_max = 30
+        mock_pe_settings.sf_job_timeout_minutes = 60
+        mock_pe_settings.sf_job_max_poll_seconds = 10
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    assert bulk_job_poll_timeout_total._value.get() - before == 1
+
+    result = await db.execute(select(JobRecord).where(JobRecord.load_run_id == run.id))
+    jobs = list(result.scalars().all())
+    assert len(jobs) == 1
+    assert jobs[0].status == JobStatus.failed
+    assert "timed out" in (jobs[0].error_message or "")
+
+    matching = [
+        r for r in caplog.records
+        if getattr(r, "event_name", None) == SalesforceEvent.BULK_JOB_POLL_TIMEOUT
+        and getattr(r, "outcome_code", None) == OutcomeCode.JOB_POLL_TIMEOUT
+    ]
+    assert matching, (
+        "expected a log record with event_name=salesforce.bulk_job.poll_timeout "
+        "and outcome_code=job_poll_timeout"
+    )
+
+    bulk_mock.abort_job.assert_awaited()
+
+
+async def test_poll_timeout_zero_preserves_unbounded_polling(
+    db: AsyncSession, tmp_path
+):
+    """SFBL-111: ``sf_job_max_poll_seconds=0`` is the opt-out sentinel —
+    the partition loop must never trip the timeout branch regardless of elapsed
+    time, and should complete normally when the job transitions to terminal."""
+    from app.observability.metrics import bulk_job_poll_timeout_total
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    bulk_mock = _make_bulk_client_mock()
+    poll_responses = [
+        ("InProgress", 0, 0, {"state": "InProgress"}),
+        ("JobComplete", 2, 0, {"state": "JobComplete"}),
+    ]
+    bulk_mock.poll_job_once = AsyncMock(side_effect=poll_responses)
+    db_factory = make_db_factory(db)
+
+    # Even massive elapsed time must not trip the disabled cap.
+    proxy = _PartitionAsyncioProxy(iter([0.0] + [1_000_000.0] * 20))
+
+    before = bulk_job_poll_timeout_total._value.get()
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch(
+            "app.services.orchestrator.get_storage",
+            new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"])),
+        ),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch("app.services.partition_executor.asyncio", proxy),
+        patch("app.services.partition_executor.settings") as mock_pe_settings,
+    ):
+        mock_pe_settings.sf_poll_interval_initial = 5
+        mock_pe_settings.sf_poll_interval_max = 30
+        mock_pe_settings.sf_job_timeout_minutes = 60
+        mock_pe_settings.sf_job_max_poll_seconds = 0
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    assert bulk_job_poll_timeout_total._value.get() - before == 0
+    bulk_mock.abort_job.assert_not_awaited()
+
+    await db.refresh(run)
+    assert run.status == RunStatus.completed
+
+
+# ── SFBL-112: unhandled step exception + CancelledError + finally backstop ────
+
+
+async def test_unhandled_step_exception_marks_run_failed(
+    db: AsyncSession, tmp_path, caplog
+):
+    """SFBL-112: if ``execute_step`` raises an unexpected ``Exception`` the
+    coordinator must funnel it through ``_mark_run_failed_fresh`` so the run
+    transitions to ``failed`` with an ``unexpected_exception`` summary key —
+    never left stuck in ``running``."""
+    import json
+    import logging
+    from app.observability.events import OutcomeCode, RunEvent
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    step = await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    # Patch execute_step to raise a generic RuntimeError (not InputStorageError).
+    async def boom(*args, **kwargs):
+        raise RuntimeError("surprise kaboom")
+
+    with (
+        caplog.at_level(logging.ERROR, logger="app.services.run_coordinator"),
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch(
+            "app.services.orchestrator.SalesforceBulkClient",
+            return_value=_make_bulk_client_mock(),
+        ),
+        patch(
+            "app.services.orchestrator.get_storage",
+            new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"])),
+        ),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch(
+            "app.services.run_coordinator._step_executor_mod.execute_step",
+            new=boom,
+        ),
+    ):
+        await _execute_run(run.id, db, db_factory=make_db_factory(db))
+
+    await db.refresh(run)
+    assert run.status == RunStatus.failed
+    assert run.error_summary is not None
+    summary = json.loads(run.error_summary)
+    assert "surprise kaboom" in summary.get("unexpected_exception", "")
+
+    # Canonical structured log record with RunEvent.FAILED + UNEXPECTED_EXCEPTION.
+    matching = [
+        r for r in caplog.records
+        if getattr(r, "event_name", None) == RunEvent.FAILED
+        and getattr(r, "outcome_code", None) == OutcomeCode.UNEXPECTED_EXCEPTION
+        and getattr(r, "step_id", None) == str(step.id)
+    ]
+    assert matching, "expected run.failed + unexpected_exception log record"
+
+
+async def test_cancelled_step_marks_run_aborted_and_re_raises(
+    db: AsyncSession, tmp_path
+):
+    """SFBL-112: ``asyncio.CancelledError`` bubbled from ``execute_step`` must
+    mark the run aborted (fresh session) and be re-raised so task-group
+    cancellation semantics still hold."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    async def cancel(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch(
+            "app.services.orchestrator.SalesforceBulkClient",
+            return_value=_make_bulk_client_mock(),
+        ),
+        patch(
+            "app.services.orchestrator.get_storage",
+            new=AsyncMock(return_value=_make_storage_mock(["accounts.csv"])),
+        ),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch(
+            "app.services.run_coordinator._step_executor_mod.execute_step",
+            new=cancel,
+        ),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await _execute_run(run.id, db, db_factory=make_db_factory(db))
+
+    await db.refresh(run)
+    assert run.status == RunStatus.aborted
+
+
+async def test_backstop_marks_stuck_running_as_failed(db: AsyncSession):
+    """SFBL-112: ``_backstop_mark_failed_if_running`` must flip a still-``running``
+    run to ``failed`` with an ``unknown_exit`` marker. This is the final safety
+    net if any code path below ``_execute_run`` exits without transitioning
+    the run to a terminal state."""
+    import json
+    from app.services.run_coordinator import _backstop_mark_failed_if_running
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    # Simulate "run body exited while status still = running".
+    run.status = RunStatus.running
+    await db.commit()
+
+    await _backstop_mark_failed_if_running(run.id, make_db_factory(db))
+
+    await db.refresh(run)
+    assert run.status == RunStatus.failed
+    assert run.error_summary is not None
+    summary = json.loads(run.error_summary)
+    assert "unknown_exit" in summary
+
+
+async def test_backstop_no_op_when_run_already_terminal(db: AsyncSession):
+    """SFBL-112: the backstop must never overwrite a run that already reached
+    a terminal state (``completed`` / ``failed`` / ``aborted``)."""
+    from app.services.run_coordinator import _backstop_mark_failed_if_running
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    run.status = RunStatus.completed
+    run.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    await _backstop_mark_failed_if_running(run.id, make_db_factory(db))
+
+    await db.refresh(run)
+    assert run.status == RunStatus.completed
+    assert run.error_summary is None
