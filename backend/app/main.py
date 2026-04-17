@@ -28,6 +28,8 @@ from app.api.utility import router as utility_router
 from app.api.utility import ws_router
 from app.database import AsyncSessionLocal, engine
 from app.services.auth import seed_admin
+from app.services.email import delivery_log as email_delivery_log
+from app.services.email import init_email_service
 
 
 @asynccontextmanager
@@ -35,6 +37,24 @@ async def lifespan(app: FastAPI):
     # Startup: seed initial admin user if database is empty
     async with AsyncSessionLocal() as session:
         await seed_admin(session)
+
+    # Startup: initialise email service singleton
+    init_email_service(AsyncSessionLocal)
+
+    # Startup: boot-sweep — reap any stale pending email_delivery rows left
+    # over from a crashed or OOM-killed process.
+    async with AsyncSessionLocal() as session:
+        reaped = await email_delivery_log.boot_sweep(
+            session, settings.email_pending_stale_minutes
+        )
+    logger.info(
+        "Email boot-sweep completed",
+        extra={
+            "event_name": "email.boot_sweep.completed",  # TODO(SFBL-142): replace with EmailEvent constant
+            "reaped_count": reaped,
+        },
+    )
+
     logger.info(
         "Distribution profile: %s | auth=%s | transport=%s | storage=%s",
         settings.app_distribution,
