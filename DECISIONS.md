@@ -331,6 +331,70 @@ is used.
 
 ---
 
+## 018 — Hosted execution tier: arq workers on Redis (supersedes #008 for hosted profiles)
+
+**Decision:** On hosted profiles (`self_hosted`, `aws_hosted`) opting into
+worker mode, `execute_run` is dispatched to a separate worker process via
+[arq](https://arq-docs.helpmanual.io/) backed by Redis. Worker ships as a
+distinct image sharing the `backend/` codebase. Desktop profile keeps today's
+in-process `asyncio` executor (DECISIONS.md #008 stands for desktop). Hosted
+profiles default to `EXECUTOR_MODE=in_process` for backward compatibility;
+opting into workers is explicit.
+
+**Why — workers over threadpool or status-quo:** Primary driver is horizontal
+scale (aws-hosted). A threadpool inside FastAPI cannot scale past one node and
+does not survive API restart. Status-quo with graceful-shutdown hardening
+addresses restart resilience but not scale. A broker + worker architecture is
+the only option that satisfies both.
+
+**Why — arq over Celery:** Re-evaluated Celery during SFBL-120 spike and ruled
+out again. The partition executor is deeply async (httpx to Salesforce,
+`AsyncSession` for DB writes, multi-coroutine polling). Celery is sync-first
+and would require `asyncio.run()` wrapping per task with an awkward sync/async
+bridge. Our task surface is narrow (one task type: execute partition), so
+Celery's ecosystem (Flower, Canvas, Beat, result backends, priorities) is
+mostly unused weight. arq is async-native, Redis-only, ~4kLOC, and its
+`on_job_start` / `on_job_end` hooks map cleanly onto our existing
+`app/observability/events.py` surface.
+
+**Why — Redis only (no SQLite broker):** Queue semantics do not abstract
+cleanly across SQLite and Redis the way SQLAlchemy flattens DDL/DML. The
+narrow "workers without Redis" configuration is already covered by the
+`in_process` fallback; a SQLite broker would be strictly additional work
+serving no audience the fallback doesn't already cover. `redis:7-alpine` as a
+compose service is a one-line operator change.
+
+**Why — separate worker image:** Smaller runtime (no FastAPI/uvicorn/middleware
+in the worker), clearer independent scaling, shared source tree. Both images
+build from `backend/` with different Dockerfile entrypoints.
+
+**Durability posture:** Graceful restart only. Worker SIGTERM drains in-flight
+jobs (arq `max_shutdown_delay`); enqueued-but-unstarted jobs remain in Redis.
+Hard worker crash (SIGKILL mid-partition) marks the partition retryable on
+next worker boot. No lease/heartbeat reclaim state machine. Redis durability
+(ephemeral vs AOF/RDB) is an operator choice documented per profile.
+
+**Hard prerequisite — Postgres for self-hosted + workers:** Multi-process
+SQLite writers have real limits (writer serialisation under WAL, file locking).
+Self-hosted opting into workers must migrate to Postgres as part of the same
+rollout. `aws_hosted` already requires Postgres (see `config.py:95`), so only
+`self_hosted` is affected.
+
+**Trade-off:** Two execution paths in the codebase (in-process + worker). The
+worker path is the production target for hosted deployments; the in-process
+path remains as the desktop executor and as a degraded-mode fallback for
+hosted. Both paths share the `partition_executor` body — only the dispatch
+boundary differs — which limits the duplication cost.
+
+**Spike reference:** `docs/specs/worker-execution-spike.md` (SFBL-120) documents
+the full evaluation including Celery reconsideration and the SQLite-as-broker
+analysis. Follow-up implementation Epic to be created; this entry is
+provisional until that Epic sequences the rollout (Postgres migration → worker
+mode with `in_process` default → image/CI → operator docs → flip aws-hosted
+default).
+
+---
+
 ## 017 — Run lifecycle: broad exception handler + try/finally backstop
 
 **Decision:** `run_coordinator._execute_run_body` wraps the `execute_step` call in a three-way
