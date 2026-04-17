@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Button, Card } from '../../components/ui'
+import { CHECKBOX_CLASS } from '../../components/ui/formStyles'
 import { runsApi } from '../../api/endpoints'
 import type { JobRecord } from '../../api/types'
 
@@ -35,7 +36,7 @@ export function RunLogDownload({ runId, jobs }: RunLogDownloadProps) {
   return (
     <Card title="Download Logs">
       <div className="space-y-4">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-content-muted">
           Select the log types to include in the ZIP download.
         </p>
         <div className="flex flex-wrap gap-6">
@@ -56,9 +57,9 @@ export function RunLogDownload({ runId, jobs }: RunLogDownloadProps) {
                 type="checkbox"
                 checked={checked}
                 onChange={(e) => set(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className={CHECKBOX_CLASS}
               />
-              <span className="text-sm text-gray-700">{label}</span>
+              <span className="text-sm text-content-primary">{label}</span>
             </label>
           ))}
         </div>
@@ -71,7 +72,7 @@ export function RunLogDownload({ runId, jobs }: RunLogDownloadProps) {
             ↓ Download ZIP
           </Button>
           {!hasLogs && (
-            <span className="text-xs text-gray-400 italic">No log files available yet.</span>
+            <span className="text-xs text-content-muted italic">No log files available yet.</span>
           )}
         </div>
       </div>
