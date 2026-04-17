@@ -48,6 +48,9 @@ class RunEvent:
     FAILED = "run.failed"
     ABORTED = "run.aborted"
     PROGRESS_UPDATED = "run.progress.updated"
+    PREFLIGHT_STARTED = "run.preflight.started"
+    PREFLIGHT_COMPLETED = "run.preflight.completed"
+    PREFLIGHT_FAILED = "run.preflight.failed"
 
 
 class StepEvent:

@@ -153,8 +153,16 @@ export interface LoadPlanDetail extends LoadPlan {
 
 // ─── Runs ──────────────────────────────────────────────────────────────────────
 
+export interface PreflightWarning {
+  step_id: string
+  outcome_code: string
+  error: string
+}
+
 export interface RunErrorSummary {
   auth_error?: string | null
+  storage_error?: string | null
+  preflight_warnings?: PreflightWarning[] | null
 }
 
 export interface LoadRun {

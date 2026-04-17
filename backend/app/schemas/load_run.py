@@ -8,10 +8,27 @@ from app.models.load_run import RunStatus
 from app.schemas.job import JobResponse
 
 
+class PreflightWarning(BaseModel):
+    """A single non-fatal warning raised during the pre-count preflight phase.
+
+    One is emitted per step that fails to be fully counted (e.g. storage
+    unavailable, malformed CSV). The run proceeds regardless; the UI should
+    indicate that ``total_records`` is approximate when any warnings are present.
+    """
+
+    step_id: str
+    outcome_code: str
+    error: str
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class RunErrorSummary(BaseModel):
     """Typed structure for run-level error context stored in LoadRun.error_summary."""
 
     auth_error: Optional[str] = None
+    storage_error: Optional[str] = None
+    preflight_warnings: Optional[List[PreflightWarning]] = None
 
     model_config = ConfigDict(extra="ignore")
 

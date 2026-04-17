@@ -509,6 +509,129 @@ async def test_auth_failure_marks_run_failed(db: AsyncSession, tmp_path):
     assert run.status == RunStatus.failed
 
 
+async def test_preflight_storage_failure_surfaces_warning_and_run_proceeds(
+    db: AsyncSession, tmp_path, caplog
+):
+    """Regression for SFBL-110: a storage error during preflight pre-count must
+    not abort the run — it should produce a structured log record with
+    event_name=run.preflight.failed + outcome_code=storage_error, increment the
+    preflight-failures metric, and surface a PreflightWarning on the run's
+    error_summary. The run itself completes normally."""
+    import json
+    import logging
+    from app.services.input_storage import InputStorageError
+    from app.observability.events import OutcomeCode, RunEvent
+    from app.observability.metrics import run_preflight_failures_total
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    step = await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    # Two invocations of get_storage during a single-step run:
+    #   1. preflight pre-count → raise InputStorageError (what this test exercises)
+    #   2. step execution itself → return a mock so the step can run to completion
+    healthy_storage = _make_storage_mock(["accounts.csv"])
+    storage_side_effects = [
+        InputStorageError("S3 bucket temporarily unavailable"),
+        healthy_storage,
+    ]
+    get_storage_mock = AsyncMock(side_effect=storage_side_effects)
+
+    bulk_mock = _make_bulk_client_mock()
+    db_factory = make_db_factory(db)
+
+    # Sample the counter before and compute the delta after, so the assertion
+    # is robust against other tests in the same process incrementing it.
+    before = run_preflight_failures_total.labels(
+        reason=OutcomeCode.STORAGE_ERROR
+    )._value.get()
+
+    with (
+        caplog.at_level(logging.WARNING, logger="app.services.run_coordinator"),
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.get_storage", new=get_storage_mock),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    # Run completes (non-fatal preflight failure).
+    assert run.status == RunStatus.completed
+
+    # error_summary contains the preflight warning for the failing step.
+    assert run.error_summary is not None
+    summary = json.loads(run.error_summary)
+    warnings = summary.get("preflight_warnings")
+    assert isinstance(warnings, list) and len(warnings) == 1
+    warning = warnings[0]
+    assert warning["step_id"] == str(step.id)
+    assert warning["outcome_code"] == OutcomeCode.STORAGE_ERROR
+    assert "S3 bucket temporarily unavailable" in warning["error"]
+
+    # Structured log record with canonical event_name + outcome_code.
+    matching = [
+        r for r in caplog.records
+        if getattr(r, "event_name", None) == RunEvent.PREFLIGHT_FAILED
+        and getattr(r, "outcome_code", None) == OutcomeCode.STORAGE_ERROR
+        and getattr(r, "step_id", None) == str(step.id)
+    ]
+    assert matching, (
+        "expected a log record with event_name=run.preflight.failed and "
+        "outcome_code=storage_error"
+    )
+
+    # Metric counter advanced by exactly one for the storage_error reason.
+    after = run_preflight_failures_total.labels(
+        reason=OutcomeCode.STORAGE_ERROR
+    )._value.get()
+    assert after - before == 1
+
+
+async def test_preflight_warning_preserved_when_auth_fails_later(
+    db: AsyncSession, tmp_path
+):
+    """Regression for SFBL-110 + decision 015: preflight warnings written to
+    error_summary must survive a subsequent _mark_run_failed call. The merge
+    helper in run_coordinator must not overwrite existing keys."""
+    import json
+    from app.services.input_storage import InputStorageError
+    from app.services.salesforce_auth import AuthError
+    from app.observability.events import OutcomeCode
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    step = await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    with (
+        patch(
+            "app.services.orchestrator.get_storage",
+            new=AsyncMock(side_effect=InputStorageError("preflight boom")),
+        ),
+        patch(
+            "app.services.orchestrator.get_access_token",
+            new=AsyncMock(side_effect=AuthError("bad key")),
+        ),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+    ):
+        await _execute_run(run.id, db, db_factory=make_db_factory(db))
+
+    await db.refresh(run)
+    assert run.status == RunStatus.failed
+    assert run.error_summary is not None
+    summary = json.loads(run.error_summary)
+    # Both keys present — preflight warning preserved through _mark_run_failed merge.
+    assert summary.get("auth_error") == "bad key"
+    warnings = summary.get("preflight_warnings")
+    assert isinstance(warnings, list) and len(warnings) == 1
+    assert warnings[0]["step_id"] == str(step.id)
+    assert warnings[0]["outcome_code"] == OutcomeCode.STORAGE_ERROR
+
+
 async def test_job_creation_failure_marks_job_failed(db: AsyncSession, tmp_path):
     """If create_job raises BulkAPIError, the JobRecord is marked failed."""
     conn = await _make_connection(db)

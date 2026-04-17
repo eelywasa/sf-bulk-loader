@@ -311,6 +311,76 @@ describe('RunDetail', () => {
     })
   })
 
+  it('renders storage_error from error_summary', async () => {
+    const runStorageFailed: LoadRun = {
+      ...runFailed,
+      error_summary: { storage_error: 'Input bucket unreachable during step 2' },
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runStorageFailed)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText('Input bucket unreachable during step 2')).toBeInTheDocument()
+    })
+  })
+
+  it('renders generic failure message for failed run with no recognized reason', async () => {
+    // Defensive: a future error_summary key (not yet mapped on the frontend)
+    // must not cause the failure banner to silently disappear.
+    const runUnknownReason: LoadRun = {
+      ...runFailed,
+      error_summary: { preflight_warnings: null } as LoadRun['error_summary'],
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runUnknownReason)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText(/Run failed\. See logs for details\./)).toBeInTheDocument()
+    })
+  })
+
+  it('renders preflight warning banner when preflight_warnings are present', async () => {
+    const runWithPreflight: LoadRun = {
+      ...runCompleted,
+      error_summary: {
+        preflight_warnings: [
+          {
+            step_id: 'step-1',
+            outcome_code: 'storage_error',
+            error: 'S3 bucket temporarily unavailable',
+          },
+        ],
+      },
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runWithPreflight)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    const banner = await screen.findByRole('status', { name: /preflight warnings/i })
+    expect(within(banner).getByText(/total records is approximate/i)).toBeInTheDocument()
+    expect(within(banner).getByText(/S3 bucket temporarily unavailable/)).toBeInTheDocument()
+    expect(within(banner).getByText(/storage_error/)).toBeInTheDocument()
+  })
+
+  it('does not render the preflight warning banner when preflight_warnings is empty', async () => {
+    const runNoWarnings: LoadRun = {
+      ...runCompleted,
+      error_summary: { preflight_warnings: [] },
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runNoWarnings)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByText('completed'))
+    expect(screen.queryByRole('status', { name: /preflight warnings/i })).not.toBeInTheDocument()
+  })
+
   // ── Breadcrumb ───────────────────────────────────────────────────────────────
 
   it('renders breadcrumb Runs link', async () => {

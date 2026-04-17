@@ -52,6 +52,13 @@ runs_started_total = Counter(
     "Total number of load runs started.",
 )
 
+run_preflight_failures_total = Counter(
+    "sfbl_run_preflight_failures_total",
+    "Total number of preflight (pre-count) failures across all runs. "
+    "A single run may contribute more than one increment (one per failing step).",
+    labelnames=["reason"],
+)
+
 runs_completed_total = Counter(
     "sfbl_runs_completed_total",
     "Total number of load runs that reached a terminal state.",
@@ -132,6 +139,15 @@ sf_rate_limited_total = Counter(
 
 def record_run_started() -> None:
     runs_started_total.inc()
+
+
+def record_run_preflight_failure(reason: str) -> None:
+    """Increment the preflight-failure counter.
+
+    ``reason`` is a low-cardinality label — use canonical ``OutcomeCode`` values
+    (e.g. ``"storage_error"``, ``"unexpected_exception"``).
+    """
+    run_preflight_failures_total.labels(reason=reason).inc()
 
 
 def record_run_completed(final_status: str, duration_seconds: float) -> None:

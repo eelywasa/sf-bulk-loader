@@ -120,10 +120,47 @@ export function RunSummaryCard({
         )}
       </div>
 
-      {run.error_summary && (
-        <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">
-          {run.error_summary.auth_error ?? 'An error occurred during execution.'}
-        </p>
+      {(() => {
+        // Render a terminal-failure banner whenever error_summary carries a
+        // reason (auth_error, storage_error, or any other known key).
+        // For failed runs with an error_summary but no recognized reason field,
+        // fall back to a generic message so the UI never silently hides the
+        // failure context. Preflight warnings have their own banner below.
+        const reason = run.error_summary?.auth_error ?? run.error_summary?.storage_error
+        if (reason) {
+          return (
+            <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">{reason}</p>
+          )
+        }
+        if (run.status === 'failed' && run.error_summary) {
+          return (
+            <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">
+              Run failed. See logs for details.
+            </p>
+          )
+        }
+        return null
+      })()}
+
+      {run.error_summary?.preflight_warnings && run.error_summary.preflight_warnings.length > 0 && (
+        <div
+          role="status"
+          aria-label="Preflight warnings"
+          className="text-xs text-warning-text bg-warning-bg rounded px-3 py-1.5 space-y-1"
+        >
+          <p className="font-medium">
+            Total records is approximate — preflight could not count {run.error_summary.preflight_warnings.length}{' '}
+            {run.error_summary.preflight_warnings.length === 1 ? 'step' : 'steps'}.
+          </p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {run.error_summary.preflight_warnings.map((w) => (
+              <li key={w.step_id}>
+                <span className="font-mono">{w.step_id}</span>: {w.error}{' '}
+                <span className="text-content-muted">({w.outcome_code})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )
