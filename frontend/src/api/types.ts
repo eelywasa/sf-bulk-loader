@@ -260,3 +260,53 @@ export interface InputFilePreview extends CsvPageResult {
   source?: string
   provider?: string
 }
+
+// ─── Admin email test-send ────────────────────────────────────────────────────
+
+export type EmailTestTemplate =
+  | 'auth/password_reset'
+  | 'auth/email_change_verify'
+  | 'notifications/run_complete'
+
+export interface EmailTestRequest {
+  to: string
+  template: EmailTestTemplate
+}
+
+export interface EmailTestSuccess {
+  status: 'sent' | 'skipped'
+  delivery_id: string
+  provider_message_id: string | null
+  backend: 'noop' | 'smtp' | 'ses'
+}
+
+export interface EmailTestBackendFailure {
+  status: 'failed'
+  delivery_id: string
+  reason: string
+  last_error_msg: string | null
+  backend: 'noop' | 'smtp' | 'ses'
+}
+
+export interface EmailTestRenderFailure {
+  code: string
+  message: string
+}
+
+export type EmailTestResponse = EmailTestSuccess | EmailTestBackendFailure
+
+// ─── Dependencies health ──────────────────────────────────────────────────────
+
+export interface DependencyStatus {
+  status: 'ok' | 'degraded' | 'failed'
+  detail?: string
+}
+
+export interface DependenciesResponse {
+  status: string
+  dependencies: {
+    database?: DependencyStatus
+    email?: DependencyStatus
+    [key: string]: DependencyStatus | undefined
+  }
+}

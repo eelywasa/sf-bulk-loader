@@ -10,6 +10,7 @@ import RunsPage from './pages/RunsPage'
 import RunDetail from './pages/RunDetail'
 import JobDetail from './pages/JobDetail'
 import FilesPage from './pages/FilesPage'
+import Settings from './pages/Settings'
 
 const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter : createBrowserRouter
 
@@ -30,6 +31,7 @@ const router = createRouter([
       { path: '/runs/:id', element: <RunDetail /> },
       { path: '/runs/:runId/jobs/:jobId', element: <JobDetail /> },
       { path: '/files', element: <FilesPage /> },
+      { path: '/settings', element: <Settings /> },
     ],
   },
 ])

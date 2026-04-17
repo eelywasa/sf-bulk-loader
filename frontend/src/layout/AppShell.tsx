@@ -33,6 +33,7 @@ const navItems: NavItem[] = [
   { path: '/connections', label: 'Connections', icon: faPlug },
   { path: '/plans', label: 'Load Plans', icon: faListCheck },
   { path: '/runs', label: 'Runs', icon: faPlay },
+  { path: '/settings', label: 'Settings', icon: faGear },
 ]
 
 const themeOptions: { value: Theme; label: string }[] = [
