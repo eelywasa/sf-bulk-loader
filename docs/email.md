@@ -191,6 +191,108 @@ delivery = await email_service.send_template(
 
 ---
 
+## Smoke testing email sends
+
+Once email is configured, exercise it end-to-end via the admin test-send
+endpoint at `POST /api/admin/email/test` (UI: **Settings → Email**).
+The endpoint is admin-gated and returns 404 on the desktop profile, so
+you must be logged in as admin on a `self_hosted` or `aws_hosted` build.
+
+### 1. `noop` — wiring check (no setup, nothing sent)
+
+No email leaves the box. Everything else (delivery row, event, metric,
+`email.send` span) runs exactly as in production. Fastest way to verify
+the service boots, the admin endpoint reaches it, and the delivery log
+is being written.
+
+```bash
+# .env
+EMAIL_BACKEND=noop
+EMAIL_FROM_ADDRESS=smoke@test.local
+```
+
+Send from **Settings → Email**, then verify:
+
+```bash
+curl localhost:8000/api/health/dependencies | jq '.dependencies.email'
+# → {"status":"ok","message":"email backend is noop; no external probe performed"}
+
+curl localhost:8000/metrics | grep sfbl_email_send_total
+# → sfbl_email_send_total{backend="noop",category="system",status="sent",...} 1
+
+sqlite3 data/db/bulk_loader.db \
+  "SELECT id,status,attempts,backend FROM email_delivery ORDER BY created_at DESC LIMIT 5"
+```
+
+### 2. `smtp` against a local catcher (realistic, safe)
+
+Use [Mailpit](https://mailpit.axllent.org/) or MailHog — a fake SMTP server
+with a web UI that shows captured mail. This is the right setup for
+verifying template rendering, multipart bodies, headers, and retry
+behaviour without risking real inboxes.
+
+```bash
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+```bash
+# .env
+EMAIL_BACKEND=smtp
+EMAIL_FROM_ADDRESS=smoke@test.local
+EMAIL_SMTP_HOST=localhost
+EMAIL_SMTP_PORT=1025
+EMAIL_SMTP_USERNAME=            # Mailpit accepts blank
+EMAIL_SMTP_PASSWORD=dummy       # required non-empty by the config validator
+EMAIL_SMTP_STARTTLS=false       # Mailpit is plaintext by default
+```
+
+Restart the app, send from **Settings → Email**, then open
+**http://localhost:8025** to inspect headers, raw source, and rendered
+HTML of the captured message.
+
+**Exercising the retry path**: stop Mailpit mid-send — the delivery row
+stays `pending`, `attempts` increments, `sfbl_email_send_retry_total`
+ticks. Restart Mailpit; the boot sweep (or the running retry loop)
+completes delivery.
+
+### 3. `ses` against real AWS (pre-production only)
+
+```bash
+# .env
+EMAIL_BACKEND=ses
+EMAIL_SES_REGION=us-east-1
+EMAIL_FROM_ADDRESS=verified@yourdomain.com   # MUST be SES-verified in sandbox
+```
+
+Credentials resolve via the default boto3 chain (env, `~/.aws/credentials`,
+or instance role).
+
+SES sandbox gotchas:
+- Both sender **and** recipient must be verified until the account is
+  moved out of sandbox. Use your own verified address as `to` for smoke
+  tests.
+- Use a `+tag` on the address so you can filter bounce notifications
+  and distinguish smoke-test traffic.
+- Hitting `/api/health/dependencies` should return `email.status=ok`
+  when creds + region are valid; flip the region to something invalid
+  and re-probe to verify the `degraded` path.
+
+### Coverage checklist beyond the happy path
+
+Worth running through at least once per environment change:
+
+| Scenario | How to trigger |
+|---|---|
+| Admin gating | Log in as a non-admin user → `POST /api/admin/email/test` should 403. Hit it on a desktop build → 404. |
+| Idempotency | Send the same payload twice with the same `idempotency_key` → second call returns the first delivery's id, backend is not re-invoked. |
+| `/dependencies` degrade | Point SMTP at a dead port (`EMAIL_SMTP_PORT=2`) and re-probe → `email.status=degraded`; overall `status` stays `ok` (email is non-critical). |
+| Boot sweep | Send, kill the app mid-retry, restart → boot log includes an `email.boot_sweep_completed` event with a non-zero `reclaimed` count. |
+| Template rendering | Not exposed via the admin UI (freeform only). Use a Python shell: `EmailService.send_template("auth/password_reset", {...}, to=..., category=EmailCategory.AUTH)`. |
+
+The admin UI intentionally sends freeform messages only — template
+rendering is driven by consumer epics (SFBL-117, SFBL-119) and the UI
+will grow template-mode support there if it's needed for QA.
+
 ## Troubleshooting
 
 ### All sends failing with `permanent_auth`
