@@ -80,8 +80,13 @@ run proceeds with an approximate `total_records`, and warnings are surfaced on
 ### Salesforce integration events
 `salesforce.auth.requested` · `salesforce.auth.failed` · `salesforce.bulk_job.created`
 `salesforce.bulk_job.uploaded` · `salesforce.bulk_job.closed` · `salesforce.bulk_job.polled`
-`salesforce.bulk_job.completed` · `salesforce.bulk_job.failed` · `salesforce.request.retried`
-`salesforce.rate_limited`
+`salesforce.bulk_job.completed` · `salesforce.bulk_job.failed` · `salesforce.bulk_job.poll_timeout`
+`salesforce.request.retried` · `salesforce.rate_limited`
+
+`salesforce.bulk_job.poll_timeout` fires when a Bulk API job exceeds
+`SF_JOB_MAX_POLL_SECONDS` (default 3600s; set to 0 to opt out). The client
+marks the JobRecord failed, attempts a best-effort `abort_job` on Salesforce,
+and increments `sfbl_bulk_job_poll_timeout_total`. See SFBL-111.
 
 ### Storage events
 `storage.input.listed` · `storage.input.previewed` · `storage.input.failed` · `storage.output.persisted`
@@ -116,7 +121,26 @@ OutcomeCode.VALIDATION_ERROR
 OutcomeCode.STEP_THRESHOLD_EXCEEDED
 OutcomeCode.DEPENDENCY_UNAVAILABLE
 OutcomeCode.CONFIGURATION_ERROR
+OutcomeCode.JOB_POLL_TIMEOUT      # Bulk API job exceeded sf_job_max_poll_seconds
 ```
+
+### Unhandled-exception funnel (SFBL-112)
+
+Any exception raised from `step_executor.execute_step` that is not
+`InputStorageError` or `asyncio.CancelledError` is caught by the broad handler
+in `run_coordinator._execute_run_body`, logged with `event_name=run.failed` +
+`outcome_code=unexpected_exception`, reported to error monitoring, and funneled
+through `_mark_run_failed_fresh` so the run transitions to `failed` (merging
+an `unexpected_exception` key into `LoadRun.error_summary`).
+
+`asyncio.CancelledError` takes the `aborted` branch instead: the run is marked
+aborted via `_mark_run_aborted_fresh`, `run.aborted` is published, and the
+exception is re-raised so task-group shutdown semantics still hold.
+
+As a final safety net, `_execute_run` wraps the body in `try/finally`. The
+finally helper (`_backstop_mark_failed_if_running`) opens a fresh session,
+re-fetches the run, and — if still `running` — marks it `failed` with an
+`unknown_exit` marker. Runs therefore never stay stuck in `running`.
 
 ---
 

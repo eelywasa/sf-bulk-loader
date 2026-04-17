@@ -24,7 +24,13 @@ from app.observability.events import JobEvent, OutcomeCode, SalesforceEvent
 from app.observability import tracing
 from app.services.result_persistence import download_and_persist_results
 from app.services.run_event_publisher import publish_job_status_change
-from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient, _TERMINAL_STATES
+from app.observability.metrics import record_bulk_job_poll_timeout
+from app.services.salesforce_bulk import (
+    BulkAPIError,
+    BulkJobPollTimeout,
+    SalesforceBulkClient,
+    _TERMINAL_STATES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,12 +195,16 @@ async def _process_partition_body(
                 interval = float(settings.sf_poll_interval_initial)
                 max_interval = float(settings.sf_poll_interval_max)
                 timeout_s = settings.sf_job_timeout_minutes * 60
+                # SFBL-111: absolute cap on the poll loop. 0 = unbounded (opt-out).
+                max_poll_s = int(settings.sf_job_max_poll_seconds)
                 loop_start = asyncio.get_event_loop().time()
                 timeout_warned = False
                 last_processed = -1  # sentinel so first poll always writes
+                last_state = ""
 
                 while True:
                     state, processed, failed, sf_body = await bulk_client.poll_job_once(sf_job_id)
+                    last_state = state
 
                     if processed != last_processed:
                         last_processed = processed
@@ -237,6 +247,45 @@ async def _process_partition_body(
                                    "job_record_id": job_record_id, "sf_job_id": sf_job_id},
                         )
                         timeout_warned = True
+
+                    # SFBL-111: hard cap. Best-effort abort on Salesforce so we
+                    # don't leave the job running after we've given up, then
+                    # raise BulkJobPollTimeout — caught by the same
+                    # ``except BulkAPIError`` branch below, which marks the
+                    # JobRecord failed.
+                    if max_poll_s > 0 and elapsed >= max_poll_s:
+                        logger.error(
+                            "Run %s step %s partition %d: job %s exceeded poll "
+                            "timeout of %ds (last state=%s) — marking failed",
+                            run_id,
+                            step.id,
+                            job_rec.partition_index,
+                            sf_job_id,
+                            max_poll_s,
+                            last_state,
+                            extra={"event_name": SalesforceEvent.BULK_JOB_POLL_TIMEOUT,
+                                   "outcome_code": OutcomeCode.JOB_POLL_TIMEOUT,
+                                   "run_id": run_id, "step_id": str(step.id),
+                                   "job_record_id": job_record_id, "sf_job_id": sf_job_id},
+                        )
+                        record_bulk_job_poll_timeout()
+                        try:
+                            await bulk_client.abort_job(sf_job_id)
+                        except BulkAPIError as abort_exc:
+                            logger.warning(
+                                "Run %s step %s partition %d: best-effort abort of "
+                                "timed-out job %s failed: %s",
+                                run_id, step.id, job_rec.partition_index,
+                                sf_job_id, abort_exc,
+                                extra={"run_id": run_id, "step_id": str(step.id),
+                                       "job_record_id": job_record_id,
+                                       "sf_job_id": sf_job_id},
+                            )
+                        raise BulkJobPollTimeout(
+                            f"poll_job timed out for {sf_job_id} after {max_poll_s}s "
+                            f"(last state={last_state})",
+                            last_state=last_state,
+                        )
 
                     await asyncio.sleep(interval)
                     interval = min(interval * 2.0, max_interval)

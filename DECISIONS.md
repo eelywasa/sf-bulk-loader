@@ -292,3 +292,80 @@ the preflight path creates.
 
 **Related:** This helper is the plumbing that SFBL-112 will lean on when funnelling unhandled
 step exceptions through `_mark_run_failed`.
+
+---
+
+## 016 — `SF_JOB_MAX_POLL_SECONDS` defaults to 1h; `0` is an explicit opt-out sentinel
+
+**Decision:** The Bulk API poll loop has a hard wall-clock cap of `sf_job_max_poll_seconds`
+(default `3600`, one hour). When exceeded, the client raises `BulkJobPollTimeout` (a subclass
+of `BulkAPIError`), increments `sfbl_bulk_job_poll_timeout_total`, emits a canonical log
+(`event_name=salesforce.bulk_job.poll_timeout`, `outcome_code=job_poll_timeout`), attempts a
+best-effort `abort_job` on Salesforce, and lets the partition executor mark the `JobRecord`
+failed. Setting the value to `0` preserves the previous unbounded behaviour (opt-out).
+
+**Why — a hard cap, distinct from `sf_job_timeout_minutes`:** `sf_job_timeout_minutes` is a
+soft warning (spec §9.1): once crossed the loop logs once and continues polling indefinitely.
+That is not the right behaviour when Salesforce leaves a job stuck in `InProgress` forever —
+the run would block one slot in the semaphore and operators would see the UI hang with no
+terminal status. SFBL-111 adds a distinct *hard* cap so the run can free the slot and
+continue with remaining partitions. The two settings coexist: the soft warning still fires
+first (so operators see "still running after Xm" before the hard cut-off).
+
+**Why — 1h default:** Most Bulk API 2.0 jobs complete within minutes; an hour is a comfortable
+headroom that surfaces genuine stuck-job pathology without false positives. Users with
+unusually large ingest volumes can raise it; setting `0` disables the cap entirely.
+
+**Why — subclass `BulkAPIError` not a new top-level exception:** The existing
+`except BulkAPIError` branches in `partition_executor` already handle "the job failed; mark
+the record failed" cleanly. Making `BulkJobPollTimeout` a subclass means no existing handler
+needs to change — they all catch it by inheritance — while call sites that want to
+differentiate (for metrics, logs) can `isinstance`-check.
+
+**Enforcement is duplicated on purpose:** Both `salesforce_bulk.poll_job` (used by other
+callers / future code) and the hand-rolled loop in `partition_executor._process_partition_body`
+enforce the cap. The partition loop reads `time.monotonic()`-equivalent values via
+`asyncio.get_event_loop().time()`, tracks `last_state`, and on timeout performs the abort
+and raises. Having both ensures the guarantee holds regardless of which polling entry point
+is used.
+
+---
+
+## 017 — Run lifecycle: broad exception handler + try/finally backstop
+
+**Decision:** `run_coordinator._execute_run_body` wraps the `execute_step` call in a three-way
+exception chain:
+
+1. `except InputStorageError` — existing, marks run failed with `storage_error` key.
+2. `except asyncio.CancelledError` — marks run aborted via a fresh session
+   (`_mark_run_aborted_fresh`), publishes `run.aborted`, then **re-raises** so task-group
+   shutdown semantics are preserved.
+3. `except Exception` — broad backstop for anything else (programming errors, unexpected
+   SDK failures). Logs with `event_name=run.failed` + `outcome_code=unexpected_exception`,
+   calls `capture_exception` for Sentry, and funnels through `_mark_run_failed_fresh` with an
+   `unexpected_exception` key in `error_summary`.
+
+As a final safety net, `_execute_run` wraps the body in `try/finally`. The `finally`
+helper `_backstop_mark_failed_if_running` opens a **fresh** session, re-fetches the run,
+and — if still `running` — marks it `failed` with an `unknown_exit` marker.
+
+**Why — fresh sessions for exception paths:** The primary `db` session may be mid-transaction
+when an exception fires. Attempting to reuse it can raise `InvalidRequestError` or silently
+roll back the status update. Opening a fresh session via `db_factory` sidesteps that. The
+fresh helpers are defensively wrapped in their own `try/except` (best-effort) because they
+are the last line of defence — if even they fail, there is nothing else to do except log.
+
+**Why — re-raise `CancelledError`:** asyncio relies on `CancelledError` propagation to
+unwind task groups and close connections cleanly. Swallowing it would break structured
+concurrency. The coordinator takes its persistence action (mark aborted) and then lets the
+exception continue.
+
+**Why — `unknown_exit` as a distinct marker:** Separating "something raised and we caught it
+but don't know why" (`unexpected_exception`) from "no exception fired but the body returned
+without finalising" (`unknown_exit`) lets operators triage. `unknown_exit` only appears if
+there is a bug in the coordinator itself; `unexpected_exception` appears if a downstream
+helper raised.
+
+**Trade-off:** The main body of `_execute_run` is now a nested function
+(`_execute_run_body`). That indirection is the cost of wrapping ~200 lines of code in
+`try/finally` without breaking the existing early-return paths.

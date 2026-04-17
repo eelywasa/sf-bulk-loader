@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Optional
 
 import httpx
@@ -48,6 +49,28 @@ class BulkAPIError(Exception):
         super().__init__(message)
         self.status_code = status_code
         self.body = body
+
+
+class BulkJobPollTimeout(BulkAPIError):
+    """Raised when a Bulk API job exceeds ``sf_job_max_poll_seconds`` (SFBL-111).
+
+    Subclass of :class:`BulkAPIError` so existing ``except BulkAPIError``
+    branches continue to handle the timeout (marking the ``JobRecord`` as
+    failed); callers that need to distinguish can catch this subclass
+    specifically. ``last_state`` records the final Salesforce state seen
+    before the timeout fired — useful for diagnosing stuck jobs.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: Optional[int] = None,
+        body: str = "",
+        last_state: Optional[str] = None,
+    ) -> None:
+        super().__init__(message, status_code=status_code, body=body)
+        self.last_state = last_state
 
 
 # ── Client ───────────────────────────────────────────────────────────────────────
@@ -366,10 +389,16 @@ class SalesforceBulkClient:
 
         Raises:
             BulkAPIError: If a status request fails after retries.
+            BulkJobPollTimeout: If the job does not reach a terminal state
+                within ``sf_job_max_poll_seconds`` (SFBL-111). Setting the
+                value to ``0`` disables the cap (unbounded polling).
         """
         url = self._job_url(sf_job_id)
         interval = float(settings.sf_poll_interval_initial)
         max_interval = float(settings.sf_poll_interval_max)
+        max_poll_seconds = int(settings.sf_job_max_poll_seconds)
+        start = time.monotonic()
+        state: str = ""
 
         while True:
             response = await self._request("GET", url)
@@ -382,7 +411,7 @@ class SalesforceBulkClient:
                 )
 
             body = response.json()
-            state: str = body.get("state", "")
+            state = body.get("state", "")
             records_processed: int = body.get("numberRecordsProcessed", 0)
             records_failed: int = body.get("numberRecordsFailed", 0)
 
@@ -403,6 +432,24 @@ class SalesforceBulkClient:
                     records_failed,
                 )
                 return state
+
+            if max_poll_seconds > 0 and (time.monotonic() - start) >= max_poll_seconds:
+                # Best-effort abort on Salesforce so the remote ingest job
+                # doesn't keep running after we've given up locally. Any abort
+                # failure is logged but NOT re-raised — the caller still gets
+                # the BulkJobPollTimeout.
+                try:
+                    await self.abort_job(sf_job_id)
+                except BulkAPIError as abort_exc:
+                    logger.warning(
+                        "Best-effort abort of timed-out job %s failed: %s",
+                        sf_job_id, abort_exc,
+                    )
+                raise BulkJobPollTimeout(
+                    f"poll_job timed out for {sf_job_id} after {max_poll_seconds}s "
+                    f"(last state={state})",
+                    last_state=state,
+                )
 
             await asyncio.sleep(interval)
             interval = min(interval * 2.0, max_interval)

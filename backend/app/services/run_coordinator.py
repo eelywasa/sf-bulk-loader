@@ -331,6 +331,75 @@ async def _execute_run(
                "load_plan_id": str(plan.id)},
     )
 
+    # SFBL-112: try/finally backstop. If any code below exits the function
+    # without transitioning the run out of ``running`` state (e.g. a coroutine
+    # is cancelled, a helper raises before the normal finalisation path runs),
+    # the finally block marks it failed via a fresh session so the run never
+    # stays stuck.
+    try:
+        await _execute_run_body(
+            run_id=run_id,
+            run=run,
+            plan=plan,
+            steps=steps,
+            db=db,
+            db_factory=db_factory,
+            _get_token=_get_token,
+            _BulkClient=_BulkClient,
+            _get_storage=_get_storage,
+            _partition=_partition,
+            _run_start=_run_start,
+            _cur_span=_cur_span,
+            NonRecordingSpan=NonRecordingSpan,
+        )
+    except asyncio.CancelledError:
+        # Cancellation can fire anywhere in the body — including phases the
+        # step-loop handler does NOT cover (preflight I/O, token fetch, step
+        # event publishing). If the step-loop handler already marked the run
+        # aborted, ``_mark_run_aborted_fresh`` is idempotent (overwrites
+        # completed_at with a fresh value but status was already aborted).
+        # If not, this is where the transition happens. Without this,
+        # cancellations in those phases would reach the ``finally`` backstop
+        # with status still ``running`` and be misclassified as ``failed`` /
+        # ``unknown_exit`` rather than ``aborted``.
+        logger.warning(
+            "Run %s: cancelled — marking run aborted before re-raising",
+            run_id,
+            extra={"event_name": RunEvent.ABORTED,
+                   "outcome_code": OutcomeCode.ABORTED,
+                   "run_id": run_id},
+        )
+        await _mark_run_aborted_fresh(run_id, db_factory)
+        try:
+            await publish_run_aborted(run_id, reason="cancelled")
+        except Exception:  # pragma: no cover - best-effort
+            pass
+        raise
+    finally:
+        # Backstop: re-fetch run in a fresh session and, if still ``running``,
+        # mark it failed with an ``unknown_exit`` marker so operators can see
+        # something went wrong even if no explicit handler fired.
+        await _backstop_mark_failed_if_running(run_id, db_factory)
+
+
+async def _execute_run_body(
+    *,
+    run_id: str,
+    run: LoadRun,
+    plan: LoadPlan,
+    steps: list[LoadStep],
+    db: AsyncSession,
+    db_factory: _DbFactory,
+    _get_token: Callable,
+    _BulkClient: type,
+    _get_storage: Callable,
+    _partition: Callable,
+    _run_start: float,
+    _cur_span,
+    NonRecordingSpan: type,
+) -> None:
+    """Main body of ``_execute_run`` (SFBL-112): separated so the caller can
+    wrap it in a try/finally backstop."""
     # ── Pre-count total records across all steps ──────────────────────────────
     # Failures here do NOT abort the run — we proceed with an approximate count
     # and surface warnings on the run record so operators can see that the
@@ -484,6 +553,41 @@ async def _execute_run(
                 )
                 await _mark_run_failed(
                     run_id, db, error_summary={"storage_error": str(exc)}
+                )
+                await publish_run_failed(run_id, error=str(exc))
+                record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
+                return
+            except asyncio.CancelledError:
+                # SFBL-112: external cancellation. Mark aborted via fresh
+                # session (primary session may be mid-transaction), then
+                # re-raise so the task shutdown proceeds normally.
+                logger.warning(
+                    "Run %s step %s: cancelled — marking run aborted",
+                    run_id, step.id,
+                    extra={"event_name": RunEvent.ABORTED,
+                           "outcome_code": OutcomeCode.ABORTED,
+                           "run_id": run_id, "step_id": str(step.id)},
+                )
+                await _mark_run_aborted_fresh(run_id, db_factory)
+                await publish_run_aborted(run_id, reason="cancelled")
+                record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
+                raise
+            except Exception as exc:
+                # SFBL-112: broad backstop for unhandled exceptions raised from
+                # execute_step (programming errors, unexpected SDK failures).
+                # Funnel through _mark_run_failed_fresh so the run never stays
+                # stuck in ``running`` state.
+                logger.exception(
+                    "Run %s step %s: unhandled exception — marking run failed",
+                    run_id, step.id,
+                    extra={"event_name": RunEvent.FAILED,
+                           "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION,
+                           "run_id": run_id, "step_id": str(step.id)},
+                )
+                capture_exception(exc, outcome_code=OutcomeCode.UNEXPECTED_EXCEPTION)
+                await _mark_run_failed_fresh(
+                    run_id, db_factory,
+                    error_summary={"unexpected_exception": str(exc)},
                 )
                 await publish_run_failed(run_id, error=str(exc))
                 record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
@@ -683,3 +787,97 @@ async def _mark_run_failed(
     if error_summary:
         _merge_run_error_summary(run, error_summary)
     await db.commit()
+
+
+async def _backstop_mark_failed_if_running(
+    run_id: str,
+    db_factory: _DbFactory,
+) -> None:
+    """SFBL-112: final backstop run in the ``finally`` block of ``_execute_run``.
+
+    Opens a fresh session, re-fetches the run, and marks it failed with an
+    ``unknown_exit`` marker if it is still in ``running`` state. This catches
+    scenarios where the main body exited without any explicit exception
+    handler transitioning the run to a terminal state (e.g. a bug in a
+    post-step helper, an unexpected ``return`` path, or a raised exception
+    that bypassed all handlers).
+    """
+    try:
+        async with db_factory() as fresh_db:
+            result = await fresh_db.execute(
+                select(LoadRun).where(LoadRun.id == run_id)
+            )
+            run = result.scalar_one_or_none()
+            if run is None or run.status != RunStatus.running:
+                return
+            logger.error(
+                "Run %s: finally backstop — run still running after execute_run "
+                "body exited. Marking failed with unknown_exit.",
+                run_id,
+                extra={"event_name": RunEvent.FAILED,
+                       "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION,
+                       "run_id": run_id},
+            )
+            run.status = RunStatus.failed
+            run.completed_at = datetime.now(timezone.utc)
+            _merge_run_error_summary(
+                run,
+                {"unknown_exit": "run body exited without finalising status"},
+            )
+            await fresh_db.commit()
+    except Exception as exc:  # pragma: no cover - best-effort backstop
+        logger.exception(
+            "Failed backstop for run %s: %s",
+            run_id, exc,
+            extra={"run_id": run_id, "outcome_code": OutcomeCode.DATABASE_ERROR},
+        )
+
+
+async def _mark_run_failed_fresh(
+    run_id: str,
+    db_factory: _DbFactory,
+    *,
+    error_summary: Optional[dict] = None,
+) -> None:
+    """Mark a run as ``failed`` using a freshly-opened session from ``db_factory``.
+
+    Used by exception-handling paths where the primary session may already be
+    in a broken-transaction state (SFBL-112).
+    """
+    try:
+        async with db_factory() as fresh_db:
+            await _mark_run_failed(run_id, fresh_db, error_summary=error_summary)
+    except Exception as exc:  # pragma: no cover - best-effort backstop
+        logger.exception(
+            "Failed to mark run %s failed via fresh session: %s",
+            run_id, exc,
+            extra={"run_id": run_id, "outcome_code": OutcomeCode.DATABASE_ERROR},
+        )
+
+
+async def _mark_run_aborted_fresh(
+    run_id: str,
+    db_factory: _DbFactory,
+) -> None:
+    """Mark a run as ``aborted`` using a freshly-opened session from ``db_factory``.
+
+    Used when the run is cancelled externally (asyncio.CancelledError) and the
+    primary session may be unsafe to use (SFBL-112).
+    """
+    try:
+        async with db_factory() as fresh_db:
+            result = await fresh_db.execute(
+                select(LoadRun).where(LoadRun.id == run_id)
+            )
+            run = result.scalar_one_or_none()
+            if run is None:
+                return
+            run.status = RunStatus.aborted
+            run.completed_at = datetime.now(timezone.utc)
+            await fresh_db.commit()
+    except Exception as exc:  # pragma: no cover - best-effort backstop
+        logger.exception(
+            "Failed to mark run %s aborted via fresh session: %s",
+            run_id, exc,
+            extra={"run_id": run_id, "outcome_code": OutcomeCode.DATABASE_ERROR},
+        )
