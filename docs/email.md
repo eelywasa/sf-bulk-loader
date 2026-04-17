@@ -235,3 +235,43 @@ classification table so future occurrences get a meaningful `last_error_code`.
   is readable by the backend process.
 
 See "SMTP credential resolution" above for the full precedence rules.
+
+### Checking email backend health via `/api/health/dependencies`
+
+The `/api/health/dependencies` endpoint includes an `email` entry that probes
+the configured backend on every request:
+
+```json
+{
+  "status": "ok",
+  "dependencies": {
+    "database": { "status": "ok" },
+    "email":    { "status": "ok" }
+  }
+}
+```
+
+**Status values:**
+
+| Value | Meaning |
+|---|---|
+| `ok` | Backend reachable (or `noop` — no probe performed) |
+| `degraded` | Backend probe failed; email delivery may be impaired |
+
+A `degraded` email status does **not** cause the overall status to be `failed`
+and does **not** return HTTP 503. Email is non-critical for app functionality.
+Only a `failed` status on a hard dependency (e.g. the database) triggers 503.
+
+**What the probe does:**
+
+- `noop` backend: always reports `ok` with a note; no network connection made.
+- `smtp` backend: opens a TCP connection to the configured SMTP host on the
+  configured port (2-second timeout). Does not authenticate or send.
+- `ses` backend: calls `GetSendQuota` via the boto3 default credential chain
+  (result is cached to avoid rate limits on repeated calls).
+
+If email is `degraded`, check:
+1. That the SMTP host/port is reachable from the backend container.
+2. That the SES IAM role has `ses:GetSendQuota` permission.
+3. Structured logs for the `email.send` event category and `health.checked`
+   event near the probe time for detailed error messages.
