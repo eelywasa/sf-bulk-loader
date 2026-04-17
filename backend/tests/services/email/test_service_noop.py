@@ -3,11 +3,13 @@
 Covers:
 - Happy path returns status=skipped
 - Duplicate idempotency_key returns existing row without calling backend
+- Observability: email_send_total counter increments on send
 """
 
 from __future__ import annotations
 
 import pytest
+from prometheus_client import REGISTRY
 
 from app.models.email_delivery import DeliveryStatus
 from app.services.email.backends.noop import NoopBackend
@@ -52,6 +54,44 @@ class TestNoopHappyPath:
             template="auth/password_reset",
         )
         assert delivery.template == "auth/password_reset"
+
+
+class TestObservability:
+    """Verify that email_send_total increments correctly after a noop send."""
+
+    @pytest.mark.asyncio
+    async def test_send_increments_email_send_total_skipped(self):
+        from app.observability.metrics import email_send_total  # noqa: F401
+
+        svc = _service()
+
+        def _get_count(backend, category, status):
+            # metric name ends in _total so prometheus_client uses it as-is
+            return REGISTRY.get_sample_value(
+                "sfbl_email_send_total",
+                {"backend": backend, "category": category, "status": status},
+            ) or 0.0
+
+        before = _get_count("noop", "system", "skipped")
+        await svc.send(_msg(), category=EmailCategory.SYSTEM)
+        after = _get_count("noop", "system", "skipped")
+        assert after == before + 1.0
+
+    @pytest.mark.asyncio
+    async def test_send_does_not_increment_sent_for_noop(self):
+        """Noop sends must go to 'skipped', never to 'sent'."""
+
+        def _get_count(backend, category, status):
+            return REGISTRY.get_sample_value(
+                "sfbl_email_send_total",
+                {"backend": backend, "category": category, "status": status},
+            ) or 0.0
+
+        svc = _service()
+        before_sent = _get_count("noop", "system", "sent")
+        await svc.send(_msg(), category=EmailCategory.SYSTEM)
+        after_sent = _get_count("noop", "system", "sent")
+        assert after_sent == before_sent  # must not have changed
 
 
 class TestIdempotency:

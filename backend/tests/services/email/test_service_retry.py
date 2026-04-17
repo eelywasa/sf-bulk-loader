@@ -3,6 +3,7 @@
 Covers:
 - Transient failure schedules a retry task; row eventually reaches terminal state
 - Two concurrent _retry_loop tasks on the same row: exactly one claim wins
+- Observability: metrics and span attributes on failure paths
 """
 
 from __future__ import annotations
@@ -174,6 +175,166 @@ class TestTransientRetry:
             settings.email_max_retries = original
 
         assert delivery.status == DeliveryStatus.failed
+
+
+class TestObservabilityMetrics:
+    """Verify that metrics are correctly incremented on retry and failure paths."""
+
+    @pytest.mark.asyncio
+    async def test_transient_failure_increments_retry_total(self):
+        """email_retry_total must increment once when a transient failure schedules a retry."""
+        from prometheus_client import REGISTRY
+
+        def _get_retry(backend, reason):
+            # metric name already ends in _total — prometheus uses it as-is
+            return REGISTRY.get_sample_value(
+                "sfbl_email_retry_total",
+                {"backend": backend, "reason": reason},
+            ) or 0.0
+
+        backend = FailNTimesBackend(fail_count=99)
+        # Prevent retries exhausting — we only care about the first scheduling
+        from app.config import settings
+
+        original = settings.email_max_retries
+        settings.email_max_retries = 5
+        try:
+            svc = EmailService(backend=backend, session_factory=EmailTestSession)
+            before = _get_retry("fake_transient", "transient_network")
+            with patch("app.services.email.service.asyncio.sleep", new_callable=AsyncMock):
+                await svc.send(_msg(), category=EmailCategory.NOTIFICATION)
+            after = _get_retry("fake_transient", "transient_network")
+            assert after == before + 1.0
+        finally:
+            settings.email_max_retries = original
+
+    @pytest.mark.asyncio
+    async def test_permanent_failure_increments_send_total_failed(self):
+        """email_send_total{status='failed'} must increment on permanent rejection."""
+        from prometheus_client import REGISTRY
+
+        def _get_send(backend, category, status):
+            return REGISTRY.get_sample_value(
+                "sfbl_email_send_total",
+                {"backend": backend, "category": category, "status": status},
+            ) or 0.0
+
+        backend = PermanentFailBackend()
+        svc = EmailService(backend=backend, session_factory=EmailTestSession)
+        before = _get_send("fake_permanent", "notification", "failed")
+        await svc.send(_msg(), category=EmailCategory.NOTIFICATION)
+        after = _get_send("fake_permanent", "notification", "failed")
+        assert after == before + 1.0
+
+    @pytest.mark.asyncio
+    async def test_claim_lost_increments_claim_lost_total(self):
+        """email_claim_lost_total must increment when a retry task loses the CAS race."""
+        from datetime import timedelta
+
+        from sqlalchemy import update
+        from prometheus_client import REGISTRY
+
+        from app.models.email_delivery import EmailDelivery
+
+        def _get_claim_lost(backend):
+            return REGISTRY.get_sample_value(
+                "sfbl_email_claim_lost_total",
+                {"backend": backend},
+            ) or 0.0
+
+        backend = FailNTimesBackend(fail_count=0)
+        svc = EmailService(backend=backend, session_factory=EmailTestSession)
+
+        msg = _msg()
+        async with EmailTestSession() as s:
+            row = await delivery_log.insert(
+                s, msg=msg, backend_name="fake_transient", category=EmailCategory.SYSTEM
+            )
+            past = datetime.now(tz=timezone.utc) - timedelta(seconds=120)
+            await s.execute(
+                update(EmailDelivery)
+                .where(EmailDelivery.id == row.id)
+                .values(
+                    claim_expires_at=past,
+                    next_attempt_at=past,
+                    status=DeliveryStatus.pending,
+                )
+            )
+            await s.commit()
+
+        before = _get_claim_lost("fake_transient")
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await asyncio.gather(
+                svc._retry_loop(row.id, msg),
+                svc._retry_loop(row.id, msg),
+            )
+
+        after = _get_claim_lost("fake_transient")
+        # Exactly one task lost the claim
+        assert after == before + 1.0
+
+
+class TestSpanAttributes:
+    """Verify span attribute behaviour on success and failure paths."""
+
+    @pytest.mark.asyncio
+    async def test_span_no_provider_error_code_on_success(self):
+        """email.provider_error_code must NOT be set when the send succeeds."""
+        from unittest.mock import MagicMock, patch
+        from contextlib import contextmanager
+
+        span_mock = MagicMock()
+        recorded_attrs: dict = {}
+
+        def _capture_attr(key, value):
+            recorded_attrs[key] = value
+
+        span_mock.set_attribute.side_effect = _capture_attr
+
+        @contextmanager
+        def _fake_span(**kwargs):
+            yield span_mock
+
+        with patch("app.services.email.service.email_send_span", _fake_span):
+            svc = EmailService(
+                backend=FailNTimesBackend(fail_count=0),
+                session_factory=EmailTestSession,
+            )
+            await svc.send(_msg(), category=EmailCategory.SYSTEM)
+
+        # On success, email.provider_error_code and email.reason must NOT be set
+        assert "email.provider_error_code" not in recorded_attrs
+        assert "email.reason" not in recorded_attrs
+
+    @pytest.mark.asyncio
+    async def test_span_provider_error_code_set_on_failure(self):
+        """email.provider_error_code and email.reason must be set on failure."""
+        from unittest.mock import MagicMock
+        from contextlib import contextmanager
+
+        span_mock = MagicMock()
+        recorded_attrs: dict = {}
+
+        def _capture_attr(key, value):
+            recorded_attrs[key] = value
+
+        span_mock.set_attribute.side_effect = _capture_attr
+
+        @contextmanager
+        def _fake_span(**kwargs):
+            yield span_mock
+
+        with patch("app.services.email.service.email_send_span", _fake_span):
+            svc = EmailService(
+                backend=PermanentFailBackend(),
+                session_factory=EmailTestSession,
+            )
+            await svc.send(_msg(), category=EmailCategory.NOTIFICATION)
+
+        assert "email.reason" in recorded_attrs
+        assert recorded_attrs["email.reason"] == "permanent_reject"
+        assert "email.provider_error_code" in recorded_attrs
 
 
 class TestConcurrentRetryLoopClaim:
