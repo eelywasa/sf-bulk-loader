@@ -35,6 +35,7 @@ from app.observability.sanitization import safe_exc_message
 from app.services.email import delivery_log
 from app.services.email.backends.base import BackendResult, EmailBackend
 from app.services.email.backends.noop import NoopBackend
+from app.services.email.backends.smtp import SmtpBackend
 from app.services.email.errors import EmailErrorReason
 from app.services.email.message import EmailCategory, EmailMessage
 
@@ -45,9 +46,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ── Backend registry ──────────────────────────────────────────────────────────
-# Add "smtp": SmtpBackend() and "ses": SesBackend() here when SFBL-139/140 land.
+# Add "ses": SesBackend() here when SFBL-140 lands.
 _BACKENDS: dict[str, EmailBackend] = {
     "noop": NoopBackend(),
+    "smtp": SmtpBackend(),
 }
 
 
