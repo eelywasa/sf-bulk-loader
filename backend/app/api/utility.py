@@ -276,12 +276,13 @@ async def _check_email(backend_name: str) -> tuple[str, str | None]:
         return OutcomeCode.OK, "email backend is noop; no external probe performed"
 
     try:
-        from app.services.email.service import _BACKENDS
+        from app.services.email.service import _BACKEND_FACTORIES
 
-        backend = _BACKENDS.get(backend_name)
-        if backend is None:
+        factory = _BACKEND_FACTORIES.get(backend_name)
+        if factory is None:
             return OutcomeCode.DEGRADED, f"unknown email backend: {backend_name!r}"
 
+        backend = factory()
         healthy = await asyncio.wait_for(backend.healthcheck(), timeout=3.0)
         if healthy:
             return OutcomeCode.OK, None

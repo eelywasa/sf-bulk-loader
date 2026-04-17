@@ -702,7 +702,7 @@ async def test_backend_name():
 @pytest.mark.asyncio
 async def test_backend_registered_in_service():
     """SmtpBackend is registered in the EmailService backend registry."""
-    from app.services.email.service import _BACKENDS
+    from app.services.email.service import _BACKEND_FACTORIES
 
-    assert "smtp" in _BACKENDS
-    assert isinstance(_BACKENDS["smtp"], SmtpBackend)
+    assert "smtp" in _BACKEND_FACTORIES
+    assert isinstance(_BACKEND_FACTORIES["smtp"](), SmtpBackend)

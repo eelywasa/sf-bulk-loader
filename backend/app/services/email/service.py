@@ -10,7 +10,7 @@ Factory
 `build_email_service(backend_name, session_factory)` constructs an
 EmailService from the configured backend name.  SMTP and SES backends are
 added by SFBL-139 and SFBL-140 respectively — adding a new backend is a
-one-line dict edit in the `_BACKENDS` registry below.
+one-line dict edit in the `_BACKEND_FACTORIES` registry below.
 
 FastAPI dependency
 ------------------
@@ -44,8 +44,6 @@ from app.observability.tracing import email_send_span
 from app.services.email import delivery_log
 from app.services.email.backends.base import BackendResult, EmailBackend
 from app.services.email.backends.noop import NoopBackend
-from app.services.email.backends.ses import SesBackend
-from app.services.email.backends.smtp import SmtpBackend
 from app.services.email.errors import EmailErrorReason
 from app.services.email.message import EmailCategory, EmailMessage
 
@@ -55,11 +53,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# ── Backend registry ──────────────────────────────────────────────────────────
-_BACKENDS: dict[str, EmailBackend] = {
-    "noop": NoopBackend(),
-    "smtp": SmtpBackend(),
-    "ses": SesBackend(),
+
+# ── Backend registry (lazy) ───────────────────────────────────────────────────
+# We avoid importing SmtpBackend / SesBackend at module load so the desktop
+# PyInstaller build (which runs with `noop` and does not ship aiosmtplib /
+# aioboto3) can import this module without those optional deps installed.
+# Adding a new backend is still a one-line edit in `_BACKEND_FACTORIES` below.
+
+def _build_noop() -> EmailBackend:
+    return NoopBackend()
+
+
+def _build_smtp() -> EmailBackend:
+    from app.services.email.backends.smtp import SmtpBackend
+    return SmtpBackend()
+
+
+def _build_ses() -> EmailBackend:
+    from app.services.email.backends.ses import SesBackend
+    return SesBackend()
+
+
+_BACKEND_FACTORIES: dict[str, "callable[[], EmailBackend]"] = {
+    "noop": _build_noop,
+    "smtp": _build_smtp,
+    "ses": _build_ses,
 }
 
 
@@ -69,16 +87,17 @@ def build_email_service(
 ) -> "EmailService":
     """Construct an EmailService for the given backend name.
 
-    Raises KeyError if `backend_name` is not registered.  smtp and ses are
-    added by SFBL-139 and SFBL-140 — adding a backend is a one-line dict edit
-    in `_BACKENDS` above.
+    Raises KeyError if `backend_name` is not registered. Backend modules are
+    imported lazily so optional provider SDKs (aiosmtplib, aioboto3) are only
+    required when their backend is actually selected — desktop builds ship
+    `noop` only.
     """
-    if backend_name not in _BACKENDS:
+    if backend_name not in _BACKEND_FACTORIES:
         raise KeyError(
             f"Unknown email backend {backend_name!r}. "
-            f"Available: {sorted(_BACKENDS)}"
+            f"Available: {sorted(_BACKEND_FACTORIES)}"
         )
-    return EmailService(backend=_BACKENDS[backend_name], session_factory=session_factory)
+    return EmailService(backend=_BACKEND_FACTORIES[backend_name](), session_factory=session_factory)
 
 
 # ── Module-level singleton ────────────────────────────────────────────────────

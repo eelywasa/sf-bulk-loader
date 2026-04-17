@@ -481,7 +481,7 @@ def test_instance_classify_string_code():
 
 def test_ses_registered_in_factory():
     """'ses' is registered in the EmailService backend registry."""
-    from app.services.email.service import _BACKENDS
+    from app.services.email.service import _BACKEND_FACTORIES
 
-    assert "ses" in _BACKENDS
-    assert isinstance(_BACKENDS["ses"], SesBackend)
+    assert "ses" in _BACKEND_FACTORIES
+    assert isinstance(_BACKEND_FACTORIES["ses"](), SesBackend)
