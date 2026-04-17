@@ -539,6 +539,45 @@ async def test_job_creation_failure_marks_job_failed(db: AsyncSession, tmp_path)
     assert "create failed" in (jobs[0].error_message or "")
 
 
+async def test_job_creation_failure_error_message_includes_body_once(
+    db: AsyncSession, tmp_path
+):
+    """Regression for SFBL-109: create_job failure must include the response body
+    exactly once in error_message (previously it was concatenated twice)."""
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+
+    from app.services.salesforce_bulk import BulkAPIError
+
+    body_text = "INVALID_FIELD: column foo does not exist"
+    bulk_mock = _make_bulk_client_mock()
+    bulk_mock.create_job = AsyncMock(
+        side_effect=BulkAPIError("create failed", status_code=400, body=body_text)
+    )
+    db_factory = make_db_factory(db)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    result = await db.execute(select(JobRecord).where(JobRecord.load_run_id == run.id))
+    jobs = list(result.scalars().all())
+    assert len(jobs) == 1
+    err = jobs[0].error_message or ""
+    # Exactly one "Response:" prefix and exactly one occurrence of the body.
+    assert err.count("Response:") == 1, f"expected one Response: fragment, got {err!r}"
+    assert err.count(body_text) == 1, f"expected body once, got {err!r}"
+    assert err.startswith("create failed")
+
+
 async def test_upload_failure_marks_job_failed(db: AsyncSession, tmp_path):
     """If upload_csv raises, the JobRecord is marked failed."""
     conn = await _make_connection(db)

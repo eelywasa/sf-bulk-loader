@@ -117,7 +117,7 @@ async def _process_partition_body(
                            "job_record_id": job_record_id},
                 )
                 job_rec.status = JobStatus.failed
-                job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "") + (f"\nResponse: {exc.body}" if exc.body else "")
+                job_rec.error_message = str(exc) + (f"\nResponse: {exc.body}" if exc.body else "")
                 job_rec.completed_at = datetime.now(timezone.utc)
                 await db.commit()
                 await publish_job_status_change(
