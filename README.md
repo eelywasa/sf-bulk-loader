@@ -55,6 +55,7 @@ For HTTPS, PostgreSQL, or combined setups see [docs/deployment/docker.md](docs/d
 | [docs/development.md](docs/development.md) | Local development, running tests, database migrations |
 | [docs/salesforce-jwt-setup.md](docs/salesforce-jwt-setup.md) | Detailed Salesforce Connected App setup |
 | [docs/s3-connection-setup.md](docs/s3-connection-setup.md) | S3 input source configuration |
+| [docs/email.md](docs/email.md) | Outbound email — backend selection, SMTP credentials, delivery log, troubleshooting |
 
 ---
 

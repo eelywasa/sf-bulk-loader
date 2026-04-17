@@ -395,6 +395,46 @@ default).
 
 ---
 
+## 019 — Email SMTP credentials: env > file > error, no auto-generation
+
+**Context:** `ENCRYPTION_KEY` and `JWT_SECRET_KEY` follow an env → file →
+auto-generate resolution chain. When neither the env var nor the key file is
+present, the application generates a random secret, persists it to the key
+file, and continues booting. This is appropriate because those secrets are
+owned entirely by the application.
+
+SMTP passwords are fundamentally different: they are credentials issued by an
+external provider (AWS SES SMTP, Gmail app passwords, Mailgun, Postfix, etc.).
+An auto-generated password is meaningless to the provider and would cause every
+send attempt to fail with an authentication error.
+
+**Decision:** `EMAIL_SMTP_PASSWORD` resolves as:
+
+1. `EMAIL_SMTP_PASSWORD` env var — used as-is if non-empty.
+2. `EMAIL_SMTP_PASSWORD_FILE` — file contents (stripped) if the file exists.
+3. Neither present with `EMAIL_BACKEND=smtp` → hard `ValueError` at boot; app
+   does not start.
+4. Neither present with any other backend (`noop`, `ses`) → silently accepted;
+   SMTP password is irrelevant.
+
+SMTP passwords are **never auto-generated**. Boot-time failure is the correct
+behaviour: it surfaces the misconfiguration immediately rather than allowing the
+application to start and then fail on the first send attempt.
+
+**Consequences:**
+
+- `desktop` and `self_hosted` profiles default to `EMAIL_BACKEND=noop`, so
+  operators who have not configured email do not see a boot error.
+- `EMAIL_BACKEND=smtp` is an explicit opt-in that requires a credential.
+  Forgetting the credential is caught at startup, not at first send.
+- Rotating the password is a `.env` change + container restart — no migration
+  or DB change required.
+
+**References:** SFBL-137, `docs/specs/email-service-spec.md` §Configuration,
+`docs/email.md` §"SMTP credential resolution".
+
+---
+
 ## 017 — Run lifecycle: broad exception handler + try/finally backstop
 
 **Decision:** `run_coordinator._execute_run_body` wraps the `execute_step` call in a three-way
