@@ -311,6 +311,38 @@ describe('RunDetail', () => {
     })
   })
 
+  it('renders storage_error from error_summary', async () => {
+    const runStorageFailed: LoadRun = {
+      ...runFailed,
+      error_summary: { storage_error: 'Input bucket unreachable during step 2' },
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runStorageFailed)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText('Input bucket unreachable during step 2')).toBeInTheDocument()
+    })
+  })
+
+  it('renders generic failure message for failed run with no recognized reason', async () => {
+    // Defensive: a future error_summary key (not yet mapped on the frontend)
+    // must not cause the failure banner to silently disappear.
+    const runUnknownReason: LoadRun = {
+      ...runFailed,
+      error_summary: { preflight_warnings: null } as LoadRun['error_summary'],
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runUnknownReason)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText(/Run failed\. See logs for details\./)).toBeInTheDocument()
+    })
+  })
+
   it('renders preflight warning banner when preflight_warnings are present', async () => {
     const runWithPreflight: LoadRun = {
       ...runCompleted,

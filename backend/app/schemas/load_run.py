@@ -27,6 +27,7 @@ class RunErrorSummary(BaseModel):
     """Typed structure for run-level error context stored in LoadRun.error_summary."""
 
     auth_error: Optional[str] = None
+    storage_error: Optional[str] = None
     preflight_warnings: Optional[List[PreflightWarning]] = None
 
     model_config = ConfigDict(extra="ignore")

@@ -161,6 +161,7 @@ export interface PreflightWarning {
 
 export interface RunErrorSummary {
   auth_error?: string | null
+  storage_error?: string | null
   preflight_warnings?: PreflightWarning[] | null
 }
 

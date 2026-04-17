@@ -336,6 +336,13 @@ async def _execute_run(
     # and surface warnings on the run record so operators can see that the
     # displayed total_records is incomplete. See SFBL-110.
     preflight_warnings: list[dict] = []
+    _preflight_start = time.perf_counter()
+    logger.info(
+        "Run %s: preflight started (steps=%d)",
+        run_id, len(steps),
+        extra={"event_name": RunEvent.PREFLIGHT_STARTED, "run_id": run_id,
+               "load_plan_id": str(plan.id)},
+    )
     try:
         preflight_total = 0
         for step in steps:
@@ -395,6 +402,16 @@ async def _execute_run(
                    "run_id": run_id},
         )
         record_run_preflight_failure(OutcomeCode.UNEXPECTED_EXCEPTION)
+    logger.info(
+        "Run %s: preflight completed (total_records=%s, warnings=%d, duration_s=%.3f)",
+        run_id, run.total_records, len(preflight_warnings),
+        time.perf_counter() - _preflight_start,
+        extra={"event_name": RunEvent.PREFLIGHT_COMPLETED,
+               "outcome_code": (
+                   OutcomeCode.DEGRADED if preflight_warnings else OutcomeCode.OK
+               ),
+               "run_id": run_id, "load_plan_id": str(plan.id)},
+    )
 
     # ── Obtain Salesforce access token ────────────────────────────────────────
     try:
