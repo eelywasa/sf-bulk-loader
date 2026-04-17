@@ -1,3 +1,4 @@
+import email.utils
 import logging
 import os
 import secrets
@@ -76,6 +77,33 @@ class Settings(BaseSettings):
     input_dir: str = "/data/input"
     output_dir: str = "/data/output"
 
+    # Email — general
+    email_backend: Literal["smtp", "ses", "noop"] | None = None
+    email_from_address: str | None = None
+    email_from_name: str | None = None
+    email_reply_to: str | None = None
+    email_max_retries: int = 3
+    email_retry_backoff_seconds: float = 2.0
+    email_retry_backoff_max_seconds: float = 120.0
+    email_timeout_seconds: float = 15.0
+    email_claim_lease_seconds: int = 60
+    email_pending_stale_minutes: int = 15
+    email_log_recipients: bool = False   # Opt-in plaintext recipient storage
+
+    # Email — SMTP
+    email_smtp_host: str | None = None
+    email_smtp_port: int = 587
+    email_smtp_username: str | None = None
+    email_smtp_password: str | None = None
+    email_smtp_password_file: str | None = None
+    email_smtp_starttls: bool = True
+    email_smtp_use_tls: bool = False     # implicit TLS (port 465)
+
+    # Email — SES
+    email_ses_region: str | None = None
+    email_ses_configuration_set: str | None = None
+    # SES credentials resolved via boto3 default chain — no explicit keys here
+
     @model_validator(mode="after")
     def _apply_distribution_profile(self) -> "Settings":
         profile = self.app_distribution
@@ -83,9 +111,9 @@ class Settings(BaseSettings):
 
         # Fill derived defaults when not explicitly set
         defaults: dict[str, dict] = {
-            "desktop":     {"auth_mode": "none",  "transport_mode": "local", "input_storage_mode": "local"},
-            "self_hosted": {"auth_mode": "local", "transport_mode": "http",  "input_storage_mode": "local"},
-            "aws_hosted":  {"auth_mode": "local", "transport_mode": "https", "input_storage_mode": "s3"},
+            "desktop":     {"auth_mode": "none",  "transport_mode": "local", "input_storage_mode": "local", "email_backend": "noop"},
+            "self_hosted": {"auth_mode": "local", "transport_mode": "http",  "input_storage_mode": "local", "email_backend": "noop"},
+            "aws_hosted":  {"auth_mode": "local", "transport_mode": "https", "input_storage_mode": "s3",   "email_backend": "ses"},
         }
         for field, default in defaults[profile].items():
             if getattr(self, field) is None:
@@ -159,6 +187,78 @@ class Settings(BaseSettings):
             lambda: secrets.token_hex(32),
             "JWT_SECRET_KEY",
         )
+        return self
+
+    @model_validator(mode="after")
+    def _resolve_email_smtp_password(self) -> "Settings":
+        """Resolve SMTP password from env var or file.
+
+        Resolution order:
+          1. EMAIL_SMTP_PASSWORD env var / explicit value — used as-is if non-empty.
+          2. EMAIL_SMTP_PASSWORD_FILE — file contents (stripped) if file exists.
+          3. Neither present:
+             - EMAIL_BACKEND=smtp → hard boot error (ValueError).
+             - Other backends     → leave as empty string (password irrelevant).
+
+        Unlike ENCRYPTION_KEY/JWT_SECRET_KEY, SMTP passwords are never auto-generated
+        because an auto-generated secret has no meaning to an external SMTP provider.
+        See DECISIONS.md #019.
+        """
+        if self.email_smtp_password:
+            # Env var / explicit value present — use as-is
+            return self
+
+        if self.email_smtp_password_file:
+            path = Path(self.email_smtp_password_file)
+            if path.exists():
+                self.email_smtp_password = path.read_text().strip()
+                return self
+
+        # Neither env nor file resolved a password
+        if self.email_backend == "smtp":
+            raise ValueError(
+                "EMAIL_BACKEND=smtp requires a password. "
+                "Set EMAIL_SMTP_PASSWORD (env var) or EMAIL_SMTP_PASSWORD_FILE (path to file). "
+                "SMTP passwords are never auto-generated — they must be issued by your SMTP provider."
+            )
+
+        # Backend is noop/ses — SMTP password is irrelevant; leave as empty string
+        if not self.email_smtp_password:
+            self.email_smtp_password = ""
+        return self
+
+    @model_validator(mode="after")
+    def _validate_email_invariants(self) -> "Settings":
+        """Enforce email configuration invariants."""
+        # email_from_address: must be a valid RFC-5321 address when set
+        if self.email_from_address is not None:
+            _, addr_spec = email.utils.parseaddr(self.email_from_address)
+            at_count = addr_spec.count("@")
+            domain = addr_spec.split("@", 1)[1] if at_count == 1 else ""
+            if at_count != 1 or not domain:
+                raise ValueError(
+                    f"email_from_address {self.email_from_address!r} is not a valid RFC-5321 address. "
+                    "Expected format: user@domain or 'Display Name <user@domain>'."
+                )
+
+        if self.email_max_retries < 0:
+            raise ValueError(
+                f"email_max_retries must be >= 0, got {self.email_max_retries}."
+            )
+
+        if self.email_retry_backoff_max_seconds < self.email_retry_backoff_seconds:
+            raise ValueError(
+                f"email_retry_backoff_max_seconds ({self.email_retry_backoff_max_seconds}) "
+                f"must be >= email_retry_backoff_seconds ({self.email_retry_backoff_seconds})."
+            )
+
+        if self.email_claim_lease_seconds <= self.email_timeout_seconds:
+            raise ValueError(
+                f"email_claim_lease_seconds ({self.email_claim_lease_seconds}) "
+                f"must be strictly greater than email_timeout_seconds ({self.email_timeout_seconds}) "
+                "so a slow send cannot outlive its lease."
+            )
+
         return self
 
 
