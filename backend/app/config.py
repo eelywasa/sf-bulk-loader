@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     password_reset_ttl_minutes: int = 15
     email_change_ttl_minutes: int = 30
 
+    # Frontend
+    frontend_base_url: str = "http://localhost:3000"
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
 

@@ -122,6 +122,14 @@ class EmailEvent:
     SERVICE_INITIALISED = "email.service.initialised"
 
 
+class AuthEvent:
+    """Auth user-management events (profile, email change, password reset)."""
+
+    PROFILE_UPDATED = "auth.profile.updated"
+    EMAIL_CHANGE_REQUESTED = "auth.email.change.requested"
+    EMAIL_CHANGE_CONFIRMED = "auth.email.change.confirmed"
+
+
 class OutcomeCode:
     """Machine-readable outcome codes for logs, events, and traces.
 
@@ -184,3 +192,12 @@ class OutcomeCode:
     EMAIL_RENDER_ERROR = "email_render_error"
     EMAIL_CONFIG_ERROR = "email_config_error"
     EMAIL_TEMPLATE_LOAD_FAILED = "email_template_load_failed"
+
+    # Auth / profile / email-change codes
+    SENT = "sent"
+    EMAIL_UNCHANGED = "unchanged"
+    EMAIL_IN_USE = "in_use"
+    INVALID_TOKEN = "invalid_token"
+    EXPIRED_TOKEN = "expired_token"
+    USED_TOKEN = "used_token"
+    IN_USE_AT_CONFIRM = "in_use_at_confirm"

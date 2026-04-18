@@ -1,0 +1,13 @@
+{% extends "base/layout.txt" %}
+{% block content %}
+Hello {{ user_display_name }},
+
+A request has been made to change the email address on your Salesforce Bulk
+Loader account to {{ new_email_masked }}.
+
+If you made this request, you will receive a confirmation email at the new
+address shortly. No further action is needed on this address.
+
+If you did NOT make this request, please contact your administrator
+immediately — your account may be compromised.
+{% endblock %}
