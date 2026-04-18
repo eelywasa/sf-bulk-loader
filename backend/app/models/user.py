@@ -26,3 +26,10 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=func.now(), onupdate=func.now()
     )
+    # JWT invalidation watermark — any token whose ``iat`` is strictly less than
+    # this value is rejected, even if the token's signature and expiry are valid.
+    # Set to utcnow() whenever the password or email address is changed.
+    # NULL means no watermark (all valid tokens are accepted).
+    password_changed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )

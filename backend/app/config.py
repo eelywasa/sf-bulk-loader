@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     admin_username: str | None = None
     admin_password: str | None = None
 
+    # Auth: password reset & email change
+    pw_reset_rate_limit_per_ip_hour: int = 5
+    pw_reset_rate_limit_per_email_hour: int = 3
+    email_change_rate_limit_per_user_hour: int = 3
+    password_reset_ttl_minutes: int = 15
+    email_change_ttl_minutes: int = 30
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
 
