@@ -7,12 +7,54 @@ on:
     branches: [main]
 
 jobs:
-  smoke-sqlite:
-    name: Docker Smoke Test (SQLite)
+  # Build the Docker image once and export it as a tar artifact so that both
+  # smoke-test jobs can reuse it without rebuilding from scratch.
+  docker-build:
+    name: Docker Build
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: sf-bulk-loader:ci
+          # Export to the local Docker daemon so compose can use it directly.
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export image tar
+        run: docker save sf-bulk-loader:ci | gzip > /tmp/sf-bulk-loader-ci.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ github.sha }}
+          path: /tmp/sf-bulk-loader-ci.tar.gz
+          retention-days: 1
+
+  smoke-sqlite:
+    name: Docker Smoke Test (SQLite)
+    needs: docker-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-${{ github.sha }}
+          path: /tmp
+
+      - name: Load image
+        run: docker load < /tmp/sf-bulk-loader-ci.tar.gz
 
       - name: Create data directories
         # data/db and data/output are mounted as writable volumes into the container
@@ -31,8 +73,8 @@ jobs:
           echo 'ADMIN_USERNAME=ci-admin' >> .env
           echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
-      - name: Build and start (SQLite mode)
-        run: docker compose up -d --build --wait --timeout 120
+      - name: Start (SQLite mode)
+        run: docker compose up -d --no-build --wait --timeout 120
 
       - name: Verify backend health
         run: |
@@ -60,10 +102,20 @@ jobs:
 
   smoke-postgres:
     name: Docker Smoke Test (PostgreSQL)
+    needs: docker-build
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-${{ github.sha }}
+          path: /tmp
+
+      - name: Load image
+        run: docker load < /tmp/sf-bulk-loader-ci.tar.gz
 
       - name: Create data directories
         run: |
@@ -76,8 +128,8 @@ jobs:
           echo 'ADMIN_USERNAME=ci-admin' >> .env
           echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
-      - name: Build and start (PostgreSQL mode)
-        run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build --wait --timeout 120
+      - name: Start (PostgreSQL mode)
+        run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --no-build --wait --timeout 120
 
       - name: Verify backend health
         run: |
