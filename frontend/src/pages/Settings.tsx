@@ -138,20 +138,25 @@ function SendResultDisplay({ result }: { result: SendResult }) {
     )
   }
 
-  // sent or skipped
-  return (
-    <div className={`${ALERT_SUCCESS} space-y-1`}>
-      <p className="font-semibold">
-        {data.status === 'skipped'
-          ? 'Send skipped (noop backend — no email delivered)'
-          : 'Email sent successfully'}
-      </p>
-      <p className="text-xs opacity-70">Delivery ID: {data.delivery_id}</p>
-      {data.provider_message_id && (
-        <p className="text-xs opacity-70">Provider message ID: {data.provider_message_id}</p>
-      )}
-    </div>
-  )
+  // sent or skipped — narrow explicitly so TS knows provider_message_id exists
+  if (data.status === 'sent' || data.status === 'skipped') {
+    return (
+      <div className={`${ALERT_SUCCESS} space-y-1`}>
+        <p className="font-semibold">
+          {data.status === 'skipped'
+            ? 'Send skipped (noop backend — no email delivered)'
+            : 'Email sent successfully'}
+        </p>
+        <p className="text-xs opacity-70">Delivery ID: {data.delivery_id}</p>
+        {data.provider_message_id && (
+          <p className="text-xs opacity-70">Provider message ID: {data.provider_message_id}</p>
+        )}
+      </div>
+    )
+  }
+
+  // Exhaustiveness guard — unreachable at runtime
+  return null
 }
 
 // ─── Email panel ──────────────────────────────────────────────────────────────
