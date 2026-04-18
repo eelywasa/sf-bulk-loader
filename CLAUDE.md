@@ -13,6 +13,15 @@ For the UI extra guidance can be found in `frontend-claude-runbook.md`. Treat it
 
 Active spec files live in `docs/specs/`. Ticket status is tracked in Jira — do not mark tickets as done in the spec files themselves.
 
+## Parallel Agent Orchestration
+
+When running multiple Claude Code subagents in parallel across worktrees, follow
+`PARALLEL_AGENTS.md` at repo root. It encodes hard-won rules about feature-branch
+discipline, worktree path pinning, scope fencing, the post-batch check sequence
+(`pytest` + `npm run typecheck` + `npm run test:run`), and model selection
+(Sonnet by default, Haiku for trivial, Opus only when escalated). Read it
+before launching any multi-agent wave.
+
 ## Jira Workflow
 
 Tickets are tracked in Jira project **SFBL** at `matthew-jenkin.atlassian.net`. Use the Jira MCP tools to manage ticket state as you work.
