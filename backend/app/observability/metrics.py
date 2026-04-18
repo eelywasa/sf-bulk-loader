@@ -195,6 +195,71 @@ email_claim_lost_total = Counter(
 # ── Email metric helpers ──────────────────────────────────────────────────────
 
 
+# ── Auth / password-reset + email-change counters (SFBL-151) ─────────────────
+#
+# Cardinality: each counter has a single ``outcome`` label drawn from the fixed
+# OutcomeCode enum values used in the auth flows.  Maximum cardinality per counter
+# is ~6 values — well within the low-cardinality ceiling.
+
+auth_password_reset_requests_total = Counter(
+    "sfbl_auth_password_reset_requests_total",
+    "Total password-reset request attempts, by outcome.",
+    ["outcome"],
+)
+
+auth_password_reset_confirms_total = Counter(
+    "sfbl_auth_password_reset_confirms_total",
+    "Total password-reset confirmation attempts, by outcome.",
+    ["outcome"],
+)
+
+auth_password_changes_total = Counter(
+    "sfbl_auth_password_changes_total",
+    "Total authenticated password-change attempts, by outcome.",
+    ["outcome"],
+)
+
+auth_email_change_requests_total = Counter(
+    "sfbl_auth_email_change_requests_total",
+    "Total email-change request attempts, by outcome.",
+    ["outcome"],
+)
+
+auth_email_change_confirms_total = Counter(
+    "sfbl_auth_email_change_confirms_total",
+    "Total email-change confirmation attempts, by outcome.",
+    ["outcome"],
+)
+
+
+# ── Auth metric helpers ───────────────────────────────────────────────────────
+
+
+def record_auth_password_reset_request(outcome: str) -> None:
+    """Increment the password-reset request counter."""
+    auth_password_reset_requests_total.labels(outcome=outcome).inc()
+
+
+def record_auth_password_reset_confirm(outcome: str) -> None:
+    """Increment the password-reset confirmation counter."""
+    auth_password_reset_confirms_total.labels(outcome=outcome).inc()
+
+
+def record_auth_password_change(outcome: str) -> None:
+    """Increment the authenticated password-change counter."""
+    auth_password_changes_total.labels(outcome=outcome).inc()
+
+
+def record_auth_email_change_request(outcome: str) -> None:
+    """Increment the email-change request counter."""
+    auth_email_change_requests_total.labels(outcome=outcome).inc()
+
+
+def record_auth_email_change_confirm(outcome: str) -> None:
+    """Increment the email-change confirmation counter."""
+    auth_email_change_confirms_total.labels(outcome=outcome).inc()
+
+
 def _assert_email_reason(reason: str) -> str:
     """Validate that *reason* is a member of EmailErrorReason enum.
 

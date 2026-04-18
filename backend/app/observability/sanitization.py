@@ -14,11 +14,15 @@ label, or error-monitoring event:
 - JWT assertions (compact base64url-encoded JWTs sent to Salesforce)
 - RSA private keys (PEM format, stored Fernet-encrypted in the database)
 - Fernet encryption keys (ENCRYPTION_KEY environment variable value)
-- Passwords or secrets of any kind
+- Passwords or secrets of any kind (including ``current_password``,
+  ``new_password``, ``password``, ``hashed_password``)
+- Raw single-use tokens: ``token``, ``raw_token`` — use ``token_hash``
+  (SHA-256 digest) for telemetry correlation; the hash is safe to log
 - Authorization HTTP request/response headers
 - API keys
 - Raw CSV row data (input or output)
 - Secret environment variable values
+- Reset-request or email-change email body content
 
 Allowed telemetry content
 --------------------------
@@ -83,6 +87,16 @@ SCRUBBED_KEYS: frozenset[str] = frozenset(
         "recipients",
         "reset_url",
         "confirm_url",
+        # Auth / password-reset + email-change fields (SFBL-151)
+        # Raw password fields — plaintext credentials must never appear in telemetry.
+        "current_password",
+        "new_password",
+        "hashed_password",
+        # Raw tokens — single-use reset/verify tokens must not leak into logs.
+        # Note: ``token_hash`` is a SHA-256 digest and IS acceptable in telemetry
+        # (it cannot be reversed to recover the raw token).  Only the raw token
+        # string itself is denied.
+        "raw_token",
     }
 )
 

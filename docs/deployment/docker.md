@@ -256,6 +256,12 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 | `MAX_PARTITION_SIZE` | `100000000` | Hard upper limit on partition size. |
 | `INPUT_DIR` | `/data/input` | Container path for source CSVs (read-only). |
 | `OUTPUT_DIR` | `/data/output` | Container path for result files. |
+| `FRONTEND_BASE_URL` | _(empty)_ | Public base URL of the frontend (e.g. `https://bulkloader.example.com`). **Required** for password-reset and email-change verification links. Falls back to the HTTP request origin if not set, but explicit configuration is strongly recommended. |
+| `PASSWORD_RESET_TTL_MINUTES` | `15` | Lifetime of a password-reset token in minutes. |
+| `EMAIL_CHANGE_TTL_MINUTES` | `30` | Lifetime of an email-change verification token in minutes. |
+| `PW_RESET_RATE_LIMIT_PER_IP_HOUR` | `10` | Maximum password-reset requests per IP address per hour. |
+| `PW_RESET_RATE_LIMIT_PER_EMAIL_HOUR` | `5` | Maximum password-reset requests per email address per hour. |
+| `EMAIL_CHANGE_RATE_LIMIT_PER_USER_HOUR` | `3` | Maximum email-change requests per authenticated user per hour. |
 
 ### Volume mounts
 

@@ -206,6 +206,100 @@ def email_send_span(
 
 
 @contextmanager
+def auth_password_reset_request_span() -> Generator[Span, None, None]:
+    """Context manager for a password-reset request operation.
+
+    Attributes set by caller after resolution:
+    - ``outcome`` — OutcomeCode value (e.g. ``"sent"``, ``"rate_limited"``)
+
+    Never attach email addresses or raw tokens as span attributes.
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("auth.password_reset.request") as span:
+        try:
+            yield span
+        except Exception as exc:
+            safe_record_exception(span, exc)
+            raise
+
+
+@contextmanager
+def auth_password_reset_confirm_span(*, user_id: str | None = None) -> Generator[Span, None, None]:
+    """Context manager for a password-reset confirmation operation.
+
+    Attributes set by caller after resolution:
+    - ``outcome`` — OutcomeCode value
+
+    ``user_id`` may be set once the associated user is resolved (before any
+    exception is raised). Never attach raw tokens.
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("auth.password_reset.confirm") as span:
+        if user_id is not None:
+            span.set_attribute("user.id", user_id)
+        try:
+            yield span
+        except Exception as exc:
+            safe_record_exception(span, exc)
+            raise
+
+
+@contextmanager
+def auth_email_change_request_span(*, user_id: str | None = None) -> Generator[Span, None, None]:
+    """Context manager for an email-change request operation.
+
+    Attributes set by caller after resolution:
+    - ``outcome`` — OutcomeCode value
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("auth.email_change.request") as span:
+        if user_id is not None:
+            span.set_attribute("user.id", user_id)
+        try:
+            yield span
+        except Exception as exc:
+            safe_record_exception(span, exc)
+            raise
+
+
+@contextmanager
+def auth_email_change_confirm_span() -> Generator[Span, None, None]:
+    """Context manager for an email-change confirmation operation.
+
+    Attributes set by caller after resolution:
+    - ``outcome`` — OutcomeCode value
+    - ``user.id`` — once the token's user is resolved
+
+    Never attach email addresses or raw tokens.
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("auth.email_change.confirm") as span:
+        try:
+            yield span
+        except Exception as exc:
+            safe_record_exception(span, exc)
+            raise
+
+
+@contextmanager
+def auth_password_change_span(*, user_id: str | None = None) -> Generator[Span, None, None]:
+    """Context manager for an authenticated password-change operation.
+
+    Attributes set by caller after resolution:
+    - ``outcome`` — OutcomeCode value
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("auth.password_change") as span:
+        if user_id is not None:
+            span.set_attribute("user.id", user_id)
+        try:
+            yield span
+        except Exception as exc:
+            safe_record_exception(span, exc)
+            raise
+
+
+@contextmanager
 def partition_span(job_record_id: str) -> Generator[Span, None, None]:
     """Context manager that creates a span for a single partition/job execution.
 

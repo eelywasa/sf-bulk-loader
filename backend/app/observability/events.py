@@ -112,10 +112,14 @@ class SystemEvent:
 class AuthEvent:
     """Authentication and account management events.
 
-    Covers password-reset flow (SFBL-147) and profile/email-change (SFBL-148).
+    Covers password-change (SFBL-146), password-reset flow (SFBL-147),
+    profile/email-change (SFBL-148), and token rejection (SFBL-145).
     """
 
-    # SFBL-147: password reset
+    # SFBL-146: authenticated password change
+    PASSWORD_CHANGED = "auth.password.changed"
+
+    # SFBL-147: unauthenticated password reset
     PASSWORD_RESET_REQUESTED = "auth.password.reset.requested"
     PASSWORD_RESET_CONFIRMED = "auth.password.reset.confirmed"
 
@@ -123,6 +127,9 @@ class AuthEvent:
     PROFILE_UPDATED = "auth.profile.updated"
     EMAIL_CHANGE_REQUESTED = "auth.email.change.requested"
     EMAIL_CHANGE_CONFIRMED = "auth.email.change.confirmed"
+
+    # SFBL-145: JWT watermark rejection
+    TOKEN_REJECTED = "auth.token_rejected"
 
 
 class EmailEvent:
@@ -173,19 +180,25 @@ class OutcomeCode:
     email_config_error        — Email backend misconfiguration (missing host, auth, etc.)
     email_template_load_failed — Template failed to load at startup
 
-    Auth / password reset + email change codes (SFBL-147, SFBL-148)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    sent              — reset/change email dispatched
-    unknown_email     — no matching user found (non-enumeration — always 202)
-    invalid_token     — token not found or associated user inactive
-    expired_token     — token TTL elapsed
-    used_token        — token already redeemed
-    no_local_auth     — SAML-only account; no local password
-    policy_violation  — new password fails strength rules
-    success           — operation completed successfully
-    email_unchanged   — email change requested but new == current
-    email_in_use      — new email already taken by another user
-    in_use_at_confirm — email claimed by a different user between request and confirm
+    Auth / password reset + email change codes (SFBL-145 – SFBL-148)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    sent                      — reset/change email dispatched
+    unknown_email             — no matching user found (non-enumeration — always 202)
+    invalid_token             — token not found or associated user inactive
+    expired_token             — token TTL elapsed
+    used_token                — token already redeemed
+    no_local_auth             — SAML-only account; no local password
+    policy_violation          — new password fails strength rules
+    success                   — operation completed successfully
+    wrong_current             — current password verification failed
+    same_password             — new password matches current
+    email_unchanged           — email change requested but new == current
+    email_in_use              — new email already taken by another user
+    in_use_at_confirm         — email claimed by a different user between request and confirm
+    stale_after_password_change — JWT issued before latest password change watermark
+    expired                   — JWT past its exp claim
+    invalid_signature         — JWT signature verification failure
+    user_inactive             — token holder's account is deactivated
     """
 
     # Baseline
@@ -209,7 +222,7 @@ class OutcomeCode:
     CONFIGURATION_ERROR = "configuration_error"
     JOB_POLL_TIMEOUT = "job_poll_timeout"
 
-    # Auth / password reset + email change (SFBL-147, SFBL-148)
+    # Auth / password reset + email change (SFBL-145 – SFBL-148)
     SENT = "sent"
     UNKNOWN_EMAIL = "unknown_email"
     INVALID_TOKEN = "invalid_token"
@@ -218,9 +231,17 @@ class OutcomeCode:
     NO_LOCAL_AUTH = "no_local_auth"
     POLICY_VIOLATION = "policy_violation"
     SUCCESS = "success"
+    WRONG_CURRENT = "wrong_current"
+    SAME_PASSWORD = "same_password"
     EMAIL_UNCHANGED = "unchanged"
     EMAIL_IN_USE = "in_use"
     IN_USE_AT_CONFIRM = "in_use_at_confirm"
+
+    # Token rejection outcome codes (SFBL-145)
+    STALE_AFTER_PASSWORD_CHANGE = "stale_after_password_change"
+    EXPIRED = "expired"
+    INVALID_SIGNATURE = "invalid_signature"
+    USER_INACTIVE = "user_inactive"
 
     # Email
     EMAIL_SMTP_ERROR = "email_smtp_error"

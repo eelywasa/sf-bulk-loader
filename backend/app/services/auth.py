@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.observability.events import AuthEvent, OutcomeCode
 
 _bearer = HTTPBearer(auto_error=False)
 _log = logging.getLogger(__name__)
@@ -115,8 +116,8 @@ async def get_current_user(
                 _log.warning(
                     "Token rejected: issued before password change",
                     extra={
-                        "event_name": "auth.token_rejected",
-                        "outcome_code": "stale_after_password_change",
+                        "event_name": AuthEvent.TOKEN_REJECTED,
+                        "outcome_code": OutcomeCode.STALE_AFTER_PASSWORD_CHANGE,
                         "user_id": user_id,
                         "token_iat": token_iat,
                         "password_changed_at_ts": pca_ts,
