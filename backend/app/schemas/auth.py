@@ -27,3 +27,9 @@ class UserResponse(BaseModel):
 
 class AuthConfigResponse(BaseModel):
     saml_enabled: bool
+
+
+# ─── SFBL-146: password change ─────────────────────────────────────────────
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
