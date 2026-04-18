@@ -14,12 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Buildx with GHA cache speeds up repeated builds across runs for both
-      # backend and frontend images. COMPOSE_BAKE=true (set below) makes
-      # Compose delegate to buildx bake so it picks up the cache backend.
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Create data directories
         # data/db and data/output are mounted as writable volumes into the container
         # which runs as appuser (non-root). chmod ensures appuser can write even though
@@ -39,8 +33,6 @@ jobs:
 
       - name: Build and start (SQLite mode)
         run: docker compose up -d --build --wait --timeout 120
-        env:
-          COMPOSE_BAKE: true
 
       - name: Verify backend health
         run: |
@@ -73,9 +65,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Create data directories
         run: |
           mkdir -p data/input data/output data/db
@@ -89,8 +78,6 @@ jobs:
 
       - name: Build and start (PostgreSQL mode)
         run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build --wait --timeout 120
-        env:
-          COMPOSE_BAKE: true
 
       - name: Verify backend health
         run: |
