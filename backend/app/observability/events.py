@@ -26,6 +26,7 @@ Event categories
 - SalesforceEvent — Salesforce integration layer events
 - StorageEvent — file storage (input/output) events
 - SystemEvent  — infrastructure and connectivity events
+- AuthEvent    — authentication and account management events
 - EmailEvent   — outbound email delivery lifecycle events
 
 Outcome taxonomy
@@ -108,6 +109,22 @@ class SystemEvent:
     EXCEPTION_UNHANDLED = "exception.unhandled"
 
 
+class AuthEvent:
+    """Authentication and account management events.
+
+    Covers password-reset flow (SFBL-147) and profile/email-change (SFBL-148).
+    """
+
+    # SFBL-147: password reset
+    PASSWORD_RESET_REQUESTED = "auth.password.reset.requested"
+    PASSWORD_RESET_CONFIRMED = "auth.password.reset.confirmed"
+
+    # SFBL-148: profile + email change
+    PROFILE_UPDATED = "auth.profile.updated"
+    EMAIL_CHANGE_REQUESTED = "auth.email.change.requested"
+    EMAIL_CHANGE_CONFIRMED = "auth.email.change.confirmed"
+
+
 class EmailEvent:
     """Outbound email delivery lifecycle events."""
 
@@ -120,14 +137,6 @@ class EmailEvent:
     TEMPLATE_LOAD_FAILED = "email.template.load_failed"
     BOOT_SWEEP_COMPLETED = "email.boot_sweep.completed"
     SERVICE_INITIALISED = "email.service.initialised"
-
-
-class AuthEvent:
-    """Auth user-management events (profile, email change, password reset)."""
-
-    PROFILE_UPDATED = "auth.profile.updated"
-    EMAIL_CHANGE_REQUESTED = "auth.email.change.requested"
-    EMAIL_CHANGE_CONFIRMED = "auth.email.change.confirmed"
 
 
 class OutcomeCode:
@@ -163,6 +172,20 @@ class OutcomeCode:
     email_render_error        — Jinja2 template render / subject-safety failure
     email_config_error        — Email backend misconfiguration (missing host, auth, etc.)
     email_template_load_failed — Template failed to load at startup
+
+    Auth / password reset + email change codes (SFBL-147, SFBL-148)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    sent              — reset/change email dispatched
+    unknown_email     — no matching user found (non-enumeration — always 202)
+    invalid_token     — token not found or associated user inactive
+    expired_token     — token TTL elapsed
+    used_token        — token already redeemed
+    no_local_auth     — SAML-only account; no local password
+    policy_violation  — new password fails strength rules
+    success           — operation completed successfully
+    email_unchanged   — email change requested but new == current
+    email_in_use      — new email already taken by another user
+    in_use_at_confirm — email claimed by a different user between request and confirm
     """
 
     # Baseline
@@ -186,18 +209,22 @@ class OutcomeCode:
     CONFIGURATION_ERROR = "configuration_error"
     JOB_POLL_TIMEOUT = "job_poll_timeout"
 
+    # Auth / password reset + email change (SFBL-147, SFBL-148)
+    SENT = "sent"
+    UNKNOWN_EMAIL = "unknown_email"
+    INVALID_TOKEN = "invalid_token"
+    EXPIRED_TOKEN = "expired_token"
+    USED_TOKEN = "used_token"
+    NO_LOCAL_AUTH = "no_local_auth"
+    POLICY_VIOLATION = "policy_violation"
+    SUCCESS = "success"
+    EMAIL_UNCHANGED = "unchanged"
+    EMAIL_IN_USE = "in_use"
+    IN_USE_AT_CONFIRM = "in_use_at_confirm"
+
     # Email
     EMAIL_SMTP_ERROR = "email_smtp_error"
     EMAIL_SES_ERROR = "email_ses_error"
     EMAIL_RENDER_ERROR = "email_render_error"
     EMAIL_CONFIG_ERROR = "email_config_error"
     EMAIL_TEMPLATE_LOAD_FAILED = "email_template_load_failed"
-
-    # Auth / profile / email-change codes
-    SENT = "sent"
-    EMAIL_UNCHANGED = "unchanged"
-    EMAIL_IN_USE = "in_use"
-    INVALID_TOKEN = "invalid_token"
-    EXPIRED_TOKEN = "expired_token"
-    USED_TOKEN = "used_token"
-    IN_USE_AT_CONFIRM = "in_use_at_confirm"

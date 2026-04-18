@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 from app.observability.events import EmailEvent, OutcomeCode
 from app.api.admin_email import router as admin_email_router
 from app.api.auth import router as auth_router
+from app.api.auth_reset import router as auth_reset_router
 from app.api.me import router as me_router
 from app.api.profile import router as profile_router
 from app.api.connections import router as connections_router
@@ -105,6 +106,7 @@ app.add_middleware(RequestIDMiddleware, settings=settings)
 if settings.auth_mode != "none":
     app.include_router(admin_email_router)
 app.include_router(auth_router)
+app.include_router(auth_reset_router)
 app.include_router(me_router)
 app.include_router(profile_router)
 app.include_router(connections_router)

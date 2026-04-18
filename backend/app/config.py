@@ -70,15 +70,15 @@ class Settings(BaseSettings):
     admin_username: str | None = None
     admin_password: str | None = None
 
+    # Frontend — base URL used by password-reset and email-change links
+    frontend_base_url: str | None = None
+
     # Auth: password reset & email change
     pw_reset_rate_limit_per_ip_hour: int = 5
     pw_reset_rate_limit_per_email_hour: int = 3
     email_change_rate_limit_per_user_hour: int = 3
     password_reset_ttl_minutes: int = 15
     email_change_ttl_minutes: int = 30
-
-    # Frontend
-    frontend_base_url: str = "http://localhost:3000"
 
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
