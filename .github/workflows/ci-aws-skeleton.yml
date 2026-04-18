@@ -19,8 +19,7 @@ jobs:
           node-version: "20"
 
       - name: Install CDK dependencies
-        # npm install (not ci) handles both lock-file-present and lock-file-absent cases.
-        run: npm install
+        run: npm ci
         working-directory: infrastructure
 
       - name: TypeScript compile check
