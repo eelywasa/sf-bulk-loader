@@ -288,12 +288,24 @@ export interface EmailTestBackendFailure {
   backend: 'noop' | 'smtp' | 'ses'
 }
 
+export interface EmailTestPending {
+  status: 'pending' | 'sending'
+  delivery_id: string
+  attempts: number
+  reason: string | null
+  last_error_msg: string | null
+  backend: 'noop' | 'smtp' | 'ses'
+}
+
 export interface EmailTestRenderFailure {
   code: string
   message: string
 }
 
-export type EmailTestResponse = EmailTestSuccess | EmailTestBackendFailure
+export type EmailTestResponse =
+  | EmailTestSuccess
+  | EmailTestBackendFailure
+  | EmailTestPending
 
 // ─── Dependencies health ──────────────────────────────────────────────────────
 

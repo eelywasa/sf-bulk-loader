@@ -11,6 +11,10 @@ Response shapes
     { "status": "sent"|"skipped", "delivery_id": str,
       "provider_message_id": str|null, "backend": str }
 
+200 pending (first attempt failed transiently; retry scheduled):
+    { "status": "pending"|"sending", "delivery_id": str, "attempts": int,
+      "reason": str|null, "last_error_msg": str|null, "backend": str }
+
 200 backend failure (typed, not an HTTP error — UI can render without error-boundary):
     { "status": "failed", "delivery_id": str,
       "reason": str, "last_error_msg": str|null, "backend": str }
@@ -108,6 +112,22 @@ class EmailTestFailureResponse(BaseModel):
     backend: str
 
 
+class EmailTestPendingResponse(BaseModel):
+    """First attempt failed transiently; a retry is scheduled in the background.
+
+    Returned when the send is still in flight after send_template() returns —
+    i.e. the row is pending or sending. The caller can poll the delivery log
+    to watch it advance to sent/failed.
+    """
+
+    status: Literal["pending", "sending"]
+    delivery_id: str
+    attempts: int
+    reason: str | None
+    last_error_msg: str | None
+    backend: str
+
+
 class EmailTestRenderFailureResponse(BaseModel):
     code: str
     message: str
@@ -191,8 +211,13 @@ async def admin_email_test(
             detail="An unexpected error occurred while sending the test email.",
         )
 
-    # Map delivery status to response
-    if delivery.status == "failed":
+    # Map delivery status to response. DeliveryStatus is a StrEnum so we
+    # normalise to its string value before passing into Pydantic Literal fields.
+    status_value = (
+        delivery.status.value if hasattr(delivery.status, "value") else str(delivery.status)
+    )
+
+    if status_value == "failed":
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content=EmailTestFailureResponse(
@@ -204,11 +229,26 @@ async def admin_email_test(
             ).model_dump(),
         )
 
+    if status_value in ("pending", "sending"):
+        # First attempt failed transiently; a retry is scheduled. Don't 500 —
+        # report pending so the UI can surface "queued, check delivery log".
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=EmailTestPendingResponse(
+                status=status_value,  # type: ignore[arg-type]
+                delivery_id=str(delivery.id),
+                attempts=delivery.attempts,
+                reason=delivery.last_error_code,
+                last_error_msg=delivery.last_error_msg,
+                backend=delivery.backend,
+            ).model_dump(),
+        )
+
     # sent or skipped
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content=EmailTestSuccessResponse(
-            status=delivery.status,  # type: ignore[arg-type]
+            status=status_value,  # type: ignore[arg-type]
             delivery_id=str(delivery.id),
             provider_message_id=delivery.provider_message_id,
             backend=delivery.backend,

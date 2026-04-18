@@ -85,10 +85,17 @@ def test_admin_email_test_desktop_returns_404():
 
 @pytest.fixture
 def admin_client(client):
-    """TestClient with admin user injected via dependency override."""
+    """TestClient with admin user injected via dependency override.
+
+    Also pins the email service to a noop-backed instance so the "happy path"
+    tests work regardless of what EMAIL_BACKEND is set to in the operator's
+    local .env (e.g. smtp pointing at Mailpit).
+    """
     from app.main import app
     from app.database import get_db
     from tests.conftest import _TestSession
+    from app.services.email.backends.noop import NoopBackend
+    from app.services.email.service import EmailService
 
     admin = _make_admin()
 
@@ -99,10 +106,17 @@ def admin_client(client):
     async def override_get_current_user():
         return admin
 
+    noop_service = EmailService(backend=NoopBackend(), session_factory=_TestSession)
+
+    async def override_email_service():
+        return noop_service
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_email_service] = override_email_service
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
+    app.dependency_overrides.pop(get_email_service, None)
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(get_db, None)
 

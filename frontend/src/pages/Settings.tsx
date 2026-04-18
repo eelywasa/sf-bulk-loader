@@ -111,6 +111,33 @@ function SendResultDisplay({ result }: { result: SendResult }) {
     )
   }
 
+  if (data.status === 'pending' || data.status === 'sending') {
+    return (
+      <div className={`${ALERT_WARNING} space-y-1`}>
+        <p className="font-semibold">Send queued for retry</p>
+        <p className="text-xs">
+          First attempt failed transiently; a background retry is scheduled.
+          Check the email delivery log for the final outcome.
+        </p>
+        <p className="text-xs">
+          <span className="font-medium">Attempts so far:</span> {data.attempts}
+        </p>
+        {data.reason && (
+          <p className="text-xs">
+            <span className="font-medium">Reason:</span>{' '}
+            <span className="font-mono">{data.reason}</span>
+          </p>
+        )}
+        {data.last_error_msg && (
+          <p className="text-xs">
+            <span className="font-medium">Detail:</span> {data.last_error_msg}
+          </p>
+        )}
+        <p className="text-xs opacity-70">Delivery ID: {data.delivery_id}</p>
+      </div>
+    )
+  }
+
   // sent or skipped
   return (
     <div className={`${ALERT_SUCCESS} space-y-1`}>
