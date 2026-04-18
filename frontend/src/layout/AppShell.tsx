@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { type Theme, useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
@@ -13,6 +13,7 @@ import {
   faPlay,
   faFolderOpen,
   faGear,
+  faEnvelope,
   faChevronDown,
   faChevronLeft,
   faChevronRight,
@@ -33,7 +34,6 @@ const navItems: NavItem[] = [
   { path: '/connections', label: 'Connections', icon: faPlug },
   { path: '/plans', label: 'Load Plans', icon: faListCheck },
   { path: '/runs', label: 'Runs', icon: faPlay },
-  { path: '/settings', label: 'Settings', icon: faGear },
 ]
 
 const themeOptions: { value: Theme; label: string }[] = [
@@ -44,6 +44,7 @@ const themeOptions: { value: Theme; label: string }[] = [
 
 function SettingsMenu({ collapsed }: { collapsed: boolean }) {
   const { theme, setTheme } = useTheme()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -98,6 +99,16 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
             ? 'bottom-0 left-full ml-2'
             : 'bottom-full left-3 right-3 mb-1'
         )}>
+          {/* Email row — navigates to the Settings page for admin test-send */}
+          <button
+            onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings') }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+            role="menuitem"
+          >
+            <FontAwesomeIcon icon={faEnvelope} className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>Email</span>
+          </button>
+
           {/* Theme row */}
           <div className="relative">
             <button
