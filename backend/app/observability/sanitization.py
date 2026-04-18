@@ -73,6 +73,16 @@ SCRUBBED_KEYS: frozenset[str] = frozenset(
         "access_token",
         "assertion",
         "bearer",
+        # Email-specific keys (SFBL-142)
+        "email_smtp_password",
+        "ses_secret_access_key",
+        "aws_secret_access_key",
+        "to",
+        "to_addr",
+        "recipient",
+        "recipients",
+        "reset_url",
+        "confirm_url",
     }
 )
 

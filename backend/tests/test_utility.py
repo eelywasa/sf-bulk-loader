@@ -816,3 +816,69 @@ class TestHealthDependencies:
             settings.health_enable_dependency_checks = original
         assert response.status_code == 200
         assert data["dependencies"]["database"]["status"] == "ok"
+
+    # ── Email probe tests (SFBL-142) ───────────────────────────────────────────
+
+    def test_email_entry_present_in_dependencies(self, client):
+        """The 'email' key must always appear in the dependencies dict."""
+        response = client.get("/api/health/dependencies")
+        data = response.json()
+        assert "email" in data["dependencies"]
+
+    def test_noop_email_backend_is_healthy(self, client):
+        """noop backend must report healthy without a network probe."""
+        from app.config import settings
+
+        original = settings.email_backend
+        try:
+            settings.email_backend = "noop"
+            response = client.get("/api/health/dependencies")
+            data = response.json()
+        finally:
+            settings.email_backend = original
+
+        email_dep = data["dependencies"]["email"]
+        assert email_dep["status"] == "ok"
+        assert "noop" in email_dep.get("detail", "").lower()
+
+    def test_smtp_healthcheck_failure_yields_degraded_not_failed(self, client):
+        """When SMTP healthcheck() returns False, status must be 'degraded'."""
+        from app.config import settings
+        from unittest.mock import AsyncMock, patch
+
+        original = settings.email_backend
+        try:
+            settings.email_backend = "smtp"
+            with patch("app.api.utility._check_email", new=AsyncMock(return_value=("degraded", "smtp healthcheck returned False"))):
+                response = client.get("/api/health/dependencies")
+                data = response.json()
+        finally:
+            settings.email_backend = original
+
+        email_dep = data["dependencies"]["email"]
+        assert email_dep["status"] == "degraded"
+        # Degraded email must NOT cause 503 (email is non-critical)
+        assert response.status_code == 200
+
+    def test_email_degraded_does_not_cause_503(self, client):
+        """A degraded email probe must keep HTTP 200 — email is non-critical."""
+        from unittest.mock import AsyncMock, patch
+
+        with patch("app.api.utility._check_email", new=AsyncMock(return_value=("degraded", "unreachable"))):
+            response = client.get("/api/health/dependencies")
+
+        assert response.status_code == 200
+        data = response.json()
+        # Overall status should be 'degraded', not 'failed'
+        assert data["status"] == "degraded"
+
+    def test_email_degraded_and_db_healthy_overall_degraded(self, client):
+        """Degraded email + healthy DB → overall 'degraded' (not 'ok', not 'failed')."""
+        from unittest.mock import AsyncMock, patch
+
+        with patch("app.api.utility._check_email", new=AsyncMock(return_value=("degraded", "test"))):
+            response = client.get("/api/health/dependencies")
+
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["dependencies"]["database"]["status"] == "ok"

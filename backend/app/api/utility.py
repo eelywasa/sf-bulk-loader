@@ -261,6 +261,40 @@ async def health_ready(db: AsyncSession = Depends(get_db)) -> Any:
     return payload
 
 
+async def _check_email(backend_name: str) -> tuple[str, str | None]:
+    """Probe the configured email backend.
+
+    Returns (status, detail) where status is one of:
+    - OutcomeCode.OK      — backend is healthy
+    - OutcomeCode.DEGRADED — backend probe failed (email is non-critical)
+
+    noop backend always returns OK without a network probe.
+    SMTP and SES failures return DEGRADED, not FAILED, because email is
+    not strictly required for app functionality.
+    """
+    if backend_name == "noop":
+        return OutcomeCode.OK, "email backend is noop; no external probe performed"
+
+    try:
+        from app.services.email.service import _BACKEND_FACTORIES
+
+        factory = _BACKEND_FACTORIES.get(backend_name)
+        if factory is None:
+            return OutcomeCode.DEGRADED, f"unknown email backend: {backend_name!r}"
+
+        backend = factory()
+        healthy = await asyncio.wait_for(backend.healthcheck(), timeout=3.0)
+        if healthy:
+            return OutcomeCode.OK, None
+        return OutcomeCode.DEGRADED, f"{backend_name} healthcheck returned False"
+    except asyncio.TimeoutError:
+        return OutcomeCode.DEGRADED, f"{backend_name} healthcheck timed out after 3s"
+    except Exception as exc:
+        from app.observability.sanitization import safe_exc_message
+
+        return OutcomeCode.DEGRADED, safe_exc_message(exc)
+
+
 @router.get("/api/health/dependencies", include_in_schema=False)
 async def health_dependencies(db: AsyncSession = Depends(get_db)) -> Any:
     """Dependency health: per-dependency status for operator inspection.
@@ -276,21 +310,33 @@ async def health_dependencies(db: AsyncSession = Depends(get_db)) -> Any:
         deps["database"] = {"status": db_status}
         if db_error:
             deps["database"]["detail"] = db_error
+
+        # Email probe — always included; noop backend reports healthy without a network call
+        email_status, email_detail = await _check_email(settings.email_backend or "noop")
+        deps["email"] = {"status": email_status}
+        if email_detail:
+            deps["email"]["detail"] = email_detail
     else:
         deps["database"] = {"status": OutcomeCode.OK, "detail": "dependency checks disabled"}
+        deps["email"] = {"status": OutcomeCode.OK, "detail": "dependency checks disabled"}
 
-    overall = (
-        OutcomeCode.OK
-        if all(d.get("status") == OutcomeCode.OK for d in deps.values())
-        else OutcomeCode.FAILED
-    )
+    # Overall: OK only if all deps are OK; DEGRADED if any are degraded;
+    # FAILED if any are failed. Email degraded does not make the overall FAILED.
+    statuses = {d.get("status") for d in deps.values()}
+    if OutcomeCode.FAILED in statuses:
+        overall = OutcomeCode.FAILED
+    elif OutcomeCode.DEGRADED in statuses:
+        overall = OutcomeCode.DEGRADED
+    else:
+        overall = OutcomeCode.OK
+
     logger.info(
         "Dependency health check: %s",
         overall,
         extra={"event_name": SystemEvent.HEALTH_CHECKED, "outcome_code": overall},
     )
     payload: Dict[str, Any] = {"status": overall, "dependencies": deps}
-    if overall != OutcomeCode.OK:
+    if overall == OutcomeCode.FAILED:
         return JSONResponse(status_code=503, content=payload)
     return payload
 

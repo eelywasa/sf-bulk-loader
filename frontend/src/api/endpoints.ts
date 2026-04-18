@@ -1,9 +1,13 @@
-import { api } from './client'
+import { api, apiFetch } from './client'
 import type {
   Connection,
   ConnectionCreate,
   CsvFetchParams,
   ConnectionTestResponse,
+  DependenciesResponse,
+  EmailTestRequest,
+  EmailTestResponse,
+  EmailTestRenderFailure,
   InputConnection,
   InputConnectionCreate,
   InputConnectionTestResponse,
@@ -144,6 +148,70 @@ export const jobsApi = {
     api.get<InputFilePreview>(`/api/jobs/${id}/error-csv/preview?${buildPreviewQuery(params)}`),
   previewUnprocessedCsv: (id: string, params?: CsvFetchParams) =>
     api.get<InputFilePreview>(`/api/jobs/${id}/unprocessed-csv/preview?${buildPreviewQuery(params)}`),
+}
+
+// ─── Admin email ──────────────────────────────────────────────────────────────
+
+/**
+ * Error thrown when the template renders but produces an unsafe subject.
+ * The `code` field is the stable EmailRenderError code from the backend.
+ * The caller should display it verbatim — do NOT translate it.
+ */
+export class EmailRenderFailureError extends Error {
+  readonly code: string
+
+  constructor(failure: EmailTestRenderFailure) {
+    super(failure.message)
+    this.name = 'EmailRenderFailureError'
+    this.code = failure.code
+  }
+}
+
+/**
+ * POST /api/admin/email/test
+ *
+ * Sends a test email and returns the typed delivery result. On a 422 render
+ * failure, throws EmailRenderFailureError (caller should display `.code`
+ * verbatim). On other non-2xx responses, the base apiFetch throws ApiError.
+ *
+ * We cannot use apiFetch directly because that helper throws on 422 and
+ * loses the structured body. We perform a raw fetch here, reusing the
+ * token-injection logic from client.ts.
+ */
+export async function postEmailTest(req: EmailTestRequest): Promise<EmailTestResponse> {
+  const { ApiError, getStoredToken, BASE_URL } = await import('./client')
+
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  const token = getStoredToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const response = await fetch(`${BASE_URL}/api/admin/email/test`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(req),
+  })
+
+  if (response.status === 422) {
+    const body: EmailTestRenderFailure = await response.json()
+    throw new EmailRenderFailureError(body)
+  }
+
+  if (!response.ok) {
+    let message = response.statusText || `HTTP ${response.status}`
+    try {
+      const body = await response.json()
+      if (typeof body.detail === 'string') message = body.detail
+    } catch {
+      // ignore
+    }
+    throw new ApiError({ status: response.status, message })
+  }
+
+  return response.json() as Promise<EmailTestResponse>
+}
+
+export const dependenciesApi = {
+  get: () => api.get<DependenciesResponse>('/api/health/dependencies'),
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────

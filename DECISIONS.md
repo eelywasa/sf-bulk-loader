@@ -395,6 +395,102 @@ default).
 
 ---
 
+## 019 — Email SMTP credentials: env > file > error, no auto-generation
+
+**Context:** `ENCRYPTION_KEY` and `JWT_SECRET_KEY` follow an env → file →
+auto-generate resolution chain. When neither the env var nor the key file is
+present, the application generates a random secret, persists it to the key
+file, and continues booting. This is appropriate because those secrets are
+owned entirely by the application.
+
+SMTP passwords are fundamentally different: they are credentials issued by an
+external provider (AWS SES SMTP, Gmail app passwords, Mailgun, Postfix, etc.).
+An auto-generated password is meaningless to the provider and would cause every
+send attempt to fail with an authentication error.
+
+**Decision:** `EMAIL_SMTP_PASSWORD` resolves as:
+
+1. `EMAIL_SMTP_PASSWORD` env var — used as-is if non-empty.
+2. `EMAIL_SMTP_PASSWORD_FILE` — file contents (stripped) if the file exists.
+3. Neither present with `EMAIL_BACKEND=smtp` → hard `ValueError` at boot; app
+   does not start.
+4. Neither present with any other backend (`noop`, `ses`) → silently accepted;
+   SMTP password is irrelevant.
+
+SMTP passwords are **never auto-generated**. Boot-time failure is the correct
+behaviour: it surfaces the misconfiguration immediately rather than allowing the
+application to start and then fail on the first send attempt.
+
+**Consequences:**
+
+- `desktop` and `self_hosted` profiles default to `EMAIL_BACKEND=noop`, so
+  operators who have not configured email do not see a boot error.
+- `EMAIL_BACKEND=smtp` is an explicit opt-in that requires a credential.
+  Forgetting the credential is caught at startup, not at first send.
+- Rotating the password is a `.env` change + container restart — no migration
+  or DB change required.
+
+**References:** SFBL-137, `docs/specs/email-service-spec.md` §Configuration,
+`docs/email.md` §"SMTP credential resolution".
+
+---
+
+## 020 — SES backend: use v2 SendEmail with configuration sets, not v1
+
+**Context:** AWS SES has two distinct API generations:
+
+- **v1** — `ses` service client: `SendEmail`, `GetSendQuota`, etc. Still
+  functional but maintenance-mode.  Corresponds to `boto3.client("ses")`.
+- **v2** — `ses-v2` (Amazon SES API v2) service client: `SendEmail` (different
+  request shape with `Content.Simple/Raw/Template`), `GetAccount`, native
+  configuration-set tagging.  Corresponds to `boto3.client("sesv2")`.
+
+**Decision:** Use `ses-v2` `SendEmail` exclusively.  When
+`EMAIL_SES_CONFIGURATION_SET` is set, pass it as `ConfigurationSetName` on
+every send.  Omit the key entirely when the setting is `None` or empty — SES
+treats a missing key differently from an empty string.
+
+For the `healthcheck()` probe, attempt `sesv2.get_account()` first.  If the
+botocore model for this `aioboto3` version does not expose that method, fall
+back to `ses.get_send_quota()`.  Either call proves connectivity and credential
+validity.  The result is cached for 60 seconds to avoid unnecessary API calls
+from the `/dependencies` probe on every request.
+
+**Rationale:**
+
+1. **v2 is the current API.** AWS documents v1 as maintenance-mode; new
+   features (templates, virtual deliverability manager, etc.) land only in v2.
+2. **Configuration sets are a prerequisite for bounce/complaint webhooks.**
+   SES configuration sets carry SNS event destinations that deliver bounce and
+   complaint notifications.  The deferred inbound-webhook ticket (SFBL-142+)
+   needs this infrastructure already in place; tagging every send with a
+   configuration set from day one means no back-fill.
+3. **Richer Content shape.** The v2 `Content` envelope (`Simple` / `Raw` /
+   `Template`) gives a clear extension point for raw multipart sends and
+   server-side template rendering.  The v1 `Message` shape has no equivalent.
+4. **Credentials via boto3 default chain.** In `aws_hosted` deployments the
+   IAM instance / ECS task role is picked up automatically.  In `self_hosted`
+   and dev, env vars or `~/.aws/credentials` work.  No SES keys are accepted
+   via `config.py` to avoid credential sprawl.
+
+**Consequences:**
+
+- Requires the `ses-v2` client to be present in the `aioboto3`/botocore
+  model bundle (available since `aioboto3>=12.0`, which is now pinned in
+  `requirements.txt`).
+- The IAM role / user must have `ses:SendEmail` permission on the `ses-v2`
+  service (ARN prefix differs from v1).
+- `GetAccount` permission (`ses:GetAccount`) is required for the v2 healthcheck
+  path; the v1 fallback needs `ses:GetSendQuota`.
+- `ConfigurationSetName` is optional — deployments without a configuration set
+  simply omit the field and SES uses the account default (or none).
+  Using a configuration set is recommended but not enforced.
+
+**References:** SFBL-140, `docs/specs/email-service-spec.md` §"Retry
+classification" and §"Backend Protocol", `backend/app/services/email/backends/ses.py`.
+
+---
+
 ## 017 — Run lifecycle: broad exception handler + try/finally backstop
 
 **Decision:** `run_coordinator._execute_run_body` wraps the `execute_step` call in a three-way
