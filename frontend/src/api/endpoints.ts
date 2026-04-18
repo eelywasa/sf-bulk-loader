@@ -214,6 +214,27 @@ export const dependenciesApi = {
   get: () => api.get<DependenciesResponse>('/api/health/dependencies'),
 }
 
+// ─── SFBL-150: public auth (forgot password, reset password) ───
+
+export function requestPasswordReset(body: { email: string }): Promise<void> {
+  return apiFetch<void>('/api/auth/password-reset/request', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+export function confirmPasswordReset(body: {
+  token: string
+  new_password: string
+}): Promise<void> {
+  return apiFetch<void>('/api/auth/password-reset/confirm', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 function buildPreviewQuery(params?: CsvFetchParams): string {

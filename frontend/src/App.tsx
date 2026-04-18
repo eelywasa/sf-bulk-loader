@@ -2,6 +2,8 @@ import { createBrowserRouter, createHashRouter, RouterProvider } from 'react-rou
 import AppShell from './layout/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Connections from './pages/Connections'
 import PlansPage from './pages/PlansPage'
@@ -16,6 +18,8 @@ const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter :
 
 const router = createRouter([
   { path: '/login', element: <Login /> },
+  { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/reset-password/:token', element: <ResetPassword /> },
   {
     element: (
       <ProtectedRoute>
