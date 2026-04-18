@@ -14,6 +14,7 @@ import {
   faFolderOpen,
   faGear,
   faEnvelope,
+  faUser,
   faChevronDown,
   faChevronLeft,
   faChevronRight,
@@ -44,6 +45,7 @@ const themeOptions: { value: Theme; label: string }[] = [
 
 function SettingsMenu({ collapsed }: { collapsed: boolean }) {
   const { theme, setTheme } = useTheme()
+  const { authRequired } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
@@ -99,6 +101,18 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
             ? 'bottom-0 left-full ml-2'
             : 'bottom-full left-3 right-3 mb-1'
         )}>
+          {/* Profile row — only visible on hosted profiles */}
+          {authRequired && (
+            <button
+              onClick={() => { setOpen(false); setThemeOpen(false); navigate('/profile') }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+              role="menuitem"
+            >
+              <FontAwesomeIcon icon={faUser} className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Profile</span>
+            </button>
+          )}
+
           {/* Email row — navigates to the Settings page for admin test-send */}
           <button
             onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings') }}
