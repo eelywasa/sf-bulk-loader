@@ -46,13 +46,15 @@ async def _get_or_404(ic_id: str, db: AsyncSession) -> InputConnection:
 
 @router.get("/", response_model=List[InputConnectionResponse])
 async def list_input_connections(
-    direction: Optional[str] = Query(default=None, description="Filter by direction. Use 'out' to get output-capable connections (out + both)."),
+    direction: Optional[str] = Query(default=None, description="Filter by direction. 'in' returns in+both; 'out' returns out+both; other values match exactly."),
     db: AsyncSession = Depends(get_db),
 ) -> List[InputConnection]:
     stmt = select(InputConnection).order_by(InputConnection.created_at.desc())
     if direction is not None:
         if direction == "out":
             stmt = stmt.where(InputConnection.direction.in_(["out", "both"]))
+        elif direction == "in":
+            stmt = stmt.where(InputConnection.direction.in_(["in", "both"]))
         else:
             stmt = stmt.where(InputConnection.direction == direction)
     result = await db.execute(stmt)

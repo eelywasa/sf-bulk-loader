@@ -139,6 +139,9 @@ export default function PlanForm({ form, formErrors, connections, outputConnecti
                 </option>
               ))}
             </select>
+            <p className="mt-1.5 text-xs text-content-muted">
+              Tip: to keep output separate from input on the same bucket, use a storage connection with a distinct root prefix (e.g. <code className="font-mono">data/output/</code>).
+            </p>
           </div>
         </div>
       </div>

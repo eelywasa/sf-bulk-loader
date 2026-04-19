@@ -118,8 +118,8 @@ def test_list_direction_filter_out_returns_out_and_both(auth_client):
     assert "In Bucket" not in names
 
 
-def test_list_direction_filter_in_returns_only_in(auth_client):
-    """?direction=in should return only 'in' connections."""
+def test_list_direction_filter_in_returns_in_and_both(auth_client):
+    """?direction=in should return 'in' and 'both' connections (input-capable)."""
     _create_ic(auth_client, direction="in", name="In Bucket")
     _create_ic(auth_client, direction="out", name="Out Bucket")
     _create_ic(auth_client, direction="both", name="Both Bucket")
@@ -128,8 +128,8 @@ def test_list_direction_filter_in_returns_only_in(auth_client):
     assert resp.status_code == 200
     names = {ic["name"] for ic in resp.json()}
     assert "In Bucket" in names
+    assert "Both Bucket" in names
     assert "Out Bucket" not in names
-    assert "Both Bucket" not in names
 
 
 def test_list_no_direction_filter_returns_all(auth_client):
