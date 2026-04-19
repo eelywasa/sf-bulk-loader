@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faHexagonNodes } from '@fortawesome/free-solid-svg-icons'
 import { useAuth } from '../context/AuthContext'
@@ -76,9 +76,17 @@ export default function Login() {
             </div>
 
             <div className="mb-5">
-              <label htmlFor="password" className={LABEL_CLASS}>
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="password" className={LABEL_CLASS}>
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-accent hover:text-accent-hover"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 id="password"
                 type="password"

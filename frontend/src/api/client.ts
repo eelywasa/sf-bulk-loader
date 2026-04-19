@@ -99,8 +99,8 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
     throw new ApiError({ status: response.status, message, detail })
   }
 
-  // 204 No Content — return undefined
-  if (response.status === 204) {
+  // 204 No Content or 202 Accepted with empty body — return undefined
+  if (response.status === 204 || response.status === 202) {
     return undefined as T
   }
 

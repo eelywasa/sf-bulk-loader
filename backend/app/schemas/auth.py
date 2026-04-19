@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class LoginRequest(BaseModel):
@@ -27,3 +27,32 @@ class UserResponse(BaseModel):
 
 class AuthConfigResponse(BaseModel):
     saml_enabled: bool
+
+
+# ─── SFBL-146: password change ─────────────────────────────────────────────
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+# ─── SFBL-148: profile + email change ──────────────────────────────────────
+class ProfileUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+
+
+class EmailChangeRequest(BaseModel):
+    new_email: EmailStr
+
+
+class EmailChangeConfirm(BaseModel):
+    token: str
+
+
+# ─── SFBL-147: password reset ──────────────────────────────────────────────
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str

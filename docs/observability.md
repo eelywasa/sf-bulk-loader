@@ -95,6 +95,77 @@ and increments `sfbl_bulk_job_poll_timeout_total`. See SFBL-111.
 `health.checked` · `websocket.connected` · `websocket.disconnected` · `websocket.error`
 `exception.unhandled`
 
+### Auth events (SFBL-119)
+
+Emitted by `app.api.me`, `app.api.auth_reset`, `app.api.profile`, and
+`app.services.auth`. Import from `app.observability.events.AuthEvent`.
+
+| Constant | Value | Description |
+|---|---|---|
+| `AuthEvent.PASSWORD_CHANGED` | `auth.password.changed` | Authenticated user changed their password |
+| `AuthEvent.PASSWORD_RESET_REQUESTED` | `auth.password.reset.requested` | Unauthenticated reset request submitted |
+| `AuthEvent.PASSWORD_RESET_CONFIRMED` | `auth.password.reset.confirmed` | Reset token redeemed and new password set |
+| `AuthEvent.PROFILE_UPDATED` | `auth.profile.updated` | Display name updated |
+| `AuthEvent.EMAIL_CHANGE_REQUESTED` | `auth.email.change.requested` | Email-change verification link dispatched |
+| `AuthEvent.EMAIL_CHANGE_CONFIRMED` | `auth.email.change.confirmed` | Email-change token redeemed; email updated |
+| `AuthEvent.TOKEN_REJECTED` | `auth.token_rejected` | JWT rejected by the watermark check |
+
+Auth flow outcome codes (subset of `OutcomeCode`):
+
+| OutcomeCode | Used in |
+|---|---|
+| `sent` | reset requested, email change requested |
+| `unknown_email` | reset requested (non-enumeration path) |
+| `rate_limited` | reset requested, email change requested |
+| `success` | reset confirmed, email change confirmed, password changed |
+| `invalid_token` | reset confirmed, email change confirmed |
+| `expired_token` | reset confirmed, email change confirmed |
+| `used_token` | reset confirmed, email change confirmed |
+| `policy_violation` | reset confirmed, password changed |
+| `no_local_auth` | reset confirmed, password changed |
+| `wrong_current` | password changed |
+| `same_password` | password changed |
+| `unchanged` | email change requested |
+| `in_use` | email change requested |
+| `in_use_at_confirm` | email change confirmed |
+| `stale_after_password_change` | token rejected |
+| `expired` | token rejected |
+| `invalid_signature` | token rejected |
+| `user_inactive` | token rejected |
+
+Auth metrics (one `outcome` label per counter):
+- `sfbl_auth_password_reset_requests_total{outcome}`
+- `sfbl_auth_password_reset_confirms_total{outcome}`
+- `sfbl_auth_password_changes_total{outcome}`
+- `sfbl_auth_email_change_requests_total{outcome}`
+- `sfbl_auth_email_change_confirms_total{outcome}`
+
+Custom spans (in `app.observability.tracing`):
+- `auth.password_reset.request` — attributes: `outcome`
+- `auth.password_reset.confirm` — attributes: `user.id` (once resolved), `outcome`
+- `auth.email_change.request` — attributes: `user.id`, `outcome`
+- `auth.email_change.confirm` — attributes: `user.id` (once resolved), `outcome`
+- `auth.password_change` — attributes: `user.id`, `outcome`
+
+**Worked example — password-reset flow:**
+
+```
+POST /api/auth/password-reset/request
+  → span: auth.password_reset.request
+  → log:  event_name=auth.password.reset.requested  outcome_code=sent
+  → metric: sfbl_auth_password_reset_requests_total{outcome="sent"} += 1
+
+POST /api/auth/password-reset/confirm (valid token)
+  → span: auth.password_reset.confirm  user.id=usr-123  outcome=success
+  → log:  event_name=auth.password.reset.confirmed  outcome_code=success  user_id=usr-123
+  → metric: sfbl_auth_password_reset_confirms_total{outcome="success"} += 1
+
+POST /api/auth/password-reset/confirm (expired token)
+  → span: auth.password_reset.confirm  outcome=expired_token
+  → log:  event_name=auth.password.reset.confirmed  outcome_code=expired_token
+  → metric: sfbl_auth_password_reset_confirms_total{outcome="expired_token"} += 1
+```
+
 ### Email events
 
 Emitted by `app.services.email.service`, `app.services.email.templates`, and
@@ -162,6 +233,25 @@ OutcomeCode.EMAIL_SES_ERROR           # SES backend delivery failure
 OutcomeCode.EMAIL_RENDER_ERROR        # Template render / subject-safety failure
 OutcomeCode.EMAIL_CONFIG_ERROR        # Email backend misconfiguration
 OutcomeCode.EMAIL_TEMPLATE_LOAD_FAILED  # Template failed to load at startup
+
+# Auth / password-reset + email-change (SFBL-119)
+OutcomeCode.SENT                          # email dispatched (reset or change request)
+OutcomeCode.UNKNOWN_EMAIL                 # email not registered (non-enumeration)
+OutcomeCode.SUCCESS                       # operation completed successfully
+OutcomeCode.INVALID_TOKEN                 # token not found or user inactive
+OutcomeCode.EXPIRED_TOKEN                 # token TTL elapsed
+OutcomeCode.USED_TOKEN                    # token already redeemed
+OutcomeCode.POLICY_VIOLATION              # password fails strength rules
+OutcomeCode.NO_LOCAL_AUTH                 # SAML-only account; no local password
+OutcomeCode.WRONG_CURRENT                 # current password verification failed
+OutcomeCode.SAME_PASSWORD                 # new password matches current
+OutcomeCode.EMAIL_UNCHANGED               # email change requested but new == current
+OutcomeCode.EMAIL_IN_USE                  # new email already taken
+OutcomeCode.IN_USE_AT_CONFIRM             # email claimed by another user at confirm time
+OutcomeCode.STALE_AFTER_PASSWORD_CHANGE   # JWT issued before password watermark
+OutcomeCode.EXPIRED                       # JWT past exp claim
+OutcomeCode.INVALID_SIGNATURE             # JWT signature invalid
+OutcomeCode.USER_INACTIVE                 # token holder's account deactivated
 ```
 
 ### Unhandled-exception funnel (SFBL-112)

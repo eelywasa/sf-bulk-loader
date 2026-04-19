@@ -101,6 +101,59 @@ Result files are written to the output directory:
 
 ---
 
+## Profile & Password
+
+These features are available in **hosted profiles** (`self_hosted`, `aws_hosted`)
+where user authentication is enabled. The desktop profile (`auth_mode=none`) has
+no user accounts, so the profile menu and password flows are not shown.
+
+### Update your display name
+
+1. Click your avatar or name in the bottom-left corner of the sidebar.
+2. Select **Profile** from the popover.
+3. Edit your **Display name** and click **Save**.
+
+Changes are immediate and reflected across the UI.
+
+### Update your email address
+
+Your email address is used for password resets and account notifications.
+
+1. Open your **Profile** page (see above).
+2. Enter a new email in the **Email** field and click **Request change**.
+3. A verification link is sent to the **new** address. A change-notice email is
+   also sent to your **current** address so you are aware of the request.
+4. Click the link in the verification email to confirm the change.
+5. The link expires after a short window — request a new one if it has lapsed.
+
+### Change your password
+
+1. Open your **Profile** page.
+2. Enter your **Current password**, then your **New password** twice.
+3. Click **Change password**.
+4. A new session token is issued immediately — any other open browser tabs will
+   require you to log in again (this is intentional for security).
+
+Password requirements: at least 12 characters, with a mix of upper-case,
+lower-case, digits, and special characters.
+
+### Forgot your password
+
+1. On the login page, click **Forgot password?**
+2. Enter the email address associated with your account and click **Send reset link**.
+3. A reset link is sent to that address. The response is the same whether the
+   address is registered or not — this prevents account enumeration.
+4. Click the link in the email to set a new password.
+5. The link expires after a short window and can only be used once.
+
+### Rate limiting
+
+Password-reset and email-change requests are rate-limited to protect against
+abuse. If you receive a "Too many requests" error, wait a short time before
+trying again.
+
+---
+
 ## Troubleshooting Salesforce Errors
 
 ### `invalid_grant` on connection test

@@ -1,0 +1,8 @@
+{% extends "base/layout.html" %}
+{% block content %}
+<h2>Email Change Requested</h2>
+<p>Hello {{ user_display_name }},</p>
+<p>A request has been made to change the email address on your Salesforce Bulk Loader account to <strong>{{ new_email_masked }}</strong>.</p>
+<p>If you made this request, you will receive a confirmation email at the new address shortly. No further action is needed on this address.</p>
+<p>If you did <strong>not</strong> make this request, please contact your administrator immediately — your account may be compromised.</p>
+{% endblock %}

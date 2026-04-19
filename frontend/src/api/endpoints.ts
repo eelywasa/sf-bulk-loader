@@ -19,6 +19,8 @@ import type {
   StepPreviewResponse,
   InputFilePreview,
   InputDirectoryEntry,
+  UserResponse,
+  TokenResponse,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -214,6 +216,27 @@ export const dependenciesApi = {
   get: () => api.get<DependenciesResponse>('/api/health/dependencies'),
 }
 
+// ─── SFBL-150: public auth (forgot password, reset password) ───
+
+export function requestPasswordReset(body: { email: string }): Promise<void> {
+  return apiFetch<void>('/api/auth/password-reset/request', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+export function confirmPasswordReset(body: {
+  token: string
+  new_password: string
+}): Promise<void> {
+  return apiFetch<void>('/api/auth/password-reset/confirm', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 // ─── Files ────────────────────────────────────────────────────────────────────
 
 function buildPreviewQuery(params?: CsvFetchParams): string {
@@ -248,6 +271,26 @@ function previewInput(
     `/api/files/input/${buildPreviewPath(filePath)}/preview?${query.toString()}`,
   )
 }
+
+// ─── SFBL-149: me (profile, email change, password change) ───────────────────
+
+export const meApi = {
+  updateProfile: (body: { display_name: string }): Promise<UserResponse> =>
+    api.put<UserResponse>('/api/me', body),
+
+  changePassword: (body: {
+    current_password: string
+    new_password: string
+  }): Promise<TokenResponse> => api.post<TokenResponse>('/api/me/password', body),
+
+  requestEmailChange: (body: { new_email: string }): Promise<void> =>
+    api.post<void>('/api/me/email-change/request', body),
+
+  confirmEmailChange: (body: { token: string }): Promise<void> =>
+    api.post<void>('/api/me/email-change/confirm', body),
+}
+
+// ─── Files ────────────────────────────────────────────────────────────────────
 
 export const filesApi = {
   listInput: (path = '', source = 'local') => {

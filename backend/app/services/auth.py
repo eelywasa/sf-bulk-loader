@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -16,8 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.observability.events import AuthEvent, OutcomeCode
 
 _bearer = HTTPBearer(auto_error=False)
+_log = logging.getLogger(__name__)
 
 
 # ── Password helpers ──────────────────────────────────────────────────────────
@@ -97,14 +100,60 @@ async def get_current_user(
             detail="User not found or inactive",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # JWT invalidation watermark — reject tokens issued before the last
+    # password (or email) change.  ``iat`` is an integer Unix timestamp;
+    # password_changed_at is timezone-aware UTC stored in the DB.
+    if user.password_changed_at is not None:
+        token_iat: Optional[int] = payload.get("iat")
+        if token_iat is not None:
+            # Ensure password_changed_at is UTC-aware for comparison
+            pca = user.password_changed_at
+            if pca.tzinfo is None:
+                pca = pca.replace(tzinfo=timezone.utc)
+            pca_ts = pca.timestamp()
+            if token_iat < pca_ts:
+                _log.warning(
+                    "Token rejected: issued before password change",
+                    extra={
+                        "event_name": AuthEvent.TOKEN_REJECTED,
+                        "outcome_code": OutcomeCode.STALE_AFTER_PASSWORD_CHANGE,
+                        "user_id": user_id,
+                        "token_iat": token_iat,
+                        "password_changed_at_ts": pca_ts,
+                    },
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token invalidated by password change — please log in again",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
     return user
 
 
-# ── WebSocket helper ──────────────────────────────────────────────────────────
+# ── Password policy ───────────────────────────────────────────────────────────
+
+
+class PasswordPolicyError(ValueError):
+    """Raised when a password does not satisfy the minimum complexity rules.
+
+    Inherits from ValueError for backward compatibility with callers that
+    catch ValueError.  The ``failures`` attribute lists each unmet rule
+    description so callers can present structured feedback.
+    """
+
+    def __init__(self, failures: list[str]) -> None:
+        self.failures = failures
+        super().__init__(
+            "Password does not meet minimum requirements: "
+            + ", ".join(failures)
+            + "."
+        )
 
 
 _PASSWORD_MIN_LENGTH = 12
-_PASSWORD_RULES = (
+_PASSWORD_RULES: tuple[tuple, ...] = (
     (lambda p: len(p) >= _PASSWORD_MIN_LENGTH, f"at least {_PASSWORD_MIN_LENGTH} characters"),
     (lambda p: any(c.isupper() for c in p), "at least one uppercase letter"),
     (lambda p: any(c.islower() for c in p), "at least one lowercase letter"),
@@ -113,15 +162,41 @@ _PASSWORD_RULES = (
 )
 
 
-def _validate_password_strength(password: str) -> None:
-    """Raise ValueError listing all unmet password requirements."""
+def validate_password_strength(password: str) -> None:
+    """Validate that *password* meets the minimum complexity policy.
+
+    Raises :class:`PasswordPolicyError` (a :class:`ValueError` subclass)
+    listing every unmet requirement if the password is too weak.
+
+    Rules (must ALL be satisfied):
+    - At least 12 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special (non-alphanumeric) character
+    """
     failures = [desc for check, desc in _PASSWORD_RULES if not check(password)]
     if failures:
+        raise PasswordPolicyError(failures)
+
+
+def _validate_password_strength(password: str) -> None:
+    """Internal alias kept for seed_admin compatibility.
+
+    Wraps :func:`validate_password_strength` and re-raises the error with
+    the ``ADMIN_PASSWORD`` prefix that existing startup code and tests expect.
+    """
+    try:
+        validate_password_strength(password)
+    except PasswordPolicyError as exc:
         raise ValueError(
             "ADMIN_PASSWORD does not meet minimum requirements: "
-            + ", ".join(failures)
+            + ", ".join(exc.failures)
             + "."
-        )
+        ) from exc
+
+
+# ── WebSocket helper ──────────────────────────────────────────────────────────
 
 
 async def seed_admin(db: AsyncSession) -> None:

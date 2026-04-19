@@ -68,8 +68,8 @@ class TestEmailDeliveryMigration:
                     f"STDERR: {result.stderr}"
                 )
 
-        # --- Upgrade to head ---
-        _alembic("upgrade", "head")
+        # --- Upgrade to 0009 (email delivery head for this suite) ---
+        _alembic("upgrade", "0009")
 
         engine = create_engine(sync_url)
         insp = inspect(engine)
@@ -108,7 +108,7 @@ class TestEmailDeliveryMigration:
         engine2.dispose()
 
         # --- Upgrade again ---
-        _alembic("upgrade", "head")
+        _alembic("upgrade", "0009")
 
         engine3 = create_engine(sync_url)
         insp3 = inspect(engine3)
