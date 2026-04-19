@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.input_connection import InputConnection
+from app.observability.events import OutcomeCode, StorageEvent
 from app.services.input_storage import _join_s3_key, _normalise_root_prefix
 from app.utils.encryption import decrypt_secret
 
@@ -158,15 +159,37 @@ class S3OutputStorage:
                 ``botocore.exceptions.ClientError``.
         """
         key = _join_s3_key(self._root_prefix, relative_path)
+        logger.debug(
+            "Uploading output to S3: %s/%s", self._bucket, key,
+            extra={
+                "event_name": StorageEvent.OUTPUT_UPLOAD_STARTED,
+                "outcome_code": None,
+                "s3_bucket": self._bucket,
+                "s3_key": key,
+            },
+        )
         try:
             self._client.upload_fileobj(io.BytesIO(data), self._bucket, key)
         except botocore.exceptions.ClientError as exc:
+            logger.warning(
+                "S3 output upload failed for %s/%s: %s", self._bucket, key, exc,
+                extra={
+                    "event_name": StorageEvent.OUTPUT_UPLOAD_FAILED,
+                    "outcome_code": OutcomeCode.OUTPUT_UPLOAD_ERROR,
+                },
+            )
             raise OutputStorageError(
                 f"Could not upload to S3 key {key!r}: {exc}"
             ) from exc
-        uri = f"s3://{self._bucket}/{key}"
-        logger.debug("S3OutputStorage: uploaded %d bytes to %s", len(data), uri)
-        return uri
+        logger.info(
+            "Output uploaded to S3: s3://%s/%s (%d bytes)", self._bucket, key, len(data),
+            extra={
+                "event_name": StorageEvent.OUTPUT_UPLOAD_COMPLETED,
+                "outcome_code": OutcomeCode.OK,
+                "bytes_written": len(data),
+            },
+        )
+        return f"s3://{self._bucket}/{key}"
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
