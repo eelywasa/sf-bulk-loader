@@ -12,8 +12,8 @@ import io
 import logging
 import pathlib
 
-from app.config import settings
 from app.models.job import JobRecord
+from app.services.output_storage import OutputStorage, OutputStorageError
 from app.services.salesforce_bulk import BulkAPIError, SalesforceBulkClient
 
 logger = logging.getLogger(__name__)
@@ -43,22 +43,18 @@ async def download_and_persist_results(
     job_record: JobRecord,
     run_id: str,
     step_id: str,
+    output_storage: OutputStorage,
 ) -> tuple[int, int]:
-    """Download success / error / unprocessed CSVs and persist them locally.
+    """Download success / error / unprocessed CSVs and persist them via *output_storage*.
 
-    Files are saved under ``{OUTPUT_DIR}/{run_id}/{step_id}/`` using relative
-    paths stored in the DB (relative to ``OUTPUT_DIR``).
-
-    Mutates ``job_record.success_file_path``, ``error_file_path``, and
-    ``unprocessed_file_path``.  The caller must commit the session.
+    The storage reference returned by ``output_storage.write_bytes`` (a local
+    relative path or an ``s3://`` URI) is stored in the corresponding
+    ``job_record.*_file_path`` field.  The caller must commit the session.
 
     Returns:
         ``(records_processed, records_failed)`` where *records_processed*
         includes both successes and failures.
     """
-    output_base = pathlib.Path(settings.output_dir) / run_id / step_id
-    output_base.mkdir(parents=True, exist_ok=True)
-
     idx = job_record.partition_index
     records_processed = 0
     records_failed = 0
@@ -68,8 +64,17 @@ async def download_and_persist_results(
         success_csv = await bulk_client.get_success_results(sf_job_id)
         if success_csv:
             rel = str(pathlib.Path(run_id) / step_id / f"partition_{idx}_success.csv")
-            (pathlib.Path(settings.output_dir) / rel).write_bytes(success_csv)
-            job_record.success_file_path = rel
+            try:
+                ref = output_storage.write_bytes(rel, success_csv)
+                job_record.success_file_path = ref
+            except OutputStorageError as exc:
+                logger.warning(
+                    "Run %s partition %d: could not write success results for job %s: %s",
+                    run_id,
+                    idx,
+                    sf_job_id,
+                    exc,
+                )
             records_processed += count_csv_rows(success_csv)
     except BulkAPIError as exc:
         logger.warning(
@@ -85,8 +90,17 @@ async def download_and_persist_results(
         error_csv = await bulk_client.get_failed_results(sf_job_id)
         if error_csv:
             rel = str(pathlib.Path(run_id) / step_id / f"partition_{idx}_errors.csv")
-            (pathlib.Path(settings.output_dir) / rel).write_bytes(error_csv)
-            job_record.error_file_path = rel
+            try:
+                ref = output_storage.write_bytes(rel, error_csv)
+                job_record.error_file_path = ref
+            except OutputStorageError as exc:
+                logger.warning(
+                    "Run %s partition %d: could not write error results for job %s: %s",
+                    run_id,
+                    idx,
+                    sf_job_id,
+                    exc,
+                )
             error_count = count_csv_rows(error_csv)
             records_failed += error_count
             records_processed += error_count
@@ -106,8 +120,17 @@ async def download_and_persist_results(
             rel = str(
                 pathlib.Path(run_id) / step_id / f"partition_{idx}_unprocessed.csv"
             )
-            (pathlib.Path(settings.output_dir) / rel).write_bytes(unprocessed_csv)
-            job_record.unprocessed_file_path = rel
+            try:
+                ref = output_storage.write_bytes(rel, unprocessed_csv)
+                job_record.unprocessed_file_path = ref
+            except OutputStorageError as exc:
+                logger.warning(
+                    "Run %s partition %d: could not write unprocessed results for job %s: %s",
+                    run_id,
+                    idx,
+                    sf_job_id,
+                    exc,
+                )
     except BulkAPIError as exc:
         logger.warning(
             "Run %s partition %d: could not download unprocessed results for job %s: %s",

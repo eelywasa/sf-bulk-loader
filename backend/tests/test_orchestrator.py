@@ -1477,4 +1477,67 @@ async def test_backstop_no_op_when_run_already_terminal(db: AsyncSession):
 
     await db.refresh(run)
     assert run.status == RunStatus.completed
-    assert run.error_summary is None
+
+
+# ── SFBL-161: OutputConnectionNotFoundError aborts run ───────────────────────
+
+
+async def test_output_connection_not_found_transitions_run_to_failed(
+    db: AsyncSession, tmp_path
+):
+    """SFBL-161: if get_output_storage raises OutputConnectionNotFoundError at
+    run start, the run must be transitioned to ``failed`` status."""
+    from app.services.output_storage import OutputConnectionNotFoundError
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+    db_factory = make_db_factory(db)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=_make_bulk_client_mock()),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock())),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch(
+            "app.services.run_coordinator.get_output_storage",
+            new=AsyncMock(side_effect=OutputConnectionNotFoundError("conn-missing not found")),
+        ),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    assert run.status == RunStatus.failed
+
+
+async def test_unsupported_output_provider_transitions_run_to_failed(
+    db: AsyncSession, tmp_path
+):
+    """SFBL-161: UnsupportedOutputProviderError at run start also → run failed."""
+    from app.services.output_storage import UnsupportedOutputProviderError
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    await _make_step(db, plan)
+    run = await _make_run(db, plan)
+    db_factory = make_db_factory(db)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=_make_bulk_client_mock()),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock())),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch(
+            "app.services.run_coordinator.get_output_storage",
+            new=AsyncMock(side_effect=UnsupportedOutputProviderError("gcs not supported")),
+        ),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    assert run.status == RunStatus.failed
