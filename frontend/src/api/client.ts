@@ -131,6 +131,29 @@ export function apiDelete<T = void>(path: string): Promise<T> {
   return apiFetch<T>(path, { method: 'DELETE' })
 }
 
+export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename: string }> {
+  const url = `${BASE_URL}${path}`
+  const headers = new Headers()
+  const token = getStoredToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const response = await fetch(url, { headers })
+
+  if (!response.ok) {
+    if (response.status === 401 && token) {
+      clearStoredToken()
+      if (window.location.pathname !== '/login') window.location.href = '/login'
+    }
+    throw new ApiError({ status: response.status, message: `HTTP ${response.status}` })
+  }
+
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename="?([^"]+)"?/)
+  const filename = match?.[1] ?? path.split('/').pop() ?? 'download.csv'
+  const blob = await response.blob()
+  return { blob, filename }
+}
+
 // ─── Object-style API (used by endpoints) ────────────────────────────────────
 
 export const api = {

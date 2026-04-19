@@ -354,15 +354,15 @@ describe('JobDetail', () => {
     })
   })
 
-  it('shows download links for available files', async () => {
+  it('shows download buttons for available files', async () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
     renderJobDetail()
     await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
     await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
-      const links = screen.getAllByRole('link', { name: /Download/ })
-      expect(links.length).toBeGreaterThanOrEqual(1)
+      const buttons = screen.getAllByRole('button', { name: /Download/ })
+      expect(buttons.length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -445,18 +445,25 @@ describe('JobDetail', () => {
     )
   })
 
-  it('download links point to correct API endpoints', async () => {
+  it('download buttons trigger authenticated fetch to correct API endpoints', async () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Blob(['a,b\n1,2'], { type: 'text/csv' }), {
+        status: 200,
+        headers: { 'Content-Disposition': 'attachment; filename="success.csv"' },
+      }),
+    )
     renderJobDetail()
     await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
     await user.click(screen.getByRole('tab', { name: 'Logs' }))
-    await waitFor(() => {
-      const links = screen.getAllByRole('link', { name: /Download/ })
-      const hrefs = links.map((l) => l.getAttribute('href'))
-      expect(hrefs).toContain('/api/jobs/job-abc-123/success-csv')
-      expect(hrefs).toContain('/api/jobs/job-abc-123/error-csv')
-    })
+    const downloadButtons = await screen.findAllByRole('button', { name: /Download/ })
+    await user.click(downloadButtons[0])
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/api/jobs/job-abc-123/'),
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    ))
+    fetchSpy.mockRestore()
   })
 
   it('shows Not available for null file path in Downloads tab', async () => {
@@ -483,14 +490,14 @@ describe('JobDetail', () => {
     })
   })
 
-  it('shows no download links when no files are present', async () => {
+  it('shows no download buttons when no files are present', async () => {
     const user = userEvent.setup()
     vi.mocked(jobsApi.get).mockResolvedValue(jobFailed)
     renderJobDetail()
     await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
     await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => {
-      expect(screen.queryAllByRole('link', { name: /Download/ }).length).toBe(0)
+      expect(screen.queryAllByRole('button', { name: /Download/ }).length).toBe(0)
     })
   })
 
