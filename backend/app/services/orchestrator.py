@@ -117,6 +117,8 @@ async def _execute_step(
     *,
     run_id: str,
     step: LoadStep,
+    plan_id: str,
+    plan_name: str,
     bulk_client: SalesforceBulkClient,
     db: AsyncSession,
     semaphore: asyncio.Semaphore,
@@ -127,6 +129,8 @@ async def _execute_step(
     return await step_executor.execute_step(
         run_id=run_id,
         step=step,
+        plan_id=plan_id,
+        plan_name=plan_name,
         bulk_client=bulk_client,
         db=db,
         semaphore=semaphore,
@@ -142,6 +146,8 @@ async def _process_partition(
     *,
     run_id: str,
     step: LoadStep,
+    plan_id: str,
+    plan_name: str,
     job_record_id: str,
     csv_data: bytes,
     bulk_client: SalesforceBulkClient,
@@ -153,6 +159,8 @@ async def _process_partition(
     return await partition_executor.process_partition(
         run_id=run_id,
         step=step,
+        plan_id=plan_id,
+        plan_name=plan_name,
         job_record_id=job_record_id,
         csv_data=csv_data,
         bulk_client=bulk_client,
@@ -168,7 +176,12 @@ async def _download_results(
     sf_job_id: str,
     job_record: JobRecord,
     run_id: str,
+    plan_id: str,
+    plan_name: str,
     step_id: str,
+    step_sequence: int,
+    object_name: str,
+    operation: str,
     output_storage,
 ) -> tuple[int, int]:
     """Download result files.  Delegates to result_persistence."""
@@ -177,7 +190,12 @@ async def _download_results(
         sf_job_id=sf_job_id,
         job_record=job_record,
         run_id=run_id,
+        plan_id=plan_id,
+        plan_name=plan_name,
         step_id=step_id,
+        step_sequence=step_sequence,
+        object_name=object_name,
+        operation=operation,
         output_storage=output_storage,
     )
 
