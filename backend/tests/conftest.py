@@ -19,6 +19,40 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+# ── Isolate tests from the repo-root `.env` file ─────────────────────────────
+# `app.config.Settings` is configured with `env_file=("../.env", ".env")`. In
+# a developer checkout the parent `.env` is the repo-root file used for
+# `docker compose up`, which sets EMAIL_BACKEND=smtp, APP_DISTRIBUTION,
+# LOG_LEVEL, etc. Those leak into every `Settings()` construction during the
+# test run — flipping profile-default assertions in test_config_email and
+# pushing the dependency health check into "degraded".
+#
+# Fix: set SFBL_DISABLE_ENV_FILE=1 BEFORE importing any app module. The
+# config module's `Settings.model_config` reads this flag at import time and
+# sets `env_file=()`, skipping `.env` loading for the whole test session.
+# Also scrub the same keys from os.environ in case the developer exported
+# them in their shell — tests should see pristine defaults unless the test
+# sets its own value.
+#
+# CI is unaffected (no `.env` present), but this keeps local and CI runs
+# identical.
+os.environ["SFBL_DISABLE_ENV_FILE"] = "1"
+
+for _pollutant in (
+    "EMAIL_BACKEND",
+    "EMAIL_FROM_ADDRESS",
+    "EMAIL_SMTP_HOST",
+    "EMAIL_SMTP_PORT",
+    "EMAIL_SMTP_STARTTLS",
+    "EMAIL_SMTP_USERNAME",
+    "EMAIL_SMTP_PASSWORD",
+    "APP_DISTRIBUTION",
+    "APP_ENV",
+    "LOG_LEVEL",
+    "CORS_ORIGINS",
+):
+    os.environ.pop(_pollutant, None)
+
 # ── Set test environment BEFORE importing any app modules ─────────────────────
 _TEST_ENCRYPTION_KEY = Fernet.generate_key().decode()
 os.environ.setdefault("ENCRYPTION_KEY", _TEST_ENCRYPTION_KEY)
