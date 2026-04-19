@@ -20,6 +20,7 @@ from app.services.input_storage import (
     BaseInputStorage,
     InputStorageError,
     InputConnectionNotFoundError,
+    LocalInputStorage,
     UnsupportedInputProviderError,
     get_storage,
 )
@@ -187,6 +188,89 @@ async def preview_input_file(
         "has_next": preview.has_next,
         "source": source_id,
         "provider": provider,
+    }
+
+
+# ── Output file endpoints ──────────────────────────────────────────────────────
+
+
+@router.get("/api/files/output", response_model=List[InputDirectoryEntry])
+async def list_output_files(
+    path: str = Query(default="", description="Relative subdirectory path to list"),
+    _: User = Depends(get_current_user),
+) -> List[InputDirectoryEntry]:
+    """List CSV files and subdirectories at the given path within the local output directory."""
+    storage = LocalInputStorage(settings.output_dir)
+    try:
+        entries = storage.list_entries(path)
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return [
+        InputDirectoryEntry(
+            name=e.name,
+            kind=EntryKind(e.kind),
+            path=e.path,
+            size_bytes=e.size_bytes,
+            row_count=e.row_count,
+            source="local-output",
+            provider="local",
+        )
+        for e in entries
+    ]
+
+
+@router.get("/api/files/output/{file_path:path}/preview", response_model=InputPreviewResponse)
+async def preview_output_file(
+    file_path: str,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
+    _: User = Depends(get_current_user),
+) -> InputPreviewResponse:
+    """Return a paginated page of data rows from a CSV file in the local output directory."""
+    parsed_filters: list[dict[str, str]] | None = None
+    if filters is not None:
+        try:
+            parsed = json.loads(filters)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid filters JSON: {exc}",
+            ) from exc
+        if not isinstance(parsed, list):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="filters must be a JSON array")
+        for item in parsed:
+            if not isinstance(item, dict) or "column" not in item or "value" not in item:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Each filter must be an object with 'column' and 'value' keys",
+                )
+        parsed_filters = parsed
+
+    storage = LocalInputStorage(settings.output_dir)
+    try:
+        preview = await run_in_threadpool(storage.preview_file, file_path, limit, offset, parsed_filters)
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not read file: {exc}",
+        ) from exc
+
+    return {
+        "filename": preview.filename,
+        "header": preview.header,
+        "rows": preview.rows,
+        "total_rows": preview.total_rows,
+        "filtered_rows": preview.filtered_rows,
+        "offset": preview.offset,
+        "limit": preview.limit,
+        "has_next": preview.has_next,
+        "source": "local-output",
+        "provider": "local",
     }
 
 

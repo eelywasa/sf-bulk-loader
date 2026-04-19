@@ -305,4 +305,14 @@ export const filesApi = {
     return api.get<InputDirectoryEntry[]>(`/api/files/input${qs ? `?${qs}` : ''}`)
   },
   previewInput,
+  listOutput: (path = '') => {
+    const qs = path ? `?path=${encodeURIComponent(path)}` : ''
+    return api.get<InputDirectoryEntry[]>(`/api/files/output${qs}`)
+  },
+  previewOutput: (filePath: string, params?: CsvFetchParams): Promise<InputFilePreview> => {
+    const query = new URLSearchParams(buildPreviewQuery(params))
+    return api.get<InputFilePreview>(
+      `/api/files/output/${buildPreviewPath(filePath)}/preview?${query.toString()}`,
+    )
+  },
 }

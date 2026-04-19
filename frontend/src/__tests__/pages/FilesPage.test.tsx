@@ -632,12 +632,14 @@ describe('FilesPage', () => {
 
   // ── Source selector ────────────────────────────────────────────────────────
 
-  it('does not show source selector when no input connections exist', async () => {
+  it('always shows source selector with at least local input and local output options', async () => {
     vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
-    expect(screen.queryByLabelText('Source')).not.toBeInTheDocument()
+    const select = screen.getByLabelText('Source')
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toEqual(['Local Input Files', 'Local Output Files'])
   })
 
   it('shows source selector when input connections exist', async () => {
@@ -656,7 +658,7 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByLabelText('Source'))
     const select = screen.getByLabelText('Source')
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
-    expect(options).toEqual(['Local files', 'Production S3'])
+    expect(options).toEqual(['Local Input Files', 'Local Output Files', 'Production S3'])
   })
 
   it('defaults to local source', async () => {

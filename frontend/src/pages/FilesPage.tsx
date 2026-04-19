@@ -156,19 +156,24 @@ export default function FilesPage() {
     queryFn: () => inputConnectionsApi.list(),
   })
 
+  const isOutputSource = source === 'local-output'
+
   const {
     data: entries,
     isLoading: filesLoading,
     isError: filesError,
     error: filesErr,
   } = useQuery({
-    queryKey: ['files', 'input', source, currentPath],
-    queryFn: () => filesApi.listInput(currentPath, source),
+    queryKey: ['files', source, currentPath],
+    queryFn: () =>
+      isOutputSource
+        ? filesApi.listOutput(currentPath)
+        : filesApi.listInput(currentPath, source),
   })
 
-  // ── Source selector (shown when input connections exist) ───────────────────
+  // ── Source selector ────────────────────────────────────────────────────────
 
-  const sourceSelector = inputConnections.length > 0 ? (
+  const sourceSelector = (
     <div className="mt-3 flex items-center gap-2">
       <label htmlFor="source-select" className={LABEL_CLASS + ' mb-0 shrink-0'}>
         Source
@@ -179,18 +184,21 @@ export default function FilesPage() {
         onChange={(e) => handleSourceChange(e.target.value)}
         className={SELECT_CLASS + ' w-auto'}
       >
-        <option value="local">Local files</option>
+        <option value="local">Local Input Files</option>
+        <option value="local-output">Local Output Files</option>
         {inputConnections.map((conn) => (
           <option key={conn.id} value={conn.id}>{conn.name}</option>
         ))}
       </select>
     </div>
-  ) : null
+  )
 
   const sourceDescription =
     source === 'local'
       ? 'Browse and preview CSV files in the local input directory.'
-      : 'Browse and preview CSV files from the selected storage connection.'
+      : source === 'local-output'
+        ? 'Browse and preview result CSV files written to the local output directory.'
+        : 'Browse and preview CSV files from the selected storage connection.'
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -244,7 +252,9 @@ export default function FilesPage() {
           description={
             source === 'local'
               ? 'Place CSV files in the /data/input directory to see them here.'
-              : 'No files found in this location.'
+              : source === 'local-output'
+                ? 'No result files found. Run a load plan to generate output files.'
+                : 'No files found in this location.'
           }
         />
       </div>
@@ -270,7 +280,11 @@ export default function FilesPage() {
       <Card>
         <CsvPreviewPanel
           queryKey={['files', 'preview', source, selectedFile]}
-          fetchPage={(params) => filesApi.previewInput(selectedFile, params, source)}
+          fetchPage={(params) =>
+            isOutputSource
+              ? filesApi.previewOutput(selectedFile, params)
+              : filesApi.previewInput(selectedFile, params, source)
+          }
           filename={selectedEntry?.name}
         />
       </Card>
