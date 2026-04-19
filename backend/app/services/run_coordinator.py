@@ -156,6 +156,18 @@ async def execute_retry_run(
             await publish_run_failed(run_id, error=str(exc))
             return
 
+        # ── Resolve output storage ────────────────────────────────────────────
+        try:
+            output_storage = await get_output_storage(plan.output_connection_id, db)
+        except (OutputConnectionNotFoundError, UnsupportedOutputProviderError) as exc:
+            logger.error("Retry run %s: failed to resolve output storage: %s", run_id, exc,
+                         extra={"event_name": RunEvent.FAILED,
+                                "outcome_code": OutcomeCode.CONFIGURATION_ERROR,
+                                "run_id": run_id})
+            await _mark_run_failed(run_id, db, error_summary={"output_storage_error": str(exc)})
+            await publish_run_failed(run_id, error=str(exc))
+            return
+
         semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
 
         # ── Create JobRecord rows ─────────────────────────────────────────────
@@ -172,6 +184,7 @@ async def execute_retry_run(
                     bulk_client=bulk_client,
                     semaphore=semaphore,
                     db_factory=AsyncSessionLocal,
+                    output_storage=output_storage,
                 )
                 for jr_id, csv_data in zip(job_record_ids, partitions)
             ]
