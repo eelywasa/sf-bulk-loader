@@ -98,6 +98,7 @@ export interface InputConnection {
   bucket: string
   root_prefix?: string | null
   region?: string | null
+  direction: 'in' | 'out' | 'both'
   created_at: string
   updated_at: string
 }
@@ -111,6 +112,7 @@ export interface InputConnectionCreate {
   access_key_id: string
   secret_access_key: string
   session_token?: string | null
+  direction?: 'in' | 'out' | 'both'
 }
 
 export interface InputConnectionTestResponse {
@@ -143,6 +145,7 @@ export interface LoadPlan {
   abort_on_step_failure: boolean
   error_threshold_pct: number
   max_parallel_jobs: number
+  output_connection_id: string | null
   created_at: string
   updated_at: string
 }

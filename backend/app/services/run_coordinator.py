@@ -27,6 +27,11 @@ from app.models.load_step import LoadStep
 from app.services import step_executor as _step_executor_mod
 from app.services.csv_processor import partition_csv as _default_partition
 from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
+from app.services.output_storage import (
+    OutputConnectionNotFoundError,
+    UnsupportedOutputProviderError,
+    get_output_storage,
+)
 from app.services.partition_executor import process_partition as _default_process
 from app.services.result_persistence import count_csv_rows
 from app.services.run_event_publisher import (
@@ -151,6 +156,18 @@ async def execute_retry_run(
             await publish_run_failed(run_id, error=str(exc))
             return
 
+        # ── Resolve output storage ────────────────────────────────────────────
+        try:
+            output_storage = await get_output_storage(plan.output_connection_id, db)
+        except (OutputConnectionNotFoundError, UnsupportedOutputProviderError) as exc:
+            logger.error("Retry run %s: failed to resolve output storage: %s", run_id, exc,
+                         extra={"event_name": RunEvent.FAILED,
+                                "outcome_code": OutcomeCode.CONFIGURATION_ERROR,
+                                "run_id": run_id})
+            await _mark_run_failed(run_id, db, error_summary={"output_storage_error": str(exc)})
+            await publish_run_failed(run_id, error=str(exc))
+            return
+
         semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
 
         # ── Create JobRecord rows ─────────────────────────────────────────────
@@ -167,6 +184,7 @@ async def execute_retry_run(
                     bulk_client=bulk_client,
                     semaphore=semaphore,
                     db_factory=AsyncSessionLocal,
+                    output_storage=output_storage,
                 )
                 for jr_id, csv_data in zip(job_record_ids, partitions)
             ]
@@ -482,6 +500,23 @@ async def _execute_run_body(
                "run_id": run_id, "load_plan_id": str(plan.id)},
     )
 
+    # ── Resolve output storage ────────────────────────────────────────────────
+    try:
+        output_storage = await get_output_storage(plan.output_connection_id, db)
+    except (OutputConnectionNotFoundError, UnsupportedOutputProviderError) as exc:
+        logger.error(
+            "Run %s: failed to resolve output storage: %s",
+            run_id,
+            exc,
+            extra={"event_name": RunEvent.FAILED,
+                   "outcome_code": OutcomeCode.STORAGE_ERROR,
+                   "run_id": run_id},
+        )
+        await _mark_run_failed(run_id, db, error_summary={"output_storage_error": str(exc)})
+        await publish_run_failed(run_id, error=str(exc))
+        record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
+        return
+
     # ── Obtain Salesforce access token ────────────────────────────────────────
     try:
         access_token = await _get_token(db, plan.connection)
@@ -538,6 +573,7 @@ async def _execute_run_body(
                     db=db,
                     semaphore=semaphore,
                     db_factory=db_factory,
+                    output_storage=output_storage,
                     _get_storage=_get_storage,
                     _partition=_partition,
                 )

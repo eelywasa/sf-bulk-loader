@@ -43,6 +43,7 @@ Public API
 - SCRUBBED_KEYS      — frozenset of lower-cased key names to redact
 - scrub_dict         — redact sensitive keys in a flat dict
 - scrub_headers      — redact sensitive HTTP headers (case-insensitive)
+- strip_s3_query_string — strip query strings from s3:// URIs (presigned URL protection)
 - safe_exc_message   — return a sanitized string representation of an exception
 - safe_record_exception — record an exception on an OTel span without leaking
                           sensitive content via the exception message attribute
@@ -112,6 +113,13 @@ _BEARER_PATTERN: re.Pattern[str] = re.compile(
     r"(?i)bearer\s+[A-Za-z0-9._~+/=-]{10,}"
 )
 
+# Regex that matches an S3 URI with a query string (e.g. a presigned URL).
+# Captures the base URI (group 1) and strips everything from '?' onwards.
+# This prevents presigned URL leakage (e.g. ?X-Amz-Signature=...) in log output.
+_S3_PRESIGNED_PATTERN: re.Pattern[str] = re.compile(
+    r"(s3://[^?\s]+)\?[^\s]*"
+)
+
 # Replacement sentinel used in redacted fields.
 _REDACTED = "[REDACTED]"
 
@@ -142,6 +150,31 @@ def scrub_headers(headers: dict[str, str]) -> dict[str, str]:
     }
 
 
+# ── S3 URI sanitization ───────────────────────────────────────────────────────
+
+
+def strip_s3_query_string(value: str) -> str:
+    """Strip query strings from ``s3://`` URIs to prevent presigned URL leakage.
+
+    If *value* is an S3 URI containing a query string (e.g. a presigned URL
+    with ``?X-Amz-Signature=...``), returns only the portion before the ``?``.
+    Non-S3 strings and S3 URIs without a query string are returned unchanged.
+
+    This function is safe to apply to any string — it only transforms values
+    that match the presigned URI pattern.
+
+    Examples::
+
+        >>> strip_s3_query_string("s3://bucket/key?X-Amz-Signature=abc")
+        "s3://bucket/key"
+        >>> strip_s3_query_string("s3://bucket/key")
+        "s3://bucket/key"
+        >>> strip_s3_query_string("https://example.com/path?q=1")
+        "https://example.com/path?q=1"
+    """
+    return _S3_PRESIGNED_PATTERN.sub(r"\1", value)
+
+
 # ── Exception message sanitization ───────────────────────────────────────────
 
 
@@ -157,6 +190,8 @@ def safe_exc_message(exc: BaseException) -> str:
     raw = _JWT_PATTERN.sub(_REDACTED, raw)
     # Remove "Bearer <token>" patterns.
     raw = _BEARER_PATTERN.sub(f"Bearer {_REDACTED}", raw)
+    # Strip query strings from s3:// URIs to prevent presigned URL leakage.
+    raw = _S3_PRESIGNED_PATTERN.sub(r"\1", raw)
     return raw
 
 

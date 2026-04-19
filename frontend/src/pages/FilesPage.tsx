@@ -33,7 +33,7 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
         onClick={() => onNavigate('')}
         className={`transition-colors ${segments.length === 0 ? 'font-semibold text-content-primary' : 'text-content-link hover:text-accent-hover'}`}
       >
-        Input Files
+        Files
       </button>
       {segments.map((seg, i) => {
         const segPath = segments.slice(0, i + 1).join('/')
@@ -71,7 +71,7 @@ interface FileListProps {
 function FileList({ entries, selected, onSelect, onNavigate }: FileListProps) {
   return (
     <Card padding={false}>
-      <ul role="listbox" aria-label="Input files" className="divide-y divide-border-base">
+      <ul role="listbox" aria-label="Files" className="divide-y divide-border-base">
         {entries.map((entry) => {
           const isSelected = entry.kind === 'file' && selected === entry.path
           return (
@@ -189,8 +189,8 @@ export default function FilesPage() {
 
   const sourceDescription =
     source === 'local'
-      ? 'Browse and preview CSV files in the input directory.'
-      : 'Browse and preview CSV files from the selected input source.'
+      ? 'Browse and preview CSV files in the local input directory.'
+      : 'Browse and preview CSV files from the selected storage connection.'
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -209,11 +209,11 @@ export default function FilesPage() {
 
   if (filesError) {
     const message =
-      filesErr instanceof ApiError ? filesErr.message : 'Failed to load input files'
+      filesErr instanceof ApiError ? filesErr.message : 'Failed to load files'
     return (
       <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
+          <h1 className="text-2xl font-bold text-content-primary">Files</h1>
           <p className="mt-1 text-sm text-content-muted">
             {sourceDescription}
           </p>
@@ -232,7 +232,7 @@ export default function FilesPage() {
     return (
       <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
+          <h1 className="text-2xl font-bold text-content-primary">Files</h1>
           <p className="mt-1 text-sm text-content-muted">
             {sourceDescription}
           </p>
@@ -240,7 +240,7 @@ export default function FilesPage() {
         </div>
         <Breadcrumb currentPath={currentPath} onNavigate={handleNavigate} />
         <EmptyState
-          title="No input files found"
+          title="No files found"
           description={
             source === 'local'
               ? 'Place CSV files in the /data/input directory to see them here.'
@@ -282,7 +282,7 @@ export default function FilesPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-content-primary">Input Files</h1>
+        <h1 className="text-2xl font-bold text-content-primary">Files</h1>
         <p className="mt-1 text-sm text-content-muted">
           {sourceDescription}
         </p>

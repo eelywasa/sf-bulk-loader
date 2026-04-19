@@ -2,16 +2,17 @@
 
 import asyncio
 import logging
-from typing import List
+from typing import List, Optional
 
 import boto3
 import botocore.exceptions
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.input_connection import InputConnection
+from app.models.load_plan import LoadPlan
 from app.schemas.input_connection import (
     InputConnectionCreate,
     InputConnectionResponse,
@@ -44,8 +45,19 @@ async def _get_or_404(ic_id: str, db: AsyncSession) -> InputConnection:
 
 
 @router.get("/", response_model=List[InputConnectionResponse])
-async def list_input_connections(db: AsyncSession = Depends(get_db)) -> List[InputConnection]:
-    result = await db.execute(select(InputConnection).order_by(InputConnection.created_at.desc()))
+async def list_input_connections(
+    direction: Optional[str] = Query(default=None, description="Filter by direction. 'in' returns in+both; 'out' returns out+both; other values match exactly."),
+    db: AsyncSession = Depends(get_db),
+) -> List[InputConnection]:
+    stmt = select(InputConnection).order_by(InputConnection.created_at.desc())
+    if direction is not None:
+        if direction == "out":
+            stmt = stmt.where(InputConnection.direction.in_(["out", "both"]))
+        elif direction == "in":
+            stmt = stmt.where(InputConnection.direction.in_(["in", "both"]))
+        else:
+            stmt = stmt.where(InputConnection.direction == direction)
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
@@ -59,6 +71,7 @@ async def create_input_connection(
         bucket=data.bucket,
         root_prefix=data.root_prefix,
         region=data.region,
+        direction=data.direction,
         access_key_id=encrypt_secret(data.access_key_id),
         secret_access_key=encrypt_secret(data.secret_access_key),
         session_token=encrypt_secret(data.session_token) if data.session_token else None,
@@ -95,6 +108,17 @@ async def update_input_connection(
 @router.delete("/{ic_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_input_connection(ic_id: str, db: AsyncSession = Depends(get_db)) -> None:
     ic = await _get_or_404(ic_id, db)
+
+    # Check if any load plans reference this connection as output_connection_id
+    plan_result = await db.execute(
+        select(LoadPlan).where(LoadPlan.output_connection_id == ic_id).limit(1)
+    )
+    if plan_result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Storage connection is used as an output destination by one or more load plans",
+        )
+
     try:
         await db.delete(ic)
         await db.commit()

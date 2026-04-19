@@ -42,7 +42,10 @@ export const connectionsApi = {
 }
 
 export const inputConnectionsApi = {
-  list: () => api.get<InputConnection[]>('/api/input-connections/'),
+  list: (params?: { direction?: string }) => {
+    const qs = params?.direction ? `?direction=${encodeURIComponent(params.direction)}` : ''
+    return api.get<InputConnection[]>(`/api/input-connections/${qs}`)
+  },
   create: (data: InputConnectionCreate) => api.post<InputConnection>('/api/input-connections/', data),
   update: (id: string, data: Partial<InputConnectionCreate>) =>
     api.put<InputConnection>(`/api/input-connections/${id}`, data),
@@ -59,6 +62,7 @@ export interface LoadPlanCreate {
   abort_on_step_failure?: boolean
   error_threshold_pct?: number
   max_parallel_jobs?: number
+  output_connection_id?: string | null
 }
 
 export const plansApi = {

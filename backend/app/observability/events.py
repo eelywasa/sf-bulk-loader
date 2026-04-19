@@ -98,6 +98,11 @@ class StorageEvent:
     INPUT_FAILED = "storage.input.failed"
     OUTPUT_PERSISTED = "storage.output.persisted"
 
+    # S3 output upload lifecycle (SFBL-163)
+    OUTPUT_UPLOAD_STARTED = "storage.output.upload.started"
+    OUTPUT_UPLOAD_COMPLETED = "storage.output.upload.completed"
+    OUTPUT_UPLOAD_FAILED = "storage.output.upload.failed"
+
 
 class SystemEvent:
     """Infrastructure and connectivity events."""
@@ -171,6 +176,7 @@ class OutcomeCode:
     dependency_unavailable  — external service not reachable
     configuration_error  — missing or invalid application configuration
     job_poll_timeout     — Bulk API job exceeded ``sf_job_max_poll_seconds`` cap
+    output_upload_error  — S3 output upload failure (distinct from input storage_error)
 
     Email codes
     ~~~~~~~~~~~
@@ -242,6 +248,10 @@ class OutcomeCode:
     EXPIRED = "expired"
     INVALID_SIGNATURE = "invalid_signature"
     USER_INACTIVE = "user_inactive"
+
+    # Storage output (SFBL-163)
+    # Separate from STORAGE_ERROR so dashboards can distinguish input-read from output-write failures.
+    OUTPUT_UPLOAD_ERROR = "output_upload_error"
 
     # Email
     EMAIL_SMTP_ERROR = "email_smtp_error"

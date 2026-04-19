@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.connection import Connection
+from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun
 from app.models.user import User
@@ -53,12 +54,34 @@ async def list_load_plans(db: AsyncSession = Depends(get_db)) -> List[LoadPlan]:
     return list(result.scalars().all())
 
 
+async def _validate_output_connection(output_connection_id: str, db: AsyncSession) -> None:
+    """Raise 422 if output_connection_id does not reference a connection with direction out or both."""
+    ic = await db.get(InputConnection, output_connection_id)
+    if ic is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Input connection '{output_connection_id}' not found",
+        )
+    if ic.direction not in ("out", "both"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"Storage connection '{output_connection_id}' has direction '{ic.direction}' "
+                "but must be 'out' or 'both' to be used as an output destination"
+            ),
+        )
+
+
 @router.post("/", response_model=LoadPlanResponse, status_code=status.HTTP_201_CREATED)
 async def create_load_plan(data: LoadPlanCreate, db: AsyncSession = Depends(get_db)) -> LoadPlan:
-    # Validate the referenced connection exists
+    # Validate the referenced Salesforce connection exists
     conn = await db.get(Connection, data.connection_id)
     if conn is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    # Validate output storage connection direction
+    if data.output_connection_id is not None:
+        await _validate_output_connection(data.output_connection_id, db)
 
     plan = LoadPlan(**data.model_dump())
     db.add(plan)
@@ -86,6 +109,9 @@ async def update_load_plan(
         conn = await db.get(Connection, update_data["connection_id"])
         if conn is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    if "output_connection_id" in update_data and update_data["output_connection_id"] is not None:
+        await _validate_output_connection(update_data["output_connection_id"], db)
 
     for field, value in update_data.items():
         setattr(plan, field, value)

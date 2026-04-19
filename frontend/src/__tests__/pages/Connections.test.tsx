@@ -62,6 +62,7 @@ const ic1: InputConnection = {
   bucket: 'my-prod-bucket',
   root_prefix: 'csvs/',
   region: 'us-east-1',
+  direction: 'in',
   created_at: '2024-04-01T00:00:00Z',
   updated_at: '2024-04-01T00:00:00Z',
 }
@@ -73,6 +74,7 @@ const ic2: InputConnection = {
   bucket: 'my-staging-bucket',
   root_prefix: null,
   region: 'eu-west-1',
+  direction: 'both',
   created_at: '2024-04-02T00:00:00Z',
   updated_at: '2024-04-02T00:00:00Z',
 }
@@ -521,7 +523,7 @@ describe('Input Connections section', () => {
     mockInputList([])
     render(<Connections />)
     await waitFor(() => {
-      expect(screen.getByText('No input connections yet')).toBeInTheDocument()
+      expect(screen.getByText('No storage connections yet')).toBeInTheDocument()
     })
   })
 
@@ -529,7 +531,7 @@ describe('Input Connections section', () => {
     vi.mocked(inputConnectionsApi.list).mockRejectedValue(new Error('S3 unavailable'))
     render(<Connections />)
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load input connections/)).toBeInTheDocument()
+      expect(screen.getByText(/Failed to load storage connections/)).toBeInTheDocument()
       expect(screen.getByText(/S3 unavailable/)).toBeInTheDocument()
     })
   })
@@ -562,15 +564,15 @@ describe('Input Connections section', () => {
 
   // ── Create flow ──────────────────────────────────────────────────────────────
 
-  it('opens create modal when "New Input Connection" is clicked', async () => {
+  it('opens create modal when "New Storage Connection" is clicked', async () => {
     mockInputList([])
     render(<Connections />)
-    await waitFor(() => screen.getByText('No input connections yet'))
+    await waitFor(() => screen.getByText('No storage connections yet'))
 
-    await userEvent.click(screen.getByRole('button', { name: 'New Input Connection' }))
+    await userEvent.click(screen.getByRole('button', { name: 'New Storage Connection' }))
 
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText('New Input Connection')).toBeInTheDocument()
+    expect(within(dialog).getByText('New Storage Connection')).toBeInTheDocument()
   })
 
 
@@ -580,8 +582,8 @@ describe('Input Connections section', () => {
     vi.mocked(inputConnectionsApi.create).mockResolvedValue(ic1)
 
     render(<Connections />)
-    await waitFor(() => screen.getByText('No input connections yet'))
-    await user.click(screen.getByRole('button', { name: 'New Input Connection' }))
+    await waitFor(() => screen.getByText('No storage connections yet'))
+    await user.click(screen.getByRole('button', { name: 'New Storage Connection' }))
 
     const dialog = screen.getByRole('dialog')
     await user.type(within(dialog).getByLabelText(/Name/), 'Production S3')
@@ -589,7 +591,7 @@ describe('Input Connections section', () => {
     await user.type(within(dialog).getByLabelText(/Access Key ID/), 'AKIAIOSFODNN7EXAMPLE')
     await user.type(within(dialog).getByLabelText(/Secret Access Key/), 'wJalrXUtnFEMI')
 
-    await user.click(within(dialog).getByRole('button', { name: 'Create Input Connection' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Create Storage Connection' }))
 
     await waitFor(() => {
       expect(inputConnectionsApi.create).toHaveBeenCalledWith(
@@ -620,11 +622,11 @@ describe('Input Connections section', () => {
     )
 
     render(<Connections />)
-    await waitFor(() => screen.getByText('No input connections yet'))
-    await user.click(screen.getByRole('button', { name: 'New Input Connection' }))
+    await waitFor(() => screen.getByText('No storage connections yet'))
+    await user.click(screen.getByRole('button', { name: 'New Storage Connection' }))
 
     const dialog = screen.getByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Create Input Connection' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Create Storage Connection' }))
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
@@ -635,9 +637,9 @@ describe('Input Connections section', () => {
     const user = userEvent.setup()
     mockInputList([])
     render(<Connections />)
-    await waitFor(() => screen.getByText('No input connections yet'))
+    await waitFor(() => screen.getByText('No storage connections yet'))
 
-    await user.click(screen.getByRole('button', { name: 'New Input Connection' }))
+    await user.click(screen.getByRole('button', { name: 'New Storage Connection' }))
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -657,7 +659,7 @@ describe('Input Connections section', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByDisplayValue('Production S3')).toBeInTheDocument()
     expect(within(dialog).getByDisplayValue('my-prod-bucket')).toBeInTheDocument()
-    expect(within(dialog).getByText('Edit Input Connection')).toBeInTheDocument()
+    expect(within(dialog).getByText('Edit Storage Connection')).toBeInTheDocument()
   })
 
   it('credential fields are blank and not required when editing', async () => {
@@ -727,7 +729,7 @@ describe('Input Connections section', () => {
     await user.click(screen.getAllByRole('button', { name: 'Delete' })[0])
 
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText('Delete Input Connection')).toBeInTheDocument()
+    expect(within(dialog).getByText('Delete Storage Connection')).toBeInTheDocument()
     expect(within(dialog).getByText('Production S3')).toBeInTheDocument()
   })
 

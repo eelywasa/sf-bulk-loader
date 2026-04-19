@@ -25,6 +25,7 @@ from app.observability.metrics import record_step_completed
 from app.observability import tracing
 from app.services.csv_processor import partition_csv as _default_partition
 from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
+from app.services.output_storage import OutputStorage
 from app.services.partition_executor import process_partition
 from app.services.result_persistence import count_csv_rows
 from app.services.salesforce_bulk import SalesforceBulkClient
@@ -42,6 +43,7 @@ async def execute_step(
     db: AsyncSession,
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
+    output_storage: OutputStorage,
     _get_storage: Callable = _default_get_storage,
     _partition: Callable = _default_partition,
     _process: Callable = process_partition,
@@ -49,6 +51,7 @@ async def execute_step(
     """Execute one LoadStep: discover files, partition, submit and poll jobs.
 
     Args:
+        output_storage: Resolved output storage instance for writing result CSVs.
         _get_storage: Injected storage-resolver callable (default: ``get_storage``).
             Overridden by the orchestrator facade so test patches propagate.
         _partition: Injected CSV-partition callable (default: ``partition_csv``).
@@ -80,6 +83,7 @@ async def execute_step(
                 db=db,
                 semaphore=semaphore,
                 db_factory=db_factory,
+                output_storage=output_storage,
                 _get_storage=_get_storage,
                 _partition=_partition,
                 _process=_process,
@@ -98,6 +102,7 @@ async def _execute_step(
     db: AsyncSession,
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
+    output_storage: OutputStorage,
     _get_storage: Callable = _default_get_storage,
     _partition: Callable = _default_partition,
     _process: Callable = process_partition,
@@ -177,6 +182,7 @@ async def _execute_step(
             bulk_client=bulk_client,
             semaphore=semaphore,
             db_factory=db_factory,
+            output_storage=output_storage,
         )
         for jr_id, (_, csv_data) in zip(job_record_ids, partitions)
     ]

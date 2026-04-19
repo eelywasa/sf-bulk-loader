@@ -31,6 +31,7 @@ const s3Connection: InputConnection = {
   bucket: 'my-data-bucket',
   root_prefix: 'data/csvs/',
   region: 'us-east-1',
+  direction: 'in',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -145,7 +146,7 @@ describe('FilesPage', () => {
     vi.mocked(filesApi.listInput).mockRejectedValue(new Error('Network error'))
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByText('Failed to load input files')).toBeInTheDocument()
+      expect(screen.getByText('Failed to load files')).toBeInTheDocument()
     })
   })
 
@@ -164,7 +165,7 @@ describe('FilesPage', () => {
     vi.mocked(filesApi.listInput).mockRejectedValue(new Error('fail'))
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Input Files' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Files' })).toBeInTheDocument()
     })
   })
 
@@ -174,7 +175,7 @@ describe('FilesPage', () => {
     vi.mocked(filesApi.listInput).mockResolvedValue([])
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByText('No input files found')).toBeInTheDocument()
+      expect(screen.getByText('No files found')).toBeInTheDocument()
     })
   })
 
@@ -192,7 +193,7 @@ describe('FilesPage', () => {
     vi.mocked(filesApi.listInput).mockResolvedValue([])
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Input Files' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Files' })).toBeInTheDocument()
     })
   })
 
@@ -202,7 +203,7 @@ describe('FilesPage', () => {
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Input Files' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Files' })).toBeInTheDocument()
     })
   })
 
@@ -230,7 +231,7 @@ describe('FilesPage', () => {
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByRole('listbox', { name: 'Input files' })).toBeInTheDocument()
+      expect(screen.getByRole('listbox', { name: 'Files' })).toBeInTheDocument()
     })
   })
 
@@ -596,11 +597,11 @@ describe('FilesPage', () => {
 
   // ── Breadcrumb ─────────────────────────────────────────────────────────────
 
-  it('renders the breadcrumb root "Input Files" link', async () => {
+  it('renders the breadcrumb root "Files" link', async () => {
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
-    expect(screen.getByRole('button', { name: 'Input Files' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Files' })).toBeInTheDocument()
   })
 
   it('clicking breadcrumb root navigates back to root', async () => {
@@ -610,7 +611,7 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByText('2026'))
     await user.click(screen.getByText('2026'))
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
-    await user.click(screen.getByRole('button', { name: 'Input Files' }))
+    await user.click(screen.getByRole('button', { name: 'Files' }))
     expect(filesApi.listInput).toHaveBeenCalledWith('', 'local')
   })
 

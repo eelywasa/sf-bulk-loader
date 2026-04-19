@@ -71,8 +71,13 @@ export function usePlanEditorState(id: string | undefined) {
 
   const { data: inputConnections = [] } = useQuery({
     queryKey: ['input-connections'],
-    queryFn: inputConnectionsApi.list,
+    queryFn: () => inputConnectionsApi.list(),
     enabled: stepModalOpen,
+  })
+
+  const { data: outputConnections = [] } = useQuery({
+    queryKey: ['input-connections', 'direction', 'out'],
+    queryFn: () => inputConnectionsApi.list({ direction: 'out' }),
   })
 
   const connectionId = form.connection_id || plan?.connection_id || ''
@@ -108,6 +113,7 @@ export function usePlanEditorState(id: string | undefined) {
         abort_on_step_failure: plan.abort_on_step_failure,
         error_threshold_pct: String(plan.error_threshold_pct),
         max_parallel_jobs: String(plan.max_parallel_jobs),
+        output_connection_id: plan.output_connection_id ?? '',
       })
     }
   }, [plan])
@@ -204,6 +210,7 @@ export function usePlanEditorState(id: string | undefined) {
       abort_on_step_failure: form.abort_on_step_failure,
       error_threshold_pct: Number(form.error_threshold_pct),
       max_parallel_jobs: Number(form.max_parallel_jobs),
+      output_connection_id: form.output_connection_id || null,
     }
     if (isNew) {
       createPlanMutation.mutate(data)
@@ -332,6 +339,7 @@ export function usePlanEditorState(id: string | undefined) {
     planError,
     connections,
     inputConnections,
+    outputConnections,
     sfObjects,
     sfObjectsLoading,
     // Step order / reorder

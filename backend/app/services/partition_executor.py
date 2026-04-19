@@ -22,6 +22,7 @@ from app.models.load_step import LoadStep
 from app.observability.context import job_record_id_ctx_var, sf_job_id_ctx_var
 from app.observability.events import JobEvent, OutcomeCode, SalesforceEvent
 from app.observability import tracing
+from app.services.output_storage import OutputStorage
 from app.services.result_persistence import download_and_persist_results
 from app.services.run_event_publisher import publish_job_status_change
 from app.observability.metrics import record_bulk_job_poll_timeout
@@ -46,6 +47,7 @@ async def process_partition(
     bulk_client: SalesforceBulkClient,
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
+    output_storage: OutputStorage,
 ) -> tuple[int, int]:
     """Submit one CSV partition as a Bulk API 2.0 job and download results.
 
@@ -68,6 +70,7 @@ async def process_partition(
             bulk_client=bulk_client,
             semaphore=semaphore,
             db_factory=db_factory,
+            output_storage=output_storage,
             _partition_span=_partition_span,
         )
 
@@ -81,6 +84,7 @@ async def _process_partition_body(
     bulk_client: SalesforceBulkClient,
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
+    output_storage: OutputStorage,
     _partition_span,
 ) -> tuple[int, int]:
     async with db_factory() as db:
@@ -322,6 +326,7 @@ async def _process_partition_body(
                 job_record=job_rec,
                 run_id=run_id,
                 step_id=step.id,
+                output_storage=output_storage,
             )
 
             status_map = {

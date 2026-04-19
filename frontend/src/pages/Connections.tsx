@@ -72,6 +72,7 @@ interface InputConnFormData {
   access_key_id: string
   secret_access_key: string
   session_token: string
+  direction: 'in' | 'out' | 'both'
 }
 
 const EMPTY_INPUT_FORM: InputConnFormData = {
@@ -82,6 +83,7 @@ const EMPTY_INPUT_FORM: InputConnFormData = {
   access_key_id: '',
   secret_access_key: '',
   session_token: '',
+  direction: 'in',
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -140,7 +142,7 @@ export default function Connections() {
     error: inputLoadError,
   } = useQuery({
     queryKey: ['input-connections'],
-    queryFn: inputConnectionsApi.list,
+    queryFn: () => inputConnectionsApi.list(),
   })
 
   // ── Mutations ──────────────────────────────────────────────────────────────
@@ -184,7 +186,7 @@ export default function Connections() {
     mutationFn: (data: InputConnectionCreate) => inputConnectionsApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['input-connections'] })
-      toast.success('Input connection created')
+      toast.success('Storage connection created')
       closeInputModal()
     },
     onError: (err) => setInputFormErrors(extractErrors(err)),
@@ -195,7 +197,7 @@ export default function Connections() {
       inputConnectionsApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['input-connections'] })
-      toast.success('Input connection updated')
+      toast.success('Storage connection updated')
       closeInputModal()
     },
     onError: (err) => setInputFormErrors(extractErrors(err)),
@@ -205,12 +207,12 @@ export default function Connections() {
     mutationFn: (id: string) => inputConnectionsApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['input-connections'] })
-      toast.success('Input connection deleted')
+      toast.success('Storage connection deleted')
       setInputDeleteTarget(null)
       setInputTestResult(null)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete input connection')
+      toast.error(err instanceof Error ? err.message : 'Failed to delete storage connection')
       setInputDeleteTarget(null)
     },
   })
@@ -324,6 +326,7 @@ export default function Connections() {
       access_key_id: '',
       secret_access_key: '',
       session_token: '',
+      direction: conn.direction,
     })
     setInputFormErrors([])
     setInputModalOpen(true)
@@ -349,6 +352,7 @@ export default function Connections() {
         bucket: inputForm.bucket,
         root_prefix: inputForm.root_prefix || null,
         region: inputForm.region || null,
+        direction: inputForm.direction,
       }
       if (inputForm.access_key_id.trim()) data.access_key_id = inputForm.access_key_id.trim()
       if (inputForm.secret_access_key.trim()) data.secret_access_key = inputForm.secret_access_key.trim()
@@ -364,6 +368,7 @@ export default function Connections() {
         access_key_id: inputForm.access_key_id,
         secret_access_key: inputForm.secret_access_key,
         session_token: inputForm.session_token || null,
+        direction: inputForm.direction,
       })
     }
   }
@@ -479,6 +484,15 @@ export default function Connections() {
       header: 'Root Prefix',
       render: (c) => (
         <span className="font-mono text-xs text-content-muted">{c.root_prefix ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'direction',
+      header: 'Direction',
+      render: (c) => (
+        <Badge variant={c.direction === 'in' ? 'info' : c.direction === 'out' ? 'warning' : 'success'}>
+          {c.direction === 'in' ? 'Input' : c.direction === 'out' ? 'Output' : 'Both'}
+        </Badge>
       ),
     },
     {
@@ -630,18 +644,18 @@ export default function Connections() {
         )}
       </div>
 
-      {/* ── S3 Input Connections ───────────────────────────────────────────── */}
+      {/* ── Storage Connections ────────────────────────────────────────────── */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-content-primary">
-              S3 Input Connections
+              Storage Connections
             </h2>
             <p className="text-sm text-content-muted">
-              Remote S3 buckets used as CSV input sources for load steps.
+              Remote S3 buckets used as CSV input sources or output destinations for load steps.
             </p>
           </div>
-          <Button onClick={openInputCreate}>New Input Connection</Button>
+          <Button onClick={openInputCreate}>New Storage Connection</Button>
         </div>
 
         {/* Input test result panel */}
@@ -700,14 +714,14 @@ export default function Connections() {
         ) : inputLoadError ? (
           <Card>
             <p className="text-error-text text-sm">
-              Failed to load input connections:{' '}
+              Failed to load storage connections:{' '}
               {inputLoadError instanceof Error ? inputLoadError.message : 'Unknown error'}
             </p>
           </Card>
         ) : !inputConnections?.length ? (
           <EmptyState
-            title="No input connections yet"
-            description="Add an S3 connection to use remote CSV files as input sources for load steps."
+            title="No storage connections yet"
+            description="Add an S3 connection to use remote CSV files as input sources or output destinations for load steps."
           />
         ) : (
           <DataTable columns={inputColumns} data={inputConnections} keyExtractor={(c) => c.id} />
@@ -913,14 +927,14 @@ export default function Connections() {
         onClose={closeInputModal}
         closeOnBackdropClick={false}
         size="lg"
-        title={editingInputConn ? 'Edit Input Connection' : 'New Input Connection'}
+        title={editingInputConn ? 'Edit Storage Connection' : 'New Storage Connection'}
         footer={
           <>
             <Button variant="secondary" onClick={closeInputModal} disabled={isInputSaving}>
               Cancel
             </Button>
             <Button loading={isInputSaving} onClick={handleInputSubmit}>
-              {editingInputConn ? 'Save Changes' : 'Create Input Connection'}
+              {editingInputConn ? 'Save Changes' : 'Create Storage Connection'}
             </Button>
           </>
         }
@@ -955,6 +969,22 @@ export default function Connections() {
               placeholder="My S3 Bucket"
               className={INPUT_CLASS}
             />
+          </div>
+
+          <div>
+            <label htmlFor="ic-direction" className={LABEL_CLASS}>
+              Direction
+            </label>
+            <select
+              id="ic-direction"
+              value={inputForm.direction}
+              onChange={(e) => setInputField('direction', e.target.value as 'in' | 'out' | 'both')}
+              className={SELECT_CLASS}
+            >
+              <option value="in">Input only</option>
+              <option value="out">Output only</option>
+              <option value="both">Input &amp; Output</option>
+            </select>
           </div>
 
           <div>
@@ -1056,7 +1086,7 @@ export default function Connections() {
         open={inputDeleteTarget !== null}
         onClose={() => setInputDeleteTarget(null)}
         size="sm"
-        title="Delete Input Connection"
+        title="Delete Storage Connection"
         footer={
           <>
             <Button

@@ -44,6 +44,7 @@ const plan1: LoadPlan = {
   abort_on_step_failure: true,
   error_threshold_pct: 10,
   max_parallel_jobs: 5,
+  output_connection_id: null,
   created_at: '2024-03-01T00:00:00Z',
   updated_at: '2024-03-01T00:00:00Z',
 }
@@ -56,6 +57,7 @@ const plan2: LoadPlan = {
   abort_on_step_failure: false,
   error_threshold_pct: 5,
   max_parallel_jobs: 3,
+  output_connection_id: null,
   created_at: '2024-04-01T00:00:00Z',
   updated_at: '2024-04-01T00:00:00Z',
 }

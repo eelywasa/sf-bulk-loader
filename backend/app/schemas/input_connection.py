@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -10,6 +10,7 @@ class InputConnectionBase(BaseModel):
     bucket: str
     root_prefix: Optional[str] = None
     region: Optional[str] = None
+    direction: Literal["in", "out", "both"] = "in"
 
 
 class InputConnectionCreate(InputConnectionBase):
@@ -26,6 +27,7 @@ class InputConnectionUpdate(BaseModel):
     access_key_id: Optional[str] = None
     secret_access_key: Optional[str] = None
     session_token: Optional[str] = None
+    direction: Optional[Literal["in", "out", "both"]] = None
 
 
 class InputConnectionResponse(InputConnectionBase):
