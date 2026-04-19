@@ -9,6 +9,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.connection import Connection
+    from app.models.input_connection import InputConnection
     from app.models.load_run import LoadRun
     from app.models.load_step import LoadStep
 
@@ -19,6 +20,9 @@ class LoadPlan(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     connection_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("connection.id", ondelete="RESTRICT"), nullable=False
+    )
+    output_connection_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("input_connection.id", ondelete="SET NULL"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -31,6 +35,9 @@ class LoadPlan(Base):
     )
 
     connection: Mapped["Connection"] = relationship("Connection", back_populates="load_plans")
+    output_connection: Mapped[Optional["InputConnection"]] = relationship(
+        "InputConnection", foreign_keys=[output_connection_id]
+    )
     load_steps: Mapped[list["LoadStep"]] = relationship(
         "LoadStep", back_populates="load_plan", cascade="all, delete-orphan", order_by="LoadStep.sequence"
     )

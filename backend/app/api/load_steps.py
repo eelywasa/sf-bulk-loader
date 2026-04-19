@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
 from app.services.auth import get_current_user
@@ -55,6 +56,24 @@ async def _get_step_or_404(plan_id: str, step_id: str, db: AsyncSession) -> Load
     return step
 
 
+async def _validate_input_connection_direction(input_connection_id: str, db: AsyncSession) -> None:
+    """Raise 422 if input_connection_id references a connection that cannot be used as input."""
+    ic = await db.get(InputConnection, input_connection_id)
+    if ic is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Input connection '{input_connection_id}' not found",
+        )
+    if ic.direction not in ("in", "both"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"Storage connection '{input_connection_id}' has direction '{ic.direction}' "
+                "but must be 'in' or 'both' to be used as a step input source"
+            ),
+        )
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 
@@ -65,6 +84,10 @@ async def add_step(
     db: AsyncSession = Depends(get_db),
 ) -> LoadStep:
     await _get_plan_or_404(plan_id, db)
+
+    if data.input_connection_id is not None:
+        await _validate_input_connection_direction(data.input_connection_id, db)
+
     step_data = data.model_dump()
     if step_data.get("sequence") is None:
         step_data["sequence"] = await load_step_service.next_sequence(db, plan_id)
@@ -95,7 +118,12 @@ async def update_step(
     db: AsyncSession = Depends(get_db),
 ) -> LoadStep:
     step = await _get_step_or_404(plan_id, step_id, db)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+
+    if "input_connection_id" in update_data and update_data["input_connection_id"] is not None:
+        await _validate_input_connection_direction(update_data["input_connection_id"], db)
+
+    for field, value in update_data.items():
         setattr(step, field, value)
     await db.commit()
     await db.refresh(step)
