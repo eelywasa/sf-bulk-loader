@@ -104,7 +104,12 @@ class LocalOutputStorage:
 
     def read_bytes(self, ref: str) -> bytes:
         dest = pathlib.Path(self._output_dir) / ref
-        return dest.read_bytes()
+        try:
+            return dest.read_bytes()
+        except FileNotFoundError as exc:
+            raise OutputStorageError(f"Output file not found: {ref}") from exc
+        except OSError as exc:
+            raise OutputStorageError(f"Failed to read output file: {ref}: {exc}") from exc
 
 
 # ── S3 storage implementation ─────────────────────────────────────────────────

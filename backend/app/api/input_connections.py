@@ -152,12 +152,13 @@ async def test_input_connection(
             client_kwargs["aws_session_token"] = session_token
 
         prefix = ic.root_prefix or ""
+        normalized_prefix = prefix.rstrip("/") + "/" if prefix else ""
 
         def _test():
             client = boto3.client(**client_kwargs)
-            client.list_objects_v2(Bucket=ic.bucket, Prefix=prefix, MaxKeys=1)
+            client.list_objects_v2(Bucket=ic.bucket, Prefix=normalized_prefix, MaxKeys=1)
             if test_write:
-                test_key = f"{prefix}.sfbl-write-test" if prefix else ".sfbl-write-test"
+                test_key = f"{normalized_prefix}.sfbl-write-test"
                 client.put_object(Bucket=ic.bucket, Key=test_key, Body=b"")
                 client.delete_object(Bucket=ic.bucket, Key=test_key)
 
