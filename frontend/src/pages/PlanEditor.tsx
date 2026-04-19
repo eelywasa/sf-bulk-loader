@@ -42,6 +42,7 @@ export default function PlanEditor() {
     planError,
     connections,
     inputConnections,
+    outputConnections,
     sfObjects,
     sfObjectsLoading,
     sortedSteps,
@@ -127,6 +128,7 @@ export default function PlanEditor() {
             form={form}
             formErrors={formErrors}
             connections={connections}
+            outputConnections={outputConnections}
             onChange={setPlanField}
           />
 

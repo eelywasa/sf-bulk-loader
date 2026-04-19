@@ -89,6 +89,7 @@ const inputConnection1 = {
   bucket: 'bucket-a',
   root_prefix: 'imports/',
   region: 'eu-west-2',
+  direction: 'in' as const,
   created_at: '2024-03-01T00:00:00Z',
   updated_at: '2024-03-01T00:00:00Z',
 }
@@ -108,6 +109,7 @@ const plan1 = {
   abort_on_step_failure: true,
   error_threshold_pct: 10,
   max_parallel_jobs: 5,
+  output_connection_id: null,
   created_at: '2024-03-01T00:00:00Z',
   updated_at: '2024-03-01T00:00:00Z',
   load_steps: [step1],
@@ -126,6 +128,7 @@ const newPlanResponse = {
   abort_on_step_failure: true,
   error_threshold_pct: 10,
   max_parallel_jobs: 5,
+  output_connection_id: null,
   created_at: '2024-03-01T00:00:00Z',
   updated_at: '2024-03-01T00:00:00Z',
 }
