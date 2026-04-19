@@ -134,32 +134,40 @@ async def delete_input_connection(ic_id: str, db: AsyncSession = Depends(get_db)
 async def test_input_connection(
     ic_id: str, db: AsyncSession = Depends(get_db)
 ) -> InputConnectionTestResponse:
-    """Attempt an S3 ListObjectsV2 call to verify stored credentials."""
+    """Verify S3 credentials: always checks read access; also checks write access for output connections."""
     ic = await _get_or_404(ic_id, db)
+    test_write = ic.direction in ("out", "both")
     try:
         access_key_id = decrypt_secret(ic.access_key_id)
         secret_access_key = decrypt_secret(ic.secret_access_key)
         session_token = decrypt_secret(ic.session_token) if ic.session_token else None
 
-        kwargs = dict(
+        client_kwargs = dict(
             service_name="s3",
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name=ic.region,
         )
         if session_token:
-            kwargs["aws_session_token"] = session_token
+            client_kwargs["aws_session_token"] = session_token
 
-        def _list():
-            client = boto3.client(**kwargs)
-            return client.list_objects_v2(
-                Bucket=ic.bucket,
-                Prefix=ic.root_prefix or "",
-                MaxKeys=1,
-            )
+        prefix = ic.root_prefix or ""
 
-        await asyncio.to_thread(_list)
-        return InputConnectionTestResponse(success=True, message="S3 connection successful")
+        def _test():
+            client = boto3.client(**client_kwargs)
+            client.list_objects_v2(Bucket=ic.bucket, Prefix=prefix, MaxKeys=1)
+            if test_write:
+                test_key = f"{prefix}.sfbl-write-test" if prefix else ".sfbl-write-test"
+                client.put_object(Bucket=ic.bucket, Key=test_key, Body=b"")
+                client.delete_object(Bucket=ic.bucket, Key=test_key)
+
+        await asyncio.to_thread(_test)
+        msg = (
+            "S3 connection successful (read and write access verified)"
+            if test_write
+            else "S3 connection successful (read access verified)"
+        )
+        return InputConnectionTestResponse(success=True, message=msg)
     except botocore.exceptions.ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "Unknown")
         return InputConnectionTestResponse(success=False, message=f"S3 error [{code}]: {exc}")

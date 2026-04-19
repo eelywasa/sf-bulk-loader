@@ -181,20 +181,74 @@ def test_test_input_connection_not_found_returns_404(auth_client):
     assert resp.status_code == 404
 
 
-def test_test_input_connection_success(auth_client):
-    ic_id = _create(auth_client).json()["id"]
+def test_test_input_connection_read_only_success(auth_client):
+    ic_id = _create(auth_client, {**_IC, "direction": "in"}).json()["id"]
 
     with patch(
         "app.api.input_connections.asyncio.to_thread",
         new_callable=AsyncMock,
-        return_value={"ResponseMetadata": {"HTTPStatusCode": 200}},
+        return_value=None,
     ):
         resp = auth_client.post(f"/api/input-connections/{ic_id}/test")
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is True
-    assert "successful" in body["message"]
+    assert "read access verified" in body["message"]
+    assert "write" not in body["message"]
+
+
+def test_test_input_connection_output_write_success(auth_client):
+    ic_id = _create(auth_client, {**_IC, "direction": "out"}).json()["id"]
+
+    with patch(
+        "app.api.input_connections.asyncio.to_thread",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        resp = auth_client.post(f"/api/input-connections/{ic_id}/test")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert "read and write access verified" in body["message"]
+
+
+def test_test_input_connection_both_direction_write_success(auth_client):
+    ic_id = _create(auth_client, {**_IC, "direction": "both"}).json()["id"]
+
+    with patch(
+        "app.api.input_connections.asyncio.to_thread",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        resp = auth_client.post(f"/api/input-connections/{ic_id}/test")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert "read and write access verified" in body["message"]
+
+
+def test_test_input_connection_write_access_denied(auth_client):
+    import botocore.exceptions
+
+    ic_id = _create(auth_client, {**_IC, "direction": "out"}).json()["id"]
+
+    error_response = {"Error": {"Code": "AccessDenied", "Message": "Access Denied"}}
+    client_error = botocore.exceptions.ClientError(error_response, "PutObject")
+
+    with patch(
+        "app.api.input_connections.asyncio.to_thread",
+        new_callable=AsyncMock,
+        side_effect=client_error,
+    ):
+        resp = auth_client.post(f"/api/input-connections/{ic_id}/test")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is False
+    assert "AccessDenied" in body["message"]
 
 
 def test_test_input_connection_auth_failure(auth_client):
