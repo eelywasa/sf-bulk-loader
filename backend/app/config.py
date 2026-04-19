@@ -12,8 +12,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _log = logging.getLogger(__name__)
 
 
+# Test suites set SFBL_DISABLE_ENV_FILE=1 before importing app.config to
+# prevent the developer's repo-root `.env` (used for `docker compose up`) from
+# bleeding into `Settings` and flipping profile-default assertions / health
+# checks. Production always loads the usual `.env` chain.
+_ENV_FILES: tuple[str, ...] = (
+    () if os.getenv("SFBL_DISABLE_ENV_FILE") == "1" else ("../.env", ".env")
+)
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=("../.env", ".env"), env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILES, env_file_encoding="utf-8", extra="ignore")
 
     # Distribution profile
     app_distribution: Literal["desktop", "self_hosted", "aws_hosted"] = "self_hosted"
