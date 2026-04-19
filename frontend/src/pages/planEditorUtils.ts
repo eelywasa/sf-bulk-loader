@@ -10,6 +10,7 @@ export interface PlanFormData {
   abort_on_step_failure: boolean
   error_threshold_pct: string
   max_parallel_jobs: string
+  output_connection_id: string
 }
 
 export const EMPTY_PLAN_FORM: PlanFormData = {
@@ -19,6 +20,7 @@ export const EMPTY_PLAN_FORM: PlanFormData = {
   abort_on_step_failure: true,
   error_threshold_pct: '10',
   max_parallel_jobs: '5',
+  output_connection_id: '',
 }
 
 export interface StepFormData {

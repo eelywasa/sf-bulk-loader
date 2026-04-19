@@ -1,5 +1,5 @@
 import { Card } from './ui'
-import type { Connection } from '../api/types'
+import type { Connection, InputConnection } from '../api/types'
 import { type PlanFormData } from '../pages/planEditorUtils'
 import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from './ui/formStyles'
 
@@ -7,10 +7,11 @@ interface PlanFormProps {
   form: PlanFormData
   formErrors: string[]
   connections: Connection[] | undefined
+  outputConnections: InputConnection[]
   onChange: <K extends keyof PlanFormData>(field: K, value: PlanFormData[K]) => void
 }
 
-export default function PlanForm({ form, formErrors, connections, onChange }: PlanFormProps) {
+export default function PlanForm({ form, formErrors, connections, outputConnections, onChange }: PlanFormProps) {
   return (
     <Card title="Plan Details">
       <div className="space-y-4">
@@ -118,6 +119,26 @@ export default function PlanForm({ form, formErrors, connections, onChange }: Pl
             <label htmlFor="plan-abort" className="text-sm font-medium text-content-secondary">
               Abort run if a step fails
             </label>
+          </div>
+
+          {/* Output Destination */}
+          <div className="sm:col-span-2">
+            <label htmlFor="plan-output-connection" className={LABEL_CLASS}>
+              Output Destination
+            </label>
+            <select
+              id="plan-output-connection"
+              value={form.output_connection_id}
+              onChange={(e) => onChange('output_connection_id', e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">Local filesystem (default)</option>
+              {outputConnections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
