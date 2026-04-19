@@ -152,8 +152,8 @@ export default function FilesPage() {
   }
 
   const { data: inputConnections = [] } = useQuery<InputConnection[]>({
-    queryKey: ['input-connections', 'in'],
-    queryFn: () => inputConnectionsApi.list({ direction: 'in' }),
+    queryKey: ['input-connections'],
+    queryFn: () => inputConnectionsApi.list(),
   })
 
   const {
