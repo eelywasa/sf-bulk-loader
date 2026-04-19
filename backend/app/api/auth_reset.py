@@ -333,13 +333,42 @@ async def confirm_password_reset(
                 detail=str(exc),
             ) from exc
 
-        # Single transaction: update password, watermark, mark token used,
-        # and invalidate all other unused reset tokens for this user.
+        # Atomically consume the token via conditional UPDATE so concurrent
+        # /confirm calls cannot both succeed. Only one will flip used_at from
+        # NULL → now_utc and see rowcount == 1; the loser sees rowcount == 0
+        # and is rejected as an already-used token.
+        consume_result = await db.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.id == token_row.id,
+                PasswordResetToken.used_at.is_(None),
+            )
+            .values(used_at=now_utc)
+        )
+        if consume_result.rowcount != 1:
+            await db.rollback()
+            outcome = OutcomeCode.USED_TOKEN
+            span.set_attribute("outcome", outcome)
+            _log.warning(
+                "Password reset confirm: token consumed concurrently",
+                extra={
+                    "event_name": AuthEvent.PASSWORD_RESET_CONFIRMED,
+                    "outcome_code": outcome,
+                    "token_id": token_row.id,
+                    "token_hash_prefix": token_hash_prefix,
+                },
+            )
+            obs_metrics.record_auth_password_reset_confirm(outcome)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired token",
+            )
+
+        # Token successfully consumed — apply the password change, bump the
+        # watermark, and invalidate sibling unused tokens for this user.
         user.hashed_password = hash_password(body.new_password)
         user.password_changed_at = now_utc.replace(microsecond=0)
-        token_row.used_at = now_utc
 
-        # Mark all sibling unused reset tokens for this user as used
         await db.execute(
             update(PasswordResetToken)
             .where(

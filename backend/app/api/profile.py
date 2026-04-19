@@ -1,7 +1,7 @@
 """Profile API — SFBL-148: profile update + email-change verification.
 
 Endpoints:
-  PUT  /api/me/profile          — update display_name
+  PUT  /api/me                  — update display_name
   POST /api/me/email-change/request  — request an email address change
   POST /api/me/email-change/confirm  — confirm via token (public)
 """
@@ -13,7 +13,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +47,34 @@ def _sha256_hex(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _verify_url(raw_token: str, request: Request) -> str:
+    """Build the email-change verify URL from config or request origin.
+
+    Mirrors the fallback in auth_reset._reset_url: if FRONTEND_BASE_URL is
+    unset, derive the origin from the inbound request's Origin/Referer header
+    rather than emitting `None/verify-email/...`.
+    """
+    base = settings.frontend_base_url
+    if not base:
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if origin:
+            from urllib.parse import urlparse
+            parsed = urlparse(origin)
+            base = f"{parsed.scheme}://{parsed.netloc}"
+        else:
+            base = ""
+        _log.warning(
+            "FRONTEND_BASE_URL not configured; falling back to request origin %r "
+            "for email-change verify link. Set FRONTEND_BASE_URL in .env.",
+            base,
+            extra={
+                "event_name": AuthEvent.EMAIL_CHANGE_REQUESTED,
+                "outcome_code": OutcomeCode.CONFIGURATION_ERROR,
+            },
+        )
+    return f"{base}/verify-email/{raw_token}"
+
+
 def _mask_email(email: str) -> str:
     """Mask the local part of an email address.
 
@@ -61,10 +89,10 @@ def _mask_email(email: str) -> str:
     return f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}@{domain}"
 
 
-# ── PUT /api/me/profile ───────────────────────────────────────────────────────
+# ── PUT /api/me ───────────────────────────────────────────────────────────────
 
 
-@router.put("/profile", response_model=UserResponse)
+@router.put("", response_model=UserResponse)
 async def update_profile(
     body: ProfileUpdateRequest,
     current_user: User = Depends(get_current_user),
@@ -117,6 +145,7 @@ async def update_profile(
 @router.post("/email-change/request", status_code=status.HTTP_202_ACCEPTED)
 async def request_email_change(
     body: EmailChangeRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     email_service=Depends(get_email_service),
@@ -230,7 +259,7 @@ async def request_email_change(
         await db.refresh(token_record)
 
         token_id = token_record.id
-        confirm_url = f"{settings.frontend_base_url}/verify-email/{raw_token}"
+        confirm_url = _verify_url(raw_token, request)
         display_name = current_user.display_name or current_user.username or "User"
 
         # Send verification email to new_email

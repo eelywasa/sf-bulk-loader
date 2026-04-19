@@ -1,4 +1,4 @@
-"""Tests for PUT /api/me/profile (SFBL-148 — profile update)."""
+"""Tests for PUT /api/me (SFBL-148 — profile update)."""
 
 import uuid
 
@@ -51,7 +51,7 @@ def test_update_display_name_valid(client):
     token = create_access_token(user)
 
     resp = client.put(
-        "/api/me/profile",
+        "/api/me",
         json={"display_name": "Alice Smith"},
         headers=_bearer(token),
     )
@@ -77,7 +77,7 @@ def test_update_display_name_trims_whitespace(client):
     token = create_access_token(user)
 
     resp = client.put(
-        "/api/me/profile",
+        "/api/me",
         json={"display_name": "  Bob  "},
         headers=_bearer(token),
     )
@@ -91,7 +91,7 @@ def test_update_display_name_empty_string_returns_400(client):
     token = create_access_token(user)
 
     resp = client.put(
-        "/api/me/profile",
+        "/api/me",
         json={"display_name": ""},
         headers=_bearer(token),
     )
@@ -104,7 +104,7 @@ def test_update_display_name_whitespace_only_returns_400(client):
     token = create_access_token(user)
 
     resp = client.put(
-        "/api/me/profile",
+        "/api/me",
         json={"display_name": "   "},
         headers=_bearer(token),
     )
@@ -117,7 +117,7 @@ def test_update_display_name_overlong_returns_400(client):
     token = create_access_token(user)
 
     resp = client.put(
-        "/api/me/profile",
+        "/api/me",
         json={"display_name": "A" * 121},
         headers=_bearer(token),
     )
@@ -130,7 +130,7 @@ def test_update_display_name_exactly_120_chars_accepted(client):
     token = create_access_token(user)
 
     resp = client.put(
-        "/api/me/profile",
+        "/api/me",
         json={"display_name": "A" * 120},
         headers=_bearer(token),
     )
@@ -140,7 +140,7 @@ def test_update_display_name_exactly_120_chars_accepted(client):
 def test_update_profile_no_token_returns_401(client):
     """Anonymous request → 401."""
     resp = client.put(
-        "/api/me/profile",
+        "/api/me",
         json={"display_name": "Alice"},
     )
     assert resp.status_code == 401
