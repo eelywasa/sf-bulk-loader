@@ -89,6 +89,7 @@ async def test_local_storage_success_file_written(tmp_path):
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -99,7 +100,7 @@ async def test_local_storage_success_file_written(tmp_path):
         tmp_path
         / "plan-001-test-plan"
         / "run-001"
-        / "01_account_insert"
+        / "01_account_insert_stepuuid"
         / "partition_0_success.csv"
     )
     assert expected.exists()
@@ -120,6 +121,7 @@ async def test_local_storage_job_record_success_path(tmp_path):
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -127,7 +129,7 @@ async def test_local_storage_job_record_success_path(tmp_path):
     )
 
     assert jr.success_file_path == (
-        "plan-001-test-plan/run-001/01_account_insert/partition_0_success.csv"
+        "plan-001-test-plan/run-001/01_account_insert_stepuuid/partition_0_success.csv"
     )
 
 
@@ -145,6 +147,7 @@ async def test_local_storage_error_file_written(tmp_path):
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -152,13 +155,13 @@ async def test_local_storage_error_file_written(tmp_path):
     )
 
     assert jr.error_file_path == (
-        "plan-001-test-plan/run-001/01_account_insert/partition_1_errors.csv"
+        "plan-001-test-plan/run-001/01_account_insert_stepuuid/partition_1_errors.csv"
     )
     expected = (
         tmp_path
         / "plan-001-test-plan"
         / "run-001"
-        / "01_account_insert"
+        / "01_account_insert_stepuuid"
         / "partition_1_errors.csv"
     )
     assert expected.read_bytes() == CSV_ERRORS
@@ -182,6 +185,7 @@ async def test_local_storage_unprocessed_file_written(tmp_path):
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -189,13 +193,13 @@ async def test_local_storage_unprocessed_file_written(tmp_path):
     )
 
     assert jr.unprocessed_file_path == (
-        "plan-001-test-plan/run-001/01_account_insert/partition_2_unprocessed.csv"
+        "plan-001-test-plan/run-001/01_account_insert_stepuuid/partition_2_unprocessed.csv"
     )
     expected = (
         tmp_path
         / "plan-001-test-plan"
         / "run-001"
-        / "01_account_insert"
+        / "01_account_insert_stepuuid"
         / "partition_2_unprocessed.csv"
     )
     assert expected.read_bytes() == CSV_UNPROCESSED
@@ -215,6 +219,7 @@ async def test_local_storage_returns_correct_counts(tmp_path):
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -244,6 +249,7 @@ async def test_local_storage_paths_not_set_when_empty_bytes(tmp_path):
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -298,6 +304,7 @@ async def test_s3_storage_job_record_paths_are_s3_uris():
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -324,6 +331,7 @@ async def test_s3_storage_success_uri_contains_correct_key():
         run_id="run-abc",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=2,
         object_name="Contact",
         operation="update",
@@ -331,7 +339,7 @@ async def test_s3_storage_success_uri_contains_correct_key():
     )
 
     assert jr.success_file_path == (
-        "s3://my-bucket/plan-001-test-plan/run-abc/02_contact_update/partition_3_success.csv"
+        "s3://my-bucket/plan-001-test-plan/run-abc/02_contact_update_stepuuid/partition_3_success.csv"
     )
 
 
@@ -350,13 +358,14 @@ async def test_s3_storage_data_uploaded_correctly():
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
         output_storage=storage,
     )
 
-    key = "plan-001-test-plan/run-001/01_account_insert/partition_0_success.csv"
+    key = "plan-001-test-plan/run-001/01_account_insert_stepuuid/partition_0_success.csv"
     assert key in fake.uploads
     assert fake.uploads[key] == CSV_SUCCESS
 
@@ -390,6 +399,7 @@ async def test_output_storage_error_is_caught_does_not_raise():
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -416,6 +426,7 @@ async def test_output_storage_error_file_path_remains_none():
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -444,6 +455,7 @@ async def test_output_storage_error_logged_as_warning(caplog):
             run_id="run-001",
             plan_id="plan-001-fixture",
             plan_name="Test Plan",
+            step_id="stepuuid12345",
             step_sequence=1,
             object_name="Account",
             operation="insert",
@@ -467,6 +479,7 @@ async def test_output_storage_error_row_counts_still_returned():
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",
@@ -495,6 +508,7 @@ async def test_bulk_api_error_on_success_download_is_caught(tmp_path):
         run_id="run-001",
         plan_id="plan-001-fixture",
         plan_name="Test Plan",
+        step_id="stepuuid12345",
         step_sequence=1,
         object_name="Account",
         operation="insert",

@@ -59,6 +59,7 @@ def _result_path(
     plan_id: str,
     plan_name: str,
     run_id: str,
+    step_id: str,
     sequence: int,
     object_name: str,
     operation: str,
@@ -70,17 +71,20 @@ def _result_path(
     Format::
 
         {plan_short_id}-{plan_slug}/{run_short_id}/
-            {sequence:02d}_{object_slug}_{operation}/
+            {sequence:02d}_{object_slug}_{operation}_{step_short_id}/
             partition_{n}_{suffix}.csv
 
     ``{plan_short_id}`` is the first 8 characters of the plan UUID and
     guarantees per-plan uniqueness even when two plans share the same name.
     ``{run_short_id}`` is the first 8 characters of the run UUID and
-    differentiates runs of the same plan.
+    differentiates runs of the same plan.  ``{step_short_id}`` is the first
+    8 characters of the step UUID — required because (sequence, object,
+    operation) is not guaranteed unique within a plan, so without it two
+    steps in the same run could overwrite each other's partitions.
     """
     plan_dir = f"{plan_id[:8]}-{_slugify(plan_name)}"
     run_short = run_id[:8]
-    step_dir = f"{sequence:02d}_{_slugify(object_name)}_{operation}"
+    step_dir = f"{sequence:02d}_{_slugify(object_name)}_{operation}_{step_id[:8]}"
     return str(
         pathlib.Path(plan_dir)
         / run_short
@@ -97,6 +101,7 @@ async def download_and_persist_results(
     run_id: str,
     plan_id: str,
     plan_name: str,
+    step_id: str,
     step_sequence: int,
     object_name: str,
     operation: str,
@@ -121,6 +126,7 @@ async def download_and_persist_results(
             plan_id=plan_id,
             plan_name=plan_name,
             run_id=run_id,
+            step_id=step_id,
             sequence=step_sequence,
             object_name=object_name,
             operation=operation,

@@ -176,7 +176,12 @@ async def _download_results(
     sf_job_id: str,
     job_record: JobRecord,
     run_id: str,
+    plan_id: str,
+    plan_name: str,
     step_id: str,
+    step_sequence: int,
+    object_name: str,
+    operation: str,
     output_storage,
 ) -> tuple[int, int]:
     """Download result files.  Delegates to result_persistence."""
@@ -185,7 +190,12 @@ async def _download_results(
         sf_job_id=sf_job_id,
         job_record=job_record,
         run_id=run_id,
+        plan_id=plan_id,
+        plan_name=plan_name,
         step_id=step_id,
+        step_sequence=step_sequence,
+        object_name=object_name,
+        operation=operation,
         output_storage=output_storage,
     )
 

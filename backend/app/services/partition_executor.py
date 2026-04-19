@@ -336,6 +336,7 @@ async def _process_partition_body(
                 run_id=run_id,
                 plan_id=plan_id,
                 plan_name=plan_name,
+                step_id=str(step.id),
                 step_sequence=step.sequence,
                 object_name=step.object_name,
                 operation=step.operation.value,
