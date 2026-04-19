@@ -179,6 +179,8 @@ async def execute_retry_run(
                 _default_process(
                     run_id=run_id,
                     step=step,
+                    plan_id=plan.id,
+                    plan_name=plan.name,
                     job_record_id=jr_id,
                     csv_data=csv_data,
                     bulk_client=bulk_client,
@@ -569,6 +571,8 @@ async def _execute_run_body(
                 step_success, step_errors = await _step_executor_mod.execute_step(
                     run_id=run_id,
                     step=step,
+                    plan_id=plan.id,
+                    plan_name=plan.name,
                     bulk_client=bulk_client,
                     db=db,
                     semaphore=semaphore,

@@ -42,6 +42,8 @@ async def process_partition(
     *,
     run_id: str,
     step: LoadStep,
+    plan_id: str,
+    plan_name: str,
     job_record_id: str,
     csv_data: bytes,
     bulk_client: SalesforceBulkClient,
@@ -55,6 +57,9 @@ async def process_partition(
     across concurrent coroutines.  The semaphore limits the number of
     partitions that may communicate with Salesforce at the same time.
 
+    ``plan_id`` and ``plan_name`` are used to build human-readable result file
+    paths (see :func:`app.services.result_persistence._result_path`).
+
     Returns:
         ``(success_count, error_count)`` — ``(0, 0)`` on early-exit failure paths.
     """
@@ -65,6 +70,8 @@ async def process_partition(
         return await _process_partition_body(
             run_id=run_id,
             step=step,
+            plan_id=plan_id,
+            plan_name=plan_name,
             job_record_id=job_record_id,
             csv_data=csv_data,
             bulk_client=bulk_client,
@@ -79,6 +86,8 @@ async def _process_partition_body(
     *,
     run_id: str,
     step: LoadStep,
+    plan_id: str,
+    plan_name: str,
     job_record_id: str,
     csv_data: bytes,
     bulk_client: SalesforceBulkClient,
@@ -325,7 +334,11 @@ async def _process_partition_body(
                 sf_job_id=sf_job_id,
                 job_record=job_rec,
                 run_id=run_id,
-                step_id=step.id,
+                plan_id=plan_id,
+                plan_name=plan_name,
+                step_sequence=step.sequence,
+                object_name=step.object_name,
+                operation=step.operation.value,
                 output_storage=output_storage,
             )
 

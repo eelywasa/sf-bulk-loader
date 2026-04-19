@@ -52,8 +52,9 @@ class UnsupportedOutputProviderError(OutputStorageError):
 class OutputStorage(Protocol):
     """Provider-neutral write contract used by result-persistence consumers.
 
-    ``relative_path`` always has the form
-    ``{run_id}/{step_id}/partition_{idx}_{type}.csv``.
+    ``relative_path`` is constructed by
+    :func:`app.services.result_persistence._result_path` and has the form
+    ``{plan_short_id}-{plan_slug}/{run_short_id}/{sequence:02d}_{object_slug}_{operation}/partition_{idx}_{type}.csv``.
 
     Returns:
         The persisted reference — a local relative path for
@@ -86,7 +87,7 @@ class LocalOutputStorage:
 
         Args:
             relative_path: Path relative to the output directory, e.g.
-                ``run-id/step-id/partition_0_results.csv``.
+                ``1a2b3c4d-q1-migration/3f2a1b4c/01_account_upsert/partition_0_success.csv``.
             data: Raw bytes to write.
 
         Returns:
@@ -152,7 +153,7 @@ class S3OutputStorage:
 
         Returns:
             The S3 URI of the uploaded object, e.g.
-            ``s3://my-bucket/results/run-id/step-id/partition_0_results.csv``.
+            ``s3://my-bucket/results/1a2b3c4d-q1-migration/3f2a1b4c/01_account_upsert/partition_0_success.csv``.
 
         Raises:
             :exc:`OutputStorageError`: If the upload fails with a
