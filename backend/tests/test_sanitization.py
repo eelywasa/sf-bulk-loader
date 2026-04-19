@@ -12,6 +12,7 @@ from app.observability.sanitization import (
     safe_record_exception,
     scrub_dict,
     scrub_headers,
+    strip_s3_query_string,
 )
 
 
@@ -290,3 +291,52 @@ class TestEmailScrubbedKeys:
         for key in email_keys:
             assert key == key.lower(), f"Key must be lowercase: {key!r}"
             assert key in SCRUBBED_KEYS, f"Key not found in SCRUBBED_KEYS: {key!r}"
+
+
+# ── S3 URI sanitization — strip_s3_query_string (SFBL-163) ───────────────────
+
+
+class TestStripS3QueryString:
+    """Tests for the S3 presigned URI sanitisation rule."""
+
+    def test_strips_query_string_from_presigned_uri(self):
+        """A presigned URI has its query string removed, leaving only the base URI."""
+        presigned = "s3://my-bucket/some/key?X-Amz-Signature=abc123&X-Amz-Expires=3600"
+        result = strip_s3_query_string(presigned)
+        assert result == "s3://my-bucket/some/key"
+
+    def test_plain_s3_uri_passes_through_unchanged(self):
+        """An S3 URI with no query string is returned as-is."""
+        plain = "s3://my-bucket/some/key"
+        result = strip_s3_query_string(plain)
+        assert result == plain
+
+    def test_non_s3_url_with_query_string_is_unaffected(self):
+        """Non-S3 URLs with query strings are NOT modified."""
+        https_url = "https://example.com/path?foo=bar&baz=qux"
+        result = strip_s3_query_string(https_url)
+        assert result == https_url
+
+    def test_non_s3_plain_string_is_unaffected(self):
+        """Arbitrary non-S3 strings pass through unchanged."""
+        plain_string = "some-run-id-value"
+        result = strip_s3_query_string(plain_string)
+        assert result == plain_string
+
+    def test_embedded_in_exception_message(self):
+        """Presigned S3 URIs embedded in exception messages are sanitized by safe_exc_message."""
+        presigned = "s3://my-bucket/results/run-1/step-1/partition_0.csv?X-Amz-Signature=abc123&X-Amz-Expires=3600"
+        exc = RuntimeError(f"Upload failed: {presigned}")
+        sanitized = safe_exc_message(exc)
+        assert "X-Amz-Signature" not in sanitized
+        assert "X-Amz-Expires" not in sanitized
+        assert "s3://my-bucket/results/run-1/step-1/partition_0.csv" in sanitized
+
+    def test_multiple_presigned_uris_all_stripped(self):
+        """Multiple presigned S3 URIs in one string are all stripped."""
+        msg = (
+            "s3://bucket-a/key-a?X-Amz-Signature=aaa "
+            "and s3://bucket-b/key-b?X-Amz-Credential=bbb"
+        )
+        result = strip_s3_query_string(msg)
+        assert result == "s3://bucket-a/key-a and s3://bucket-b/key-b"

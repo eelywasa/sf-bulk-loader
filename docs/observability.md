@@ -90,6 +90,19 @@ and increments `sfbl_bulk_job_poll_timeout_total`. See SFBL-111.
 
 ### Storage events
 `storage.input.listed` · `storage.input.previewed` · `storage.input.failed` · `storage.output.persisted`
+`storage.output.upload.started` · `storage.output.upload.completed` · `storage.output.upload.failed`
+
+| Constant | Value | Description |
+|---|---|---|
+| `StorageEvent.INPUT_LISTED` | `storage.input.listed` | Input file listing completed |
+| `StorageEvent.INPUT_PREVIEWED` | `storage.input.previewed` | Input file preview read |
+| `StorageEvent.INPUT_FAILED` | `storage.input.failed` | Input storage access failure |
+| `StorageEvent.OUTPUT_PERSISTED` | `storage.output.persisted` | Result written (any backend) |
+| `StorageEvent.OUTPUT_UPLOAD_STARTED` | `storage.output.upload.started` | S3 upload initiated (before `upload_fileobj`) |
+| `StorageEvent.OUTPUT_UPLOAD_COMPLETED` | `storage.output.upload.completed` | S3 upload succeeded; logged at INFO with `bytes_written` |
+| `StorageEvent.OUTPUT_UPLOAD_FAILED` | `storage.output.upload.failed` | S3 `ClientError`; logged at WARNING before re-raising as `OutputStorageError` |
+
+The S3 output upload path in `S3OutputStorage.write_bytes` is a new storage interaction boundary. All three lifecycle events are emitted with structured `extra` fields (`event_name`, `outcome_code`, and where applicable `s3_bucket`, `s3_key`, `bytes_written`).
 
 ### System events
 `health.checked` · `websocket.connected` · `websocket.disconnected` · `websocket.error`
@@ -226,6 +239,9 @@ OutcomeCode.STEP_THRESHOLD_EXCEEDED
 OutcomeCode.DEPENDENCY_UNAVAILABLE
 OutcomeCode.CONFIGURATION_ERROR
 OutcomeCode.JOB_POLL_TIMEOUT      # Bulk API job exceeded sf_job_max_poll_seconds
+
+# Storage output
+OutcomeCode.OUTPUT_UPLOAD_ERROR   # S3 output write failure (distinct from STORAGE_ERROR for input reads)
 
 # Email
 OutcomeCode.EMAIL_SMTP_ERROR          # SMTP backend delivery failure
@@ -399,6 +415,7 @@ Work through each item and explicitly note which ones apply:
 - [ ] **Span attributes** — do any new span attributes respect the sanitization rules?
 - [ ] **Health / readiness** — does this change affect `ready` or `dependencies` endpoint semantics?
 - [ ] **Sensitive telemetry** — do any new error paths or exception handlers comply with `sanitization.py`?
+- [ ] **S3 URI safety** — if any log site or span attribute may include an S3 URI, is it passed through `strip_s3_query_string` to prevent presigned URL leakage?
 - [ ] **Tests** — are there tests covering the new observability paths?
 
 ### Review questions for specs and PRs
@@ -423,6 +440,27 @@ for the full list of prohibited content and the shared scrubbing helpers.
 
 **Summary: never include tokens, keys, passwords, auth headers, or raw CSV data
 in any log record, span attribute, metric label, or error monitoring event.**
+
+### S3 presigned URI sanitization (SFBL-163)
+
+`sanitization.py` includes a rule that strips query strings from `s3://` URIs.
+This prevents AWS presigned URL leakage (e.g. `?X-Amz-Signature=...`) in log output.
+
+The rule is applied automatically in `safe_exc_message` and is also available
+directly as `strip_s3_query_string(value)`:
+
+```python
+from app.observability.sanitization import strip_s3_query_string
+
+# "s3://bucket/key?X-Amz-Signature=..." → "s3://bucket/key"
+clean = strip_s3_query_string(potentially_presigned_uri)
+```
+
+Any code that logs an S3 URI that might be presigned (e.g. a value returned from
+a `generate_presigned_url` call) must pass it through `strip_s3_query_string` before
+including it in a log `extra` field or span attribute. The `S3OutputStorage` class
+never logs presigned URIs directly — it logs only the `s3_bucket` and `s3_key` fields
+separately, which cannot carry query strings.
 
 ---
 
