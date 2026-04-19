@@ -121,6 +121,7 @@ async def _execute_step(
     db: AsyncSession,
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
+    output_storage,
 ) -> tuple[int, int]:
     """Execute one LoadStep.  Delegates to step_executor with patched bindings."""
     return await step_executor.execute_step(
@@ -130,6 +131,7 @@ async def _execute_step(
         db=db,
         semaphore=semaphore,
         db_factory=db_factory,
+        output_storage=output_storage,
         _get_storage=get_storage,
         _partition=partition_csv,
         _process=_process_partition,
@@ -145,6 +147,7 @@ async def _process_partition(
     bulk_client: SalesforceBulkClient,
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
+    output_storage,
 ) -> tuple[int, int]:
     """Submit one CSV partition.  Delegates to partition_executor."""
     return await partition_executor.process_partition(
@@ -155,6 +158,7 @@ async def _process_partition(
         bulk_client=bulk_client,
         semaphore=semaphore,
         db_factory=db_factory,
+        output_storage=output_storage,
     )
 
 
@@ -165,6 +169,7 @@ async def _download_results(
     job_record: JobRecord,
     run_id: str,
     step_id: str,
+    output_storage,
 ) -> tuple[int, int]:
     """Download result files.  Delegates to result_persistence."""
     return await result_persistence.download_and_persist_results(
@@ -173,6 +178,7 @@ async def _download_results(
         job_record=job_record,
         run_id=run_id,
         step_id=step_id,
+        output_storage=output_storage,
     )
 
 
