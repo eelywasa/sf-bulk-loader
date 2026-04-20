@@ -882,3 +882,125 @@ class TestHealthDependencies:
         data = response.json()
         assert data["status"] == "degraded"
         assert data["dependencies"]["database"]["status"] == "ok"
+
+
+# ── Output file listing ────────────────────────────────────────────────────────
+
+
+def test_list_output_files_requires_auth(client):
+    assert client.get("/api/files/output").status_code == 401
+
+
+def test_list_output_files_empty_dir(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get("/api/files/output")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_list_output_files_returns_csvs(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for name in ("partition_0_success.csv", "partition_0_errors.csv", "readme.txt"):
+            open(os.path.join(tmpdir, name), "w").close()
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get("/api/files/output")
+    assert resp.status_code == 200
+    names = [f["name"] for f in resp.json()]
+    assert "partition_0_success.csv" in names
+    assert "partition_0_errors.csv" in names
+    assert "readme.txt" not in names
+    assert all(f["source"] == "local-output" for f in resp.json())
+    assert all(f["provider"] == "local" for f in resp.json())
+
+
+def test_list_output_files_missing_dir_returns_empty(auth_client):
+    with patch("app.api.utility.settings.output_dir", "/path/that/does/not/exist"):
+        resp = auth_client.get("/api/files/output")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_list_output_files_returns_directory_entries(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, "plan-abc"))
+        open(os.path.join(tmpdir, "root.csv"), "w").close()
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get("/api/files/output")
+    assert resp.status_code == 200
+    kinds = {e["name"]: e["kind"] for e in resp.json()}
+    assert kinds["plan-abc"] == "directory"
+    assert kinds["root.csv"] == "file"
+
+
+def test_list_output_files_with_path_param(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, "plan-abc", "run-01"))
+        csv_path = os.path.join(tmpdir, "plan-abc", "run-01", "partition_0_success.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["sf__Id", "sf__Created"])
+            writer.writerow(["001abc", "true"])
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get("/api/files/output?path=plan-abc/run-01")
+    assert resp.status_code == 200
+    entries = resp.json()
+    assert len(entries) == 1
+    assert entries[0]["name"] == "partition_0_success.csv"
+    assert entries[0]["source"] == "local-output"
+    assert entries[0]["row_count"] == 1
+
+
+def test_list_output_files_path_traversal_returns_400(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get("/api/files/output?path=../etc")
+    assert resp.status_code == 400
+
+
+# ── Output file preview ────────────────────────────────────────────────────────
+
+
+def test_preview_output_file_returns_rows(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = os.path.join(tmpdir, "partition_0_success.csv")
+        _write_preview_csv(csv_path, rows=5)
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get("/api/files/output/partition_0_success.csv/preview?limit=5")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["filename"] == "partition_0_success.csv"
+    assert body["header"] == ["Name", "Industry"]
+    assert len(body["rows"]) == 5
+    assert body["source"] == "local-output"
+    assert body["provider"] == "local"
+
+
+def test_preview_output_file_not_found_returns_404(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get("/api/files/output/nonexistent.csv/preview")
+    assert resp.status_code == 404
+
+
+def test_preview_output_file_path_traversal_returns_400(auth_client):
+    resp = auth_client.get("/api/files/output/../secret.csv/preview")
+    assert resp.status_code in (400, 404)
+
+
+def test_preview_output_file_in_subdirectory(auth_client):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, "plan-abc", "run-01"))
+        csv_path = os.path.join(tmpdir, "plan-abc", "run-01", "partition_0_errors.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["sf__Id", "sf__Error"])
+            writer.writerow(["", "REQUIRED_FIELD_MISSING"])
+        with patch("app.api.utility.settings.output_dir", tmpdir):
+            resp = auth_client.get(
+                "/api/files/output/plan-abc/run-01/partition_0_errors.csv/preview"
+            )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["header"] == ["sf__Id", "sf__Error"]
+    assert len(body["rows"]) == 1

@@ -13,6 +13,8 @@ vi.mock('../../api/endpoints', () => ({
   filesApi: {
     listInput: vi.fn(),
     previewInput: vi.fn(),
+    listOutput: vi.fn(),
+    previewOutput: vi.fn(),
   },
   inputConnectionsApi: {
     list: vi.fn(),
@@ -632,12 +634,14 @@ describe('FilesPage', () => {
 
   // ── Source selector ────────────────────────────────────────────────────────
 
-  it('does not show source selector when no input connections exist', async () => {
+  it('always shows source selector with at least local input and local output options', async () => {
     vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
-    expect(screen.queryByLabelText('Source')).not.toBeInTheDocument()
+    const select = screen.getByLabelText('Source')
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toEqual(['Local Input Files', 'Local Output Files'])
   })
 
   it('shows source selector when input connections exist', async () => {
@@ -656,7 +660,7 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByLabelText('Source'))
     const select = screen.getByLabelText('Source')
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
-    expect(options).toEqual(['Local files', 'Production S3'])
+    expect(options).toEqual(['Local Input Files', 'Local Output Files', 'Production S3'])
   })
 
   it('defaults to local source', async () => {
@@ -803,6 +807,57 @@ describe('FilesPage', () => {
       '2026/accounts.csv',
       { offset: 0, limit: 50, filters: [] },
       'local',
+    )
+  })
+
+  // ── Local Output Files source ──────────────────────────────────────────────
+
+  it('calls listOutput when Local Output Files is selected', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    const outputFiles: InputDirectoryEntry[] = [
+      { name: 'partition_0_success.csv', kind: 'file', path: 'plan/run/partition_0_success.csv', size_bytes: 512, row_count: 10, source: 'local-output', provider: 'local' },
+    ]
+    vi.mocked(filesApi.listOutput).mockResolvedValue(outputFiles)
+    renderFilesPage()
+    await waitFor(() => screen.getByLabelText('Source'))
+    await user.selectOptions(screen.getByLabelText('Source'), 'local-output')
+    await waitFor(() => expect(filesApi.listOutput).toHaveBeenCalledWith(''))
+    expect(await screen.findByText('partition_0_success.csv')).toBeInTheDocument()
+  })
+
+  it('uses previewOutput when source is local-output', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue([])
+    const outputFiles: InputDirectoryEntry[] = [
+      { name: 'partition_0_errors.csv', kind: 'file', path: 'partition_0_errors.csv', size_bytes: 256, row_count: 3, source: 'local-output', provider: 'local' },
+    ]
+    vi.mocked(filesApi.listOutput).mockResolvedValue(outputFiles)
+    vi.mocked(filesApi.previewOutput).mockReturnValue(new Promise(() => {}))
+    renderFilesPage()
+    await waitFor(() => screen.getByLabelText('Source'))
+    await user.selectOptions(screen.getByLabelText('Source'), 'local-output')
+    await waitFor(() => screen.getByText('partition_0_errors.csv'))
+    await user.click(screen.getByText('partition_0_errors.csv'))
+    expect(filesApi.previewOutput).toHaveBeenCalledWith(
+      'partition_0_errors.csv',
+      { offset: 0, limit: 50, filters: [] },
+    )
+    expect(filesApi.previewInput).not.toHaveBeenCalled()
+  })
+
+  it('shows output-specific empty state when local-output has no files', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue([])
+    vi.mocked(filesApi.listOutput).mockResolvedValue([])
+    renderFilesPage()
+    await waitFor(() => screen.getByLabelText('Source'))
+    await user.selectOptions(screen.getByLabelText('Source'), 'local-output')
+    await waitFor(() =>
+      expect(screen.getByText('No result files found. Run a load plan to generate output files.')).toBeInTheDocument()
     )
   })
 })

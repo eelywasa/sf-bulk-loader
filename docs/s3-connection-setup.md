@@ -1,6 +1,14 @@
-# S3 Input Connection Setup Guide
+# S3 Connection Setup Guide
 
 This guide covers everything needed to configure an S3 bucket for use with the Salesforce Bulk Loader, including the required AWS-side setup and how to create the connection in the UI.
+
+Connections can be configured for three purposes, controlled by the **Direction** field:
+
+| Direction | Used for | Permissions required |
+|---|---|---|
+| **Input** | Reading source CSV files | `s3:ListBucket`, `s3:GetObject` |
+| **Output** | Writing result CSVs (successes, errors, unprocessed) | `s3:ListBucket`, `s3:PutObject`, `s3:DeleteObject` |
+| **Both** | Reading source CSVs and writing results | All of the above |
 
 ---
 
@@ -20,9 +28,13 @@ The application authenticates using static IAM credentials (access key + secret)
 
 ### 2. Create an IAM Policy
 
-The application only needs to list and read objects — it never writes to S3. Attach the following least-privilege policy to the IAM user, replacing `my-bucket` and `data/` with your actual bucket name and root prefix.
+Choose the policy template that matches the connection's intended direction. Replace `my-bucket` and `data/` with your actual bucket name and root prefix.
 
-The `GetObject` resource must cover the root prefix **and all subdirectories beneath it** — use a single wildcard at the end of the prefix (`data/*`), not a deeper path. If you scope it too narrowly (e.g. `data/csvs/*`), files in other subdirectories (e.g. `data/10K/Account.csv`) will be denied.
+The object-level resource must cover the root prefix **and all subdirectories beneath it** — use a single wildcard at the end of the prefix (`data/*`). If you scope it too narrowly (e.g. `data/csvs/*`), files in other subdirectories will be denied.
+
+#### Input only (`direction: in`)
+
+Read access to list and download objects:
 
 ```json
 {
@@ -49,14 +61,86 @@ The `GetObject` resource must cover the root prefix **and all subdirectories ben
 }
 ```
 
-If you do not use a root prefix (the connection will read from the bucket root), remove the `Condition` block from the `AllowBucketListing` statement and set the `AllowObjectRead` resource to `arn:aws:s3:::my-bucket/*`.
+#### Output only (`direction: out`)
+
+Write access to upload and clean up result CSVs. The `s3:ListBucket` permission is used by the connection test to verify basic bucket access before attempting a write.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowBucketListing",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["data/*"]
+        }
+      }
+    },
+    {
+      "Sid": "AllowObjectWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/data/*"
+    }
+  ]
+}
+```
+
+> **Why `s3:DeleteObject`?** The connection test writes a small probe file (`.sfbl-write-test`) to verify write access, then immediately deletes it. Without `s3:DeleteObject` the test will fail even if `s3:PutObject` works, and the probe file will be left in the bucket.
+
+#### Input and Output (`direction: both`)
+
+Full read and write access, combining both statement sets above:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowBucketListing",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["data/*"]
+        }
+      }
+    },
+    {
+      "Sid": "AllowObjectRead",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-bucket/data/*"
+    },
+    {
+      "Sid": "AllowObjectWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/data/*"
+    }
+  ]
+}
+```
+
+If you do not use a root prefix (the connection reads/writes from the bucket root), remove the `Condition` block from `AllowBucketListing` and change the object-level resource to `arn:aws:s3:::my-bucket/*`.
 
 ### 3. Bucket Configuration
 
 No special bucket configuration is required beyond normal access controls. Confirm the following:
 
 - **Block Public Access** — leave enabled; the application uses IAM credentials, not public URLs
-- **Encryption** — any encryption setting (SSE-S3, SSE-KMS) is supported; the IAM user will need `kms:Decrypt` permission if using a customer-managed KMS key
+- **Encryption** — any encryption setting (SSE-S3, SSE-KMS) is supported; the IAM user will need `kms:Decrypt` permission for reads and `kms:GenerateDataKey` for writes if using a customer-managed KMS key
 - **Versioning** — the application always reads the latest version; versioning can be on or off
 - **Bucket region** — note the region (e.g. `us-east-1`); you will enter this when creating the connection
 
@@ -108,7 +192,9 @@ aws iam create-user --user-name sf-bulk-loader-s3
 
 ### 3. Create and Attach the IAM Policy
 
-Save the policy document to a local file:
+Choose the policy document that matches your intended direction and save it to a local file.
+
+**Input only:**
 
 ```bash
 cat > sf-bulk-loader-s3-policy.json << 'EOF'
@@ -137,6 +223,76 @@ cat > sf-bulk-loader-s3-policy.json << 'EOF'
 EOF
 ```
 
+**Output only:**
+
+```bash
+cat > sf-bulk-loader-s3-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowBucketListing",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["data/*"]
+        }
+      }
+    },
+    {
+      "Sid": "AllowObjectWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/data/*"
+    }
+  ]
+}
+EOF
+```
+
+**Both (input and output):**
+
+```bash
+cat > sf-bulk-loader-s3-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowBucketListing",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["data/*"]
+        }
+      }
+    },
+    {
+      "Sid": "AllowObjectRead",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-bucket/data/*"
+    },
+    {
+      "Sid": "AllowObjectWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/data/*"
+    }
+  ]
+}
+EOF
+```
+
 Create the policy in AWS and capture its ARN:
 
 ```bash
@@ -157,7 +313,7 @@ aws iam attach-user-policy \
   --policy-arn "$POLICY_ARN"
 ```
 
-### 3. Create an Access Key
+### 4. Create an Access Key
 
 ```bash
 aws iam create-access-key --user-name sf-bulk-loader-s3
@@ -177,45 +333,29 @@ This returns JSON containing `AccessKeyId` and `SecretAccessKey`. Copy both valu
 }
 ```
 
-### 4. Verify the Policy (Optional)
+### 5. Verify the Policy (Optional)
 
-Confirm the policy is attached and test that listing objects works:
+Confirm the policy is attached and test access manually:
 
 ```bash
 # Check attached policies
 aws iam list-attached-user-policies --user-name sf-bulk-loader-s3
 
-# Test listing using the new credentials (replace key values)
+# Test listing (input / both)
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
 AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
-aws s3 ls s3://my-bucket/data/csvs/ --region us-east-1
+aws s3 ls s3://my-bucket/data/ --region us-east-1
+
+# Test writing (output / both)
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE \
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
+aws s3 cp /dev/null s3://my-bucket/data/.write-test --region us-east-1 && \
+aws s3 rm s3://my-bucket/data/.write-test --region us-east-1
 ```
 
 ### Bucket-Root Variant (No Prefix)
 
-If you are not using a root prefix, use this policy document instead (omits the `Condition` block and grants access to all objects):
-
-```bash
-cat > sf-bulk-loader-s3-policy.json << 'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowBucketListing",
-      "Effect": "Allow",
-      "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::my-bucket"
-    },
-    {
-      "Sid": "AllowObjectRead",
-      "Effect": "Allow",
-      "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::my-bucket/*"
-    }
-  ]
-}
-EOF
-```
+If you are not using a root prefix, omit the `Condition` block from `AllowBucketListing` and change all object-level resources to `arn:aws:s3:::my-bucket/*`.
 
 ### Cleanup (If Needed)
 
@@ -239,12 +379,13 @@ aws iam delete-policy --policy-arn "$POLICY_ARN"
 ## Creating the Connection in the App
 
 1. Navigate to **Connections** in the sidebar
-2. Under the **Input Connections** section, click **New Input Connection**
+2. Under the **Storage Connections** section, click **New Storage Connection**
 3. Fill in the form:
 
 | Field | Required | Description |
 |---|---|---|
 | **Name** | Yes | A display name for this connection, e.g. `Production S3` |
+| **Direction** | Yes | `Input` — source CSVs only; `Output` — result CSVs only; `Both` — source and result CSVs |
 | **Bucket** | Yes | The S3 bucket name, e.g. `my-data-bucket` |
 | **Region** | No | The AWS region, e.g. `us-east-1`. Recommended — without it boto3 will attempt to detect the region automatically |
 | **Root Prefix** | No | A path prefix within the bucket to treat as the root, e.g. `data/csvs/`. Use this to limit the app's visible scope to a subfolder |
@@ -252,7 +393,9 @@ aws iam delete-policy --policy-arn "$POLICY_ARN"
 | **Secret Access Key** | Yes | The IAM secret access key |
 | **Session Token** | No | Only required when using temporary STS credentials |
 
-4. Click **Save**, then click **Test** to verify the connection. The test performs a lightweight `ListObjectsV2` call against the bucket (scoped to the root prefix if set) and reports success or a specific error (e.g. `AccessDenied`, `NoSuchBucket`, `InvalidClientTokenId`)
+4. Click **Save**, then click **Test** to verify the connection:
+   - For **Input** connections the test performs a `ListObjectsV2` call to confirm read access
+   - For **Output** and **Both** connections the test additionally performs a `PutObject` and `DeleteObject` on a temporary probe file to confirm write access — the probe file is immediately removed on success
 
 ---
 
@@ -268,3 +411,4 @@ When editing an existing connection, the credential fields (Access Key ID, Secre
 - Credentials are never returned in API responses; the connection list and detail endpoints omit all secret fields
 - Use a dedicated IAM user per environment (dev/staging/prod) so credentials can be rotated or revoked independently
 - Scope the IAM policy to the specific bucket and prefix your load plans actually need — avoid `s3:*` or wildcard resources
+- For output connections, `s3:DeleteObject` is required in addition to `s3:PutObject`. The application uses it to clean up the write-test probe during connection testing; it does not delete result files after writing them

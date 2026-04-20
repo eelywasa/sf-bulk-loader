@@ -6,13 +6,19 @@ export function formatDate(iso: string | null | undefined): string {
   return new Date(iso).toLocaleString()
 }
 
+function parseUtc(iso: string): number {
+  // SQLite strips timezone info, so bare ISO strings must be treated as UTC
+  const normalized = /[Zz]$|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + 'Z'
+  return new Date(normalized).getTime()
+}
+
 export function formatElapsed(
   startedAt: string | null | undefined,
   completedAt: string | null | undefined,
 ): string {
   if (!startedAt) return '—'
-  const start = new Date(startedAt).getTime()
-  const end = completedAt ? new Date(completedAt).getTime() : Date.now()
+  const start = parseUtc(startedAt)
+  const end = completedAt ? parseUtc(completedAt) : Date.now()
   const ms = end - start
   const totalSeconds = Math.floor(ms / 1000)
   const hours = Math.floor(totalSeconds / 3600)

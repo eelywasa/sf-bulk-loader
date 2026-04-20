@@ -1,8 +1,8 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { jobsApi } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { ApiError, apiFetchBlob } from '../api/client'
 import type { CsvFetchParams, JobStatus } from '../api/types'
 import { Badge, Button, Card, CsvPreviewPanel, Tabs } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
@@ -67,6 +67,27 @@ function LogSection({
   fetchPage,
   filename,
 }: LogSectionProps) {
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  async function handleDownload() {
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      const { blob, filename: name } = await apiFetchBlob(downloadHref)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setDownloadError('Download failed')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <div className="border border-border-base rounded-lg overflow-hidden">
       {/* Header */}
@@ -74,15 +95,16 @@ function LogSection({
         <div>
           <p className="text-sm font-medium text-content-primary">{label}</p>
           <p className="text-xs text-content-muted mt-0.5">{description}</p>
+          {downloadError && <p className="text-xs text-status-error mt-0.5">{downloadError}</p>}
         </div>
         {available ? (
-          <a
-            href={downloadHref}
-            download
-            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-surface-raised border border-border-strong text-content-primary hover:bg-surface-hover transition-colors"
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-surface-raised border border-border-strong text-content-primary hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            ↓ Download
-          </a>
+            {downloading ? 'Downloading…' : '↓ Download'}
+          </button>
         ) : (
           <span className="shrink-0 text-sm text-content-disabled italic">Not available</span>
         )}

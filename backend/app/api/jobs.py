@@ -1,6 +1,7 @@
 """Jobs API — inspect individual Bulk API jobs and download result CSVs."""
 
 import csv
+import io
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from app.models.load_plan import LoadPlan
 from app.schemas.job import JobResponse
 from app.services.auth import get_current_user
 from app.services.input_storage import InputStorageError, _validate_filters, _row_matches
+from app.services.output_storage import OutputStorage, OutputStorageError, get_output_storage
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,52 @@ def _parse_filters_param(filters: Optional[str]) -> list[dict[str, str]] | None:
     return parsed
 
 
+def _parse_csv_stream(
+    fh: Any,
+    filename: str,
+    limit: int,
+    offset: int,
+    filters: list[dict[str, str]] | None,
+) -> Dict[str, Any]:
+    reader = csv.DictReader(fh)
+    header = list(reader.fieldnames or [])
+    if not filters:
+        for _ in zip(range(offset), reader):
+            pass
+        buffer = [dict(row) for _, row in zip(range(limit + 1), reader)]
+        has_next = len(buffer) > limit
+        page_rows = buffer[:limit]
+        total_rows = None
+        filtered_rows = None
+    else:
+        try:
+            filter_tuples = _validate_filters(header, filters)
+        except InputStorageError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        page_rows: list[dict] = []
+        match_count = 0
+        total_scanned = 0
+        for row in reader:
+            total_scanned += 1
+            if _row_matches(row, filter_tuples):
+                if match_count >= offset and len(page_rows) < limit:
+                    page_rows.append(dict(row))
+                match_count += 1
+        has_next = match_count > offset + limit
+        total_rows = total_scanned
+        filtered_rows = match_count
+    return {
+        "filename": filename,
+        "header": header,
+        "rows": page_rows,
+        "total_rows": total_rows,
+        "filtered_rows": filtered_rows,
+        "offset": offset,
+        "limit": limit,
+        "has_next": has_next,
+    }
+
+
 def _preview_csv(
     relative_path: Optional[str],
     description: str,
@@ -74,7 +122,7 @@ def _preview_csv(
     offset: int = 0,
     filters: list[dict[str, str]] | None = None,
 ) -> Dict[str, Any]:
-    """Return a paginated page of data rows from a result CSV."""
+    """Return a paginated page of data rows from a local result CSV."""
     if not relative_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -88,58 +136,27 @@ def _preview_csv(
         )
     try:
         with open(full_path, newline="", encoding="utf-8-sig") as fh:
-            reader = csv.DictReader(fh)
-            header = list(reader.fieldnames or [])
-
-            if not filters:
-                # Unfiltered path: skip offset rows, read limit+1 for has_next sentinel
-                for _ in zip(range(offset), reader):
-                    pass
-                buffer = [dict(row) for _, row in zip(range(limit + 1), reader)]
-                has_next = len(buffer) > limit
-                page_rows = buffer[:limit]
-                total_rows = None
-                filtered_rows = None
-            else:
-                # Filtered path: full scan
-                try:
-                    filter_tuples = _validate_filters(header, filters)
-                except InputStorageError as exc:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=str(exc),
-                    ) from exc
-                page_rows: list[dict] = []
-                match_count = 0
-                total_scanned = 0
-                for row in reader:
-                    total_scanned += 1
-                    if _row_matches(row, filter_tuples):
-                        if match_count >= offset and len(page_rows) < limit:
-                            page_rows.append(dict(row))
-                        match_count += 1
-                has_next = match_count > offset + limit
-                total_rows = total_scanned
-                filtered_rows = match_count
+            return _parse_csv_stream(fh, os.path.basename(full_path), limit, offset, filters)
     except OSError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not read file: {exc}",
         ) from exc
-    return {
-        "filename": os.path.basename(full_path),
-        "header": header,
-        "rows": page_rows,
-        "total_rows": total_rows,
-        "filtered_rows": filtered_rows,
-        "offset": offset,
-        "limit": limit,
-        "has_next": has_next,
-    }
+
+
+def _preview_csv_from_bytes(
+    data: bytes,
+    filename: str,
+    limit: int,
+    offset: int,
+    filters: list[dict[str, str]] | None,
+) -> Dict[str, Any]:
+    fh = io.StringIO(data.decode("utf-8-sig"))
+    return _parse_csv_stream(fh, filename, limit, offset, filters)
 
 
 def _serve_csv(relative_path: Optional[str], description: str) -> FileResponse:
-    """Return a FileResponse for a result CSV or raise 404 if unavailable."""
+    """Return a FileResponse for a local result CSV or raise 404 if unavailable."""
     if not relative_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -156,6 +173,75 @@ def _serve_csv(relative_path: Optional[str], description: str) -> FileResponse:
         media_type="text/csv",
         filename=os.path.basename(full_path),
     )
+
+
+async def _get_output_storage_for_job(job: JobRecord, db: AsyncSession) -> OutputStorage:
+    result = await db.execute(
+        select(LoadRun)
+        .options(joinedload(LoadRun.load_plan))
+        .where(LoadRun.id == job.load_run_id)
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found for job")
+    return await get_output_storage(run.load_plan.output_connection_id, db)
+
+
+async def _serve_result_file(
+    job: JobRecord,
+    ref: Optional[str],
+    description: str,
+    db: AsyncSession,
+) -> Any:
+    if not ref:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{description} is not available for this job",
+        )
+    if ref.startswith("s3://"):
+        storage = await _get_output_storage_for_job(job, db)
+        try:
+            data = await run_in_threadpool(storage.read_bytes, ref)
+        except OutputStorageError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Could not download {description} from S3: {exc}",
+            ) from exc
+        filename = ref.rsplit("/", 1)[-1]
+        return Response(
+            content=data,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    return _serve_csv(ref, description)
+
+
+async def _preview_result_file(
+    job: JobRecord,
+    ref: Optional[str],
+    description: str,
+    limit: int,
+    offset: int,
+    filters: list[dict[str, str]] | None,
+    db: AsyncSession,
+) -> Dict[str, Any]:
+    if not ref:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{description} is not available for this job",
+        )
+    if ref.startswith("s3://"):
+        storage = await _get_output_storage_for_job(job, db)
+        try:
+            data = await run_in_threadpool(storage.read_bytes, ref)
+        except OutputStorageError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Could not download {description} from S3: {exc}",
+            ) from exc
+        filename = ref.rsplit("/", 1)[-1]
+        return await run_in_threadpool(_preview_csv_from_bytes, data, filename, limit, offset, filters)
+    return await run_in_threadpool(_preview_csv, ref, description, limit, offset, filters)
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -202,21 +288,21 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> JobRespons
 
 
 @router.get("/api/jobs/{job_id}/success-csv")
-async def download_success_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+async def download_success_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
     job = await _get_job_or_404(job_id, db)
-    return _serve_csv(job.success_file_path, "Success CSV")
+    return await _serve_result_file(job, job.success_file_path, "Success CSV", db)
 
 
 @router.get("/api/jobs/{job_id}/error-csv")
-async def download_error_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+async def download_error_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
     job = await _get_job_or_404(job_id, db)
-    return _serve_csv(job.error_file_path, "Error CSV")
+    return await _serve_result_file(job, job.error_file_path, "Error CSV", db)
 
 
 @router.get("/api/jobs/{job_id}/unprocessed-csv")
-async def download_unprocessed_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+async def download_unprocessed_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
     job = await _get_job_or_404(job_id, db)
-    return _serve_csv(job.unprocessed_file_path, "Unprocessed records CSV")
+    return await _serve_result_file(job, job.unprocessed_file_path, "Unprocessed records CSV", db)
 
 
 @router.get("/api/jobs/{job_id}/success-csv/preview")
@@ -229,9 +315,7 @@ async def preview_success_csv(
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
     parsed_filters = _parse_filters_param(filters)
-    return await run_in_threadpool(
-        _preview_csv, job.success_file_path, "Success CSV", limit, offset, parsed_filters
-    )
+    return await _preview_result_file(job, job.success_file_path, "Success CSV", limit, offset, parsed_filters, db)
 
 
 @router.get("/api/jobs/{job_id}/error-csv/preview")
@@ -244,9 +328,7 @@ async def preview_error_csv(
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
     parsed_filters = _parse_filters_param(filters)
-    return await run_in_threadpool(
-        _preview_csv, job.error_file_path, "Error CSV", limit, offset, parsed_filters
-    )
+    return await _preview_result_file(job, job.error_file_path, "Error CSV", limit, offset, parsed_filters, db)
 
 
 @router.get("/api/jobs/{job_id}/unprocessed-csv/preview")
@@ -259,6 +341,4 @@ async def preview_unprocessed_csv(
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
     parsed_filters = _parse_filters_param(filters)
-    return await run_in_threadpool(
-        _preview_csv, job.unprocessed_file_path, "Unprocessed records CSV", limit, offset, parsed_filters
-    )
+    return await _preview_result_file(job, job.unprocessed_file_path, "Unprocessed records CSV", limit, offset, parsed_filters, db)

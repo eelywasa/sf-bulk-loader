@@ -50,7 +50,7 @@ class UnsupportedOutputProviderError(OutputStorageError):
 
 
 class OutputStorage(Protocol):
-    """Provider-neutral write contract used by result-persistence consumers.
+    """Provider-neutral write/read contract used by result-persistence consumers.
 
     ``relative_path`` is constructed by
     :func:`app.services.result_persistence._result_path` and has the form
@@ -63,6 +63,8 @@ class OutputStorage(Protocol):
     """
 
     def write_bytes(self, relative_path: str, data: bytes) -> str: ...
+
+    def read_bytes(self, ref: str) -> bytes: ...
 
 
 # ── Local storage implementation ──────────────────────────────────────────────
@@ -99,6 +101,15 @@ class LocalOutputStorage:
         dest.write_bytes(data)
         logger.debug("LocalOutputStorage: wrote %d bytes to %s", len(data), dest)
         return relative_path
+
+    def read_bytes(self, ref: str) -> bytes:
+        dest = pathlib.Path(self._output_dir) / ref
+        try:
+            return dest.read_bytes()
+        except FileNotFoundError as exc:
+            raise OutputStorageError(f"Output file not found: {ref}") from exc
+        except OSError as exc:
+            raise OutputStorageError(f"Failed to read output file: {ref}: {exc}") from exc
 
 
 # ── S3 storage implementation ─────────────────────────────────────────────────
@@ -191,6 +202,16 @@ class S3OutputStorage:
             },
         )
         return f"s3://{self._bucket}/{key}"
+
+    def read_bytes(self, ref: str) -> bytes:
+        without_scheme = ref[len("s3://"):]
+        bucket, key = without_scheme.split("/", 1)
+        buf = io.BytesIO()
+        try:
+            self._client.download_fileobj(bucket, key, buf)
+        except botocore.exceptions.ClientError as exc:
+            raise OutputStorageError(f"Could not download s3://{bucket}/{key}: {exc}") from exc
+        return buf.getvalue()
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
