@@ -259,6 +259,37 @@ The `/api/health/dependencies` endpoint includes an `email` entry:
   Failure → `degraded` (not `unhealthy`), because email is not strictly required
   for app functionality.
 
+### Notification events (SFBL-117)
+
+Emitted by `app.services.notifications.dispatcher` and
+`app.services.notifications.channels.webhook`. Import from
+`app.observability.events.NotificationEvent`.
+
+| Constant | Value | Description |
+|---|---|---|
+| `NotificationEvent.DISPATCH_REQUESTED` | `notification.dispatch.requested` | Dispatcher selected a subscription and began sending |
+| `NotificationEvent.DISPATCH_SUCCEEDED` | `notification.dispatch.succeeded` | Channel accepted the send; delivery row status→`sent` |
+| `NotificationEvent.DISPATCH_FAILED` | `notification.dispatch.failed` | Terminal failure — permanent error or retries exhausted |
+| `NotificationEvent.WEBHOOK_RETRIED` | `notification.webhook.retried` | Transient failure (5xx / 429 / network); retry scheduled inside the channel |
+| `NotificationEvent.NO_MATCHING_SUBSCRIPTIONS` | `notification.no_matching_subscriptions` | Terminal run had no matching subscriptions for its status |
+
+Notification metrics (defined in `app.observability.metrics`):
+
+| Metric | Labels | Cardinality |
+|---|---|---|
+| `sfbl_notification_dispatch_total` | `channel`, `status` | 2 × 3 = 6 series |
+| `sfbl_notification_dispatch_duration_seconds` | `channel` | 2 series × 10 buckets |
+| `sfbl_notification_webhook_retry_total` | `reason` (`network` / `server_error` / `throttled`) | 3 series |
+
+Sanitisation rules used in logs and span attributes:
+- Webhook URLs are passed through `sanitize_webhook_url()` (query string + userinfo stripped) before being logged or attached as span attributes.
+- Email destinations are passed through `redact_email_address()` (local-part truncated) when logged.
+- Raw destinations are **never** emitted as metric labels.
+
+The delivery audit trail lives in the `notification_delivery` table (one row
+per dispatch; see `app.models.notification_delivery`). `/test` endpoint rows
+carry `is_test=TRUE` and `run_id=NULL`.
+
 ---
 
 ## Outcome codes (quick reference)
