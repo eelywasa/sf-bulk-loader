@@ -16,6 +16,8 @@ import {
   EMPTY_PLAN_FORM,
   EMPTY_STEP_FORM,
   extractErrors,
+  isQueryOp,
+  validateSoqlClientSide,
   type PlanFormData,
   type StepFormData,
 } from '../pages/planEditorUtils'
@@ -225,7 +227,8 @@ export function usePlanEditorState(id: string | undefined) {
       setStepForm({
         object_name: step.object_name,
         operation: step.operation,
-        csv_file_pattern: step.csv_file_pattern,
+        csv_file_pattern: step.csv_file_pattern ?? '',
+        soql: step.soql ?? '',
         partition_size: String(step.partition_size),
         external_id_field: step.external_id_field ?? '',
         assignment_rule_id: step.assignment_rule_id ?? '',
@@ -265,19 +268,37 @@ export function usePlanEditorState(id: string | undefined) {
 
   function handleSaveStep() {
     setStepFormErrors([])
-    if (stepForm.operation === 'upsert' && !stepForm.external_id_field.trim()) {
+    if (isQueryOp(stepForm.operation)) {
+      const soqlErr = validateSoqlClientSide(stepForm.soql)
+      if (soqlErr) {
+        setStepFormErrors([soqlErr])
+        return
+      }
+    } else if (stepForm.operation === 'upsert' && !stepForm.external_id_field.trim()) {
       setStepFormErrors(['External ID Field is required for upsert operations.'])
       return
     }
-    const data: LoadStepCreate = {
-      object_name: stepForm.object_name,
-      operation: stepForm.operation,
-      csv_file_pattern: stepForm.csv_file_pattern,
-      partition_size: Number(stepForm.partition_size),
-      external_id_field: stepForm.external_id_field || null,
-      assignment_rule_id: stepForm.assignment_rule_id || null,
-      input_connection_id: stepForm.input_connection_id || null,
-    }
+    const data: LoadStepCreate = isQueryOp(stepForm.operation)
+      ? {
+          object_name: stepForm.object_name,
+          operation: stepForm.operation,
+          soql: stepForm.soql,
+          csv_file_pattern: null,
+          partition_size: Number(stepForm.partition_size),
+          external_id_field: stepForm.external_id_field || null,
+          assignment_rule_id: stepForm.assignment_rule_id || null,
+          input_connection_id: stepForm.input_connection_id || null,
+        }
+      : {
+          object_name: stepForm.object_name,
+          operation: stepForm.operation,
+          csv_file_pattern: stepForm.csv_file_pattern,
+          soql: null,
+          partition_size: Number(stepForm.partition_size),
+          external_id_field: stepForm.external_id_field || null,
+          assignment_rule_id: stepForm.assignment_rule_id || null,
+          input_connection_id: stepForm.input_connection_id || null,
+        }
     if (editingStep) {
       updateStepMutation.mutate({ stepId: editingStep.id, data })
     } else {

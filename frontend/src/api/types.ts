@@ -43,7 +43,7 @@ export type JobStatus =
   | 'failed'
   | 'aborted'
 
-export type Operation = 'insert' | 'update' | 'upsert' | 'delete'
+export type Operation = 'insert' | 'update' | 'upsert' | 'delete' | 'query' | 'queryAll'
 
 // ─── API error types ───────────────────────────────────────────────────────────
 
@@ -129,7 +129,8 @@ export interface LoadStep {
   object_name: string
   operation: Operation
   external_id_field?: string | null
-  csv_file_pattern: string
+  csv_file_pattern?: string | null
+  soql?: string | null
   partition_size: number
   assignment_rule_id?: string | null
   input_connection_id?: string | null
@@ -213,10 +214,22 @@ export interface StepPreviewInfo {
   row_count: number
 }
 
+export interface StepPreviewQueryPlan {
+  leadingOperation: string
+  sobjectType: string
+  [key: string]: unknown
+}
+
 export interface StepPreviewResponse {
-  pattern: string
+  pattern?: string | null
   matched_files: StepPreviewInfo[]
   total_rows: number
+  kind?: 'dml' | 'query'
+  note?: string | null
+  // Query-op explain fields (present only when kind="query")
+  valid?: boolean | null
+  plan?: StepPreviewQueryPlan | null
+  error?: string | null
 }
 
 export interface InputFileInfo {

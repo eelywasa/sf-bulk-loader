@@ -101,6 +101,36 @@ const remoteStep = {
   input_connection_id: 'ic-1',
 }
 
+const queryStep = {
+  id: 'step-query',
+  load_plan_id: 'plan-1',
+  sequence: 1,
+  object_name: 'Account',
+  operation: 'query' as const,
+  csv_file_pattern: null,
+  soql: 'SELECT Id, Name FROM Account',
+  partition_size: 10000,
+  external_id_field: null,
+  assignment_rule_id: null,
+  input_connection_id: null,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+}
+
+const planWithQueryStep = {
+  id: 'plan-1',
+  name: 'Q1 Migration',
+  description: 'Test plan description',
+  connection_id: 'conn-1',
+  abort_on_step_failure: true,
+  error_threshold_pct: 10,
+  max_parallel_jobs: 5,
+  output_connection_id: null,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+  load_steps: [queryStep],
+}
+
 const plan1 = {
   id: 'plan-1',
   name: 'Q1 Migration',
@@ -1142,5 +1172,265 @@ describe('PlanEditor', () => {
     await user.selectOptions(screen.getByLabelText(/Operation/), 'upsert')
     await user.type(screen.getByLabelText(/CSV File Pattern/), 'accounts_*.csv')
     expect(screen.getByText(/Enter a literal file path/)).toBeInTheDocument()
+  })
+
+  // ── Query operation ───────────────────────────────────────────────────────
+
+  it('shows SOQL textarea and hides CSV fields when operation is "query"', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'query')
+
+    expect(screen.getByLabelText(/SOQL Query/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/CSV File Pattern/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Partition Size/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Input Source/)).not.toBeInTheDocument()
+  })
+
+  it('shows SOQL textarea and hides CSV fields when operation is "queryAll"', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'queryAll')
+
+    expect(screen.getByLabelText(/SOQL Query/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/CSV File Pattern/)).not.toBeInTheDocument()
+  })
+
+  it('restores CSV fields when switching from query back to a DML operation', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'query')
+    expect(screen.getByLabelText(/SOQL Query/)).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'insert')
+    expect(screen.queryByLabelText(/SOQL Query/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/CSV File Pattern/)).toBeInTheDocument()
+  })
+
+  it('shows a client-side validation error when SOQL is empty on save', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'query')
+    await user.type(screen.getByLabelText(/Salesforce Object/), 'Account')
+
+    // Try to save without entering SOQL
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByText(/SOQL query is required/i)).toBeInTheDocument()
+    })
+    expect(stepsApi.create).not.toHaveBeenCalled()
+  })
+
+  it('shows a client-side validation error when SOQL lacks SELECT', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'query')
+    await user.type(screen.getByLabelText(/Salesforce Object/), 'Account')
+    await user.type(screen.getByLabelText(/SOQL Query/), 'FROM Account')
+
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByText(/SOQL must contain SELECT/)).toBeInTheDocument()
+    })
+  })
+
+  it('calls stepsApi.create with soql and null csv_file_pattern for query ops', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(stepsApi.create).mockResolvedValue(queryStep)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+    await user.type(screen.getByLabelText(/Salesforce Object/), 'Account')
+    await user.selectOptions(screen.getByLabelText(/Operation/), 'query')
+    await user.type(screen.getByLabelText(/SOQL Query/), 'SELECT Id FROM Account')
+
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(stepsApi.create).toHaveBeenCalledWith(
+        'plan-1',
+        expect.objectContaining({
+          operation: 'query',
+          soql: 'SELECT Id FROM Account',
+          csv_file_pattern: null,
+        }),
+      )
+    })
+  })
+
+  it('hides Preview button for query op rows in StepList', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    // Preview button should not be present for query steps
+    expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument()
+  })
+
+  it('shows Preview button for DML op rows but not query op rows when both exist', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue({
+      ...planWithQueryStep,
+      load_steps: [queryStep, { ...step1, id: 'step-dml', sequence: 2 }],
+    })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getAllByText('Account'))
+
+    // Exactly one Preview button — for the DML step
+    expect(screen.getAllByRole('button', { name: 'Preview' })).toHaveLength(1)
+  })
+
+  it('does not call stepsApi.preview when Preview is triggered for a query op', async () => {
+    // This tests that useStepPreview early-returns for query ops.
+    // We set up a plan with a query step then simulate the preview handler call.
+    // Since the Preview button is hidden we trigger via the preflight flow.
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    vi.mocked(stepsApi.preview).mockResolvedValue({
+      kind: 'query',
+      valid: true,
+      plan: { leadingOperation: 'TableScan', sobjectType: 'Account' },
+      error: null,
+      matched_files: [],
+      total_rows: 0,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    // Run Preflight button should be visible (plan has steps)
+    await user.click(screen.getByRole('button', { name: 'Run Preflight' }))
+
+    // Wait for preflight modal to open
+    await screen.findByRole('dialog')
+
+    // stepsApi.preview should NOT have been called because query ops are excluded from preflight
+    expect(stepsApi.preview).not.toHaveBeenCalled()
+  })
+
+  it('shows Validate SOQL button when editing an existing query step', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: 'Validate SOQL' })).toBeInTheDocument()
+  })
+
+  it('renders success state when Validate SOQL returns valid: true', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    vi.mocked(stepsApi.preview).mockResolvedValue({
+      kind: 'query',
+      valid: true,
+      plan: { leadingOperation: 'TableScan', sobjectType: 'Account' },
+      error: null,
+      matched_files: [],
+      total_rows: 0,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Validate SOQL' }))
+
+    await waitFor(() => {
+      expect(within(dialog).getByText(/SOQL is valid/)).toBeInTheDocument()
+      // The plan summary line includes both sobjectType and leadingOperation
+      expect(within(dialog).getByText(/TableScan/)).toBeInTheDocument()
+    })
+  })
+
+  it('renders the Salesforce error message verbatim when Validate SOQL returns valid: false', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    vi.mocked(stepsApi.preview).mockResolvedValue({
+      kind: 'query',
+      valid: false,
+      plan: null,
+      error: "INVALID_FIELD: No such column 'BadField' on entity 'Account'",
+      matched_files: [],
+      total_rows: 0,
+    })
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Validate SOQL' }))
+
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Validation failed/)).toBeInTheDocument()
+      expect(within(dialog).getByText(/No such column 'BadField'/)).toBeInTheDocument()
+    })
+  })
+
+  it('renders a network error message when Validate SOQL fetch fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    vi.mocked(stepsApi.preview).mockRejectedValue(new Error('Network error'))
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Validate SOQL' }))
+
+    await waitFor(() => {
+      expect(within(dialog).getByText('Network error')).toBeInTheDocument()
+    })
+  })
+
+  it('pre-fills SOQL textarea when editing an existing query step', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByDisplayValue('SELECT Id, Name FROM Account')).toBeInTheDocument()
   })
 })

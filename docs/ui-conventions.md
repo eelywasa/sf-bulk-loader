@@ -191,6 +191,40 @@ import {
 </div>
 ```
 
+### Monospace textarea (e.g. SOQL, code inputs)
+
+Use `TEXTAREA_CLASS` with an additional `font-mono` and size class. The `TEXTAREA_CLASS`
+constant already includes `resize-y`:
+
+```tsx
+<textarea
+  id="step-soql"
+  rows={5}
+  className={clsx(TEXTAREA_CLASS, 'font-mono text-xs')}
+/>
+```
+
+### Inline validation results (non-field-level)
+
+For actions that trigger server-side validation (e.g. Validate SOQL), render the result
+inline below the action button using `ALERT_SUCCESS` or `ALERT_ERROR` from `formStyles.ts`.
+Do not use custom colour classes:
+
+```tsx
+{validationResult === 'valid' && (
+  <div className={`${ALERT_SUCCESS} mt-2`}>
+    <p className="font-medium">Valid</p>
+    <p className="text-xs mt-0.5">{summary}</p>
+  </div>
+)}
+{validationResult === 'invalid' && (
+  <div className={`${ALERT_ERROR} mt-2`}>
+    <p className="font-medium">Validation failed</p>
+    <p className="text-xs mt-0.5 font-mono whitespace-pre-wrap">{errorMessage}</p>
+  </div>
+)}
+```
+
 ### Field with validation error
 
 ```tsx
