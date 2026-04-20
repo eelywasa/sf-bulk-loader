@@ -72,10 +72,46 @@ def _msg(
 
 
 def _free_port() -> int:
-    """Find a free TCP port on localhost."""
+    """Find a free TCP port on localhost.
+
+    Sets SO_REUSEADDR so the port can be rebound immediately by the caller
+    without waiting for the kernel's TIME_WAIT window — otherwise on macOS the
+    subsequent Controller.start() can intermittently fail to bind.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def _start_controller(handler: Any, **kwargs: Any) -> Controller:
+    """Start an aiosmtpd Controller on an ephemeral port with retry.
+
+    aiosmtpd's Controller cannot bind to port=0 (its internal ``_trigger_server``
+    reads ``self.port`` before the bound port is known), so we pick a free port
+    via ``_free_port()``. Two flake vectors are handled here:
+
+    1. **Port TOCTOU** — another process/thread may grab the port between
+       ``_free_port()`` returning and ``Controller.start()`` binding. We retry
+       a few times on OSError.
+    2. **Slow startup under load** — aiosmtpd's default ``ready_timeout`` is
+       5s, and its internal readiness probe uses a hardcoded 1s socket
+       connect. Under heavy parallel-agent CI workload that can time out. We
+       pass ``ready_timeout=15`` to give the first factory invocation room to
+       land.
+    """
+    kwargs.setdefault("ready_timeout", 15.0)
+    last_exc: Exception | None = None
+    for _ in range(5):
+        port = _free_port()
+        controller = Controller(handler, hostname="127.0.0.1", port=port, **kwargs)
+        try:
+            controller.start()
+            return controller
+        except OSError as exc:
+            last_exc = exc
+            continue
+    raise last_exc or RuntimeError("failed to start aiosmtpd Controller")
 
 
 class _SimpleHandler:
@@ -161,9 +197,8 @@ def _apply_settings(overrides: dict[str, Any]) -> "contextlib.AbstractContextMan
 async def test_happy_path_plain_text():
     """Sending a plain text message through an aiosmtpd server returns accepted=True."""
     handler = _SimpleHandler()
-    port = _free_port()
-    controller = Controller(handler, hostname="127.0.0.1", port=port)
-    controller.start()
+    controller = _start_controller(handler)
+    port = controller.port
     try:
         backend = SmtpBackend()
         with _apply_settings(_patch_settings("127.0.0.1", port)):
@@ -181,9 +216,8 @@ async def test_happy_path_plain_text():
 async def test_happy_path_html_alternative():
     """HTML alternative is included in the MIME message."""
     handler = _SimpleHandler()
-    port = _free_port()
-    controller = Controller(handler, hostname="127.0.0.1", port=port)
-    controller.start()
+    controller = _start_controller(handler)
+    port = controller.port
     try:
         backend = SmtpBackend()
         with _apply_settings(_patch_settings("127.0.0.1", port)):
@@ -202,9 +236,8 @@ async def test_happy_path_html_alternative():
 async def test_happy_path_extra_headers():
     """Custom headers in msg.headers are added to the MIME envelope."""
     handler = _SimpleHandler()
-    port = _free_port()
-    controller = Controller(handler, hostname="127.0.0.1", port=port)
-    controller.start()
+    controller = _start_controller(handler)
+    port = controller.port
     try:
         backend = SmtpBackend()
         with _apply_settings(_patch_settings("127.0.0.1", port)):
@@ -276,15 +309,12 @@ async def test_starttls_mode():
         server_tls_ctx.load_cert_chain(cert_file, key_file)
 
         handler = _SimpleHandler()
-        port = _free_port()
-        controller = Controller(
+        controller = _start_controller(
             handler,
-            hostname="127.0.0.1",
-            port=port,
             tls_context=server_tls_ctx,
             require_starttls=False,  # offer but don't require (so plain auth also works)
         )
-        controller.start()
+        port = controller.port
 
         try:
             # Client TLS context that accepts our self-signed cert
@@ -375,9 +405,8 @@ async def test_implicit_tls_unit():
 async def test_421_response():
     """421 DATA rejection → TRANSIENT_PROVIDER_UNAVAILABLE, accepted=False, is_transient."""
     handler = _RejectHandler(421, "Service temporarily unavailable")
-    port = _free_port()
-    controller = Controller(handler, hostname="127.0.0.1", port=port)
-    controller.start()
+    controller = _start_controller(handler)
+    port = controller.port
     try:
         backend = SmtpBackend()
         with _apply_settings(_patch_settings("127.0.0.1", port)):
@@ -435,9 +464,8 @@ async def test_535_auth_failure():
 async def test_550_permanent_reject():
     """550 DATA rejection → PERMANENT_REJECT, accepted=False, not transient."""
     handler = _RejectHandler(550, "User does not exist")
-    port = _free_port()
-    controller = Controller(handler, hostname="127.0.0.1", port=port)
-    controller.start()
+    controller = _start_controller(handler)
+    port = controller.port
     try:
         backend = SmtpBackend()
         with _apply_settings(_patch_settings("127.0.0.1", port)):
