@@ -43,6 +43,16 @@ function installStorage(name: 'localStorage' | 'sessionStorage'): void {
 installStorage('localStorage')
 installStorage('sessionStorage')
 
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+    ResizeObserverStub
+}
+
 if (typeof window !== 'undefined' && !window.matchMedia) {
   // jsdom does not implement window.matchMedia — stub it globally
   Object.defineProperty(window, 'matchMedia', {

@@ -89,3 +89,12 @@ export function useAuth(): AuthContextValue {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
+
+/**
+ * Non-throwing variant — returns null when no AuthProvider is mounted.
+ * Useful for components that appear on pages whose existing tests do not
+ * wrap in AuthProvider (e.g. the PlanEditor toolbar).
+ */
+export function useAuthOptional(): AuthContextValue | null {
+  return useContext(AuthContext)
+}

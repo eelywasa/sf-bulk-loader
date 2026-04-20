@@ -7,6 +7,8 @@ import StepEditorModal from '../components/StepEditorModal'
 import PreflightPreviewModal from '../components/PreflightPreviewModal'
 import { usePlanEditorState } from '../hooks/usePlanEditorState'
 import { useStepPreview } from '../hooks/useStepPreview'
+import { NotifyMeButton } from '../components/NotifyMeButton'
+import { useAuthOptional } from '../context/AuthContext'
 
 export default function PlanEditor() {
   const { id } = useParams<{ id: string }>()
@@ -56,6 +58,9 @@ export default function PlanEditor() {
   const { previews, preflightOpen, setPreflightOpen, handlePreviewStep, handlePreflight } =
     useStepPreview(isNew ? undefined : id)
 
+  const auth = useAuthOptional()
+  const showNotifyButton = !isNew && auth?.authRequired === true && !!id
+
   return (
     <div className="p-6 space-y-6">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
@@ -76,6 +81,7 @@ export default function PlanEditor() {
         </div>
 
         <div className="flex gap-2 shrink-0">
+          {showNotifyButton && id && <NotifyMeButton planId={id} />}
           {!isNew && sortedSteps.length > 0 && (
             <Button variant="secondary" onClick={() => void handlePreflight(sortedSteps)}>
               Run Preflight

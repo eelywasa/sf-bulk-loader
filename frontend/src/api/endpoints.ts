@@ -22,6 +22,10 @@ import type {
   InputDirectoryEntry,
   UserResponse,
   TokenResponse,
+  NotificationSubscription,
+  NotificationSubscriptionCreate,
+  NotificationSubscriptionUpdate,
+  NotificationTestResponse,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -218,6 +222,20 @@ export async function postEmailTest(req: EmailTestRequest): Promise<EmailTestRes
   }
 
   return response.json() as Promise<EmailTestResponse>
+}
+
+// ─── Notification subscriptions (SFBL-182) ────────────────────────────────────
+
+export const notificationSubscriptionsApi = {
+  list: () =>
+    api.get<NotificationSubscription[]>('/api/notification-subscriptions'),
+  create: (data: NotificationSubscriptionCreate) =>
+    api.post<NotificationSubscription>('/api/notification-subscriptions', data),
+  update: (id: string, data: NotificationSubscriptionUpdate) =>
+    api.put<NotificationSubscription>(`/api/notification-subscriptions/${id}`, data),
+  delete: (id: string) => api.delete(`/api/notification-subscriptions/${id}`),
+  test: (id: string) =>
+    api.post<NotificationTestResponse>(`/api/notification-subscriptions/${id}/test`, {}),
 }
 
 export const dependenciesApi = {
