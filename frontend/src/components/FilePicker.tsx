@@ -44,7 +44,7 @@ export default function FilePicker({ source, onSelect, onClose }: FilePickerProp
             onClick={() => navigate('')}
             className={`transition-colors ${segments.length === 0 ? 'font-semibold text-content-primary' : 'text-content-link hover:text-accent-hover'}`}
           >
-            Input Files
+            {source === 'local-output' ? 'Output Files' : 'Input Files'}
           </button>
           {segments.map((seg, i) => {
             const segPath = segments.slice(0, i + 1).join('/')

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
+from app.models.load_step import LoadStep
 from app.schemas.input_connection import (
     InputConnectionCreate,
     InputConnectionResponse,
@@ -119,15 +120,25 @@ async def delete_input_connection(ic_id: str, db: AsyncSession = Depends(get_db)
             detail="Storage connection is used as an output destination by one or more load plans",
         )
 
-    try:
-        await db.delete(ic)
-        await db.commit()
-    except Exception:
+    # The FK was dropped in migration 0014 (input_connection_id is now a
+    # loosely-typed source identifier), so check for step references explicitly.
+    # To avoid a TOCTOU race with concurrent step create/update, issue the
+    # DELETE first and then verify no step rows still reference this id within
+    # the same write transaction — SQLite serialises writers, so any interleaved
+    # step insert either happened-before (and is visible here) or happens-after
+    # (and its _validate_input_connection_direction lookup will now 404).
+    await db.delete(ic)
+    await db.flush()
+    step_result = await db.execute(
+        select(LoadStep).where(LoadStep.input_connection_id == ic_id).limit(1)
+    )
+    if step_result.scalar_one_or_none() is not None:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Input connection is referenced by one or more load steps",
         )
+    await db.commit()
 
 
 @router.post("/{ic_id}/test", response_model=InputConnectionTestResponse)

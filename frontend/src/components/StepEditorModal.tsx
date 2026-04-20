@@ -274,13 +274,20 @@ export default function StepEditorModal({
                 onChange={(e) => onInputSourceChange(e.target.value)}
                 className={SELECT_CLASS}
               >
-                <option value="">Local files</option>
+                <option value="">Local input files</option>
+                <option value="local-output">Local output files (prior run results)</option>
                 {inputConnections.map((inputConnection) => (
                   <option key={inputConnection.id} value={inputConnection.id}>
                     {inputConnection.name}
                   </option>
                 ))}
               </select>
+              {stepForm.input_connection_id === 'local-output' && (
+                <p className={HELPER_TEXT_CLASS}>
+                  Chain a prior run's output (e.g. query results) into this step.
+                  Paths are relative to the local output directory.
+                </p>
+              )}
             </div>
 
             <div>

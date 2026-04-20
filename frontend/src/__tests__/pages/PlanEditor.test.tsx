@@ -486,8 +486,38 @@ describe('PlanEditor', () => {
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
 
     expect(screen.getByLabelText(/Input Source/)).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Local files' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Local input files' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('option', { name: 'Local output files (prior run results)' }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'S3 Source' })).toBeInTheDocument()
+  })
+
+  it('submits the local-output sentinel when Local output files is selected', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(stepsApi.create).mockResolvedValue(step1)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Account')
+    await user.type(within(dialog).getByLabelText(/CSV File Pattern/), 'accounts_*.csv')
+    await user.selectOptions(within(dialog).getByLabelText(/Input Source/), 'local-output')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(stepsApi.create).toHaveBeenCalledWith(
+        'plan-1',
+        expect.objectContaining({
+          input_connection_id: 'local-output',
+        }),
+      )
+    })
   })
 
   it('preselects the remote input source when editing a remote-backed step', async () => {

@@ -792,10 +792,23 @@ class S3InputStorage:
         return io.TextIOWrapper(buffered, encoding=enc, newline="")
 
 
+LOCAL_OUTPUT_SOURCE = "local-output"
+"""Sentinel value for :func:`get_storage` / :data:`LoadStep.input_connection_id`
+that routes reads to :data:`settings.output_dir` instead of the input tree.
+
+Used by SFBL-178 so DML steps can chain a prior run's output (e.g. query
+results written by SFBL-114) into a subsequent run as an input source, via
+the same :class:`BaseInputStorage` contract used for true inputs.
+"""
+
+
 async def get_storage(source: Optional[str], db: AsyncSession) -> BaseInputStorage:
     """Resolve *source* to the appropriate input storage provider."""
     if source in (None, "", "local"):
         return LocalInputStorage(settings.input_dir)
+
+    if source == LOCAL_OUTPUT_SOURCE:
+        return LocalInputStorage(settings.output_dir)
 
     ic = await db.get(InputConnection, source)
     if ic is None:
