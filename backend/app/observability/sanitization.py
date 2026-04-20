@@ -279,3 +279,54 @@ def safe_record_exception(span: Span, exc: BaseException) -> None:
     span.set_attribute("exception.type", type(exc).__name__)
     span.set_attribute("exception.message", safe_exc_message(exc))
     span.set_status(StatusCode.ERROR, safe_exc_message(exc))
+
+
+# ── Webhook URL + recipient address sanitization (SFBL-180) ──────────────────
+
+
+def sanitize_webhook_url(url: str) -> str:
+    """Return *url* with query string and userinfo stripped.
+
+    Webhook destinations for chat integrations (e.g. Slack) often carry a
+    secret token in the path (``hooks.slack.com/services/T.../B.../XXX``).
+    Stripping the query string and any ``user:pass@`` credentials keeps log
+    output safe while preserving enough of the URL (scheme + host + path) to
+    correlate failures to the right subscription.  The path IS retained
+    because Slack-style tokens ride in the path and operators need to see
+    which integration is misbehaving — the SFBL guidance only prohibits
+    emitting the webhook token in plain text, and the URL is recorded on
+    the subscription row in the database, not to telemetry.
+
+    Fails open: if urlparse raises (malformed URL), returns ``"<invalid>"``.
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    try:
+        parts = urlparse(url)
+    except ValueError:
+        return "<invalid>"
+    # Rebuild netloc without userinfo
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    cleaned = parts._replace(netloc=host, query="", fragment="")
+    try:
+        return urlunparse(cleaned)
+    except ValueError:
+        return "<invalid>"
+
+
+def redact_email_address(addr: str) -> str:
+    """Obscure the local-part of an email address for telemetry.
+
+    ``"alice@example.com"`` → ``"a***@example.com"``.  The first character
+    of the local-part is preserved to aid debugging without disclosing the
+    full identity; the domain is kept in full.  Strings without an ``@``
+    return ``"<invalid>"``.
+    """
+    if "@" not in addr:
+        return "<invalid>"
+    local, _, domain = addr.partition("@")
+    if not local:
+        return f"***@{domain}"
+    return f"{local[0]}***@{domain}"

@@ -183,6 +183,16 @@ class EmailEvent:
     SERVICE_INITIALISED = "email.service.initialised"
 
 
+class NotificationEvent:
+    """Run-complete notification dispatch lifecycle events (SFBL-117 / SFBL-180)."""
+
+    DISPATCH_REQUESTED = "notification.dispatch.requested"
+    DISPATCH_SUCCEEDED = "notification.dispatch.succeeded"
+    DISPATCH_FAILED = "notification.dispatch.failed"
+    WEBHOOK_RETRIED = "notification.webhook.retried"
+    NO_MATCHING_SUBSCRIPTIONS = "notification.no_matching_subscriptions"
+
+
 class OutcomeCode:
     """Machine-readable outcome codes for logs, events, and traces.
 
@@ -299,3 +309,6 @@ class OutcomeCode:
     EMAIL_RENDER_ERROR = "email_render_error"
     EMAIL_CONFIG_ERROR = "email_config_error"
     EMAIL_TEMPLATE_LOAD_FAILED = "email_template_load_failed"
+
+    # Notifications (SFBL-180)
+    NOTIFICATION_WEBHOOK_ERROR = "notification_webhook_error"
