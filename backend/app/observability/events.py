@@ -20,14 +20,15 @@ Usage:
 
 Event categories
 ----------------
-- RunEvent     — top-level load run lifecycle
-- StepEvent    — per-step execution events
-- JobEvent     — per-partition / Bulk API job events
+- RunEvent        — top-level load run lifecycle
+- StepEvent       — per-step execution events
+- JobEvent        — per-partition / Bulk API job events
 - SalesforceEvent — Salesforce integration layer events
-- StorageEvent — file storage (input/output) events
-- SystemEvent  — infrastructure and connectivity events
-- AuthEvent    — authentication and account management events
-- EmailEvent   — outbound email delivery lifecycle events
+- BulkQueryEvent  — Bulk API 2.0 query job lifecycle events (SFBL-171)
+- StorageEvent    — file storage (input/output) events
+- SystemEvent     — infrastructure and connectivity events
+- AuthEvent       — authentication and account management events
+- EmailEvent      — outbound email delivery lifecycle events
 
 Outcome taxonomy
 ----------------
@@ -72,6 +73,37 @@ class JobEvent:
     COMPLETED = "job.completed"
     FAILED = "job.failed"
     ABORTED = "job.aborted"
+
+
+class BulkQueryEvent:
+    """Bulk API 2.0 query job lifecycle events (SFBL-171).
+
+    Distinct from :class:`SalesforceEvent` (which covers the DML path) so that
+    dashboards can filter query-specific signals without parsing ``object_name``
+    or ``operation`` labels.
+    """
+
+    #: Query job successfully created on Salesforce.
+    JOB_CREATED = "bulk_query.job.created"
+
+    #: Single poll cycle against the job status endpoint.  Emitted at DEBUG.
+    JOB_POLLED = "bulk_query.job.polled"
+
+    #: One results page successfully downloaded and streamed to output storage.
+    #: Carries ``page_index`` (0-based) and ``row_count`` in ``extra``.
+    JOB_PAGE_DOWNLOADED = "bulk_query.job.page_downloaded"
+
+    #: Query job reached ``JobComplete`` terminal state and all pages streamed.
+    JOB_COMPLETED = "bulk_query.job.completed"
+
+    #: Query job reached ``Failed`` or ``Aborted`` terminal state.
+    JOB_FAILED = "bulk_query.job.failed"
+
+    #: Transient HTTP error retried (5xx or network) on the query path.
+    REQUEST_RETRIED = "bulk_query.request.retried"
+
+    #: Rate-limited (429) on the query path.
+    RATE_LIMITED = "bulk_query.rate_limited"
 
 
 class SalesforceEvent:
@@ -177,6 +209,8 @@ class OutcomeCode:
     configuration_error  — missing or invalid application configuration
     job_poll_timeout     — Bulk API job exceeded ``sf_job_max_poll_seconds`` cap
     output_upload_error  — S3 output upload failure (distinct from input storage_error)
+    query_sf_job_failed        — Bulk query job reached Failed/Aborted terminal state (SFBL-171)
+    query_soql_syntax_rejected — Salesforce explain endpoint returned 400 (invalid SOQL)
 
     Email codes
     ~~~~~~~~~~~
@@ -248,6 +282,12 @@ class OutcomeCode:
     EXPIRED = "expired"
     INVALID_SIGNATURE = "invalid_signature"
     USER_INACTIVE = "user_inactive"
+
+    # Bulk query codes (SFBL-171)
+    # More specific than SALESFORCE_API_ERROR so dashboards can filter query failures.
+    QUERY_SF_JOB_FAILED = "query_sf_job_failed"
+    # Emitted when the Salesforce query explain endpoint returns 400 (invalid SOQL).
+    QUERY_SOQL_SYNTAX_REJECTED = "query_soql_syntax_rejected"
 
     # Storage output (SFBL-163)
     # Separate from STORAGE_ERROR so dashboards can distinguish input-read from output-write failures.

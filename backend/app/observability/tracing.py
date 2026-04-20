@@ -300,6 +300,47 @@ def auth_password_change_span(*, user_id: str | None = None) -> Generator[Span, 
 
 
 @contextmanager
+def bulk_query_span(
+    *,
+    object_name: str,
+    operation: str,
+    sf_job_id: str | None = None,
+) -> Generator[Span, None, None]:
+    """Context manager that creates a span for a full bulk-query executor invocation.
+
+    Wraps the entire :func:`~app.services.bulk_query_executor.run_bulk_query`
+    call — from job creation through to the last page streamed to output storage.
+
+    The caller should set ``salesforce.job.id`` once the job ID is known::
+
+        with tracing.bulk_query_span(object_name="Account", operation="query") as span:
+            result = await run_bulk_query(...)
+            span.set_attribute("salesforce.job.id", result.sf_job_id)
+
+    Attributes set automatically:
+        - ``object.name``   — Salesforce object type
+        - ``operation``     — ``"query"`` or ``"queryAll"``
+        - ``salesforce.job.id`` — set if *sf_job_id* is provided; may also be
+          set by the caller after the job is created.
+
+    SOQL must not be set as a span attribute (it may contain WHERE-clause values
+    that are quasi-identifiers). Log it via
+    :func:`~app.observability.sanitization.sanitize_soql` at DEBUG level only.
+    """
+    tracer = _get_tracer()
+    with tracer.start_as_current_span("bulk_query.execute") as span:
+        span.set_attribute("object.name", object_name)
+        span.set_attribute("operation", operation)
+        if sf_job_id is not None:
+            span.set_attribute("salesforce.job.id", sf_job_id)
+        try:
+            yield span
+        except Exception as exc:
+            safe_record_exception(span, exc)
+            raise
+
+
+@contextmanager
 def partition_span(job_record_id: str) -> Generator[Span, None, None]:
     """Context manager that creates a span for a single partition/job execution.
 

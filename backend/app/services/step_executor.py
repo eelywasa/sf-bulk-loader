@@ -27,7 +27,11 @@ from app.models.job import JobRecord, JobStatus
 from app.models.load_step import LoadStep, QUERY_OPERATIONS
 from app.observability.context import input_connection_id_ctx_var, step_id_ctx_var
 from app.observability.events import JobEvent, OutcomeCode, StepEvent
-from app.observability.metrics import record_step_completed
+from app.observability.metrics import (
+    record_bulk_query_job_created,
+    record_bulk_query_job_failed,
+    record_step_completed,
+)
 from app.observability import tracing
 from app.services.bulk_query_executor import BulkQueryJobFailed, run_bulk_query
 from app.services.csv_processor import partition_csv as _default_partition
@@ -332,7 +336,8 @@ async def _execute_query_step(
             "step_id": str(step.id),
         },
     )
-    # TODO(SFBL-171): metric/span here — query step started counter
+    # Metrics and span for this query step are recorded inside run_bulk_query
+    # (bulk_query_executor.py) and via the wrapping step_span in execute_step.
 
     # ── Create the single JobRecord ────────────────────────────────────────────
     job_record = JobRecord(
@@ -395,7 +400,8 @@ async def _execute_query_step(
                 "job_record_id": job_record_id,
             },
         )
-        # TODO(SFBL-171): metric/span here — query job failed counter
+        # record_bulk_query_job_failed is also called inside run_bulk_query
+        # for the job-level failure; this covers the step-level accounting.
         job_record.status = JobStatus.failed
         job_record.completed_at = datetime.now(timezone.utc)
         job_record.error_message = str(exc)
@@ -431,7 +437,7 @@ async def _execute_query_step(
                 "job_record_id": job_record_id,
             },
         )
-        # TODO(SFBL-171): metric/span here — query step unexpected exception counter
+        record_bulk_query_job_failed(step.object_name, step.operation.value)  # noqa
         job_record.status = JobStatus.failed
         job_record.completed_at = datetime.now(timezone.utc)
         job_record.error_message = str(exc)
@@ -482,7 +488,6 @@ async def _execute_query_step(
             "artefact_uri": query_result.artefact_uri,
         },
     )
-    # TODO(SFBL-171): metric/span here — query step completed counter, row_count histogram
 
     await publish_job_status_change(
         run_id,

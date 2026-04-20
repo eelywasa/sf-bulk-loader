@@ -1,4 +1,4 @@
-"""Tests for app.observability.sanitization — SFBL-60."""
+"""Tests for app.observability.sanitization — SFBL-60, SFBL-171."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from app.observability.sanitization import (
     SCRUBBED_KEYS,
     safe_exc_message,
     safe_record_exception,
+    sanitize_soql,
     scrub_dict,
     scrub_headers,
     strip_s3_query_string,
@@ -340,3 +341,155 @@ class TestStripS3QueryString:
         )
         result = strip_s3_query_string(msg)
         assert result == "s3://bucket-a/key-a and s3://bucket-b/key-b"
+
+
+# ── sanitize_soql — SFBL-171 ──────────────────────────────────────────────────
+
+
+class TestSanitizeSoql:
+    """SOQL sanitization must strip WHERE clause values from INFO-level logs."""
+
+    def test_returns_select_from_prefix(self):
+        soql = "SELECT Id, Name FROM Account WHERE Email__c = 'x@y.com'"
+        result = sanitize_soql(soql)
+        assert result.startswith("SELECT Id, Name FROM Account")
+
+    def test_does_not_contain_where_clause_value(self):
+        soql = "SELECT Id FROM Contact WHERE Email = 'alice@example.com'"
+        result = sanitize_soql(soql)
+        assert "alice@example.com" not in result
+
+    def test_includes_length(self):
+        soql = "SELECT Id FROM Account"
+        result = sanitize_soql(soql)
+        assert f"len={len(soql)}" in result
+
+    def test_includes_sha256_hash_prefix(self):
+        import hashlib
+        soql = "SELECT Id FROM Account"
+        expected_hash = hashlib.sha256(soql.encode()).hexdigest()[:8]
+        result = sanitize_soql(soql)
+        assert f"sha256={expected_hash}" in result
+
+    def test_two_different_soql_produce_different_hashes(self):
+        soql1 = "SELECT Id FROM Account"
+        soql2 = "SELECT Id FROM Contact"
+        r1 = sanitize_soql(soql1)
+        r2 = sanitize_soql(soql2)
+        # Both valid but hash must differ.
+        assert r1 != r2
+
+    def test_same_soql_is_deterministic(self):
+        soql = "SELECT Id, Name FROM Opportunity WHERE StageName = 'Closed Won'"
+        assert sanitize_soql(soql) == sanitize_soql(soql)
+
+    def test_empty_string_does_not_raise(self):
+        result = sanitize_soql("")
+        assert "len=0" in result
+
+    def test_soql_without_where_still_safe(self):
+        soql = "SELECT Id, Name FROM Account ORDER BY Name LIMIT 100"
+        result = sanitize_soql(soql)
+        assert "SELECT" in result
+        assert "Account" in result
+
+    def test_query_all_operation_accepted(self):
+        soql = "SELECT Id FROM Contact"
+        result = sanitize_soql(soql)
+        assert result  # non-empty
+
+
+# ── BulkQueryEvent and new OutcomeCodes — SFBL-171 ────────────────────────────
+
+
+class TestBulkQueryEvents:
+    """BulkQueryEvent constants must exist and follow dot-separated naming."""
+
+    def test_job_created_constant(self):
+        from app.observability.events import BulkQueryEvent
+        assert BulkQueryEvent.JOB_CREATED == "bulk_query.job.created"
+
+    def test_job_polled_constant(self):
+        from app.observability.events import BulkQueryEvent
+        assert BulkQueryEvent.JOB_POLLED == "bulk_query.job.polled"
+
+    def test_job_page_downloaded_constant(self):
+        from app.observability.events import BulkQueryEvent
+        assert BulkQueryEvent.JOB_PAGE_DOWNLOADED == "bulk_query.job.page_downloaded"
+
+    def test_job_completed_constant(self):
+        from app.observability.events import BulkQueryEvent
+        assert BulkQueryEvent.JOB_COMPLETED == "bulk_query.job.completed"
+
+    def test_job_failed_constant(self):
+        from app.observability.events import BulkQueryEvent
+        assert BulkQueryEvent.JOB_FAILED == "bulk_query.job.failed"
+
+    def test_request_retried_constant(self):
+        from app.observability.events import BulkQueryEvent
+        assert BulkQueryEvent.REQUEST_RETRIED == "bulk_query.request.retried"
+
+    def test_rate_limited_constant(self):
+        from app.observability.events import BulkQueryEvent
+        assert BulkQueryEvent.RATE_LIMITED == "bulk_query.rate_limited"
+
+    def test_all_values_are_lowercase_dot_separated(self):
+        from app.observability.events import BulkQueryEvent
+        for attr in ("JOB_CREATED", "JOB_POLLED", "JOB_PAGE_DOWNLOADED",
+                     "JOB_COMPLETED", "JOB_FAILED", "REQUEST_RETRIED", "RATE_LIMITED"):
+            value = getattr(BulkQueryEvent, attr)
+            assert value == value.lower(), f"{attr} value is not lowercase: {value!r}"
+            assert "." in value, f"{attr} value is not dot-separated: {value!r}"
+
+
+class TestBulkQueryOutcomeCodes:
+    """New OutcomeCode constants for the bulk-query path."""
+
+    def test_query_sf_job_failed(self):
+        from app.observability.events import OutcomeCode
+        assert OutcomeCode.QUERY_SF_JOB_FAILED == "query_sf_job_failed"
+
+    def test_query_soql_syntax_rejected(self):
+        from app.observability.events import OutcomeCode
+        assert OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED == "query_soql_syntax_rejected"
+
+    def test_all_new_codes_are_lowercase(self):
+        from app.observability.events import OutcomeCode
+        for name in ("QUERY_SF_JOB_FAILED", "QUERY_SOQL_SYNTAX_REJECTED"):
+            value = getattr(OutcomeCode, name)
+            assert value == value.lower(), f"{name} must be lowercase: {value!r}"
+
+
+# ── Bulk query metrics helpers — SFBL-171 ─────────────────────────────────────
+
+
+class TestBulkQueryMetrics:
+    """Metric helpers must call the underlying Prometheus objects without raising."""
+
+    def test_record_bulk_query_job_created(self):
+        from app.observability.metrics import record_bulk_query_job_created
+        # Should not raise.
+        record_bulk_query_job_created("Account", "query")
+
+    def test_record_bulk_query_job_failed(self):
+        from app.observability.metrics import record_bulk_query_job_failed
+        record_bulk_query_job_failed("Contact", "queryAll")
+
+    def test_record_bulk_query_job_completed(self):
+        from app.observability.metrics import record_bulk_query_job_completed
+        record_bulk_query_job_completed(
+            "Opportunity", "query", row_count=100, byte_count=4096, page_count=2
+        )
+
+    def test_metric_objects_are_importable(self):
+        from app.observability.metrics import (
+            bulk_query_bytes_histogram,
+            bulk_query_jobs_completed_total,
+            bulk_query_jobs_created_total,
+            bulk_query_jobs_failed_total,
+            bulk_query_locator_pages_histogram,
+            bulk_query_rows_histogram,
+        )
+        # Check they are Prometheus-compatible counter/histogram objects.
+        assert hasattr(bulk_query_jobs_created_total, "labels")
+        assert hasattr(bulk_query_rows_histogram, "labels")

@@ -40,6 +40,8 @@ from urllib.parse import quote
 import httpx
 
 from app.config import settings
+from app.observability.events import BulkQueryEvent, OutcomeCode
+from app.observability.sanitization import sanitize_soql
 from app.services.salesforce_bulk import BulkAPIError
 
 logger = logging.getLogger(__name__)
@@ -133,6 +135,10 @@ async def explain_soql(
                     _MAX_RETRIES + 1,
                     wait,
                     exc,
+                    extra={
+                        "event_name": BulkQueryEvent.REQUEST_RETRIED,
+                        "outcome_code": OutcomeCode.NETWORK_ERROR,
+                    },
                 )
                 await asyncio.sleep(wait)
                 continue
@@ -152,13 +158,29 @@ async def explain_soql(
                         "cost": first.get("cost"),
                         "relativeCost": first.get("relativeCost"),
                     }
-                logger.debug("SOQL explain returned valid plan: %s", plan_summary)
+                logger.debug(
+                    "SOQL explain returned valid plan for %s: %s",
+                    sanitize_soql(soql),
+                    plan_summary,
+                    extra={
+                        "event_name": BulkQueryEvent.JOB_CREATED,
+                        "outcome_code": OutcomeCode.OK,
+                    },
+                )
                 return SoqlExplainResult(valid=True, plan=plan_summary)
 
             # ── 400 — invalid SOQL (not retriable) ──────────────────────────
             if response.status_code == 400:
                 error_msg = _extract_sf_error(response)
-                logger.debug("SOQL explain returned 400: %s", error_msg)
+                logger.warning(
+                    "SOQL explain rejected (400) for %s: %s",
+                    sanitize_soql(soql),
+                    error_msg,
+                    extra={
+                        "event_name": BulkQueryEvent.JOB_FAILED,
+                        "outcome_code": OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED,
+                    },
+                )
                 return SoqlExplainResult(valid=False, error=error_msg)
 
             # ── 429 — rate-limited ───────────────────────────────────────────
@@ -176,6 +198,10 @@ async def explain_soql(
                     attempt + 1,
                     _MAX_RETRIES + 1,
                     wait,
+                    extra={
+                        "event_name": BulkQueryEvent.RATE_LIMITED,
+                        "outcome_code": OutcomeCode.RATE_LIMITED,
+                    },
                 )
                 await asyncio.sleep(wait)
                 continue
@@ -191,6 +217,10 @@ async def explain_soql(
                     attempt + 1,
                     _MAX_RETRIES + 1,
                     wait,
+                    extra={
+                        "event_name": BulkQueryEvent.REQUEST_RETRIED,
+                        "outcome_code": None,
+                    },
                 )
                 await asyncio.sleep(wait)
                 continue
