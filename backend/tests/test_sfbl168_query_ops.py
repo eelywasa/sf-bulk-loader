@@ -285,7 +285,10 @@ def test_api_create_dml_step_with_soql_returns_422(auth_client):
 
 
 def test_preview_query_step_returns_query_envelope(auth_client):
-    """Preview for a query step must return kind=query without file discovery."""
+    """Preview for a query step must return kind=query with explain result (SFBL-175)."""
+    from unittest.mock import AsyncMock
+    from app.services.salesforce_query_validation import SoqlExplainResult
+
     pid = _plan_id(auth_client, _conn_id(auth_client))
     step_payload = {
         "object_name": "Account",
@@ -294,18 +297,24 @@ def test_preview_query_step_returns_query_envelope(auth_client):
     }
     step_id = auth_client.post(f"/api/load-plans/{pid}/steps", json=step_payload).json()["id"]
 
-    resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+    with patch("app.api.load_steps.get_access_token", new_callable=AsyncMock, return_value="tok"), \
+         patch("app.api.load_steps.explain_soql", new_callable=AsyncMock,
+               return_value=SoqlExplainResult(valid=True, plan={"leadingOperation": "TableScan", "sobjectType": "Account"})):
+        resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
     assert resp.status_code == 200
     body = resp.json()
     assert body["kind"] == "query"
     assert body["matched_files"] == []
     assert body["total_rows"] == 0
-    assert "note" in body
-    assert body["note"] == "query step — no file preview"
+    assert body["valid"] is True
 
 
 def test_preview_query_all_step_returns_query_envelope(auth_client):
-    """Preview for a queryAll step must also return kind=query."""
+    """Preview for a queryAll step must also return kind=query (SFBL-175)."""
+    from unittest.mock import AsyncMock
+    from app.services.salesforce_query_validation import SoqlExplainResult
+
     pid = _plan_id(auth_client, _conn_id(auth_client))
     step_payload = {
         "object_name": "Account",
@@ -314,7 +323,11 @@ def test_preview_query_all_step_returns_query_envelope(auth_client):
     }
     step_id = auth_client.post(f"/api/load-plans/{pid}/steps", json=step_payload).json()["id"]
 
-    resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+    with patch("app.api.load_steps.get_access_token", new_callable=AsyncMock, return_value="tok"), \
+         patch("app.api.load_steps.explain_soql", new_callable=AsyncMock,
+               return_value=SoqlExplainResult(valid=True, plan={})):
+        resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
     assert resp.status_code == 200
     body = resp.json()
     assert body["kind"] == "query"

@@ -8,6 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.input_connection import InputConnection
@@ -21,6 +22,8 @@ from app.services.input_storage import (
     get_storage,
 )
 from app.services import load_step_service
+from app.services.salesforce_auth import AuthError, get_access_token
+from app.services.salesforce_query_validation import BulkAPIError, explain_soql
 from app.schemas.load_step import (
     FilePreviewInfo,
     LoadStepCreate,
@@ -149,18 +152,63 @@ async def preview_step(
 ) -> StepPreviewResponse:
     """Discover CSV files matching the step's pattern and return row counts.
 
-    For query/queryAll steps, no file discovery is performed.  An envelope is
-    returned that is shape-compatible with DML step responses so that callers
-    iterating a mixed plan do not need special-case logic.
+    For query/queryAll steps, no file discovery is performed.  Instead the
+    SOQL is validated via the Salesforce explain endpoint and the result is
+    returned in a shape-compatible envelope.
     """
     step = await _get_step_or_404(plan_id, step_id, db)
 
-    # Query ops have no CSV input — return a shape-compatible envelope immediately.
+    # Query ops: validate SOQL via the explain endpoint.
     if step.operation in QUERY_OPERATIONS:
+        # Load the plan with its Salesforce connection eagerly so we can call
+        # get_access_token without a separate query.
+        result = await db.execute(
+            select(LoadPlan)
+            .options(selectinload(LoadPlan.connection))
+            .where(LoadPlan.id == plan_id)
+        )
+        plan = result.scalar_one_or_none()
+        if plan is None or plan.connection is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Load plan or its Salesforce connection not found",
+            )
+
+        soql = step.soql or ""
+        if not soql:
+            return StepPreviewResponse(
+                kind="query",
+                valid=False,
+                error="No SOQL defined on this step",
+                matched_files=[],
+                total_rows=0,
+            )
+
+        try:
+            access_token = await get_access_token(db, plan.connection)
+        except AuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Could not authenticate with Salesforce: {exc}",
+            ) from exc
+
+        try:
+            explain_result = await explain_soql(
+                plan.connection.instance_url,
+                access_token,
+                soql,
+            )
+        except BulkAPIError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Salesforce explain endpoint error: {exc}",
+            ) from exc
+
         return StepPreviewResponse(
             kind="query",
-            note="query step — no file preview",
-            pattern=None,
+            valid=explain_result.valid,
+            plan=explain_result.plan if explain_result.valid else None,
+            error=explain_result.error if not explain_result.valid else None,
             matched_files=[],
             total_rows=0,
         )
