@@ -34,6 +34,7 @@ from app.services.output_storage import (
 )
 from app.services.partition_executor import process_partition as _default_process
 from app.services.result_persistence import count_csv_rows
+from app.services.notifications import fire_terminal_notifications
 from app.services.run_event_publisher import (
     publish_run_aborted,
     publish_run_completed,
@@ -120,6 +121,7 @@ async def execute_retry_run(
             logger.error("execute_retry_run: LoadStep %s not found", step_id,
                          extra={"run_id": run_id, "step_id": step_id})
             await _mark_run_failed(run_id, db)
+            fire_terminal_notifications(run_id, RunStatus.failed)
             return
 
         plan: LoadPlan = run.load_plan
@@ -154,6 +156,7 @@ async def execute_retry_run(
                                 "run_id": run_id})
             await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
             await publish_run_failed(run_id, error=str(exc))
+            fire_terminal_notifications(run_id, RunStatus.failed)
             return
 
         # ── Resolve output storage ────────────────────────────────────────────
@@ -166,6 +169,7 @@ async def execute_retry_run(
                                 "run_id": run_id})
             await _mark_run_failed(run_id, db, error_summary={"output_storage_error": str(exc)})
             await publish_run_failed(run_id, error=str(exc))
+            fire_terminal_notifications(run_id, RunStatus.failed)
             return
 
         semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
@@ -244,6 +248,7 @@ async def execute_retry_run(
             total_success=total_success,
             total_errors=total_errors,
         )
+        fire_terminal_notifications(run_id, final_status)
         retry_outcome = OutcomeCode.DEGRADED if total_errors > 0 else OutcomeCode.OK
         logger.info(
             "Retry run %s completed (%s): records=%d success=%d errors=%d",
@@ -396,12 +401,15 @@ async def _execute_run(
             await publish_run_aborted(run_id, reason="cancelled")
         except Exception:  # pragma: no cover - best-effort
             pass
+        fire_terminal_notifications(run_id, RunStatus.aborted)
         raise
     finally:
         # Backstop: re-fetch run in a fresh session and, if still ``running``,
         # mark it failed with an ``unknown_exit`` marker so operators can see
         # something went wrong even if no explicit handler fired.
-        await _backstop_mark_failed_if_running(run_id, db_factory)
+        backstopped = await _backstop_mark_failed_if_running(run_id, db_factory)
+        if backstopped:
+            fire_terminal_notifications(run_id, RunStatus.failed)
 
 
 async def _execute_run_body(
@@ -602,6 +610,7 @@ async def _execute_run_body(
         await _mark_run_failed(run_id, db, error_summary={"output_storage_error": str(exc)})
         await publish_run_failed(run_id, error=str(exc))
         record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
+        fire_terminal_notifications(run_id, RunStatus.failed)
         return
 
     # ── Obtain Salesforce access token ────────────────────────────────────────
@@ -614,6 +623,7 @@ async def _execute_run_body(
         await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
         await publish_run_failed(run_id, error=str(exc))
         record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
+        fire_terminal_notifications(run_id, RunStatus.failed)
         return
 
     semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
@@ -634,6 +644,7 @@ async def _execute_run_body(
                                    "run_id": run_id, "step_id": str(step.id)})
                 await publish_run_aborted(run_id)
                 record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
+                fire_terminal_notifications(run_id, RunStatus.aborted)
                 return
 
             await publish_step_started(
@@ -688,6 +699,7 @@ async def _execute_run_body(
                 )
                 await publish_run_failed(run_id, error=str(exc))
                 record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
+                fire_terminal_notifications(run_id, RunStatus.failed)
                 return
             except asyncio.CancelledError:
                 # SFBL-112: external cancellation. Mark aborted via fresh
@@ -703,6 +715,7 @@ async def _execute_run_body(
                 await _mark_run_aborted_fresh(run_id, db_factory)
                 await publish_run_aborted(run_id, reason="cancelled")
                 record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
+                fire_terminal_notifications(run_id, RunStatus.aborted)
                 raise
             except Exception as exc:
                 # SFBL-112: broad backstop for unhandled exceptions raised from
@@ -723,6 +736,7 @@ async def _execute_run_body(
                 )
                 await publish_run_failed(run_id, error=str(exc))
                 record_run_completed(RunStatus.failed.value, time.perf_counter() - _run_start)
+                fire_terminal_notifications(run_id, RunStatus.failed)
                 return
 
             total_step_records = step_success + step_errors
@@ -796,6 +810,7 @@ async def _execute_run_body(
                     await db.commit()
                     record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
                     await publish_run_aborted(run_id, reason="step_failure_threshold")
+                    fire_terminal_notifications(run_id, RunStatus.aborted)
                     return
 
     # ── Finalise run ──────────────────────────────────────────────────────────
@@ -818,6 +833,7 @@ async def _execute_run_body(
     )
     outcome = OutcomeCode.DEGRADED if any_step_failed else OutcomeCode.OK
     record_run_completed(final_status.value, time.perf_counter() - _run_start)
+    fire_terminal_notifications(run_id, final_status)
     if not isinstance(_cur_span, NonRecordingSpan):
         _cur_span.set_attribute("outcome.code", outcome)
     logger.info(
@@ -924,7 +940,7 @@ async def _mark_run_failed(
 async def _backstop_mark_failed_if_running(
     run_id: str,
     db_factory: _DbFactory,
-) -> None:
+) -> bool:
     """SFBL-112: final backstop run in the ``finally`` block of ``_execute_run``.
 
     Opens a fresh session, re-fetches the run, and marks it failed with an
@@ -941,7 +957,7 @@ async def _backstop_mark_failed_if_running(
             )
             run = result.scalar_one_or_none()
             if run is None or run.status != RunStatus.running:
-                return
+                return False
             logger.error(
                 "Run %s: finally backstop — run still running after execute_run "
                 "body exited. Marking failed with unknown_exit.",
@@ -957,12 +973,14 @@ async def _backstop_mark_failed_if_running(
                 {"unknown_exit": "run body exited without finalising status"},
             )
             await fresh_db.commit()
+            return True
     except Exception as exc:  # pragma: no cover - best-effort backstop
         logger.exception(
             "Failed backstop for run %s: %s",
             run_id, exc,
             extra={"run_id": run_id, "outcome_code": OutcomeCode.DATABASE_ERROR},
         )
+    return False
 
 
 async def _mark_run_failed_fresh(

@@ -40,6 +40,24 @@ Tickets are tracked in Jira project **SFBL** at `matthew-jenkin.atlassian.net`. 
    - Test results (pass/fail counts)
    - Any notable decisions or deviations from the spec
 
+## Epic Delivery: One PR Per Epic
+
+An epic ships as **one shippable PR**, not a stack of per-ticket PRs. Each
+child ticket is still tracked individually in Jira (plan comment → In Progress
+→ Done with completion comment), but the code for every ticket in the epic
+lands on a single long-lived epic branch (`feat/sfbl-<epic-id>-<slug>`) and is
+opened as one PR at the end once the feature is complete end-to-end.
+
+Rationale: an epic is the unit that delivers user value; merging half of an
+epic leaves the product in an inconsistent state (e.g. a backend channel with
+no UI to configure it). Reviewers also get the full picture in one pass.
+
+Per-ticket commits on the epic branch should use conventional commit prefixes
+so they're greppable (`SFBL-179: …`, `SFBL-180: …`). Push regularly so CI
+stays green, but do not open the PR until the final ticket of the epic is
+implemented. The PR description lists all child tickets with a brief note per
+ticket.
+
 ## Documentation Structure
 User-facing documentation lives in `docs/`:
 - `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)

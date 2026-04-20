@@ -29,12 +29,15 @@ from app.api.jobs import router as jobs_router
 from app.api.load_plans import router as load_plans_router
 from app.api.load_runs import router as load_runs_router
 from app.api.load_steps import router as load_steps_router
+from app.api.notification_subscriptions import router as notification_subscriptions_router
 from app.api.utility import router as utility_router
 from app.api.utility import ws_router
 from app.database import AsyncSessionLocal, engine
 from app.services.auth import seed_admin
 from app.services.email import delivery_log as email_delivery_log
 from app.services.email import init_email_service
+from app.services.email.service import get_email_service
+from app.services.notifications import init_notification_dispatcher
 
 
 @asynccontextmanager
@@ -45,6 +48,9 @@ async def lifespan(app: FastAPI):
 
     # Startup: initialise email service singleton
     init_email_service(AsyncSessionLocal)
+
+    # Startup: initialise notification dispatcher singleton (SFBL-181)
+    init_notification_dispatcher(await get_email_service(), AsyncSessionLocal)
 
     # Startup: boot-sweep — reap any stale pending email_delivery rows left
     # over from a crashed or OOM-killed process.
@@ -115,6 +121,7 @@ app.include_router(load_plans_router)
 app.include_router(load_steps_router)
 app.include_router(load_runs_router)
 app.include_router(jobs_router)
+app.include_router(notification_subscriptions_router)
 app.include_router(utility_router)
 
 # WebSocket router — no prefix, path is /ws/runs/{run_id}

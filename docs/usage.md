@@ -138,6 +138,90 @@ and a **Result file** link instead of the DML success/error/unprocessed fields.
 
 ---
 
+## Getting notified when a run completes
+
+Subscribe to terminal-state notifications so you don't have to sit on the Runs
+page. Available in **hosted profiles only** (`self_hosted`, `aws_hosted`); the
+desktop profile has no user identity to attach subscriptions to.
+
+### Channels
+
+- **Email** — plain-text summary built from the `notifications/run_complete`
+  template. Rendered subject includes the plan name and terminal status.
+- **Webhook** — JSON POST to any `https://` URL. Compatible with Slack
+  incoming webhooks. Payload shape:
+
+  ```json
+  {
+    "text": "Accounts Plan: completed_with_errors",
+    "run": {
+      "run_id": "…",
+      "load_plan_id": "…",
+      "plan_name": "Accounts Plan",
+      "status": "completed_with_errors",
+      "started_at": "2026-04-20T12:00:00Z",
+      "finished_at": "2026-04-20T12:04:21Z"
+    }
+  }
+  ```
+
+  `http://` URLs are rejected. The webhook channel retries up to 3 times on
+  5xx, 429, or network errors with exponential backoff + jitter; 4xx is
+  terminal.
+
+### Triggers
+
+- **Any terminal state** — fires on `completed`, `completed_with_errors`,
+  `failed`, or `aborted`.
+- **Failures only** — fires on `completed_with_errors`, `failed`, or
+  `aborted`.
+
+### Subscribing
+
+Two entry points:
+
+1. **Settings → Notifications** — full CRUD. Choose a channel, destination,
+   a specific plan (or "All plans"), and a trigger. Use **Test** to fire a
+   synthetic payload through the real dispatcher without waiting for a run.
+2. **Plan editor toolbar → "Notify me"** — one-click subscribe for the
+   current user's email, scoped to the plan you're editing, with the "any
+   terminal" trigger. The button flips to **Notifications on** once a match
+   exists, with a menu to Edit or Unsubscribe. **Customize…** opens the full
+   form pre-filled with the plan.
+
+### Validating a webhook destination before subscribing
+
+To confirm your endpoint accepts the payload, send a sample request with
+`curl` (replace the URL with your endpoint):
+
+```bash
+curl -X POST https://hooks.example.com/services/T/B/X \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Accounts Plan: completed",
+    "run": {
+      "run_id": "00000000-0000-0000-0000-000000000000",
+      "load_plan_id": "00000000-0000-0000-0000-000000000000",
+      "plan_name": "Accounts Plan",
+      "status": "completed",
+      "started_at": "2026-04-20T12:00:00Z",
+      "finished_at": "2026-04-20T12:01:00Z"
+    }
+  }'
+```
+
+If the endpoint returns 2xx, the Settings **Test** button will succeed with
+the same payload shape.
+
+### Delivery audit trail
+
+Every dispatch writes one row to the `notification_delivery` table capturing
+the channel, status, attempt count, last error (if any), and — for email —
+the linked `email_delivery` row. Test-send rows carry `is_test=TRUE` and
+`run_id=NULL`.
+
+---
+
 ## Profile & Password
 
 These features are available in **hosted profiles** (`self_hosted`, `aws_hosted`)

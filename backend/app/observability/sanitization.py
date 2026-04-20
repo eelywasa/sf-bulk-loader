@@ -279,3 +279,54 @@ def safe_record_exception(span: Span, exc: BaseException) -> None:
     span.set_attribute("exception.type", type(exc).__name__)
     span.set_attribute("exception.message", safe_exc_message(exc))
     span.set_status(StatusCode.ERROR, safe_exc_message(exc))
+
+
+# ── Webhook URL + recipient address sanitization (SFBL-180) ──────────────────
+
+
+def sanitize_webhook_url(url: str) -> str:
+    """Return a telemetry-safe representation of a webhook destination.
+
+    Webhook destinations for chat integrations (e.g. Slack) embed a secret
+    token directly in the path (``hooks.slack.com/services/T.../B.../XXX``),
+    so logging the raw path would leak credentials.  This helper replaces
+    userinfo, the full path, query string, and fragment with a non-reversible
+    SHA-256 digest prefix.  Scheme + host + port are retained so operators
+    can still tell which integration is misbehaving.
+
+    Output shape::
+
+        ``https://<host>[:<port>]/#sha256=<first-8-hex>``
+
+    Fails open: if urlparse raises (malformed URL), returns ``"<invalid>"``.
+    """
+    from urllib.parse import urlparse
+
+    try:
+        parts = urlparse(url)
+    except ValueError:
+        return "<invalid>"
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    if not host:
+        return "<invalid>"
+    digest = hashlib.sha256(url.encode()).hexdigest()[:8]
+    scheme = parts.scheme or "https"
+    return f"{scheme}://{host}/#sha256={digest}"
+
+
+def redact_email_address(addr: str) -> str:
+    """Obscure the local-part of an email address for telemetry.
+
+    ``"alice@example.com"`` → ``"a***@example.com"``.  The first character
+    of the local-part is preserved to aid debugging without disclosing the
+    full identity; the domain is kept in full.  Strings without an ``@``
+    return ``"<invalid>"``.
+    """
+    if "@" not in addr:
+        return "<invalid>"
+    local, _, domain = addr.partition("@")
+    if not local:
+        return f"***@{domain}"
+    return f"{local[0]}***@{domain}"

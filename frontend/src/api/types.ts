@@ -339,6 +339,44 @@ export type EmailTestResponse =
   | EmailTestBackendFailure
   | EmailTestPending
 
+// ─── Notification subscriptions (SFBL-182) ───────────────────────────────────
+
+export type NotificationChannel = 'email' | 'webhook'
+export type NotificationTrigger = 'terminal_any' | 'terminal_fail_only'
+
+export interface NotificationSubscription {
+  id: string
+  user_id: string
+  plan_id: string | null
+  channel: NotificationChannel
+  destination: string
+  trigger: NotificationTrigger
+  created_at: string
+  updated_at: string
+}
+
+export interface NotificationSubscriptionCreate {
+  plan_id?: string | null
+  channel: NotificationChannel
+  destination: string
+  trigger: NotificationTrigger
+}
+
+export interface NotificationSubscriptionUpdate {
+  plan_id?: string | null
+  channel?: NotificationChannel
+  destination?: string
+  trigger?: NotificationTrigger
+}
+
+export interface NotificationTestResponse {
+  delivery_id: string
+  status: string
+  attempts: number
+  last_error: string | null
+  email_delivery_id: string | null
+}
+
 // ─── Dependencies health ──────────────────────────────────────────────────────
 
 export interface DependencyStatus {

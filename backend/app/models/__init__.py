@@ -6,6 +6,15 @@ from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
 from app.models.load_run import LoadRun
 from app.models.job import JobRecord
+from app.models.notification_delivery import (
+    NotificationDelivery,
+    NotificationDeliveryStatus,
+)
+from app.models.notification_subscription import (
+    NotificationChannel,
+    NotificationSubscription,
+    NotificationTrigger,
+)
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 
@@ -18,6 +27,11 @@ __all__ = [
     "LoadStep",
     "LoadRun",
     "JobRecord",
+    "NotificationChannel",
+    "NotificationDelivery",
+    "NotificationDeliveryStatus",
+    "NotificationSubscription",
+    "NotificationTrigger",
     "PasswordResetToken",
     "User",
 ]

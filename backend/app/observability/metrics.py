@@ -251,6 +251,30 @@ email_claim_lost_total = Counter(
 )
 
 
+# ── Notification dispatch metrics (SFBL-180) ──────────────────────────────────
+# Cardinality ceiling: 2 (channel) × 3 (status) = 6 series on dispatch_total;
+# 2 × 5 = 10 on dispatch_duration; webhook retry keyed by reason (3 values).
+
+notification_dispatch_total = Counter(
+    "sfbl_notification_dispatch_total",
+    "Number of notification dispatch attempts, by channel and terminal status.",
+    ["channel", "status"],
+)
+
+notification_dispatch_duration_seconds = Histogram(
+    "sfbl_notification_dispatch_duration_seconds",
+    "Duration of notification dispatch attempts in seconds.",
+    ["channel"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+
+notification_webhook_retry_total = Counter(
+    "sfbl_notification_webhook_retry_total",
+    "Number of webhook retry attempts, classified by failure reason.",
+    ["reason"],
+)
+
+
 # ── Email metric helpers ──────────────────────────────────────────────────────
 
 
