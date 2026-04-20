@@ -82,7 +82,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column(
-            "is_test", sa.Boolean(), nullable=False, server_default=sa.text("0")
+            "is_test", sa.Boolean(), nullable=False, server_default=sa.false()
         ),
         sa.Column(
             "status",
