@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -19,6 +19,15 @@ class Operation(str, enum.Enum):
     update = "update"
     upsert = "upsert"
     delete = "delete"
+    query = "query"
+    queryAll = "queryAll"
+
+
+# Convenience sets used by validators
+QUERY_OPERATIONS: frozenset[Operation] = frozenset({Operation.query, Operation.queryAll})
+DML_OPERATIONS: frozenset[Operation] = frozenset({
+    Operation.insert, Operation.update, Operation.upsert, Operation.delete
+})
 
 
 class LoadStep(Base):
@@ -35,7 +44,10 @@ class LoadStep(Base):
     )
     # Required when operation == upsert
     external_id_field: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    csv_file_pattern: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Required for DML operations; null for query ops
+    csv_file_pattern: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # Required for query/queryAll operations; null for DML ops
+    soql: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     partition_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10_000)
     assignment_rule_id: Mapped[Optional[str]] = mapped_column(String(18), nullable=True)
     input_connection_id: Mapped[Optional[str]] = mapped_column(
