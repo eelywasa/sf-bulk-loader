@@ -230,6 +230,12 @@ export interface StepPreviewQueryPlan {
   [key: string]: unknown
 }
 
+export interface ValidateSoqlResponse {
+  valid: boolean
+  plan?: StepPreviewQueryPlan | null
+  error?: string | null
+}
+
 export interface StepPreviewResponse {
   pattern?: string | null
   matched_files: StepPreviewInfo[]

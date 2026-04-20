@@ -17,6 +17,7 @@ import type {
   LoadRun,
   JobRecord,
   StepPreviewResponse,
+  ValidateSoqlResponse,
   InputFilePreview,
   InputDirectoryEntry,
   UserResponse,
@@ -101,6 +102,8 @@ export const stepsApi = {
     api.post<void>(`/api/load-plans/${planId}/steps/reorder`, stepIds),
   preview: (planId: string, stepId: string) =>
     api.post<StepPreviewResponse>(`/api/load-plans/${planId}/steps/${stepId}/preview`),
+  validateSoql: (planId: string, soql: string) =>
+    api.post<ValidateSoqlResponse>(`/api/load-plans/${planId}/validate-soql`, { soql }),
 }
 
 // ─── Runs ─────────────────────────────────────────────────────────────────────

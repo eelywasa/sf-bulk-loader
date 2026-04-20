@@ -31,6 +31,8 @@ from app.schemas.load_step import (
     LoadStepUpdate,
     StepPreviewResponse,
     StepReorderRequest,
+    ValidateSoqlRequest,
+    ValidateSoqlResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,6 +144,61 @@ async def delete_step(
     step = await _get_step_or_404(plan_id, step_id, db)
     await db.delete(step)
     await db.commit()
+
+
+@router.post("/{plan_id}/validate-soql", response_model=ValidateSoqlResponse)
+async def validate_soql(
+    plan_id: str,
+    data: ValidateSoqlRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ValidateSoqlResponse:
+    """Validate an ad-hoc SOQL string against the plan's Salesforce connection.
+
+    Unlike the step preview endpoint, this does not require the SOQL to be
+    persisted on a step first — callers pass the SOQL directly so unsaved
+    edits in the step editor can be validated immediately.
+    """
+    soql = (data.soql or "").strip()
+    if not soql:
+        return ValidateSoqlResponse(valid=False, error="SOQL is empty")
+
+    result = await db.execute(
+        select(LoadPlan)
+        .options(selectinload(LoadPlan.connection))
+        .where(LoadPlan.id == plan_id)
+    )
+    plan = result.scalar_one_or_none()
+    if plan is None or plan.connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Load plan or its Salesforce connection not found",
+        )
+
+    try:
+        access_token = await get_access_token(db, plan.connection)
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not authenticate with Salesforce: {exc}",
+        ) from exc
+
+    try:
+        explain_result = await explain_soql(
+            plan.connection.instance_url,
+            access_token,
+            soql,
+        )
+    except BulkAPIError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Salesforce explain endpoint error: {exc}",
+        ) from exc
+
+    return ValidateSoqlResponse(
+        valid=explain_result.valid,
+        plan=explain_result.plan if explain_result.valid else None,
+        error=explain_result.error if not explain_result.valid else None,
+    )
 
 
 @router.post("/{plan_id}/steps/{step_id}/preview", response_model=StepPreviewResponse)

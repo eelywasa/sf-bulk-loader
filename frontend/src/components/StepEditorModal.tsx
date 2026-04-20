@@ -89,35 +89,29 @@ export default function StepEditorModal({
   }
 
   async function handleValidateSoql() {
-    if (!planId || !editingStep) {
+    if (!planId) {
       setSoqlValidation({
         status: 'error',
-        message: 'Save the step first before validating SOQL.',
+        message: 'No plan selected — save the plan before validating SOQL.',
       })
       return
     }
+    const soql = stepForm.soql.trim()
+    if (!soql) return
     setSoqlValidation({ status: 'loading' })
     try {
-      const result = await stepsApi.preview(planId, editingStep.id)
-      if (result.kind === 'query') {
-        if (result.valid && result.plan) {
-          setSoqlValidation({
-            status: 'valid',
-            sobjectType: result.plan.sobjectType,
-            leadingOperation: result.plan.leadingOperation,
-            plan: result.plan,
-          })
-        } else {
-          setSoqlValidation({
-            status: 'invalid',
-            error: result.error ?? 'SOQL validation failed.',
-          })
-        }
-      } else {
-        // Unexpected response kind — show a generic message
+      const result = await stepsApi.validateSoql(planId, soql)
+      if (result.valid && result.plan) {
         setSoqlValidation({
-          status: 'error',
-          message: 'Unexpected response from server.',
+          status: 'valid',
+          sobjectType: result.plan.sobjectType,
+          leadingOperation: result.plan.leadingOperation,
+          plan: result.plan,
+        })
+      } else {
+        setSoqlValidation({
+          status: 'invalid',
+          error: result.error ?? 'SOQL validation failed.',
         })
       }
     } catch (err) {
@@ -233,14 +227,14 @@ export default function StepEditorModal({
                 variant="secondary"
                 size="sm"
                 loading={soqlValidation.status === 'loading'}
-                disabled={!editingStep || !stepForm.soql.trim()}
+                disabled={!planId || !stepForm.soql.trim()}
                 onClick={() => void handleValidateSoql()}
               >
                 Validate SOQL
               </Button>
-              {!editingStep && (
+              {!planId && (
                 <span className="text-xs text-content-muted">
-                  Save the step first to validate SOQL against Salesforce.
+                  Save the plan first to validate SOQL against Salesforce.
                 </span>
               )}
             </div>

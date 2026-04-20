@@ -502,6 +502,84 @@ class TestPreviewRouteQuery:
         assert resp.status_code == 502
 
 
+class TestValidateSoqlEndpoint:
+    """Ad-hoc SOQL validation — does not require a persisted step."""
+
+    def test_valid_soql(self, auth_client) -> None:
+        conn_id = _create_connection(auth_client)
+        plan_id = _create_plan(auth_client, conn_id)
+
+        with patch(
+            "app.api.load_steps.get_access_token",
+            new_callable=AsyncMock,
+            return_value="mock_token",
+        ), patch(
+            "app.api.load_steps.explain_soql",
+            new_callable=AsyncMock,
+            return_value=SoqlExplainResult(
+                valid=True,
+                plan={"leadingOperation": "TableScan", "sobjectType": "Account"},
+            ),
+        ):
+            resp = auth_client.post(
+                f"/api/load-plans/{plan_id}/validate-soql",
+                json={"soql": VALID_SOQL},
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["valid"] is True
+        assert body["plan"]["sobjectType"] == "Account"
+        assert body.get("error") is None
+
+    def test_invalid_soql(self, auth_client) -> None:
+        conn_id = _create_connection(auth_client)
+        plan_id = _create_plan(auth_client, conn_id)
+
+        with patch(
+            "app.api.load_steps.get_access_token",
+            new_callable=AsyncMock,
+            return_value="mock_token",
+        ), patch(
+            "app.api.load_steps.explain_soql",
+            new_callable=AsyncMock,
+            return_value=SoqlExplainResult(
+                valid=False,
+                error="MALFORMED_QUERY: unexpected end of query",
+            ),
+        ):
+            resp = auth_client.post(
+                f"/api/load-plans/{plan_id}/validate-soql",
+                json={"soql": "SELECT Foo FROM"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["valid"] is False
+        assert "MALFORMED_QUERY" in body["error"]
+        assert body.get("plan") is None
+
+    def test_empty_soql_returns_invalid(self, auth_client) -> None:
+        conn_id = _create_connection(auth_client)
+        plan_id = _create_plan(auth_client, conn_id)
+
+        resp = auth_client.post(
+            f"/api/load-plans/{plan_id}/validate-soql",
+            json={"soql": "   "},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["valid"] is False
+        assert body["error"]
+
+    def test_plan_not_found(self, auth_client) -> None:
+        resp = auth_client.post(
+            "/api/load-plans/does-not-exist/validate-soql",
+            json={"soql": VALID_SOQL},
+        )
+        assert resp.status_code == 404
+
+
 class TestPreviewRouteDmlRegression:
     def test_dml_step_returns_file_preview_envelope(self, auth_client, tmp_path) -> None:
         """DML steps must still return the original file-preview shape."""

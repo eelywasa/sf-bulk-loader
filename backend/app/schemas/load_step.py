@@ -97,6 +97,16 @@ class FilePreviewInfo(BaseModel):
     row_count: int
 
 
+class ValidateSoqlRequest(BaseModel):
+    soql: str
+
+
+class ValidateSoqlResponse(BaseModel):
+    valid: bool
+    plan: Optional[dict] = None
+    error: Optional[str] = None
+
+
 class StepPreviewResponse(BaseModel):
     pattern: Optional[str] = None
     matched_files: List[FilePreviewInfo] = []

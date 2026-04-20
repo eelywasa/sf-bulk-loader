@@ -22,6 +22,7 @@ vi.mock('../../api/endpoints', () => ({
     delete: vi.fn(),
     reorder: vi.fn(),
     preview: vi.fn(),
+    validateSoql: vi.fn(),
   },
   connectionsApi: {
     list: vi.fn(),
@@ -1350,13 +1351,10 @@ describe('PlanEditor', () => {
   it('renders success state when Validate SOQL returns valid: true', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
-    vi.mocked(stepsApi.preview).mockResolvedValue({
-      kind: 'query',
+    vi.mocked(stepsApi.validateSoql).mockResolvedValue({
       valid: true,
       plan: { leadingOperation: 'TableScan', sobjectType: 'Account' },
       error: null,
-      matched_files: [],
-      total_rows: 0,
     })
 
     renderEditor('plan-1')
@@ -1378,13 +1376,10 @@ describe('PlanEditor', () => {
   it('renders the Salesforce error message verbatim when Validate SOQL returns valid: false', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
-    vi.mocked(stepsApi.preview).mockResolvedValue({
-      kind: 'query',
+    vi.mocked(stepsApi.validateSoql).mockResolvedValue({
       valid: false,
       plan: null,
       error: "INVALID_FIELD: No such column 'BadField' on entity 'Account'",
-      matched_files: [],
-      total_rows: 0,
     })
 
     renderEditor('plan-1')
@@ -1405,7 +1400,7 @@ describe('PlanEditor', () => {
   it('renders a network error message when Validate SOQL fetch fails', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
-    vi.mocked(stepsApi.preview).mockRejectedValue(new Error('Network error'))
+    vi.mocked(stepsApi.validateSoql).mockRejectedValue(new Error('Network error'))
 
     renderEditor('plan-1')
     await waitFor(() => screen.getByText('Account'))
