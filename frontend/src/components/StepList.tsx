@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { Button, Card, Badge } from './ui'
 import type { LoadStep, InputConnection } from '../api/types'
-import { operationVariant, type PreviewEntry } from '../pages/planEditorUtils'
+import { operationVariant, isQueryOp, type PreviewEntry } from '../pages/planEditorUtils'
 
 interface StepListProps {
   steps: LoadStep[]
@@ -69,15 +69,21 @@ export default function StepList({
                           </Badge>
                         </span>
                       </p>
-                      <p className="text-xs text-content-muted mt-0.5 font-mono truncate">
-                        <span className="not-italic font-sans text-content-muted mr-1">
-                          {step.input_connection_id
-                            ? (inputConnections.find((c) => c.id === step.input_connection_id)?.name ?? 'S3')
-                            : 'Local'}
-                          {' · '}
-                        </span>
-                        {step.csv_file_pattern}
-                      </p>
+                      {isQueryOp(step.operation) ? (
+                        <p className="text-xs text-content-muted mt-0.5 font-mono truncate">
+                          {step.soql ? step.soql.substring(0, 80) + (step.soql.length > 80 ? '…' : '') : '(no SOQL)'}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-content-muted mt-0.5 font-mono truncate">
+                          <span className="not-italic font-sans text-content-muted mr-1">
+                            {step.input_connection_id
+                              ? (inputConnections.find((c) => c.id === step.input_connection_id)?.name ?? 'S3')
+                              : 'Local'}
+                            {' · '}
+                          </span>
+                          {step.csv_file_pattern}
+                        </p>
+                      )}
                       {step.external_id_field && (
                         <p className="text-xs text-content-muted mt-0.5">
                           External ID: {step.external_id_field}
@@ -87,14 +93,16 @@ export default function StepList({
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      loading={preview?.status === 'loading'}
-                      onClick={() => onPreview(step)}
-                    >
-                      Preview
-                    </Button>
+                    {!isQueryOp(step.operation) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={preview?.status === 'loading'}
+                        onClick={() => onPreview(step)}
+                      >
+                        Preview
+                      </Button>
+                    )}
                     <Button size="sm" variant="secondary" onClick={() => onEdit(step)}>
                       Edit
                     </Button>
@@ -138,7 +146,7 @@ export default function StepList({
                     {preview.status === 'error' && (
                       <span className="text-error-text">{preview.message}</span>
                     )}
-                    {preview.status === 'success' && (
+                    {preview.status === 'success' && preview.kind === 'dml' && (
                       <>
                         <p className="font-medium text-info-text">
                           {preview.data.matched_files.length} file(s) matched •{' '}
@@ -155,6 +163,22 @@ export default function StepList({
                           </p>
                         )}
                       </>
+                    )}
+                    {preview.status === 'success' && preview.kind === 'query' && (
+                      preview.data.valid ? (
+                        <p className="font-medium text-info-text">
+                          SOQL valid
+                          {preview.data.plan && (
+                            <span className="ml-2 text-xs font-mono">
+                              ({preview.data.plan.sobjectType} • {preview.data.plan.leadingOperation})
+                            </span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-error-text text-xs">
+                          {preview.data.error || 'SOQL invalid'}
+                        </p>
+                      )
                     )}
                   </div>
                 )}

@@ -8,11 +8,12 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
-from app.models.load_step import LoadStep
+from app.models.load_step import LoadStep, QUERY_OPERATIONS
 from app.services.auth import get_current_user
 from app.services.input_storage import (
     InputConnectionNotFoundError,
@@ -21,6 +22,8 @@ from app.services.input_storage import (
     get_storage,
 )
 from app.services import load_step_service
+from app.services.salesforce_auth import AuthError, get_access_token
+from app.services.salesforce_query_validation import BulkAPIError, explain_soql
 from app.schemas.load_step import (
     FilePreviewInfo,
     LoadStepCreate,
@@ -28,6 +31,9 @@ from app.schemas.load_step import (
     LoadStepUpdate,
     StepPreviewResponse,
     StepReorderRequest,
+    ValidateSoqlRequest,
+    ValidateSoqlResponse,
+    _validate_query_dml_fields,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,6 +129,30 @@ async def update_step(
     if "input_connection_id" in update_data and update_data["input_connection_id"] is not None:
         await _validate_input_connection_direction(update_data["input_connection_id"], db)
 
+    # Cross-field validation against the composed final state: merge the
+    # existing step's operation/soql/csv_file_pattern with the incoming patch
+    # so partial updates cannot produce invalid combinations (e.g. clearing
+    # csv_file_pattern on a DML step, or setting soql on one).
+    effective_operation = update_data.get("operation", step.operation)
+    effective_soql = update_data["soql"] if "soql" in update_data else step.soql
+    effective_pattern = (
+        update_data["csv_file_pattern"]
+        if "csv_file_pattern" in update_data
+        else step.csv_file_pattern
+    )
+    try:
+        _validate_query_dml_fields(
+            effective_operation,
+            effective_soql,
+            effective_pattern,
+            context="update",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
     for field, value in update_data.items():
         setattr(step, field, value)
     await db.commit()
@@ -141,14 +171,129 @@ async def delete_step(
     await db.commit()
 
 
+@router.post("/{plan_id}/validate-soql", response_model=ValidateSoqlResponse)
+async def validate_soql(
+    plan_id: str,
+    data: ValidateSoqlRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ValidateSoqlResponse:
+    """Validate an ad-hoc SOQL string against the plan's Salesforce connection.
+
+    Unlike the step preview endpoint, this does not require the SOQL to be
+    persisted on a step first — callers pass the SOQL directly so unsaved
+    edits in the step editor can be validated immediately.
+    """
+    soql = (data.soql or "").strip()
+    if not soql:
+        return ValidateSoqlResponse(valid=False, error="SOQL is empty")
+
+    result = await db.execute(
+        select(LoadPlan)
+        .options(selectinload(LoadPlan.connection))
+        .where(LoadPlan.id == plan_id)
+    )
+    plan = result.scalar_one_or_none()
+    if plan is None or plan.connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Load plan or its Salesforce connection not found",
+        )
+
+    try:
+        access_token = await get_access_token(db, plan.connection)
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not authenticate with Salesforce: {exc}",
+        ) from exc
+
+    try:
+        explain_result = await explain_soql(
+            plan.connection.instance_url,
+            access_token,
+            soql,
+        )
+    except BulkAPIError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Salesforce explain endpoint error: {exc}",
+        ) from exc
+
+    return ValidateSoqlResponse(
+        valid=explain_result.valid,
+        plan=explain_result.plan if explain_result.valid else None,
+        error=explain_result.error if not explain_result.valid else None,
+    )
+
+
 @router.post("/{plan_id}/steps/{step_id}/preview", response_model=StepPreviewResponse)
 async def preview_step(
     plan_id: str,
     step_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> StepPreviewResponse:
-    """Discover CSV files matching the step's pattern and return row counts."""
+    """Discover CSV files matching the step's pattern and return row counts.
+
+    For query/queryAll steps, no file discovery is performed.  Instead the
+    SOQL is validated via the Salesforce explain endpoint and the result is
+    returned in a shape-compatible envelope.
+    """
     step = await _get_step_or_404(plan_id, step_id, db)
+
+    # Query ops: validate SOQL via the explain endpoint.
+    if step.operation in QUERY_OPERATIONS:
+        # Load the plan with its Salesforce connection eagerly so we can call
+        # get_access_token without a separate query.
+        result = await db.execute(
+            select(LoadPlan)
+            .options(selectinload(LoadPlan.connection))
+            .where(LoadPlan.id == plan_id)
+        )
+        plan = result.scalar_one_or_none()
+        if plan is None or plan.connection is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Load plan or its Salesforce connection not found",
+            )
+
+        soql = step.soql or ""
+        if not soql:
+            return StepPreviewResponse(
+                kind="query",
+                valid=False,
+                error="No SOQL defined on this step",
+                matched_files=[],
+                total_rows=0,
+            )
+
+        try:
+            access_token = await get_access_token(db, plan.connection)
+        except AuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Could not authenticate with Salesforce: {exc}",
+            ) from exc
+
+        try:
+            explain_result = await explain_soql(
+                plan.connection.instance_url,
+                access_token,
+                soql,
+            )
+        except BulkAPIError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Salesforce explain endpoint error: {exc}",
+            ) from exc
+
+        return StepPreviewResponse(
+            kind="query",
+            valid=explain_result.valid,
+            plan=explain_result.plan if explain_result.valid else None,
+            error=explain_result.error if not explain_result.valid else None,
+            matched_files=[],
+            total_rows=0,
+        )
 
     try:
         storage = await get_storage(step.input_connection_id or "local", db)
@@ -185,6 +330,7 @@ async def preview_step(
         total_rows += row_count
 
     return StepPreviewResponse(
+        kind="dml",
         pattern=step.csv_file_pattern,
         matched_files=file_infos,
         total_rows=total_rows,

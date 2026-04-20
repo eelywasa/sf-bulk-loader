@@ -17,6 +17,7 @@ import type {
   LoadRun,
   JobRecord,
   StepPreviewResponse,
+  ValidateSoqlResponse,
   InputFilePreview,
   InputDirectoryEntry,
   UserResponse,
@@ -81,7 +82,8 @@ export const plansApi = {
 export interface LoadStepCreate {
   object_name: string
   operation: string
-  csv_file_pattern: string
+  csv_file_pattern?: string | null
+  soql?: string | null
   partition_size?: number
   external_id_field?: string | null
   assignment_rule_id?: string | null
@@ -100,6 +102,8 @@ export const stepsApi = {
     api.post<void>(`/api/load-plans/${planId}/steps/reorder`, stepIds),
   preview: (planId: string, stepId: string) =>
     api.post<StepPreviewResponse>(`/api/load-plans/${planId}/steps/${stepId}/preview`),
+  validateSoql: (planId: string, soql: string) =>
+    api.post<ValidateSoqlResponse>(`/api/load-plans/${planId}/validate-soql`, { soql }),
 }
 
 // ─── Runs ─────────────────────────────────────────────────────────────────────

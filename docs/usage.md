@@ -78,12 +78,27 @@ Jane,Doe,jane@example.com,ACCT-001
 3. Add **Load Steps** in execution order (parent objects before child objects):
    | Field | Description |
    |-------|-------------|
-   | **Object Name** | Salesforce API name (`Account`, `Contact`, etc.) |
-   | **Operation** | `insert`, `update`, `upsert`, or `delete` |
+   | **Object Name** | Salesforce API name (`Account`, `Contact`, etc.) — for query steps this is a free-text label only |
+   | **Operation** | `insert`, `update`, `upsert`, `delete`, `query`, or `queryAll` (query-all includes deleted/archived rows) |
    | **External ID Field** | Required for `upsert` (e.g. `ExternalId__c`) |
-   | **CSV File Pattern** | Glob pattern matching files in the input directory (e.g. `accounts_*.csv`) |
+   | **CSV File Pattern** | DML steps only — glob pattern matching files in the input directory (e.g. `accounts_*.csv`) |
+   | **SOQL** | Query steps only — the SOQL statement to execute. Use **Validate SOQL** to check syntax against the org before saving |
    | **Partition Size** | Records per Bulk API job (default 10,000) |
-4. Use **Preview** to verify file matching and record counts before running.
+4. Use **Preview** to verify file matching and record counts before running. (Query steps skip preview — use **Validate SOQL** instead.)
+
+### Bulk query steps
+
+Query (`query`) and queryAll (`queryAll`) steps run a SOQL statement via the
+Bulk API 2.0 and write the result to a single concatenated CSV artefact on the
+plan's configured output connection.
+
+- One file per step, header written once; a header-only file is produced when
+  the query returns zero rows.
+- `queryAll` includes soft-deleted and archived records.
+- **Validate SOQL** uses Salesforce's `explain` endpoint to check syntax and
+  surface the query plan before you run the plan.
+- To feed query results into a subsequent `delete` (or other DML) step, point
+  the downstream step's **CSV File Pattern** at the query's result file.
 
 ---
 
@@ -91,13 +106,17 @@ Jane,Doe,jane@example.com,ACCT-001
 
 Click **Run** on the Load Plan page. Monitor job progress in real time on the Load Run view.
 
-Result files are written to the output directory:
+DML result files are written to the output directory:
 
 ```
 {run_id}/{step_id}/{job_id}_success.csv
 {run_id}/{step_id}/{job_id}_error.csv
 {run_id}/{step_id}/{job_id}_unprocessed.csv
 ```
+
+Query/queryAll steps write a single concatenated CSV per step (no per-partition
+splits). On the Run Detail and Job Detail pages, query jobs show **Rows returned**
+and a **Result file** link instead of the DML success/error/unprocessed fields.
 
 ---
 

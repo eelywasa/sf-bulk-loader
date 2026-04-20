@@ -167,6 +167,7 @@ export default function PlanEditor() {
             patternPreviewLoading={patternPreviewLoading}
             showFilePicker={showFilePicker}
             connectionId={connectionId}
+            planId={isNew ? undefined : id}
             inputConnections={inputConnections}
             isSaving={isSavingStep}
             onChange={setStepField}

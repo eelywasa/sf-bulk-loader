@@ -1,13 +1,16 @@
-"""Tests for the OutputStorage abstraction (SFBL-160).
+"""Tests for the OutputStorage abstraction (SFBL-160, SFBL-174).
 
 Covers:
 - LocalOutputStorage.write_bytes: creates directory tree, writes bytes, returns relative path.
+- LocalOutputStorage.open_writer: multi-chunk writes, parent dir creation, .tmp cleanup, atomic rename.
 - S3OutputStorage.write_bytes: correct key, s3:// URI, root_prefix handling, ClientError wrapping.
+- S3OutputStorage.open_writer: multipart upload completion, abort on exception, empty stream.
 - Factory: None → local; valid S3 connection (direction=out) → S3; missing ID → error; direction=in → error.
 """
 
 from __future__ import annotations
 
+import asyncio
 import io
 import pathlib
 from unittest.mock import patch, MagicMock
@@ -25,6 +28,15 @@ from app.services.output_storage import (
     get_output_storage,
 )
 from app.utils.encryption import encrypt_secret
+
+
+def _run_async(coro_or_gen):
+    """Run a coroutine on a new event loop."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro_or_gen)
+    finally:
+        loop.close()
 
 
 # ── Fake S3 client ────────────────────────────────────────────────────────────
@@ -163,15 +175,6 @@ def test_s3_write_bytes_wraps_client_error_as_output_storage_error():
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 
-def _run_async(coro):
-    import asyncio
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _make_db_with_connection(ic: InputConnection):
     """Return a mock AsyncSession that returns *ic* from db.get()."""
     db = MagicMock()
@@ -293,3 +296,277 @@ def test_factory_unsupported_provider_raises():
     db = _make_db_with_connection(ic)
     with pytest.raises(UnsupportedOutputProviderError, match="gcs"):
         _run_async(get_output_storage("ic-004", db))
+
+
+# ── resolve_uri ──────────────────────────────────────────────────────────────
+
+
+def test_local_resolve_uri_returns_relative_path(tmp_path):
+    storage = LocalOutputStorage(str(tmp_path))
+    assert storage.resolve_uri("plan/run/step/partition_0.csv") == "plan/run/step/partition_0.csv"
+
+
+def test_s3_resolve_uri_returns_s3_scheme_with_prefix():
+    with patch("app.services.output_storage.boto3.client"):
+        storage = S3OutputStorage(
+            bucket="my-bucket",
+            root_prefix="results/",
+            region=None,
+            access_key_id="AKID",
+            secret_access_key="SAK",
+        )
+    assert (
+        storage.resolve_uri("plan/run/step/partition_0.csv")
+        == "s3://my-bucket/results/plan/run/step/partition_0.csv"
+    )
+
+
+def test_s3_resolve_uri_without_root_prefix():
+    with patch("app.services.output_storage.boto3.client"):
+        storage = S3OutputStorage(
+            bucket="my-bucket",
+            root_prefix=None,
+            region=None,
+            access_key_id="AKID",
+            secret_access_key="SAK",
+        )
+    assert storage.resolve_uri("run/step/out.csv") == "s3://my-bucket/run/step/out.csv"
+
+
+# ── LocalOutputStorage.open_writer ───────────────────────────────────────────
+
+
+def test_local_open_writer_writes_correct_bytes(tmp_path):
+    """Multiple chunks written via open_writer produce the expected file contents."""
+
+    async def _run():
+        storage = LocalOutputStorage(str(tmp_path))
+        rel = "run-1/step-1/results.csv"
+        async with storage.open_writer(rel) as w:
+            await w.write(b"header,col\n")
+            await w.write(b"1,2\n")
+            await w.write(b"3,4\n")
+        return (tmp_path / rel).read_bytes()
+
+    result = _run_async(_run())
+    assert result == b"header,col\n1,2\n3,4\n"
+
+
+def test_local_open_writer_creates_parent_dirs(tmp_path):
+    """open_writer creates nested parent directories automatically."""
+
+    async def _run():
+        storage = LocalOutputStorage(str(tmp_path))
+        rel = "deep/nested/dir/output.csv"
+        async with storage.open_writer(rel) as w:
+            await w.write(b"x")
+
+    _run_async(_run())
+    assert (tmp_path / "deep/nested/dir/output.csv").exists()
+
+
+def test_local_open_writer_atomic_rename_no_tmp_on_success(tmp_path):
+    """On successful close the final file exists and no .tmp remains."""
+
+    async def _run():
+        storage = LocalOutputStorage(str(tmp_path))
+        rel = "run-2/result.csv"
+        async with storage.open_writer(rel) as w:
+            await w.write(b"data\n")
+
+    _run_async(_run())
+    final = tmp_path / "run-2/result.csv"
+    tmp = tmp_path / "run-2/result.csv.tmp"
+    assert final.exists()
+    assert not tmp.exists()
+
+
+def test_local_open_writer_tmp_cleaned_up_on_exception(tmp_path):
+    """On exception inside the writer block the .tmp file is deleted and error propagates."""
+
+    async def _run():
+        storage = LocalOutputStorage(str(tmp_path))
+        rel = "run-3/result.csv"
+        with pytest.raises(ValueError, match="boom"):
+            async with storage.open_writer(rel) as w:
+                await w.write(b"partial")
+                raise ValueError("boom")
+
+    _run_async(_run())
+    final = tmp_path / "run-3/result.csv"
+    tmp = tmp_path / "run-3/result.csv.tmp"
+    assert not final.exists()
+    assert not tmp.exists()
+
+
+def test_local_open_writer_empty_stream(tmp_path):
+    """Writing zero bytes creates an empty file (no error)."""
+
+    async def _run():
+        storage = LocalOutputStorage(str(tmp_path))
+        rel = "run-4/empty.csv"
+        async with storage.open_writer(rel) as w:
+            pass  # write nothing
+
+    _run_async(_run())
+    assert (tmp_path / "run-4/empty.csv").read_bytes() == b""
+
+
+# ── S3OutputStorage.open_writer ───────────────────────────────────────────────
+
+
+class _FakeMultipartS3Client:
+    """Minimal S3 client stub that implements the multipart upload API."""
+
+    def __init__(self) -> None:
+        self._upload_id_counter = 0
+        self._uploads: dict[str, dict] = {}  # upload_id → {"parts": [...], "aborted": bool}
+        self.objects: dict[str, bytes] = {}  # key → assembled bytes
+
+    # Existing write_bytes path
+    def upload_fileobj(self, fileobj: io.IOBase, bucket: str, key: str, **_kwargs) -> None:
+        self.objects[key] = fileobj.read()
+
+    # Multipart
+    def create_multipart_upload(self, *, Bucket: str, Key: str, **_kw) -> dict:
+        self._upload_id_counter += 1
+        uid = f"uid-{self._upload_id_counter}"
+        self._uploads[uid] = {"key": Key, "bucket": Bucket, "parts": [], "aborted": False}
+        return {"UploadId": uid}
+
+    def upload_part(self, *, Bucket: str, Key: str, UploadId: str, PartNumber: int, Body: bytes, **_kw) -> dict:
+        assert UploadId in self._uploads, f"Unknown UploadId: {UploadId}"
+        self._uploads[UploadId]["parts"].append((PartNumber, Body))
+        return {"ETag": f"etag-{PartNumber}"}
+
+    def complete_multipart_upload(
+        self, *, Bucket: str, Key: str, UploadId: str, MultipartUpload: dict, **_kw
+    ) -> dict:
+        upload = self._uploads[UploadId]
+        # Sort parts by PartNumber and assemble
+        sorted_parts = sorted(upload["parts"], key=lambda t: t[0])
+        self.objects[Key] = b"".join(body for _, body in sorted_parts)
+        return {"Location": f"https://{Bucket}.s3.amazonaws.com/{Key}", "ETag": "etag-final"}
+
+    def abort_multipart_upload(self, *, Bucket: str, Key: str, UploadId: str, **_kw) -> None:
+        self._uploads[UploadId]["aborted"] = True
+
+    def head_object(self, *, Bucket: str, Key: str) -> dict:
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "HeadObject")
+        return {"ContentLength": len(self.objects[Key])}
+
+
+def _make_s3_multipart_storage(fake_client, *, bucket="test-bucket", root_prefix=None):
+    """Create an S3OutputStorage backed by a fake multipart-capable client."""
+    with patch("app.services.output_storage.boto3.client", return_value=fake_client):
+        storage = S3OutputStorage(
+            bucket=bucket,
+            root_prefix=root_prefix,
+            region="us-east-1",
+            access_key_id="AKID",
+            secret_access_key="SAK",
+        )
+    return storage
+
+
+def test_s3_open_writer_multi_chunk_upload_completes(tmp_path):
+    """Multiple chunks (one of which exceeds 5 MiB) triggers multi-part upload and completes."""
+    from app.services.output_storage import _S3_MIN_PART_SIZE
+
+    client = _FakeMultipartS3Client()
+    storage = _make_s3_multipart_storage(client, bucket="my-bucket")
+    rel = "run-1/step-1/results.csv"
+
+    # Send two parts: first exactly fills the min part size, second is small
+    chunk1 = b"a" * _S3_MIN_PART_SIZE
+    chunk2 = b"b" * 100
+
+    async def _run():
+        async with storage.open_writer(rel) as w:
+            await w.write(chunk1)
+            await w.write(chunk2)
+
+    _run_async(_run())
+
+    # The assembled object should have both chunks in order
+    assert client.objects[rel] == chunk1 + chunk2
+    # There should be 2 parts (one flushed mid-stream, one final)
+    uid = "uid-1"
+    assert not client._uploads[uid]["aborted"]
+    assert len(client._uploads[uid]["parts"]) == 2
+
+
+def test_s3_open_writer_exception_aborts_multipart():
+    """An exception inside the writer block triggers abort_multipart_upload."""
+    client = _FakeMultipartS3Client()
+    storage = _make_s3_multipart_storage(client, bucket="my-bucket")
+    rel = "run-2/step-1/results.csv"
+
+    async def _run():
+        with pytest.raises(RuntimeError, match="oops"):
+            async with storage.open_writer(rel) as w:
+                await w.write(b"some data")
+                raise RuntimeError("oops")
+
+    _run_async(_run())
+
+    uid = "uid-1"
+    assert client._uploads[uid]["aborted"]
+    assert rel not in client.objects
+
+
+def test_s3_open_writer_empty_stream_produces_valid_object():
+    """Writing zero bytes still results in a completed (empty) object."""
+    client = _FakeMultipartS3Client()
+    storage = _make_s3_multipart_storage(client, bucket="my-bucket")
+    rel = "run-3/empty.csv"
+
+    async def _run():
+        async with storage.open_writer(rel) as w:
+            pass  # write nothing
+
+    _run_async(_run())
+
+    # The key should exist with empty content
+    assert rel in client.objects
+    assert client.objects[rel] == b""
+    uid = "uid-1"
+    assert not client._uploads[uid]["aborted"]
+
+
+def test_s3_open_writer_small_payload_single_part():
+    """A payload smaller than 5 MiB is handled as a single final part."""
+    client = _FakeMultipartS3Client()
+    storage = _make_s3_multipart_storage(client, bucket="my-bucket")
+    rel = "run-4/small.csv"
+    data = b"col1,col2\n1,2\n"
+
+    async def _run():
+        async with storage.open_writer(rel) as w:
+            await w.write(data)
+
+    _run_async(_run())
+
+    assert client.objects[rel] == data
+    uid = "uid-1"
+    # Only one part (the final flush)
+    assert len(client._uploads[uid]["parts"]) == 1
+    assert not client._uploads[uid]["aborted"]
+
+
+def test_s3_open_writer_with_root_prefix():
+    """root_prefix is prepended to the key in the multipart upload."""
+    client = _FakeMultipartS3Client()
+    storage = _make_s3_multipart_storage(client, bucket="b", root_prefix="results/")
+    rel = "run-5/output.csv"
+
+    async def _run():
+        async with storage.open_writer(rel) as w:
+            await w.write(b"hello")
+
+    _run_async(_run())
+
+    expected_key = f"results/{rel}"
+    assert expected_key in client.objects
+    assert client.objects[expected_key] == b"hello"

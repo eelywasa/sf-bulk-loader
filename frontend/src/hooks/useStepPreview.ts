@@ -1,18 +1,21 @@
 import { useState } from 'react'
 import { stepsApi } from '../api/endpoints'
 import type { LoadStep } from '../api/types'
-import type { PreviewEntry } from '../pages/planEditorUtils'
+import { isQueryOp, type PreviewEntry } from '../pages/planEditorUtils'
 
 export function useStepPreview(planId: string | undefined) {
   const [previews, setPreviews] = useState<Record<string, PreviewEntry>>({})
   const [preflightOpen, setPreflightOpen] = useState(false)
 
   async function handlePreviewStep(step: LoadStep) {
+    // Query ops use inline SOQL validation — the Preview button is hidden for them.
+    // Early-return here as a safety guard so no request is ever fired.
+    if (isQueryOp(step.operation)) return
     if (!planId) return
     setPreviews((prev) => ({ ...prev, [step.id]: { status: 'loading' } }))
     try {
       const data = await stepsApi.preview(planId, step.id)
-      setPreviews((prev) => ({ ...prev, [step.id]: { status: 'success', data } }))
+      setPreviews((prev) => ({ ...prev, [step.id]: { status: 'success', kind: 'dml', data } }))
     } catch (err) {
       setPreviews((prev) => ({
         ...prev,
@@ -37,8 +40,19 @@ export function useStepPreview(planId: string | undefined) {
     await Promise.all(
       steps.map(async (step) => {
         try {
-          const data = await stepsApi.preview(planId, step.id)
-          setPreviews((prev) => ({ ...prev, [step.id]: { status: 'success', data } }))
+          if (isQueryOp(step.operation)) {
+            const data = await stepsApi.validateSoql(planId, step.soql ?? '')
+            setPreviews((prev) => ({
+              ...prev,
+              [step.id]: { status: 'success', kind: 'query', data },
+            }))
+          } else {
+            const data = await stepsApi.preview(planId, step.id)
+            setPreviews((prev) => ({
+              ...prev,
+              [step.id]: { status: 'success', kind: 'dml', data },
+            }))
+          }
         } catch (err) {
           setPreviews((prev) => ({
             ...prev,

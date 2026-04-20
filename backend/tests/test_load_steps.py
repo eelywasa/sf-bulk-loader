@@ -194,6 +194,60 @@ def test_update_step_returns_updated_fields(auth_client):
     assert body["partition_size"] == 1000
 
 
+def test_update_step_rejects_clearing_csv_pattern_on_dml(auth_client):
+    """Partial update that would leave a DML step without csv_file_pattern → 422."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid)["id"]
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{step_id}",
+        json={"csv_file_pattern": None},
+    )
+    assert resp.status_code == 422
+    assert "csv_file_pattern" in resp.json()["detail"]
+
+
+def test_update_step_rejects_adding_soql_to_dml(auth_client):
+    """Setting soql on a DML step without switching operation → 422."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid)["id"]
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{step_id}",
+        json={"soql": "SELECT Id FROM Account"},
+    )
+    assert resp.status_code == 422
+    assert "soql" in resp.json()["detail"]
+
+
+def test_update_step_operation_switch_to_query_requires_soql(auth_client):
+    """Switching a DML step to query without providing soql → 422."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid)["id"]
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{step_id}",
+        json={"operation": "query", "csv_file_pattern": None},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_step_operation_switch_to_query_with_soql_succeeds(auth_client):
+    """Atomic switch DML→query providing soql and clearing csv_file_pattern → 200."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid)["id"]
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{step_id}",
+        json={
+            "operation": "query",
+            "soql": "SELECT Id FROM Account",
+            "csv_file_pattern": None,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["operation"] == "query"
+    assert body["soql"] == "SELECT Id FROM Account"
+    assert body["csv_file_pattern"] is None
+
+
 def test_update_step_not_found_returns_404(auth_client):
     pid = _plan_id(auth_client, _conn_id(auth_client))
     resp = auth_client.put(f"/api/load-plans/{pid}/steps/bad-id", json={"sequence": 2})

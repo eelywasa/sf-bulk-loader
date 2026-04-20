@@ -4,6 +4,7 @@ import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons
 import { Badge, Button, Progress } from '../../components/ui'
 import type { ProgressColor } from '../../components/ui/Progress'
 import type { LoadStep, JobRecord } from '../../api/types'
+import { isQueryOperation, operationLabel } from '../../api/types'
 import { RunJobList } from './RunJobList'
 import { deriveStepStatus } from './utils'
 
@@ -28,6 +29,7 @@ export function RunStepPanel({
 }: StepPanelProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const stepStatus = deriveStepStatus(jobs)
+  const isQuery = isQueryOperation(step.operation)
 
   const totalProcessed = jobs.reduce((n, j) => n + (j.records_processed ?? 0), 0)
   const totalFailed = jobs.reduce((n, j) => n + (j.records_failed ?? 0), 0)
@@ -40,7 +42,7 @@ export function RunStepPanel({
     : 'blue'
 
   const hasRetryableJobs =
-    stepStatus.label === 'failed' || (stepStatus.label === 'complete' && totalFailed > 0)
+    !isQuery && (stepStatus.label === 'failed' || (stepStatus.label === 'complete' && totalFailed > 0))
 
   return (
     <div className="border border-border-base rounded-lg overflow-hidden">
@@ -59,8 +61,8 @@ export function RunStepPanel({
               #{step.sequence}
             </span>
             <span className="font-medium text-content-primary truncate">{step.object_name}</span>
-            <Badge variant="neutral" className="capitalize shrink-0">
-              {step.operation}
+            <Badge variant="neutral" className="shrink-0">
+              {operationLabel(step.operation)}
             </Badge>
             <Badge variant={stepStatus.variant} className="shrink-0">{stepStatus.label}</Badge>
             <span className="text-xs text-content-muted shrink-0">
@@ -109,11 +111,27 @@ export function RunStepPanel({
               className="flex-1"
             />
             <span className="text-xs text-content-muted shrink-0 whitespace-nowrap">
-              {totalProcessed.toLocaleString()} processed
-              {totalFailed > 0 && (
-                <span className="text-error-text"> · {totalFailed.toLocaleString()} failed</span>
+              {isQuery ? (
+                <>{totalProcessed.toLocaleString()} rows returned</>
+              ) : (
+                <>
+                  {totalProcessed.toLocaleString()} processed
+                  {totalFailed > 0 && (
+                    <span className="text-error-text"> · {totalFailed.toLocaleString()} failed</span>
+                  )}
+                </>
               )}
             </span>
+          </div>
+        )}
+
+        {/* SOQL block — only for query/queryAll steps */}
+        {isQuery && step.soql && (
+          <div className="mt-3">
+            <p className="text-xs font-medium text-content-muted uppercase tracking-wide mb-1">SOQL</p>
+            <pre className="rounded-md bg-gray-900 px-3 py-2 text-xs text-gray-100 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+              {step.soql}
+            </pre>
           </div>
         )}
       </div>
@@ -121,7 +139,7 @@ export function RunStepPanel({
       {/* Job list */}
       {expanded && (
         <div className="divide-y divide-border-base">
-          <RunJobList jobs={jobs} runId={runId} />
+          <RunJobList jobs={jobs} runId={runId} operation={step.operation} />
         </div>
       )}
     </div>

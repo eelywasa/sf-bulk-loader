@@ -139,6 +139,65 @@ bulk_job_poll_timeout_total = Counter(
     "(sf_job_max_poll_seconds) and were marked failed by the client.",
 )
 
+# ── Bulk query metrics (SFBL-171) ─────────────────────────────────────────────
+#
+# Query jobs are distinct from DML ingest jobs.  These metrics cover the Bulk
+# API 2.0 query path (query / queryAll operations) in bulk_query_executor.py.
+#
+# Labels:
+#   object_name — Salesforce object type (e.g. "Account", "Contact")
+#   operation   — "query" or "queryAll"
+#
+# Cardinality: object_name × operation is low-cardinality (bounded by the
+# number of distinct Salesforce object types referenced in load plans).
+
+bulk_query_jobs_created_total = Counter(
+    "sfbl_bulk_query_jobs_created_total",
+    "Total number of Bulk API 2.0 query jobs created.",
+    labelnames=["object_name", "operation"],
+)
+
+bulk_query_jobs_completed_total = Counter(
+    "sfbl_bulk_query_jobs_completed_total",
+    "Total number of Bulk API 2.0 query jobs that reached JobComplete state.",
+    labelnames=["object_name", "operation"],
+)
+
+bulk_query_jobs_failed_total = Counter(
+    "sfbl_bulk_query_jobs_failed_total",
+    "Total number of Bulk API 2.0 query jobs that reached Failed or Aborted state.",
+    labelnames=["object_name", "operation"],
+)
+
+bulk_query_rows_histogram = Histogram(
+    "sfbl_bulk_query_rows",
+    "Number of data rows returned per completed query step.",
+    labelnames=["object_name", "operation"],
+    buckets=(0, 100, 1_000, 10_000, 100_000, 500_000, 1_000_000, 5_000_000),
+)
+
+bulk_query_bytes_histogram = Histogram(
+    "sfbl_bulk_query_bytes",
+    "Total bytes written per completed query artefact.",
+    labelnames=["object_name", "operation"],
+    buckets=(
+        1_024,        # 1 KiB
+        10_240,       # 10 KiB
+        102_400,      # 100 KiB
+        1_048_576,    # 1 MiB
+        10_485_760,   # 10 MiB
+        104_857_600,  # 100 MiB
+        1_073_741_824,  # 1 GiB
+    ),
+)
+
+bulk_query_locator_pages_histogram = Histogram(
+    "sfbl_bulk_query_locator_pages",
+    "Number of Sforce-Locator pagination pages per completed query step.",
+    labelnames=["object_name", "operation"],
+    buckets=(1, 2, 5, 10, 25, 50, 100, 250, 500),
+)
+
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -281,6 +340,53 @@ def _assert_email_reason(reason: str) -> str:
 def record_bulk_job_poll_timeout() -> None:
     """Increment the Bulk API job poll-timeout counter (SFBL-111)."""
     bulk_job_poll_timeout_total.inc()
+
+
+# ── Bulk query metric helpers (SFBL-171) ──────────────────────────────────────
+
+
+def record_bulk_query_job_created(object_name: str, operation: str) -> None:
+    """Increment the bulk-query job-created counter."""
+    bulk_query_jobs_created_total.labels(
+        object_name=object_name, operation=operation
+    ).inc()
+
+
+def record_bulk_query_job_completed(
+    object_name: str,
+    operation: str,
+    row_count: int,
+    byte_count: int,
+    page_count: int,
+) -> None:
+    """Increment the bulk-query completed counter and record size histograms.
+
+    Args:
+        object_name: Salesforce object type (low-cardinality label).
+        operation:   ``"query"`` or ``"queryAll"`` (low-cardinality label).
+        row_count:   Number of data rows (header excluded) in the result file.
+        byte_count:  Total bytes written to the output artefact.
+        page_count:  Number of Sforce-Locator pages fetched (≥ 1).
+    """
+    bulk_query_jobs_completed_total.labels(
+        object_name=object_name, operation=operation
+    ).inc()
+    bulk_query_rows_histogram.labels(
+        object_name=object_name, operation=operation
+    ).observe(row_count)
+    bulk_query_bytes_histogram.labels(
+        object_name=object_name, operation=operation
+    ).observe(byte_count)
+    bulk_query_locator_pages_histogram.labels(
+        object_name=object_name, operation=operation
+    ).observe(page_count)
+
+
+def record_bulk_query_job_failed(object_name: str, operation: str) -> None:
+    """Increment the bulk-query job-failed counter."""
+    bulk_query_jobs_failed_total.labels(
+        object_name=object_name, operation=operation
+    ).inc()
 
 
 def record_run_completed(final_status: str, duration_seconds: float) -> None:
