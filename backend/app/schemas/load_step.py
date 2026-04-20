@@ -103,3 +103,7 @@ class StepPreviewResponse(BaseModel):
     total_rows: int = 0
     kind: str = "dml"
     note: Optional[str] = None
+    # Query-op explain fields (present only when kind="query")
+    valid: Optional[bool] = None
+    plan: Optional[dict] = None
+    error: Optional[str] = None
