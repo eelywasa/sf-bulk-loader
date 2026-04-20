@@ -1307,31 +1307,22 @@ describe('PlanEditor', () => {
     expect(screen.getAllByRole('button', { name: 'Preview' })).toHaveLength(1)
   })
 
-  it('does not call stepsApi.preview when Preview is triggered for a query op', async () => {
-    // This tests that useStepPreview early-returns for query ops.
-    // We set up a plan with a query step then simulate the preview handler call.
-    // Since the Preview button is hidden we trigger via the preflight flow.
+  it('calls stepsApi.validateSoql (not preview) for query steps during preflight', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
-    vi.mocked(stepsApi.preview).mockResolvedValue({
-      kind: 'query',
+    vi.mocked(stepsApi.validateSoql).mockResolvedValue({
       valid: true,
       plan: { leadingOperation: 'TableScan', sobjectType: 'Account' },
       error: null,
-      matched_files: [],
-      total_rows: 0,
     })
 
     renderEditor('plan-1')
     await waitFor(() => screen.getByText('Account'))
 
-    // Run Preflight button should be visible (plan has steps)
     await user.click(screen.getByRole('button', { name: 'Run Preflight' }))
-
-    // Wait for preflight modal to open
     await screen.findByRole('dialog')
 
-    // stepsApi.preview should NOT have been called because query ops are excluded from preflight
+    await waitFor(() => expect(stepsApi.validateSoql).toHaveBeenCalled())
     expect(stepsApi.preview).not.toHaveBeenCalled()
   })
 

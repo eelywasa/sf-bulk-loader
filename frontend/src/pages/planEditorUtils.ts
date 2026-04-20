@@ -1,5 +1,5 @@
 import { ApiError } from '../api/client'
-import type { ApiValidationError, StepPreviewResponse } from '../api/types'
+import type { ApiValidationError, StepPreviewResponse, ValidateSoqlResponse } from '../api/types'
 
 // ─── Form types ───────────────────────────────────────────────────────────────
 
@@ -50,7 +50,8 @@ export const EMPTY_STEP_FORM: StepFormData = {
 export type PreviewEntry =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; data: StepPreviewResponse }
+  | { status: 'success'; kind: 'dml'; data: StepPreviewResponse }
+  | { status: 'success'; kind: 'query'; data: ValidateSoqlResponse }
   | { status: 'error'; message: string }
 
 // ─── Constants ────────────────────────────────────────────────────────────────

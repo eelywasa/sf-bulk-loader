@@ -50,6 +50,21 @@ export default function PreflightPreviewModal({
                 </div>
               ) : preview.status === 'error' ? (
                 <p className="text-xs text-error-text">{preview.message}</p>
+              ) : preview.kind === 'query' ? (
+                preview.data.valid ? (
+                  <>
+                    <p className="text-xs font-semibold text-success-text">SOQL valid</p>
+                    {preview.data.plan && (
+                      <p className="text-xs text-content-secondary font-mono mt-0.5">
+                        {preview.data.plan.sobjectType} • {preview.data.plan.leadingOperation}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-error-text">
+                    {preview.data.error || 'SOQL invalid'}
+                  </p>
+                )
               ) : (
                 <>
                   <p className="text-xs font-semibold text-success-text">

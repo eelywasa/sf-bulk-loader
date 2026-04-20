@@ -146,7 +146,7 @@ export default function StepList({
                     {preview.status === 'error' && (
                       <span className="text-error-text">{preview.message}</span>
                     )}
-                    {preview.status === 'success' && (
+                    {preview.status === 'success' && preview.kind === 'dml' && (
                       <>
                         <p className="font-medium text-info-text">
                           {preview.data.matched_files.length} file(s) matched •{' '}
@@ -163,6 +163,22 @@ export default function StepList({
                           </p>
                         )}
                       </>
+                    )}
+                    {preview.status === 'success' && preview.kind === 'query' && (
+                      preview.data.valid ? (
+                        <p className="font-medium text-info-text">
+                          SOQL valid
+                          {preview.data.plan && (
+                            <span className="ml-2 text-xs font-mono">
+                              ({preview.data.plan.sobjectType} • {preview.data.plan.leadingOperation})
+                            </span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-error-text text-xs">
+                          {preview.data.error || 'SOQL invalid'}
+                        </p>
+                      )
                     )}
                   </div>
                 )}

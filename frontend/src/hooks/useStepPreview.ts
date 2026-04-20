@@ -15,7 +15,7 @@ export function useStepPreview(planId: string | undefined) {
     setPreviews((prev) => ({ ...prev, [step.id]: { status: 'loading' } }))
     try {
       const data = await stepsApi.preview(planId, step.id)
-      setPreviews((prev) => ({ ...prev, [step.id]: { status: 'success', data } }))
+      setPreviews((prev) => ({ ...prev, [step.id]: { status: 'success', kind: 'dml', data } }))
     } catch (err) {
       setPreviews((prev) => ({
         ...prev,
@@ -30,20 +30,29 @@ export function useStepPreview(planId: string | undefined) {
   async function handlePreflight(steps: LoadStep[]) {
     if (!planId) return
     setPreflightOpen(true)
-    // Exclude query ops from preflight — they use server-side SOQL validation instead
-    const dmlSteps = steps.filter((s) => !isQueryOp(s.operation))
     setPreviews((prev) => {
       const next = { ...prev }
-      for (const step of dmlSteps) {
+      for (const step of steps) {
         next[step.id] = { status: 'loading' }
       }
       return next
     })
     await Promise.all(
-      dmlSteps.map(async (step) => {
+      steps.map(async (step) => {
         try {
-          const data = await stepsApi.preview(planId, step.id)
-          setPreviews((prev) => ({ ...prev, [step.id]: { status: 'success', data } }))
+          if (isQueryOp(step.operation)) {
+            const data = await stepsApi.validateSoql(planId, step.soql ?? '')
+            setPreviews((prev) => ({
+              ...prev,
+              [step.id]: { status: 'success', kind: 'query', data },
+            }))
+          } else {
+            const data = await stepsApi.preview(planId, step.id)
+            setPreviews((prev) => ({
+              ...prev,
+              [step.id]: { status: 'success', kind: 'dml', data },
+            }))
+          }
         } catch (err) {
           setPreviews((prev) => ({
             ...prev,
