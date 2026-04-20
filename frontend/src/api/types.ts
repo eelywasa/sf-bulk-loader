@@ -45,6 +45,16 @@ export type JobStatus =
 
 export type Operation = 'insert' | 'update' | 'upsert' | 'delete' | 'query' | 'queryAll'
 
+export function isQueryOperation(op: Operation): boolean {
+  return op === 'query' || op === 'queryAll'
+}
+
+export function operationLabel(op: Operation): string {
+  if (op === 'queryAll') return 'Query All (incl. deleted)'
+  if (op === 'query') return 'Query'
+  return op
+}
+
 // ─── API error types ───────────────────────────────────────────────────────────
 
 export interface ApiValidationError {

@@ -162,6 +162,58 @@ const runAborted: LoadRun = {
   error_summary: null,
 }
 
+const planDetailWithQuery: LoadPlanDetail = {
+  ...planDetail,
+  load_steps: [
+    {
+      id: 'step-q1',
+      load_plan_id: 'plan-1',
+      sequence: 1,
+      object_name: 'Account',
+      operation: 'query',
+      csv_file_pattern: null,
+      soql: 'SELECT Id, Name FROM Account WHERE CreatedDate = TODAY',
+      partition_size: 10000,
+      external_id_field: null,
+      assignment_rule_id: null,
+      created_at: '2024-03-01T00:00:00Z',
+      updated_at: '2024-03-01T00:00:00Z',
+    },
+    {
+      id: 'step-qa1',
+      load_plan_id: 'plan-1',
+      sequence: 2,
+      object_name: 'Contact',
+      operation: 'queryAll',
+      csv_file_pattern: null,
+      soql: 'SELECT Id, Name, IsDeleted FROM Contact',
+      partition_size: 10000,
+      external_id_field: null,
+      assignment_rule_id: null,
+      created_at: '2024-03-01T00:00:00Z',
+      updated_at: '2024-03-01T00:00:00Z',
+    },
+  ],
+}
+
+const jobQueryComplete: JobRecord = {
+  id: 'job-q1',
+  load_run_id: 'run-111',
+  load_step_id: 'step-q1',
+  sf_job_id: 'sf-query-abc',
+  partition_index: 0,
+  status: 'job_complete',
+  records_processed: 500,
+  records_failed: 0,
+  success_file_path: '/output/query_result.csv',
+  error_file_path: null,
+  unprocessed_file_path: null,
+  sf_api_response: null,
+  started_at: '2024-03-01T10:00:00Z',
+  completed_at: '2024-03-01T10:03:00Z',
+  error_message: null,
+}
+
 // ─── Render helper ─────────────────────────────────────────────────────────────
 
 function renderRunDetail(runId = 'run-111') {
@@ -700,5 +752,89 @@ describe('RunDetail', () => {
 
     // Only the run-level progress bar should be present
     expect(screen.getAllByRole('progressbar')).toHaveLength(1)
+  })
+
+  // ── Query step rendering ──────────────────────────────────────────────────────
+
+  it('renders "Query" operation badge for a query step', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetailWithQuery)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText('Query')).toBeInTheDocument()
+    })
+  })
+
+  it('renders "Query All (incl. deleted)" operation badge for a queryAll step', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetailWithQuery)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText('Query All (incl. deleted)')).toBeInTheDocument()
+    })
+  })
+
+  it('shows SOQL block in expanded query step panel', async () => {
+    const user = userEvent.setup()
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobQueryComplete])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetailWithQuery)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByLabelText('Step 1: Account'))
+
+    // SOQL appears before expanding (it's in the header section)
+    await waitFor(() => {
+      expect(
+        screen.getByText('SELECT Id, Name FROM Account WHERE CreatedDate = TODAY'),
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('shows "rows returned" label in query step progress row', async () => {
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobQueryComplete])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetailWithQuery)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText(/500 rows returned/)).toBeInTheDocument()
+    })
+  })
+
+  it('does not show "Retry Failed Records" button for a query step with failed records', async () => {
+    // Query ops don't support retry
+    const jobQueryWithErrors: JobRecord = {
+      ...jobQueryComplete,
+      records_failed: 10,
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobQueryWithErrors])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetailWithQuery)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByText('Account'))
+
+    expect(screen.queryByRole('button', { name: 'Retry Failed Records' })).not.toBeInTheDocument()
+  })
+
+  it('shows "rows returned" in expanded query job row', async () => {
+    const user = userEvent.setup()
+    vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+    vi.mocked(runsApi.jobs).mockResolvedValue([jobQueryComplete])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetailWithQuery)
+
+    renderRunDetail()
+    await waitFor(() => screen.getByLabelText('Step 1: Account'))
+    await user.click(screen.getByLabelText('Step 1: Account'))
+
+    await waitFor(() => {
+      // Multiple instances of "rows returned" are expected (step header + job row)
+      expect(screen.getAllByText(/500 rows returned/).length).toBeGreaterThanOrEqual(1)
+    })
   })
 })

@@ -1,14 +1,17 @@
 import { Link } from 'react-router-dom'
 import { Badge, Progress } from '../../components/ui'
 import type { BadgeVariant } from '../../components/ui/Badge'
-import type { JobRecord } from '../../api/types'
+import type { JobRecord, Operation } from '../../api/types'
+import { isQueryOperation } from '../../api/types'
 
 interface RunJobListProps {
   jobs: JobRecord[]
   runId: string
+  operation?: Operation
 }
 
-export function RunJobList({ jobs, runId }: RunJobListProps) {
+export function RunJobList({ jobs, runId, operation }: RunJobListProps) {
+  const isQuery = operation ? isQueryOperation(operation) : false
   if (jobs.length === 0) {
     return <p className="px-5 py-4 text-sm text-content-muted italic">No jobs started yet.</p>
   }
@@ -43,11 +46,17 @@ export function RunJobList({ jobs, runId }: RunJobListProps) {
               <div className="flex items-center gap-2 flex-wrap">
                 {job.records_processed != null && (
                   <span className="text-xs text-content-secondary">
-                    {job.records_processed.toLocaleString()} processed
-                    {(job.records_failed ?? 0) > 0 && (
-                      <span className="text-error-text ml-1">
-                        · {job.records_failed!.toLocaleString()} failed
-                      </span>
+                    {isQuery ? (
+                      <>{job.records_processed.toLocaleString()} rows returned</>
+                    ) : (
+                      <>
+                        {job.records_processed.toLocaleString()} processed
+                        {(job.records_failed ?? 0) > 0 && (
+                          <span className="text-error-text ml-1">
+                            · {job.records_failed!.toLocaleString()} failed
+                          </span>
+                        )}
+                      </>
                     )}
                   </span>
                 )}
@@ -60,7 +69,7 @@ export function RunJobList({ jobs, runId }: RunJobListProps) {
                   </span>
                 )}
               </div>
-              {job.status === 'in_progress' && (job.total_records ?? 0) > 0 && (
+              {!isQuery && job.status === 'in_progress' && (job.total_records ?? 0) > 0 && (
                 <Progress
                   value={Math.round(((job.records_processed ?? 0) / job.total_records!) * 100)}
                   label={`${(job.records_processed ?? 0).toLocaleString()} / ${job.total_records!.toLocaleString()} records`}
