@@ -59,6 +59,7 @@ from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
+from app.services.bulk_query_executor import run_bulk_query
 from app.services.csv_processor import partition_csv
 from app.services.input_storage import get_storage
 from app.services.salesforce_auth import get_access_token
@@ -110,6 +111,7 @@ async def _execute_run(
         _BulkClient=SalesforceBulkClient,
         _get_storage=get_storage,
         _partition=partition_csv,
+        _run_bulk_query=run_bulk_query,
     )
 
 
@@ -124,6 +126,8 @@ async def _execute_step(
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
     output_storage,
+    instance_url: str = "",
+    access_token: str = "",
 ) -> tuple[int, int]:
     """Execute one LoadStep.  Delegates to step_executor with patched bindings."""
     return await step_executor.execute_step(
@@ -136,9 +140,12 @@ async def _execute_step(
         semaphore=semaphore,
         db_factory=db_factory,
         output_storage=output_storage,
+        instance_url=instance_url,
+        access_token=access_token,
         _get_storage=get_storage,
         _partition=partition_csv,
         _process=_process_partition,
+        _run_bulk_query=run_bulk_query,
     )
 
 

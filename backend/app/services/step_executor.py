@@ -3,6 +3,12 @@
 :func:`execute_step` discovers CSV files, partitions them, creates
 ``JobRecord`` rows, and processes all partitions concurrently (bounded by the
 run semaphore).
+
+For query/queryAll steps a separate code path is taken: no file discovery,
+no partitioning, no CSV upload.  Instead exactly **one** ``JobRecord`` is
+created (``partition_index=0``) and :func:`run_bulk_query` is invoked to
+execute the Salesforce Bulk API 2.0 query job and stream results to the
+configured :class:`OutputStorage`.
 """
 
 from __future__ import annotations
@@ -18,16 +24,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import time
 
 from app.models.job import JobRecord, JobStatus
-from app.models.load_step import LoadStep
+from app.models.load_step import LoadStep, QUERY_OPERATIONS
 from app.observability.context import input_connection_id_ctx_var, step_id_ctx_var
 from app.observability.events import JobEvent, OutcomeCode, StepEvent
 from app.observability.metrics import record_step_completed
 from app.observability import tracing
+from app.services.bulk_query_executor import BulkQueryJobFailed, run_bulk_query
 from app.services.csv_processor import partition_csv as _default_partition
 from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
 from app.services.output_storage import OutputStorage
 from app.services.partition_executor import process_partition
 from app.services.result_persistence import count_csv_rows
+from app.services.run_event_publisher import publish_job_status_change
 from app.services.salesforce_bulk import SalesforceBulkClient
 
 logger = logging.getLogger(__name__)
@@ -46,11 +54,22 @@ async def execute_step(
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
     output_storage: OutputStorage,
+    instance_url: str = "",
+    access_token: str = "",
     _get_storage: Callable = _default_get_storage,
     _partition: Callable = _default_partition,
     _process: Callable = process_partition,
+    _run_bulk_query: Callable = run_bulk_query,
 ) -> tuple[int, int]:
     """Execute one LoadStep: discover files, partition, submit and poll jobs.
+
+    For DML operations (insert/update/upsert/delete), CSV files are discovered,
+    partitioned, and processed concurrently via the Salesforce Bulk API 2.0 DML
+    endpoint.
+
+    For query operations (query/queryAll), exactly one ``JobRecord`` is created
+    and :func:`run_bulk_query` is invoked to stream query results to the output
+    storage.
 
     Args:
         output_storage: Resolved output storage instance for writing result CSVs.
@@ -60,6 +79,8 @@ async def execute_step(
             Overridden by the orchestrator facade so test patches propagate.
         _process: Injected partition-processing callable.
             Overridden by the orchestrator facade for test compatibility.
+        _run_bulk_query: Injected bulk-query callable (default: ``run_bulk_query``).
+            Overridden in tests to avoid real Salesforce I/O.
 
     Returns:
         ``(total_success, total_errors)`` record counts across all partitions.
@@ -88,9 +109,12 @@ async def execute_step(
                 semaphore=semaphore,
                 db_factory=db_factory,
                 output_storage=output_storage,
+                instance_url=instance_url,
+                access_token=access_token,
                 _get_storage=_get_storage,
                 _partition=_partition,
                 _process=_process,
+                _run_bulk_query=_run_bulk_query,
             )
             return result
     finally:
@@ -109,11 +133,27 @@ async def _execute_step(
     semaphore: asyncio.Semaphore,
     db_factory: _DbFactory,
     output_storage: OutputStorage,
+    instance_url: str = "",
+    access_token: str = "",
     _get_storage: Callable = _default_get_storage,
     _partition: Callable = _default_partition,
     _process: Callable = process_partition,
+    _run_bulk_query: Callable = run_bulk_query,
 ) -> tuple[int, int]:
     """Inner implementation of execute_step (called after ContextVars are bound)."""
+    # ── Query ops: single-job path (no glob / partition / upload) ────────────
+    if step.operation in QUERY_OPERATIONS:
+        return await _execute_query_step(
+            run_id=run_id,
+            step=step,
+            instance_url=instance_url,
+            access_token=access_token,
+            db=db,
+            output_storage=output_storage,
+            _run_bulk_query=_run_bulk_query,
+        )
+
+    # ── DML path ─────────────────────────────────────────────────────────────
     # ── 1. Resolve storage and discover CSV files ─────────────────────────────
     storage = await _get_storage(step.input_connection_id, db)
     rel_paths = storage.discover_files(step.csv_file_pattern)
@@ -247,3 +287,219 @@ async def _execute_step(
         records_failed=total_errors,
     )
     return total_success, total_errors
+
+
+# ── Query step executor ────────────────────────────────────────────────────────
+
+
+async def _execute_query_step(
+    *,
+    run_id: str,
+    step: LoadStep,
+    instance_url: str,
+    access_token: str,
+    db: AsyncSession,
+    output_storage: OutputStorage,
+    _run_bulk_query: Callable = run_bulk_query,
+) -> tuple[int, int]:
+    """Execute a single query/queryAll step via the Bulk API 2.0 query endpoint.
+
+    Creates exactly **one** ``JobRecord`` (``partition_index=0``) so the UI and
+    observability layer see the same job-row shape as for DML steps.
+
+    On success the ``JobRecord`` is populated with query-semantic field values:
+    - ``success_file_path`` — artefact URI returned by the executor.
+    - ``records_processed`` / ``total_records`` — row count returned by the executor.
+    - ``records_failed`` — always 0 (query-level failures surface as job-level failure).
+    - ``error_file_path`` / ``unprocessed_file_path`` — left ``None``.
+
+    Returns:
+        ``(row_count, 0)`` on success; ``(0, 1)`` on failure so the caller
+        (run_coordinator) can apply the error-threshold logic uniformly.
+    """
+    _step_start = time.perf_counter()
+
+    logger.info(
+        "Run %s step %s: starting query step — %s %s",
+        run_id,
+        step.id,
+        step.operation.value,
+        step.object_name,
+        extra={
+            "event_name": StepEvent.STARTED,
+            "outcome_code": None,
+            "run_id": run_id,
+            "step_id": str(step.id),
+        },
+    )
+    # TODO(SFBL-171): metric/span here — query step started counter
+
+    # ── Create the single JobRecord ────────────────────────────────────────────
+    job_record = JobRecord(
+        load_run_id=run_id,
+        load_step_id=step.id,
+        partition_index=0,
+        status=JobStatus.pending,
+    )
+    db.add(job_record)
+    await db.commit()
+    await db.refresh(job_record)
+    job_record_id = job_record.id
+
+    await publish_job_status_change(
+        run_id,
+        step_id=step.id,
+        job_id=job_record_id,
+        status=JobStatus.pending.value,
+    )
+
+    # Mark in_progress
+    job_record.status = JobStatus.in_progress
+    job_record.started_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    await publish_job_status_change(
+        run_id,
+        step_id=step.id,
+        job_id=job_record_id,
+        status=JobStatus.in_progress.value,
+    )
+
+    # ── Build the relative artefact path ──────────────────────────────────────
+    # Convention: <run_id>/<step_sequence>-<object_name>-<timestamp>.csv
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    relative_path = f"{run_id}/{step.sequence:02d}-{step.object_name}-{ts}.csv"
+
+    # ── Invoke the query executor ──────────────────────────────────────────────
+    try:
+        query_result = await _run_bulk_query(
+            soql=step.soql,
+            operation=step.operation.value,
+            instance_url=instance_url,
+            access_token=access_token,
+            output_storage=output_storage,
+            relative_path=relative_path,
+        )
+    except BulkQueryJobFailed as exc:
+        logger.warning(
+            "Run %s step %s: query job reached terminal failure state %s: %s",
+            run_id,
+            step.id,
+            exc.final_state,
+            exc,
+            extra={
+                "event_name": JobEvent.FAILED,
+                "outcome_code": OutcomeCode.SALESFORCE_API_ERROR,
+                "run_id": run_id,
+                "step_id": str(step.id),
+                "job_record_id": job_record_id,
+            },
+        )
+        # TODO(SFBL-171): metric/span here — query job failed counter
+        job_record.status = JobStatus.failed
+        job_record.completed_at = datetime.now(timezone.utc)
+        job_record.error_message = str(exc)
+        await db.commit()
+
+        await publish_job_status_change(
+            run_id,
+            step_id=step.id,
+            job_id=job_record_id,
+            status=JobStatus.failed.value,
+        )
+        record_step_completed(
+            object_name=step.object_name,
+            operation=step.operation.value,
+            final_status="failed",
+            duration_seconds=time.perf_counter() - _step_start,
+            records_processed=0,
+            records_succeeded=0,
+            records_failed=1,
+        )
+        return 0, 1
+    except Exception as exc:
+        logger.error(
+            "Run %s step %s: query step raised unexpected exception: %s",
+            run_id,
+            step.id,
+            exc,
+            extra={
+                "event_name": JobEvent.FAILED,
+                "outcome_code": OutcomeCode.UNEXPECTED_EXCEPTION,
+                "run_id": run_id,
+                "step_id": str(step.id),
+                "job_record_id": job_record_id,
+            },
+        )
+        # TODO(SFBL-171): metric/span here — query step unexpected exception counter
+        job_record.status = JobStatus.failed
+        job_record.completed_at = datetime.now(timezone.utc)
+        job_record.error_message = str(exc)
+        await db.commit()
+
+        await publish_job_status_change(
+            run_id,
+            step_id=step.id,
+            job_id=job_record_id,
+            status=JobStatus.failed.value,
+        )
+        record_step_completed(
+            object_name=step.object_name,
+            operation=step.operation.value,
+            final_status="failed",
+            duration_seconds=time.perf_counter() - _step_start,
+            records_processed=0,
+            records_succeeded=0,
+            records_failed=1,
+        )
+        return 0, 1
+
+    # ── Happy path: populate JobRecord with query-semantic fields ──────────────
+    row_count = query_result.row_count
+    job_record.status = JobStatus.job_complete
+    job_record.completed_at = datetime.now(timezone.utc)
+    job_record.success_file_path = query_result.artefact_uri
+    job_record.records_processed = row_count
+    job_record.total_records = row_count
+    job_record.records_failed = 0
+    job_record.error_file_path = None
+    job_record.unprocessed_file_path = None
+    await db.commit()
+
+    logger.info(
+        "Run %s step %s: query step completed — %d rows → %s",
+        run_id,
+        step.id,
+        row_count,
+        query_result.artefact_uri,
+        extra={
+            "event_name": JobEvent.COMPLETED,
+            "outcome_code": OutcomeCode.OK,
+            "run_id": run_id,
+            "step_id": str(step.id),
+            "job_record_id": job_record_id,
+            "row_count": row_count,
+            "artefact_uri": query_result.artefact_uri,
+        },
+    )
+    # TODO(SFBL-171): metric/span here — query step completed counter, row_count histogram
+
+    await publish_job_status_change(
+        run_id,
+        step_id=step.id,
+        job_id=job_record_id,
+        status=JobStatus.job_complete.value,
+        records_processed=row_count,
+        records_failed=0,
+        total_records=row_count,
+    )
+    record_step_completed(
+        object_name=step.object_name,
+        operation=step.operation.value,
+        final_status="completed",
+        duration_seconds=time.perf_counter() - _step_start,
+        records_processed=row_count,
+        records_succeeded=row_count,
+        records_failed=0,
+    )
+    return row_count, 0

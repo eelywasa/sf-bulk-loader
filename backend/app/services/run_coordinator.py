@@ -296,6 +296,7 @@ async def _execute_run(
     _BulkClient: type = SalesforceBulkClient,
     _get_storage: Callable = _default_get_storage,
     _partition: Callable = _default_partition,
+    _run_bulk_query: Optional[Callable] = None,
 ) -> None:
     """Orchestrate a load run.
 
@@ -368,6 +369,7 @@ async def _execute_run(
             _BulkClient=_BulkClient,
             _get_storage=_get_storage,
             _partition=_partition,
+            _run_bulk_query=_run_bulk_query,
             _run_start=_run_start,
             _cur_span=_cur_span,
             NonRecordingSpan=NonRecordingSpan,
@@ -414,6 +416,7 @@ async def _execute_run_body(
     _BulkClient: type,
     _get_storage: Callable,
     _partition: Callable,
+    _run_bulk_query: Optional[Callable] = None,
     _run_start: float,
     _cur_span,
     NonRecordingSpan: type,
@@ -435,6 +438,10 @@ async def _execute_run_body(
     try:
         preflight_total = 0
         for step in steps:
+            # Query/queryAll steps have no CSV source — skip pre-count entirely.
+            from app.models.load_step import QUERY_OPERATIONS
+            if step.operation in QUERY_OPERATIONS:
+                continue
             try:
                 storage = await _get_storage(step.input_connection_id, db)
                 rel_paths = storage.discover_files(step.csv_file_pattern)
@@ -568,7 +575,7 @@ async def _execute_run_body(
             )
 
             try:
-                step_success, step_errors = await _step_executor_mod.execute_step(
+                _step_kwargs: dict = dict(
                     run_id=run_id,
                     step=step,
                     plan_id=plan.id,
@@ -578,8 +585,15 @@ async def _execute_run_body(
                     semaphore=semaphore,
                     db_factory=db_factory,
                     output_storage=output_storage,
+                    instance_url=plan.connection.instance_url,
+                    access_token=access_token,
                     _get_storage=_get_storage,
                     _partition=_partition,
+                )
+                if _run_bulk_query is not None:
+                    _step_kwargs["_run_bulk_query"] = _run_bulk_query
+                step_success, step_errors = await _step_executor_mod.execute_step(
+                    **_step_kwargs
                 )
             except InputStorageError as exc:
                 logger.error(
