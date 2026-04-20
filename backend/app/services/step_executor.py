@@ -38,7 +38,7 @@ from app.services.csv_processor import partition_csv as _default_partition
 from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
 from app.services.output_storage import OutputStorage
 from app.services.partition_executor import process_partition
-from app.services.result_persistence import count_csv_rows
+from app.services.result_persistence import _result_path, count_csv_rows
 from app.services.run_event_publisher import publish_job_status_change
 from app.services.salesforce_bulk import SalesforceBulkClient
 
@@ -149,6 +149,8 @@ async def _execute_step(
     if step.operation in QUERY_OPERATIONS:
         return await _execute_query_step(
             run_id=run_id,
+            plan_id=plan_id,
+            plan_name=plan_name,
             step=step,
             instance_url=instance_url,
             access_token=access_token,
@@ -299,6 +301,8 @@ async def _execute_step(
 async def _execute_query_step(
     *,
     run_id: str,
+    plan_id: str,
+    plan_name: str,
     step: LoadStep,
     instance_url: str,
     access_token: str,
@@ -370,10 +374,18 @@ async def _execute_query_step(
         status=JobStatus.in_progress.value,
     )
 
-    # ── Build the relative artefact path ──────────────────────────────────────
-    # Convention: <run_id>/<step_sequence>-<object_name>-<timestamp>.csv
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    relative_path = f"{run_id}/{step.sequence:02d}-{step.object_name}-{ts}.csv"
+    # ── Build the relative artefact path (SFBL-164 layout) ────────────────────
+    relative_path = _result_path(
+        plan_id=plan_id,
+        plan_name=plan_name,
+        run_id=run_id,
+        step_id=step.id,
+        sequence=step.sequence,
+        object_name=step.object_name,
+        operation=step.operation.value,
+        partition_index=0,
+        suffix="results",
+    )
 
     # ── Invoke the query executor ──────────────────────────────────────────────
     try:

@@ -290,6 +290,14 @@ async def test_query_step_happy_path(db: AsyncSession, tmp_path):
     assert call_kwargs["instance_url"] == "https://test.salesforce.com"
     assert call_kwargs["access_token"] == "token"
 
+    # SFBL-164 layout: {plan_short}-{plan_slug}/{run_short}/
+    #   {sequence:02d}_{object_slug}_{operation}_{step_short}/partition_0_results.csv
+    rel = call_kwargs["relative_path"]
+    assert rel.startswith(f"{plan.id[:8]}-")
+    assert f"/{run.id[:8]}/" in rel
+    assert f"/01_account_query_{step.id[:8]}/" in rel
+    assert rel.endswith("/partition_0_results.csv")
+
     # WS events should include at least step-started and job-status events
     event_names = [e.get("event_name") for e in broadcast_events]
     assert "run.started" in event_names
