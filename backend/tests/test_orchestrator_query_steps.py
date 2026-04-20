@@ -659,3 +659,85 @@ async def test_query_step_queryAll_operation(db: AsyncSession, tmp_path):
     # Verify queryAll was passed as the operation
     call_kwargs = fake_run_bulk_query.call_args.kwargs
     assert call_kwargs["operation"] == "queryAll"
+
+
+async def test_preflight_validates_soql_and_surfaces_warning(db: AsyncSession, tmp_path):
+    """Preflight runs explain_soql for query steps; invalid SOQL surfaces as a
+    preflight warning on the run error_summary but does NOT abort the run."""
+    import json
+    from app.observability.events import OutcomeCode
+    from app.services.salesforce_query_validation import SoqlExplainResult
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    step = await _make_query_step(db, plan, soql="SELECT BadField FROM Account")
+    run = await _make_run(db, plan)
+
+    fake_run_bulk_query = AsyncMock(return_value=_make_query_result(row_count=1))
+    bulk_mock = _make_bulk_client_mock()
+    db_factory = make_db_factory(db)
+
+    explain_mock = AsyncMock(return_value=SoqlExplainResult(
+        valid=False, error="INVALID_FIELD: No such column 'BadField' on entity 'Account'",
+    ))
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock())),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch("app.services.orchestrator.run_bulk_query", new=fake_run_bulk_query),
+        patch("app.services.salesforce_query_validation.explain_soql", new=explain_mock),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    # Run still completes — preflight warnings are non-fatal.
+    assert run.status == RunStatus.completed
+    assert run.error_summary is not None
+    summary = json.loads(run.error_summary)
+    warnings = summary.get("preflight_warnings")
+    assert warnings and len(warnings) == 1
+    w = warnings[0]
+    assert w["step_id"] == str(step.id)
+    assert w["outcome_code"] == OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED
+    assert "BadField" in w["error"]
+    explain_mock.assert_awaited_once()
+
+
+async def test_preflight_empty_soql_surfaces_warning(db: AsyncSession, tmp_path):
+    """A query step with empty SOQL is flagged in preflight without hitting SF."""
+    import json
+    from app.observability.events import OutcomeCode
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    step = await _make_query_step(db, plan, soql="   ")
+    run = await _make_run(db, plan)
+
+    fake_run_bulk_query = AsyncMock(return_value=_make_query_result(row_count=0))
+    bulk_mock = _make_bulk_client_mock()
+    db_factory = make_db_factory(db)
+
+    explain_mock = AsyncMock()  # must NOT be called
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock())),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        patch("app.services.orchestrator.run_bulk_query", new=fake_run_bulk_query),
+        patch("app.services.salesforce_query_validation.explain_soql", new=explain_mock),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    summary = json.loads(run.error_summary)
+    warnings = summary.get("preflight_warnings")
+    assert warnings and warnings[0]["outcome_code"] == OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED
+    assert warnings[0]["step_id"] == str(step.id)
+    explain_mock.assert_not_awaited()

@@ -437,10 +437,88 @@ async def _execute_run_body(
     )
     try:
         preflight_total = 0
+        from app.models.load_step import QUERY_OPERATIONS
+        _preflight_access_token: Optional[str] = None
+
+        async def _ensure_preflight_token() -> Optional[str]:
+            """Lazily obtain an access token for SOQL explain calls.
+
+            Returns None on failure; the caller records a preflight warning
+            and skips further query validation for this run.
+            """
+            nonlocal _preflight_access_token
+            if _preflight_access_token is not None:
+                return _preflight_access_token
+            try:
+                _preflight_access_token = await _get_token(db, plan.connection)
+                return _preflight_access_token
+            except Exception as exc:
+                logger.warning(
+                    "Run %s: preflight token fetch failed — skipping SOQL validation: %s",
+                    run_id, exc,
+                    extra={"event_name": RunEvent.PREFLIGHT_FAILED,
+                           "outcome_code": OutcomeCode.AUTH_ERROR,
+                           "run_id": run_id},
+                )
+                record_run_preflight_failure(OutcomeCode.AUTH_ERROR)
+                preflight_warnings.append({
+                    "step_id": "",
+                    "outcome_code": OutcomeCode.AUTH_ERROR,
+                    "error": f"SOQL preflight skipped — {exc}",
+                })
+                return None
+
         for step in steps:
-            # Query/queryAll steps have no CSV source — skip pre-count entirely.
-            from app.models.load_step import QUERY_OPERATIONS
+            # Query/queryAll steps: validate SOQL via the explain endpoint.
             if step.operation in QUERY_OPERATIONS:
+                soql = (step.soql or "").strip()
+                if not soql:
+                    preflight_warnings.append({
+                        "step_id": str(step.id),
+                        "outcome_code": OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED,
+                        "error": "Query step has no SOQL defined",
+                    })
+                    record_run_preflight_failure(OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED)
+                    continue
+                token = await _ensure_preflight_token()
+                if token is None:
+                    continue
+                try:
+                    from app.services.salesforce_query_validation import (
+                        BulkAPIError,
+                        explain_soql,
+                    )
+                    explain = await explain_soql(
+                        plan.connection.instance_url, token, soql,
+                    )
+                    if not explain.valid:
+                        logger.warning(
+                            "Run %s step %s: preflight SOQL invalid: %s",
+                            run_id, step.id, explain.error,
+                            extra={"event_name": RunEvent.PREFLIGHT_FAILED,
+                                   "outcome_code": OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED,
+                                   "run_id": run_id, "step_id": str(step.id)},
+                        )
+                        record_run_preflight_failure(OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED)
+                        preflight_warnings.append({
+                            "step_id": str(step.id),
+                            "outcome_code": OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED,
+                            "error": explain.error or "SOQL validation failed",
+                        })
+                except BulkAPIError as exc:
+                    logger.warning(
+                        "Run %s step %s: preflight explain failed (SF error): %s",
+                        run_id, step.id, exc,
+                        extra={"event_name": RunEvent.PREFLIGHT_FAILED,
+                               "outcome_code": OutcomeCode.SALESFORCE_API_ERROR,
+                               "run_id": run_id, "step_id": str(step.id)},
+                    )
+                    record_run_preflight_failure(OutcomeCode.SALESFORCE_API_ERROR)
+                    preflight_warnings.append({
+                        "step_id": str(step.id),
+                        "outcome_code": OutcomeCode.SALESFORCE_API_ERROR,
+                        "error": str(exc),
+                    })
                 continue
             try:
                 storage = await _get_storage(step.input_connection_id, db)
