@@ -109,6 +109,17 @@ def _start_controller(handler: Any, **kwargs: Any) -> Controller:
             controller.start()
             return controller
         except OSError as exc:
+            # Controller.start() can raise after the background thread and/or
+            # asyncio server have already been created (e.g. TimeoutError on
+            # the readiness probe, which is an OSError). If we just `continue`
+            # we'd leak live SMTP threads/sockets on each retry, which under
+            # parallel CI load is worse than the original flake. Tear it down
+            # defensively — stop() asserts a thread is running, so tolerate
+            # AssertionError when the failure happened before the thread start.
+            try:
+                controller.stop(no_assert=True)
+            except Exception:
+                pass
             last_exc = exc
             continue
     raise last_exc or RuntimeError("failed to start aiosmtpd Controller")
