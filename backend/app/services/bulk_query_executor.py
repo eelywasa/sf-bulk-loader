@@ -89,9 +89,11 @@ class BulkQueryJobFailed(BulkQueryError):
         final_state: str,
         status_code: Optional[int] = None,
         body: str = "",
+        sf_job_response: Optional[dict] = None,
     ) -> None:
         super().__init__(message, status_code=status_code, body=body)
         self.final_state = final_state
+        self.sf_job_response = sf_job_response
 
 
 # ── Result dataclass ────────────────────────────────────────────────────────────
@@ -119,6 +121,7 @@ class BulkQueryResult:
     byte_count: int
     artefact_uri: str
     final_state: str
+    sf_job_response: Optional[dict] = None
 
 
 # ── HTTP helper ─────────────────────────────────────────────────────────────────
@@ -328,7 +331,7 @@ async def run_bulk_query(
             record_bulk_query_job_created(_object_name, operation)
 
             # ── 2. Poll until terminal ───────────────────────────────────────
-            final_state = await _poll_query_job(http_client, access_token, job_url, job_id)
+            final_state, final_body = await _poll_query_job(http_client, access_token, job_url, job_id)
 
             if final_state != "JobComplete":
                 logger.warning(
@@ -345,6 +348,7 @@ async def run_bulk_query(
                 raise BulkQueryJobFailed(
                     f"Bulk query job {job_id} ended in state {final_state!r}",
                     final_state=final_state,
+                    sf_job_response=final_body,
                 )
 
             # ── 3 & 4. Paginate results and stream to storage ────────────────
@@ -382,6 +386,7 @@ async def run_bulk_query(
                 byte_count=byte_count,
                 artefact_uri=artefact_uri,
                 final_state=final_state,
+                sf_job_response=final_body,
             )
 
     finally:
@@ -397,7 +402,7 @@ async def _poll_query_job(
     access_token: str,
     job_url: str,
     job_id: str,
-) -> str:
+) -> tuple[str, dict]:
     """Poll a query job until it reaches a terminal state.
 
     Uses the same exponential-backoff strategy as ``SalesforceBulkClient.poll_job``:
@@ -411,7 +416,9 @@ async def _poll_query_job(
         job_id:       Salesforce job ID (for log messages).
 
     Returns:
-        Terminal state string (``"JobComplete"``, ``"Failed"``, or ``"Aborted"``).
+        ``(final_state, final_body)`` — terminal state string
+        (``"JobComplete"``, ``"Failed"``, or ``"Aborted"``) and the full
+        Salesforce response body at the terminal poll, for observability.
 
     Raises:
         BulkQueryError: On HTTP failure or poll timeout.
@@ -456,7 +463,7 @@ async def _poll_query_job(
                     "final_state": state,
                 },
             )
-            return state
+            return state, body
 
         if max_poll_seconds > 0 and (time.monotonic() - start) >= max_poll_seconds:
             raise BulkQueryError(

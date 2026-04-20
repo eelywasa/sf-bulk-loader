@@ -14,6 +14,7 @@ configured :class:`OutputStorage`.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Callable
@@ -417,6 +418,8 @@ async def _execute_query_step(
         job_record.status = JobStatus.failed
         job_record.completed_at = datetime.now(timezone.utc)
         job_record.error_message = str(exc)
+        if exc.sf_job_response is not None:
+            job_record.sf_api_response = json.dumps(exc.sf_job_response)
         await db.commit()
 
         await publish_job_status_change(
@@ -482,6 +485,8 @@ async def _execute_query_step(
     job_record.records_failed = 0
     job_record.error_file_path = None
     job_record.unprocessed_file_path = None
+    if query_result.sf_job_response is not None:
+        job_record.sf_api_response = json.dumps(query_result.sf_job_response)
     await db.commit()
 
     logger.info(

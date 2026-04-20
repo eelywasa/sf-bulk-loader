@@ -221,12 +221,14 @@ def _make_query_result(
     *,
     row_count: int = 100,
     artefact_uri: str = "run-abc/01-Account-20260101T000000.csv",
+    sf_job_response: dict | None = None,
 ) -> BulkQueryResult:
     return BulkQueryResult(
         row_count=row_count,
         byte_count=row_count * 20,
         artefact_uri=artefact_uri,
         final_state="JobComplete",
+        sf_job_response=sf_job_response,
     )
 
 
@@ -240,7 +242,17 @@ async def test_query_step_happy_path(db: AsyncSession, tmp_path):
     step = await _make_query_step(db, plan, soql="SELECT Id FROM Account")
     run = await _make_run(db, plan)
 
-    query_result = _make_query_result(row_count=50, artefact_uri="run-abc/01-Account-20260101T000000.csv")
+    query_result = _make_query_result(
+        row_count=50,
+        artefact_uri="run-abc/01-Account-20260101T000000.csv",
+        sf_job_response={
+            "id": "750xx0000000001",
+            "state": "JobComplete",
+            "operation": "query",
+            "object": "Account",
+            "numberRecordsProcessed": 50,
+        },
+    )
     fake_run_bulk_query = AsyncMock(return_value=query_result)
     bulk_mock = _make_bulk_client_mock()
     db_factory = make_db_factory(db)
@@ -281,6 +293,13 @@ async def test_query_step_happy_path(db: AsyncSession, tmp_path):
     assert job.records_failed == 0
     assert job.error_file_path is None
     assert job.unprocessed_file_path is None
+
+    # Raw Salesforce payload captured on the JobRecord (parity with DML)
+    import json as _json
+    assert job.sf_api_response is not None
+    parsed = _json.loads(job.sf_api_response)
+    assert parsed["id"] == "750xx0000000001"
+    assert parsed["state"] == "JobComplete"
 
     # Verify run_bulk_query was called with the correct args
     fake_run_bulk_query.assert_called_once()
