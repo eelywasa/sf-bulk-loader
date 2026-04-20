@@ -105,7 +105,11 @@ class NotificationDispatcher:
             return []
 
         async with self._session_factory() as session:
-            run = await session.get(LoadRun, run_id)
+            from sqlalchemy.orm import selectinload
+
+            run = await session.get(
+                LoadRun, run_id, options=[selectinload(LoadRun.load_plan)]
+            )
             if run is None:
                 logger.warning(
                     "Notification dispatch skipped: run not found",
@@ -302,12 +306,19 @@ def _snapshot_run(run: LoadRun | Mapping[str, Any]) -> dict[str, Any]:
     """
     if isinstance(run, Mapping):
         return dict(run)
+    plan_name = None
+    if getattr(run, "load_plan", None) is not None:
+        plan_name = run.load_plan.name
     return {
         "id": run.id,
         "load_plan_id": run.load_plan_id,
+        "plan_name": plan_name,
         "status": run.status.value if hasattr(run.status, "value") else run.status,
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "total_records": run.total_records,
+        "total_success": run.total_success,
+        "total_errors": run.total_errors,
     }
 
 

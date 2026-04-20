@@ -128,6 +128,35 @@ async def test_webhook_429_retries_as_throttled(monkeypatch):
     assert result.attempts == 2
 
 
+async def test_webhook_retry_metric_only_increments_on_actual_retry(monkeypatch):
+    """Metric must reflect retries scheduled, not failed attempts.
+
+    Budget = 3 attempts, so a run of three 500s should emit at most two
+    retry events (one after attempt 1, one after attempt 2).  The final
+    attempt yields the terminal failure and must NOT increment the metric.
+    """
+    import app.services.notifications.channels.webhook as mod
+    from app.observability.metrics import notification_webhook_retry_total
+
+    async def _no_sleep(_s):
+        return None
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+
+    before = notification_webhook_retry_total.labels(reason="server_error")._value.get()
+
+    def handler(_req):
+        return httpx.Response(500)
+
+    channel = WebhookChannel(client_factory=_client_factory(handler))
+    result = await channel.send(_sub(), _context())
+
+    assert result.accepted is False
+    assert result.attempts == 3
+    after = notification_webhook_retry_total.labels(reason="server_error")._value.get()
+    assert after - before == 2  # retries 1→2 and 2→3; no increment on exhaust
+
+
 async def test_webhook_network_error_retries_and_exhausts(monkeypatch):
     import app.services.notifications.channels.webhook as mod
 

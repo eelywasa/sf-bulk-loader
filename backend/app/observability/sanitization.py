@@ -285,35 +285,35 @@ def safe_record_exception(span: Span, exc: BaseException) -> None:
 
 
 def sanitize_webhook_url(url: str) -> str:
-    """Return *url* with query string and userinfo stripped.
+    """Return a telemetry-safe representation of a webhook destination.
 
-    Webhook destinations for chat integrations (e.g. Slack) often carry a
-    secret token in the path (``hooks.slack.com/services/T.../B.../XXX``).
-    Stripping the query string and any ``user:pass@`` credentials keeps log
-    output safe while preserving enough of the URL (scheme + host + path) to
-    correlate failures to the right subscription.  The path IS retained
-    because Slack-style tokens ride in the path and operators need to see
-    which integration is misbehaving — the SFBL guidance only prohibits
-    emitting the webhook token in plain text, and the URL is recorded on
-    the subscription row in the database, not to telemetry.
+    Webhook destinations for chat integrations (e.g. Slack) embed a secret
+    token directly in the path (``hooks.slack.com/services/T.../B.../XXX``),
+    so logging the raw path would leak credentials.  This helper replaces
+    userinfo, the full path, query string, and fragment with a non-reversible
+    SHA-256 digest prefix.  Scheme + host + port are retained so operators
+    can still tell which integration is misbehaving.
+
+    Output shape::
+
+        ``https://<host>[:<port>]/#sha256=<first-8-hex>``
 
     Fails open: if urlparse raises (malformed URL), returns ``"<invalid>"``.
     """
-    from urllib.parse import urlparse, urlunparse
+    from urllib.parse import urlparse
 
     try:
         parts = urlparse(url)
     except ValueError:
         return "<invalid>"
-    # Rebuild netloc without userinfo
     host = parts.hostname or ""
     if parts.port:
         host = f"{host}:{parts.port}"
-    cleaned = parts._replace(netloc=host, query="", fragment="")
-    try:
-        return urlunparse(cleaned)
-    except ValueError:
+    if not host:
         return "<invalid>"
+    digest = hashlib.sha256(url.encode()).hexdigest()[:8]
+    scheme = parts.scheme or "https"
+    return f"{scheme}://{host}/#sha256={digest}"
 
 
 def redact_email_address(addr: str) -> str:

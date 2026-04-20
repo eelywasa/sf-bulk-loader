@@ -11,31 +11,39 @@ from app.observability.sanitization import (
 
 
 @pytest.mark.parametrize(
-    "raw,expected",
+    "raw,host_part",
     [
         (
             "https://hooks.slack.com/services/T1/B2/XYZ?token=secret",
-            "https://hooks.slack.com/services/T1/B2/XYZ",
+            "hooks.slack.com",
         ),
         (
             "https://user:pass@example.com/webhook",
-            "https://example.com/webhook",
+            "example.com",
         ),
         (
-            "https://example.com:8443/path#frag",
-            "https://example.com:8443/path",
+            "https://example.com:8443/path/segment/secret#frag",
+            "example.com:8443",
         ),
     ],
 )
-def test_sanitize_webhook_url(raw, expected):
-    assert sanitize_webhook_url(raw) == expected
+def test_sanitize_webhook_url_strips_path_and_userinfo(raw, host_part):
+    out = sanitize_webhook_url(raw)
+    assert host_part in out
+    # Secret path segments must not leak into telemetry.
+    assert "XYZ" not in out
+    assert "secret" not in out
+    assert "pass" not in out
+    # Query + userinfo must be gone.
+    assert "?" not in out
+    assert "@" not in out
+    # Must carry a short non-reversible fingerprint so operators can still
+    # cross-reference two log lines as the same subscription.
+    assert "sha256=" in out
 
 
 def test_sanitize_webhook_url_invalid():
-    # urlparse accepts almost anything — so a genuinely unparseable string
-    # still returns a best-effort cleaned form; we only assert the query
-    # is stripped.
-    assert "?" not in sanitize_webhook_url("not a url?x=1")
+    assert sanitize_webhook_url("") == "<invalid>"
 
 
 @pytest.mark.parametrize(

@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Mapping
 
+from app.config import settings
 from app.observability.sanitization import safe_exc_message
 from app.services.email.message import EmailCategory
 from app.services.notifications.channels.base import ChannelResult
@@ -35,10 +36,11 @@ class EmailChannel:
         subscription: "NotificationSubscription",
         context: Mapping[str, Any],
     ) -> ChannelResult:
+        template_context = _flatten_context(context)
         try:
             delivery = await self._email.send_template(
                 _TEMPLATE_NAME,
-                context,
+                template_context,
                 to=subscription.destination,
                 category=EmailCategory.NOTIFICATION,
             )
@@ -63,3 +65,40 @@ class EmailChannel:
             error_detail=None if accepted else getattr(delivery, "last_error_msg", None),
             email_delivery_id=delivery.id,
         )
+
+
+def _flatten_context(context: Mapping[str, Any]) -> dict[str, Any]:
+    """Produce the flat key set required by ``notifications/run_complete``.
+
+    The dispatcher passes a shared context of shape ``{"run": {...}, "is_test":
+    bool, "text": str}`` — useful for webhook consumers but a mismatch for the
+    template manifest's strict flat contract.  This helper projects those nested
+    fields out to the exact keys the template enforces (``plan_name``,
+    ``run_id``, ``status``, ``total_rows``, ``success_rows``, ``failed_rows``,
+    ``started_at``, ``ended_at``, ``run_url``).  Missing numeric totals default
+    to 0 rather than None so the template can render without conditional
+    guards.
+    """
+    run = context.get("run") if isinstance(context, Mapping) else None
+    run = dict(run) if isinstance(run, Mapping) else {}
+    run_id = run.get("id", "")
+    return {
+        "plan_name": run.get("plan_name") or "Untitled plan",
+        "run_id": run_id,
+        "status": run.get("status", "unknown"),
+        "total_rows": run.get("total_records") or 0,
+        "success_rows": run.get("total_success") or 0,
+        "failed_rows": run.get("total_errors") or 0,
+        "started_at": run.get("started_at") or "",
+        "ended_at": run.get("completed_at") or "",
+        "run_url": _build_run_url(run_id),
+    }
+
+
+def _build_run_url(run_id: str) -> str:
+    base = (settings.frontend_base_url or "").rstrip("/")
+    if not run_id:
+        return base or ""
+    if not base:
+        return f"/runs/{run_id}"
+    return f"{base}/runs/{run_id}"

@@ -68,9 +68,9 @@ class WebhookChannel:
                     response = await client.post(destination, json=payload)
                 except httpx.HTTPError as exc:
                     last_error = safe_exc_message(exc)
-                    notification_webhook_retry_total.labels(reason="network").inc()
                     if attempts >= _MAX_ATTEMPTS:
                         break
+                    notification_webhook_retry_total.labels(reason="network").inc()
                     _log_retry(safe_url, attempts, last_error, "network")
                     await asyncio.sleep(_backoff(idx))
                     continue
@@ -83,9 +83,9 @@ class WebhookChannel:
                 if status >= 500 or status == 429:
                     last_error = f"HTTP {status}"
                     reason = "throttled" if status == 429 else "server_error"
-                    notification_webhook_retry_total.labels(reason=reason).inc()
                     if attempts >= _MAX_ATTEMPTS:
                         break
+                    notification_webhook_retry_total.labels(reason=reason).inc()
                     _log_retry(safe_url, attempts, last_error, reason)
                     await asyncio.sleep(_backoff(idx))
                     continue
