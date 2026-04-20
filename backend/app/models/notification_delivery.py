@@ -23,6 +23,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    false as sa_false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -57,10 +58,15 @@ class NotificationDelivery(Base):
         String(36), ForeignKey("load_run.id", ondelete="SET NULL"), nullable=True
     )
     is_test: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
+        Boolean, nullable=False, default=False, server_default=sa_false()
     )
     status: Mapped[NotificationDeliveryStatus] = mapped_column(
-        SAEnum(NotificationDeliveryStatus, name="notification_delivery_status_enum"),
+        SAEnum(
+            NotificationDeliveryStatus,
+            name="notification_delivery_status_enum",
+            validate_strings=True,
+            create_constraint=True,
+        ),
         nullable=False,
         default=NotificationDeliveryStatus.pending,
     )

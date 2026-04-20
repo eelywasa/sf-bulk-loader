@@ -65,6 +65,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
 import app.database as _db_module  # noqa: E402
+import app.models  # noqa: E402,F401  # register all ORM models with Base.metadata before create_all
 import app.main as _main_module  # noqa: E402
 from app.main import app  # noqa: E402
 import app.services.orchestrator as _orchestrator_module  # noqa: E402
