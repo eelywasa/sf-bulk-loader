@@ -33,6 +33,7 @@ from app.schemas.load_step import (
     StepReorderRequest,
     ValidateSoqlRequest,
     ValidateSoqlResponse,
+    _validate_query_dml_fields,
 )
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,30 @@ async def update_step(
 
     if "input_connection_id" in update_data and update_data["input_connection_id"] is not None:
         await _validate_input_connection_direction(update_data["input_connection_id"], db)
+
+    # Cross-field validation against the composed final state: merge the
+    # existing step's operation/soql/csv_file_pattern with the incoming patch
+    # so partial updates cannot produce invalid combinations (e.g. clearing
+    # csv_file_pattern on a DML step, or setting soql on one).
+    effective_operation = update_data.get("operation", step.operation)
+    effective_soql = update_data["soql"] if "soql" in update_data else step.soql
+    effective_pattern = (
+        update_data["csv_file_pattern"]
+        if "csv_file_pattern" in update_data
+        else step.csv_file_pattern
+    )
+    try:
+        _validate_query_dml_fields(
+            effective_operation,
+            effective_soql,
+            effective_pattern,
+            context="update",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
 
     for field, value in update_data.items():
         setattr(step, field, value)

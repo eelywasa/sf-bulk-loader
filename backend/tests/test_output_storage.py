@@ -298,6 +298,41 @@ def test_factory_unsupported_provider_raises():
         _run_async(get_output_storage("ic-004", db))
 
 
+# ── resolve_uri ──────────────────────────────────────────────────────────────
+
+
+def test_local_resolve_uri_returns_relative_path(tmp_path):
+    storage = LocalOutputStorage(str(tmp_path))
+    assert storage.resolve_uri("plan/run/step/partition_0.csv") == "plan/run/step/partition_0.csv"
+
+
+def test_s3_resolve_uri_returns_s3_scheme_with_prefix():
+    with patch("app.services.output_storage.boto3.client"):
+        storage = S3OutputStorage(
+            bucket="my-bucket",
+            root_prefix="results/",
+            region=None,
+            access_key_id="AKID",
+            secret_access_key="SAK",
+        )
+    assert (
+        storage.resolve_uri("plan/run/step/partition_0.csv")
+        == "s3://my-bucket/results/plan/run/step/partition_0.csv"
+    )
+
+
+def test_s3_resolve_uri_without_root_prefix():
+    with patch("app.services.output_storage.boto3.client"):
+        storage = S3OutputStorage(
+            bucket="my-bucket",
+            root_prefix=None,
+            region=None,
+            access_key_id="AKID",
+            secret_access_key="SAK",
+        )
+    assert storage.resolve_uri("run/step/out.csv") == "s3://my-bucket/run/step/out.csv"
+
+
 # ── LocalOutputStorage.open_writer ───────────────────────────────────────────
 
 

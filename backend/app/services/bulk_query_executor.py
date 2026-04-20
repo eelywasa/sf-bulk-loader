@@ -679,19 +679,26 @@ async def _stream_results(
             if locator is None:
                 break
 
-    # Derive row_count by reading back the committed file.
+    artefact_uri = output_storage.resolve_uri(relative_path)
+
+    # Derive row_count by reading back the committed file via the
+    # provider-specific URI (local relative path or s3://bucket/key).
     # TODO(SFBL-171): replace with inline newline counting during streaming to
     # avoid this extra I/O.
     row_count = 0
     try:
-        data = output_storage.read_bytes(relative_path)
+        data = output_storage.read_bytes(artefact_uri)
         # Count non-empty lines, then subtract 1 for the header row.
         all_lines = [ln for ln in data.split(b"\n") if ln]
         row_count = max(0, len(all_lines) - 1)
-    except Exception:  # noqa: BLE001
-        # If read_bytes fails (e.g. S3 without download permissions),
-        # leave row_count at 0 — SFBL-171 will replace this path.
+    except Exception as exc:  # noqa: BLE001
+        # Read-back is best-effort: if the provider cannot return the bytes
+        # (e.g. S3 download permissions), log and fall through with 0 so the
+        # caller can still record the artefact URI.  SFBL-171 will replace
+        # this path with inline counting.
+        logger.warning(
+            "Could not read back %s to count rows: %s", artefact_uri, exc,
+        )
         row_count = 0
 
-    artefact_uri = relative_path
     return row_count, byte_count, page_number, artefact_uri

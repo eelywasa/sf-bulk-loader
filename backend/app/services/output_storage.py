@@ -86,6 +86,16 @@ class OutputStorage(Protocol):
 
     def read_bytes(self, ref: str) -> bytes: ...
 
+    def resolve_uri(self, relative_path: str) -> str:
+        """Return the provider-specific artefact reference for *relative_path*.
+
+        Deterministic; no I/O.  Matches the value returned by
+        :meth:`write_bytes` for the same path and the reference committed by
+        :meth:`open_writer`.  Callers use this to persist a durable,
+        cross-provider artefact URI (local relative path or ``s3://...``).
+        """
+        ...
+
     def open_writer(self, relative_path: str) -> AsyncIterator[AsyncWritable]:
         """Return an async context manager that yields an :class:`AsyncWritable`.
 
@@ -134,6 +144,9 @@ class LocalOutputStorage:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
         logger.debug("LocalOutputStorage: wrote %d bytes to %s", len(data), dest)
+        return relative_path
+
+    def resolve_uri(self, relative_path: str) -> str:
         return relative_path
 
     def read_bytes(self, ref: str) -> bytes:
@@ -280,6 +293,10 @@ class S3OutputStorage:
                 "bytes_written": len(data),
             },
         )
+        return f"s3://{self._bucket}/{key}"
+
+    def resolve_uri(self, relative_path: str) -> str:
+        key = _join_s3_key(self._root_prefix, relative_path)
         return f"s3://{self._bucket}/{key}"
 
     def read_bytes(self, ref: str) -> bytes:
