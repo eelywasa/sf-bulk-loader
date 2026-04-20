@@ -302,6 +302,11 @@ export const meApi = {
 
 export const filesApi = {
   listInput: (path = '', source = 'local') => {
+    // SFBL-178: the "local-output" sentinel browses the output tree via the
+    // dedicated endpoint instead of the input one.
+    if (source === 'local-output') {
+      return filesApi.listOutput(path)
+    }
     const params = new URLSearchParams()
     if (path) params.set('path', path)
     if (source !== 'local') params.set('source', source)

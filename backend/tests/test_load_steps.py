@@ -298,6 +298,29 @@ def test_update_step_clears_input_connection_id(auth_client):
     assert body["input_connection_id"] is None
 
 
+def test_create_step_accepts_local_output_sentinel(auth_client):
+    """SFBL-178: input_connection_id='local-output' bypasses connection FK lookup."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={**_STEP, "input_connection_id": "local-output"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["input_connection_id"] == "local-output"
+
+
+def test_update_step_accepts_local_output_sentinel(auth_client):
+    """SFBL-178: step can be switched to the local-output sentinel via PUT."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid)["id"]
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{step_id}",
+        json={"input_connection_id": "local-output"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["input_connection_id"] == "local-output"
+
+
 # ── Delete step ────────────────────────────────────────────────────────────────
 
 

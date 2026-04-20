@@ -18,6 +18,7 @@ from app.services.auth import get_current_user
 from app.services.input_storage import (
     InputConnectionNotFoundError,
     InputStorageError,
+    LOCAL_OUTPUT_SOURCE,
     UnsupportedInputProviderError,
     get_storage,
 )
@@ -64,6 +65,9 @@ async def _get_step_or_404(plan_id: str, step_id: str, db: AsyncSession) -> Load
 
 async def _validate_input_connection_direction(input_connection_id: str, db: AsyncSession) -> None:
     """Raise 422 if input_connection_id references a connection that cannot be used as input."""
+    # The local output tree is always read-safe; skip DB lookup.
+    if input_connection_id == LOCAL_OUTPUT_SOURCE:
+        return
     ic = await db.get(InputConnection, input_connection_id)
     if ic is None:
         raise HTTPException(

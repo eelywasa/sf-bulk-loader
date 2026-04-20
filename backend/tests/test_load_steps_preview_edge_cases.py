@@ -202,3 +202,29 @@ def test_preview_pattern_matching_no_files_returns_empty(auth_client, tmp_path):
     body = resp.json()
     assert body["matched_files"] == []
     assert body["total_rows"] == 0
+
+
+def test_preview_with_local_output_sentinel_reads_output_dir(auth_client, tmp_path):
+    """SFBL-178: preview honours input_connection_id='local-output' and reads from output_dir."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            **_STEP,
+            "csv_file_pattern": "prior-run/*.csv",
+            "input_connection_id": "local-output",
+        },
+    )
+    step_id = resp.json()["id"]
+
+    (tmp_path / "prior-run").mkdir()
+    (tmp_path / "prior-run" / "ids.csv").write_text("Id\n001\n002\n003\n")
+
+    with patch("app.services.input_storage.settings.output_dir", str(tmp_path)):
+        resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["matched_files"]) == 1
+    assert body["matched_files"][0]["filename"] == "ids.csv"
+    assert body["total_rows"] == 3

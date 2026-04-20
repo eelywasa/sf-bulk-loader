@@ -10,6 +10,7 @@ import pytest
 from app.models.input_connection import InputConnection
 from app.services.input_storage import (
     InputStorageError,
+    LOCAL_OUTPUT_SOURCE,
     LocalInputStorage,
     S3InputStorage,
     detect_encoding,
@@ -694,6 +695,16 @@ def test_s3_open_text_uses_detected_encoding():
 async def test_get_storage_returns_local_for_local_source():
     storage = await get_storage("local", db=None)
     assert isinstance(storage, LocalInputStorage)
+
+
+@pytest.mark.asyncio
+async def test_get_storage_returns_local_output_for_sentinel():
+    """SFBL-178: get_storage("local-output") returns storage rooted at settings.output_dir."""
+    from app.config import settings
+    storage = await get_storage(LOCAL_OUTPUT_SOURCE, db=None)
+    assert isinstance(storage, LocalInputStorage)
+    # Verify it's pointed at output_dir, not input_dir.
+    assert storage._base == pathlib.Path(settings.output_dir).resolve()  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

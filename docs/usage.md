@@ -100,6 +100,24 @@ plan's configured output connection.
 - To feed query results into a subsequent `delete` (or other DML) step, point
   the downstream step's **CSV File Pattern** at the query's result file.
 
+### Chaining a prior run's output into a DML step
+
+Results written to the local output directory can be used as the input source
+for a later plan's DML step:
+
+1. In the Step Editor, set **Input Source** to **Local output files (prior run
+   results)**.
+2. Click **Browse** to pick a CSV from the output tree, or enter a path
+   relative to the output directory in **CSV File Pattern**.
+
+This is useful for two-plan workflows — run a query plan to extract records,
+then run a DML plan that points at the query's result file. Paths are resolved
+at run time against the local output directory configured on the server.
+
+> Same-run composition (reading output produced earlier in the *same* run) is
+> not yet supported, since run-specific output folders don't exist at plan
+> edit time. Tracked under SFBL-166.
+
 ---
 
 ## Running a Load Plan

@@ -50,8 +50,12 @@ class LoadStep(Base):
     soql: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     partition_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10_000)
     assignment_rule_id: Mapped[Optional[str]] = mapped_column(String(18), nullable=True)
+    # Loosely-typed source identifier: None/""/"local" → local input tree,
+    # "local-output" → local output tree (SFBL-178), else an InputConnection
+    # UUID.  Not a DB-level FK — resolution happens at request time in
+    # app.services.input_storage.get_storage.
     input_connection_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("input_connection.id", ondelete="RESTRICT"), nullable=True
+        String(36), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -60,4 +64,3 @@ class LoadStep(Base):
 
     load_plan: Mapped["LoadPlan"] = relationship("LoadPlan", back_populates="load_steps")
     job_records: Mapped[list["JobRecord"]] = relationship("JobRecord", back_populates="load_step")
-    input_connection: Mapped[Optional["InputConnection"]] = relationship("InputConnection")
