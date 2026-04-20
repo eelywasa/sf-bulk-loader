@@ -104,6 +104,36 @@ and increments `sfbl_bulk_job_poll_timeout_total`. See SFBL-111.
 
 The S3 output upload path in `S3OutputStorage.write_bytes` is a new storage interaction boundary. All three lifecycle events are emitted with structured `extra` fields (`event_name`, `outcome_code`, and where applicable `s3_bucket`, `s3_key`, `bytes_written`).
 
+### Bulk query events (SFBL-171)
+
+`bulk_query.job.created` · `bulk_query.job.polled` · `bulk_query.job.page_downloaded`
+`bulk_query.job.completed` · `bulk_query.job.failed`
+`bulk_query.request.retried` · `bulk_query.rate_limited`
+
+| Constant | Value | Description |
+|---|---|---|
+| `BulkQueryEvent.JOB_CREATED` | `bulk_query.job.created` | Query job created on Salesforce |
+| `BulkQueryEvent.JOB_POLLED` | `bulk_query.job.polled` | Single poll cycle emitted at DEBUG |
+| `BulkQueryEvent.JOB_PAGE_DOWNLOADED` | `bulk_query.job.page_downloaded` | One locator page streamed to storage; carries `page_index` |
+| `BulkQueryEvent.JOB_COMPLETED` | `bulk_query.job.completed` | Terminal `JobComplete` state, all pages streamed |
+| `BulkQueryEvent.JOB_FAILED` | `bulk_query.job.failed` | Terminal `Failed` or `Aborted` state; also emitted on explain-400 |
+| `BulkQueryEvent.REQUEST_RETRIED` | `bulk_query.request.retried` | 5xx / network retry on the query path |
+| `BulkQueryEvent.RATE_LIMITED` | `bulk_query.rate_limited` | 429 on the query path |
+
+**Worked example — query step log line:**
+
+```
+INFO  bulk_query: created query job 7509X00000AbcQueryJob001 (operation=query soql=SELECT Id, Name FROM Account [len=32 sha256=ab12cd34])
+      event_name=bulk_query.job.created  outcome_code=None  sf_job_id=7509X00000AbcQueryJob001  operation=query
+
+INFO  bulk_query: job 7509X00000AbcQueryJob001 complete — 150 rows, 12288 bytes, 1 page(s) → run-1/01-Account-20260420T120000.csv
+      event_name=bulk_query.job.completed  outcome_code=ok  sf_job_id=7509X00000AbcQueryJob001  row_count=150  byte_count=12288  page_count=1
+```
+
+SOQL strings are never logged verbatim at INFO or above — `sanitize_soql()` replaces the
+WHERE clause with a length+hash summary: ``SELECT … FROM <sobject> [len=N sha256=XXXXXXXX]``.
+Full SOQL may appear at DEBUG level only.
+
 ### System events
 `health.checked` · `websocket.connected` · `websocket.disconnected` · `websocket.error`
 `exception.unhandled`
@@ -152,6 +182,23 @@ Auth metrics (one `outcome` label per counter):
 - `sfbl_auth_password_changes_total{outcome}`
 - `sfbl_auth_email_change_requests_total{outcome}`
 - `sfbl_auth_email_change_confirms_total{outcome}`
+
+**Bulk query metrics (SFBL-171):**
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `sfbl_bulk_query_jobs_created_total` | Counter | `object_name`, `operation` | Query jobs created |
+| `sfbl_bulk_query_jobs_completed_total` | Counter | `object_name`, `operation` | Query jobs that reached `JobComplete` |
+| `sfbl_bulk_query_jobs_failed_total` | Counter | `object_name`, `operation` | Query jobs that reached `Failed`/`Aborted` |
+| `sfbl_bulk_query_rows` | Histogram | `object_name`, `operation` | Data rows per completed query step |
+| `sfbl_bulk_query_bytes` | Histogram | `object_name`, `operation` | Bytes per completed query artefact |
+| `sfbl_bulk_query_locator_pages` | Histogram | `object_name`, `operation` | Locator pages per completed query step |
+
+Helpers: `record_bulk_query_job_created`, `record_bulk_query_job_completed`, `record_bulk_query_job_failed` in `app/observability/metrics.py`.
+
+**Bulk query span:**
+
+`bulk_query.execute` (in `app.observability.tracing.bulk_query_span`) — wraps the full `run_bulk_query` invocation.  Attributes: `object.name`, `operation`, `salesforce.job.id` (set once job is created).  SOQL must not be set as a span attribute.
 
 Custom spans (in `app.observability.tracing`):
 - `auth.password_reset.request` — attributes: `outcome`
@@ -242,6 +289,10 @@ OutcomeCode.JOB_POLL_TIMEOUT      # Bulk API job exceeded sf_job_max_poll_second
 
 # Storage output
 OutcomeCode.OUTPUT_UPLOAD_ERROR   # S3 output write failure (distinct from STORAGE_ERROR for input reads)
+
+# Bulk query (SFBL-171)
+OutcomeCode.QUERY_SF_JOB_FAILED        # Bulk query job reached Failed/Aborted terminal state
+OutcomeCode.QUERY_SOQL_SYNTAX_REJECTED # Salesforce explain endpoint returned 400 (invalid SOQL)
 
 # Email
 OutcomeCode.EMAIL_SMTP_ERROR          # SMTP backend delivery failure
@@ -440,6 +491,26 @@ for the full list of prohibited content and the shared scrubbing helpers.
 
 **Summary: never include tokens, keys, passwords, auth headers, or raw CSV data
 in any log record, span attribute, metric label, or error monitoring event.**
+
+### SOQL sanitization (SFBL-171)
+
+SOQL ``WHERE`` clauses may contain field values that are quasi-identifiers (e.g.
+``WHERE Email__c = 'alice@example.com'``). The `sanitize_soql(s: str) -> str`
+helper in `sanitization.py` replaces the full SOQL with a length+hash+prefix
+summary safe for INFO-level logging and span attributes:
+
+```python
+from app.observability.sanitization import sanitize_soql
+
+logger.info("Query: %s", sanitize_soql(soql))
+# → "SELECT Id, Name FROM Account [len=52 sha256=ab12cd34]"
+```
+
+Rules:
+- **Never** log the full SOQL at INFO or above.
+- At DEBUG level the full SOQL may be logged (DEBUG output is excluded from production collectors by default).
+- Error messages that include SOQL must pass through `sanitize_soql` or `safe_exc_message` before logging.
+- Do not set full SOQL as a span attribute — use the sanitized form or omit it.
 
 ### S3 presigned URI sanitization (SFBL-163)
 

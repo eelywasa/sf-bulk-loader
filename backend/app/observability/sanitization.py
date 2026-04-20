@@ -47,10 +47,13 @@ Public API
 - safe_exc_message   — return a sanitized string representation of an exception
 - safe_record_exception — record an exception on an OTel span without leaking
                           sensitive content via the exception message attribute
+- sanitize_soql      — return a safe representation of a SOQL string for INFO-level
+                        logging (length + hash + SELECT…FROM prefix only)
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -196,6 +199,55 @@ def safe_exc_message(exc: BaseException) -> str:
 
 
 # ── OTel span exception recording ────────────────────────────────────────────
+
+
+# Regex that captures the "SELECT ... FROM <sobject>" prefix of a SOQL string,
+# stopping before any WHERE / ORDER BY / LIMIT clause.
+_SOQL_PREFIX_PATTERN: re.Pattern[str] = re.compile(
+    r"(?i)^(SELECT\s+.+?\s+FROM\s+\w+)",
+    re.DOTALL,
+)
+
+
+def sanitize_soql(soql: str) -> str:
+    """Return a safe representation of a SOQL string for INFO-level logging.
+
+    SOQL ``WHERE`` clauses may contain field values that are quasi-identifiers
+    (e.g. ``WHERE Email = 'alice@example.com'``). This function replaces the
+    full SOQL with a non-reversible summary so that the query can be correlated
+    with other log records without leaking record-level data.
+
+    The returned string has the form::
+
+        "<SELECT … FROM <sobject>> [len=<n> sha256=<first-8-hex>]"
+
+    The ``SELECT ... FROM <sobject>`` prefix is safe because it contains only
+    object/field names (low-cardinality metadata), not field values. If the
+    prefix cannot be parsed, only the length and hash are emitted.
+
+    At ``DEBUG`` level callers MAY log the full SOQL if the runtime log level
+    permits it, because DEBUG output is never sent to production collectors by
+    default.
+
+    Args:
+        soql: Raw SOQL query string.
+
+    Returns:
+        A sanitized, human-readable string safe for INFO-level log records and
+        span attributes.
+
+    Examples::
+
+        >>> sanitize_soql("SELECT Id, Name FROM Account WHERE Email__c = 'x@y.com'")
+        "SELECT Id, Name FROM Account [len=52 sha256=ab12cd34]"
+        >>> sanitize_soql("SELECT Id FROM Contact LIMIT 100")
+        "SELECT Id FROM Contact [len=31 sha256=cd56ef78]"
+    """
+    digest = hashlib.sha256(soql.encode()).hexdigest()[:8]
+    length = len(soql)
+    match = _SOQL_PREFIX_PATTERN.match(soql)
+    prefix = match.group(1) if match else "SOQL"
+    return f"{prefix} [len={length} sha256={digest}]"
 
 
 def safe_record_exception(span: Span, exc: BaseException) -> None:

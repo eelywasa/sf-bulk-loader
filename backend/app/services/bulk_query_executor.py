@@ -32,6 +32,14 @@ from typing import Any, Optional
 import httpx
 
 from app.config import settings
+from app.observability.events import BulkQueryEvent, OutcomeCode
+from app.observability.metrics import (
+    record_bulk_query_job_completed,
+    record_bulk_query_job_created,
+    record_bulk_query_job_failed,
+)
+from app.observability.sanitization import sanitize_soql
+from app.observability import tracing
 from app.services.output_storage import OutputStorage
 
 logger = logging.getLogger(__name__)
@@ -181,8 +189,8 @@ async def _request(
                 "retrying in %.1f s",
                 method, url, attempt + 1, _MAX_RETRIES + 1, wait,
                 extra={
-                    "event_name": "salesforce.bulk_query.rate_limited",
-                    "outcome_code": "rate_limited",
+                    "event_name": BulkQueryEvent.RATE_LIMITED,
+                    "outcome_code": OutcomeCode.RATE_LIMITED,
                 },
             )
             await asyncio.sleep(wait)
@@ -197,7 +205,7 @@ async def _request(
                 "retrying in %.0f s",
                 response.status_code, method, url, attempt + 1, _MAX_RETRIES + 1, wait,
                 extra={
-                    "event_name": "salesforce.bulk_query.request_retried",
+                    "event_name": BulkQueryEvent.REQUEST_RETRIED,
                     "outcome_code": None,
                 },
             )
@@ -270,89 +278,111 @@ async def run_bulk_query(
     base = instance_url.rstrip("/")
     query_base = f"{base}/services/data/{version}/jobs/query"
 
+    # Derive object_name from SOQL for metric labels (best-effort; fall back to
+    # the operation string if parsing fails).  We extract the token after FROM.
+    _from_match = __import__("re").search(r"(?i)\bFROM\s+(\w+)", soql)
+    _object_name = _from_match.group(1) if _from_match else operation
+
     owns_client = http_client is None
     if owns_client:
         http_client = httpx.AsyncClient(timeout=30.0)
 
     try:
-        # ── 1. Create the query job ──────────────────────────────────────────
-        create_resp = await _request(
-            http_client,
-            access_token,
-            "POST",
-            query_base,
-            headers={"Content-Type": "application/json"},
-            json={"operation": operation, "query": soql},
-        )
-        if create_resp.status_code != 200:
-            raise BulkQueryError(
-                f"create query job failed: HTTP {create_resp.status_code}",
-                status_code=create_resp.status_code,
-                body=create_resp.text,
-            )
-        job_id: str = create_resp.json()["id"]
-        job_url = f"{query_base}/{job_id}"
-        logger.info(
-            "bulk_query: created query job %s (operation=%s)",
-            job_id, operation,
-            extra={
-                "event_name": "salesforce.bulk_query.job_created",
-                "outcome_code": None,
-                "sf_job_id": job_id,
-                "operation": operation,
-            },
-        )
-        # TODO(SFBL-171): metric here — query job created counter
-
-        # ── 2. Poll until terminal ───────────────────────────────────────────
-        final_state = await _poll_query_job(http_client, access_token, job_url, job_id)
-
-        if final_state != "JobComplete":
-            logger.warning(
-                "bulk_query: job %s reached non-success terminal state %s",
-                job_id, final_state,
+        with tracing.bulk_query_span(object_name=_object_name, operation=operation) as span:
+            # ── 1. Create the query job ──────────────────────────────────────
+            logger.debug(
+                "bulk_query: SOQL=%s",
+                soql,
                 extra={
-                    "event_name": "salesforce.bulk_query.job_failed",
-                    "outcome_code": "salesforce_api_error",
-                    "sf_job_id": job_id,
-                    "final_state": final_state,
+                    "event_name": BulkQueryEvent.JOB_CREATED,
+                    "outcome_code": None,
                 },
             )
-            # TODO(SFBL-171): metric here — query job failed counter
-            raise BulkQueryJobFailed(
-                f"Bulk query job {job_id} ended in state {final_state!r}",
-                final_state=final_state,
+            create_resp = await _request(
+                http_client,
+                access_token,
+                "POST",
+                query_base,
+                headers={"Content-Type": "application/json"},
+                json={"operation": operation, "query": soql},
+            )
+            if create_resp.status_code != 200:
+                raise BulkQueryError(
+                    f"create query job failed: HTTP {create_resp.status_code}",
+                    status_code=create_resp.status_code,
+                    body=create_resp.text,
+                )
+            job_id: str = create_resp.json()["id"]
+            job_url = f"{query_base}/{job_id}"
+            span.set_attribute("salesforce.job.id", job_id)
+            logger.info(
+                "bulk_query: created query job %s (operation=%s soql=%s)",
+                job_id, operation, sanitize_soql(soql),
+                extra={
+                    "event_name": BulkQueryEvent.JOB_CREATED,
+                    "outcome_code": None,
+                    "sf_job_id": job_id,
+                    "operation": operation,
+                },
+            )
+            record_bulk_query_job_created(_object_name, operation)
+
+            # ── 2. Poll until terminal ───────────────────────────────────────
+            final_state = await _poll_query_job(http_client, access_token, job_url, job_id)
+
+            if final_state != "JobComplete":
+                logger.warning(
+                    "bulk_query: job %s reached non-success terminal state %s",
+                    job_id, final_state,
+                    extra={
+                        "event_name": BulkQueryEvent.JOB_FAILED,
+                        "outcome_code": OutcomeCode.QUERY_SF_JOB_FAILED,
+                        "sf_job_id": job_id,
+                        "final_state": final_state,
+                    },
+                )
+                record_bulk_query_job_failed(_object_name, operation)
+                raise BulkQueryJobFailed(
+                    f"Bulk query job {job_id} ended in state {final_state!r}",
+                    final_state=final_state,
+                )
+
+            # ── 3 & 4. Paginate results and stream to storage ────────────────
+            row_count, byte_count, page_count, artefact_uri = await _stream_results(
+                http_client,
+                access_token,
+                job_url,
+                output_storage,
+                relative_path,
             )
 
-        # ── 3 & 4. Paginate results and stream to storage ────────────────────
-        row_count, byte_count, artefact_uri = await _stream_results(
-            http_client,
-            access_token,
-            job_url,
-            output_storage,
-            relative_path,
-        )
+            logger.info(
+                "bulk_query: job %s complete — %d rows, %d bytes, %d page(s) → %s",
+                job_id, row_count, byte_count, page_count, artefact_uri,
+                extra={
+                    "event_name": BulkQueryEvent.JOB_COMPLETED,
+                    "outcome_code": OutcomeCode.OK,
+                    "sf_job_id": job_id,
+                    "row_count": row_count,
+                    "byte_count": byte_count,
+                    "page_count": page_count,
+                    "artefact_uri": artefact_uri,
+                },
+            )
+            record_bulk_query_job_completed(
+                _object_name,
+                operation,
+                row_count=row_count,
+                byte_count=byte_count,
+                page_count=page_count,
+            )
 
-        logger.info(
-            "bulk_query: job %s complete — %d rows, %d bytes → %s",
-            job_id, row_count, byte_count, artefact_uri,
-            extra={
-                "event_name": "salesforce.bulk_query.job_completed",
-                "outcome_code": "ok",
-                "sf_job_id": job_id,
-                "row_count": row_count,
-                "byte_count": byte_count,
-                "artefact_uri": artefact_uri,
-            },
-        )
-        # TODO(SFBL-171): metric here — query job completed counter, row_count histogram
-
-        return BulkQueryResult(
-            row_count=row_count,
-            byte_count=byte_count,
-            artefact_uri=artefact_uri,
-            final_state=final_state,
-        )
+            return BulkQueryResult(
+                row_count=row_count,
+                byte_count=byte_count,
+                artefact_uri=artefact_uri,
+                final_state=final_state,
+            )
 
     finally:
         if owns_client:
@@ -408,7 +438,7 @@ async def _poll_query_job(
             "bulk_query: job %s state=%s processed=%d",
             job_id, state, records_processed,
             extra={
-                "event_name": "salesforce.bulk_query.job_polled",
+                "event_name": BulkQueryEvent.JOB_POLLED,
                 "outcome_code": None,
                 "sf_job_id": job_id,
                 "state": state,
@@ -420,8 +450,8 @@ async def _poll_query_job(
                 "bulk_query: job %s reached terminal state %s (processed=%d)",
                 job_id, state, records_processed,
                 extra={
-                    "event_name": "salesforce.bulk_query.job_terminal",
-                    "outcome_code": "ok" if state == "JobComplete" else "salesforce_api_error",
+                    "event_name": BulkQueryEvent.JOB_POLLED,
+                    "outcome_code": OutcomeCode.OK if state == "JobComplete" else OutcomeCode.QUERY_SF_JOB_FAILED,
                     "sf_job_id": job_id,
                     "final_state": state,
                 },
@@ -490,11 +520,10 @@ async def _fetch_results_page(
                     "retrying in %.1f s",
                     page_number + 1, attempt + 1, _MAX_RETRIES + 1, wait,
                     extra={
-                        "event_name": "salesforce.bulk_query.rate_limited",
-                        "outcome_code": "rate_limited",
+                        "event_name": BulkQueryEvent.RATE_LIMITED,
+                        "outcome_code": OutcomeCode.RATE_LIMITED,
                     },
                 )
-                # TODO(SFBL-171): metric here — rate-limited counter
                 # Must consume the body before sleeping and retrying.
                 await resp.aread()
                 await asyncio.sleep(wait)
@@ -515,7 +544,7 @@ async def _fetch_results_page(
                     "retrying in %.0f s",
                     resp.status_code, page_number + 1, attempt + 1, _MAX_RETRIES + 1, wait,
                     extra={
-                        "event_name": "salesforce.bulk_query.request_retried",
+                        "event_name": BulkQueryEvent.REQUEST_RETRIED,
                         "outcome_code": None,
                     },
                 )
@@ -574,6 +603,15 @@ async def _fetch_results_page(
                 # Any remaining leftover is entirely header (no newline found);
                 # discard it.
 
+            logger.debug(
+                "bulk_query: page %d downloaded — %d bytes, next_locator=%s",
+                page_number + 1, bytes_written, next_locator,
+                extra={
+                    "event_name": BulkQueryEvent.JOB_PAGE_DOWNLOADED,
+                    "outcome_code": None,
+                    "page_index": page_number,
+                },
+            )
             return bytes_written, next_locator
 
     # Should be unreachable — all retry exhaustion paths raise above.
@@ -586,7 +624,7 @@ async def _stream_results(
     job_url: str,
     output_storage: OutputStorage,
     relative_path: str,
-) -> tuple[int, int, str]:
+) -> tuple[int, int, int, str]:
     """Paginate the results endpoint and stream pages to ``output_storage``.
 
     The CSV header row (first line) is written exactly once — from page 1.
@@ -602,7 +640,7 @@ async def _stream_results(
         relative_path:  Target relative path within the storage.
 
     Returns:
-        A 3-tuple ``(row_count, byte_count, artefact_uri)``.
+        A 4-tuple ``(row_count, byte_count, page_count, artefact_uri)``.
         ``artefact_uri`` equals ``relative_path`` — the concrete storage
         reference for local storage.  S3 callers should wrap the result.
         TODO(SFBL-176): resolve artefact_uri for S3 in per-step destination
@@ -649,4 +687,4 @@ async def _stream_results(
         row_count = 0
 
     artefact_uri = relative_path
-    return row_count, byte_count, artefact_uri
+    return row_count, byte_count, page_number, artefact_uri
