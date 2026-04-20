@@ -35,6 +35,8 @@ from app.database import AsyncSessionLocal, engine
 from app.services.auth import seed_admin
 from app.services.email import delivery_log as email_delivery_log
 from app.services.email import init_email_service
+from app.services.email.service import get_email_service
+from app.services.notifications import init_notification_dispatcher
 
 
 @asynccontextmanager
@@ -45,6 +47,9 @@ async def lifespan(app: FastAPI):
 
     # Startup: initialise email service singleton
     init_email_service(AsyncSessionLocal)
+
+    # Startup: initialise notification dispatcher singleton (SFBL-181)
+    init_notification_dispatcher(await get_email_service(), AsyncSessionLocal)
 
     # Startup: boot-sweep — reap any stale pending email_delivery rows left
     # over from a crashed or OOM-killed process.
