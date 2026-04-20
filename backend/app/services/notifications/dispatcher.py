@@ -152,7 +152,27 @@ class NotificationDispatcher:
         context = _build_context(run_snapshot)
         deliveries: list[NotificationDelivery] = []
         for sub in subs:
-            deliveries.append(await self._dispatch(sub, run_id, context, is_test=False))
+            try:
+                deliveries.append(
+                    await self._dispatch(sub, run_id, context, is_test=False)
+                )
+            except Exception as exc:  # noqa: BLE001 — keep fan-out best-effort
+                # A failure against one subscription (e.g. the row was deleted
+                # between SELECT and INSERT) must not stop the remaining
+                # subscribers from being notified.  Log and continue.
+                from app.observability.sanitization import safe_exc_message
+
+                logger.exception(
+                    "Notification dispatch raised for subscription; continuing fan-out",
+                    extra={
+                        "event_name": NotificationEvent.DISPATCH_FAILED,
+                        "outcome_code": OutcomeCode.FAILED,
+                        "subscription_id": getattr(sub, "id", None),
+                        "channel": getattr(sub.channel, "value", None),
+                        "run_id": run_id,
+                        "error": safe_exc_message(exc),
+                    },
+                )
         return deliveries
 
     async def dispatch_one(
@@ -244,6 +264,29 @@ class NotificationDispatcher:
 
             delivery.attempt_count = result.attempts
             delivery.email_delivery_id = result.email_delivery_id
+            if result.pending and not result.accepted:
+                # Transport is still retrying (e.g. EmailService scheduled a
+                # follow-up attempt).  Leave the delivery row in ``pending``
+                # so its final status reflects the eventual outcome.
+                delivery.status = NotificationDeliveryStatus.pending
+                delivery.last_error = result.error_detail
+                notification_dispatch_total.labels(
+                    channel=channel_name.value, status="pending"
+                ).inc()
+                logger.info(
+                    "Notification dispatch pending retry",
+                    extra={
+                        "event_name": NotificationEvent.DISPATCH_REQUESTED,
+                        "outcome_code": OutcomeCode.OK,
+                        "subscription_id": subscription.id,
+                        "channel": channel_name.value,
+                        "delivery_id": delivery.id,
+                        "attempts": result.attempts,
+                    },
+                )
+                await session.commit()
+                await session.refresh(delivery)
+                return delivery
             if result.accepted:
                 delivery.status = NotificationDeliveryStatus.sent
                 delivery.sent_at = datetime.now(tz=timezone.utc)

@@ -264,6 +264,134 @@ async def test_metrics_increment_on_sent():
     assert after == before + 1
 
 
+async def test_pending_channel_result_leaves_delivery_pending():
+    """An in-flight email retry must not flip the delivery row to ``failed``.
+
+    See P1 on PR #51: when EmailService schedules a transient-failure retry it
+    returns ``status=pending``, which the channel surfaces as
+    ``ChannelResult(pending=True)``.  The dispatcher must keep the
+    notification_delivery row in ``pending`` so audit/metrics reflect the
+    eventual outcome when the retry lands.
+    """
+    from tests.conftest import _TestSession
+
+    before_pending = notification_dispatch_total.labels(
+        channel="email", status="pending"
+    )._value.get()
+    before_failed = notification_dispatch_total.labels(
+        channel="email", status="failed"
+    )._value.get()
+
+    async with _TestSession() as session:
+        user, plan = await _seed(session)
+        run = LoadRun(load_plan_id=plan.id, status=RunStatus.completed)
+        session.add(run)
+        sub = NotificationSubscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            channel=NotificationChannel.email,
+            destination="a@example.com",
+            trigger=NotificationTrigger.terminal_any,
+        )
+        session.add(sub)
+        await session.commit()
+        run_id = run.id
+
+    pending_email = _StubChannel(
+        ChannelResult(
+            accepted=False,
+            attempts=1,
+            error_detail="smtp timeout",
+            pending=True,
+        )
+    )
+    dispatcher, _, _ = _make_dispatcher(
+        channels={NotificationChannel.email: pending_email}
+    )
+    deliveries = await dispatcher.dispatch_run(run_id, RunStatus.completed)
+
+    assert len(deliveries) == 1
+    d = deliveries[0]
+    assert d.status == NotificationDeliveryStatus.pending
+    assert d.last_error == "smtp timeout"
+    assert d.sent_at is None
+
+    after_pending = notification_dispatch_total.labels(
+        channel="email", status="pending"
+    )._value.get()
+    after_failed = notification_dispatch_total.labels(
+        channel="email", status="failed"
+    )._value.get()
+    assert after_pending == before_pending + 1
+    assert after_failed == before_failed  # not counted as a failure
+
+
+async def test_fan_out_continues_when_one_subscription_raises():
+    """See P2 on PR #51: an exception dispatching one subscription must not
+    abort fan-out for the remaining subscriptions."""
+    from tests.conftest import _TestSession
+
+    async with _TestSession() as session:
+        user, plan = await _seed(session)
+        run = LoadRun(load_plan_id=plan.id, status=RunStatus.completed)
+        session.add(run)
+        good_sub = NotificationSubscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            channel=NotificationChannel.webhook,
+            destination="https://hooks.example.com/good",
+            trigger=NotificationTrigger.terminal_any,
+        )
+        bad_sub = NotificationSubscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            channel=NotificationChannel.email,
+            destination="b@example.com",
+            trigger=NotificationTrigger.terminal_any,
+        )
+        session.add_all([good_sub, bad_sub])
+        await session.commit()
+        run_id = run.id
+
+    class _RaisingChannel:
+        name = "email"
+
+        async def send(self, subscription, context):  # noqa: ARG002
+            raise RuntimeError("unexpected infra failure")
+
+    good = _StubChannel(ChannelResult(accepted=True, attempts=1))
+    # Use an explicitly failing stub that bypasses the per-channel try/except
+    # wrapper inside _dispatch by raising before session.commit — simulate by
+    # making the channel entry missing? No: inject an error before dispatch by
+    # making the second subscription's session.add raise.  Simplest: patch
+    # _dispatch to raise for the bad_sub.id.
+
+    # Monkey-patch _dispatch so it raises for bad_sub.id only (simulates a
+    # race where the subscription disappears between SELECT and INSERT).
+    dispatcher = NotificationDispatcher(
+        _TestSession,
+        channels={
+            NotificationChannel.webhook: good,
+            NotificationChannel.email: _RaisingChannel(),  # type: ignore[dict-item]
+        },
+    )
+    original = dispatcher._dispatch
+
+    async def _maybe_raise(subscription, *args, **kwargs):
+        if subscription.id == bad_sub.id:
+            raise RuntimeError("subscription vanished")
+        return await original(subscription, *args, **kwargs)
+
+    dispatcher._dispatch = _maybe_raise  # type: ignore[assignment]
+
+    deliveries = await dispatcher.dispatch_run(run_id, RunStatus.completed)
+
+    # The bad subscription raised, but the good one still got delivered.
+    assert len(deliveries) == 1
+    assert deliveries[0].status == NotificationDeliveryStatus.sent
+    assert good.calls
+
+
 async def test_delivery_row_persisted():
     from tests.conftest import _TestSession
 

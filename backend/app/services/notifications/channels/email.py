@@ -56,14 +56,19 @@ class EmailChannel:
             )
 
         # ``status`` is a str column on EmailDelivery; enum values are
-        # defined in app.services.email.delivery_log.EmailDeliveryStatus.
+        # defined in app.services.email.delivery_log.DeliveryStatus.  A
+        # ``pending`` row means EmailService hit a transient failure and
+        # scheduled a retry — the send is still in flight, so we must not
+        # record it as a hard failure on the notification row.
         status = getattr(delivery, "status", None)
         accepted = status in {"sent", "skipped"}
+        pending = (not accepted) and status == "pending"
         return ChannelResult(
             accepted=accepted,
             attempts=1,
             error_detail=None if accepted else getattr(delivery, "last_error_msg", None),
             email_delivery_id=delivery.id,
+            pending=pending,
         )
 
 

@@ -24,6 +24,11 @@ class ChannelResult:
     attempts: int = 1
     error_detail: str | None = None
     email_delivery_id: str | None = None
+    # True when the underlying transport has neither succeeded nor given up —
+    # e.g. EmailService scheduled a retry after a transient failure.  The
+    # dispatcher leaves ``notification_delivery.status=pending`` so the row
+    # will reflect the eventual outcome when the retry lands.
+    pending: bool = False
 
 
 class NotificationChannel(Protocol):

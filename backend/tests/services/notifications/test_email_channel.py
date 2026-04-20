@@ -136,6 +136,21 @@ async def test_email_channel_flatten_defaults_when_keys_missing():
     assert ctx["ended_at"] == ""
 
 
+async def test_email_channel_pending_is_not_treated_as_failure():
+    """Transient EmailService failures leave the row in ``pending`` for a
+    scheduled retry.  EmailChannel must propagate that state so the dispatcher
+    keeps the notification_delivery row in ``pending`` rather than marking it
+    failed prematurely.
+    """
+    delivery = _FakeDelivery(status="pending", err="smtp timeout", did="deliv-pending")
+    channel = EmailChannel(_FakeEmailService(delivery))  # type: ignore[arg-type]
+    result = await channel.send(_sub(), {})
+    assert result.accepted is False
+    assert result.pending is True
+    assert result.email_delivery_id == "deliv-pending"
+    assert result.error_detail == "smtp timeout"
+
+
 async def test_email_channel_exception_is_caught_and_sanitised():
     channel = EmailChannel(_FakeEmailService(RuntimeError("boom")))  # type: ignore[arg-type]
     result = await channel.send(_sub(), {})
