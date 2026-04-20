@@ -145,11 +145,23 @@ def clean_db():
     from app.models.load_plan import LoadPlan
     from app.models.load_run import LoadRun
     from app.models.load_step import LoadStep
+    from app.models.notification_delivery import NotificationDelivery
+    from app.models.notification_subscription import NotificationSubscription
     from app.models.user import User
 
     async def _clean():
         async with _TestSession() as session:
-            for model in [JobRecord, LoadRun, LoadStep, LoadPlan, Connection, InputConnection, User]:
+            for model in [
+                NotificationDelivery,
+                NotificationSubscription,
+                JobRecord,
+                LoadRun,
+                LoadStep,
+                LoadPlan,
+                Connection,
+                InputConnection,
+                User,
+            ]:
                 await session.execute(delete(model))
             await session.commit()
 
