@@ -35,6 +35,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Clear sentinel values that only exist post-SFBL-178 ("local-output")
+    # before restoring the FK; on databases that validate existing rows when
+    # adding a foreign key (e.g. PostgreSQL), leaving them in place would
+    # block the downgrade once any step used local output as its source.
+    op.execute(
+        sa.text(
+            "UPDATE load_step SET input_connection_id = NULL "
+            "WHERE input_connection_id = 'local-output'"
+        )
+    )
     with op.batch_alter_table("load_step") as batch_op:
         batch_op.create_foreign_key(
             "fk_load_step_input_connection_id",
