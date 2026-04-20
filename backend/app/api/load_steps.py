@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
-from app.models.load_step import LoadStep
+from app.models.load_step import LoadStep, QUERY_OPERATIONS
 from app.services.auth import get_current_user
 from app.services.input_storage import (
     InputConnectionNotFoundError,
@@ -147,8 +147,23 @@ async def preview_step(
     step_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> StepPreviewResponse:
-    """Discover CSV files matching the step's pattern and return row counts."""
+    """Discover CSV files matching the step's pattern and return row counts.
+
+    For query/queryAll steps, no file discovery is performed.  An envelope is
+    returned that is shape-compatible with DML step responses so that callers
+    iterating a mixed plan do not need special-case logic.
+    """
     step = await _get_step_or_404(plan_id, step_id, db)
+
+    # Query ops have no CSV input — return a shape-compatible envelope immediately.
+    if step.operation in QUERY_OPERATIONS:
+        return StepPreviewResponse(
+            kind="query",
+            note="query step — no file preview",
+            pattern=None,
+            matched_files=[],
+            total_rows=0,
+        )
 
     try:
         storage = await get_storage(step.input_connection_id or "local", db)
@@ -185,6 +200,7 @@ async def preview_step(
         total_rows += row_count
 
     return StepPreviewResponse(
+        kind="dml",
         pattern=step.csv_file_pattern,
         matched_files=file_infos,
         total_rows=total_rows,
