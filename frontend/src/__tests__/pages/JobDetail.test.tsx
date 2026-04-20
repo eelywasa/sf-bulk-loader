@@ -19,10 +19,16 @@ vi.mock('../../api/endpoints', () => ({
     errorCsvUrl: (id: string) => `/api/jobs/${id}/error-csv`,
     unprocessedCsvUrl: (id: string) => `/api/jobs/${id}/unprocessed-csv`,
   },
+  runsApi: {
+    get: vi.fn(),
+  },
+  plansApi: {
+    get: vi.fn(),
+  },
 }))
 
-import { jobsApi } from '../../api/endpoints'
-import type { InputFilePreview } from '../../api/types'
+import { jobsApi, runsApi, plansApi } from '../../api/endpoints'
+import type { InputFilePreview, LoadRun, LoadPlanDetail } from '../../api/types'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -88,6 +94,99 @@ const errorPreview: InputFilePreview = {
   rows: [{ Id: '002', Name: 'Globex', Status: 'Failed' }],
 }
 
+const mockRun: LoadRun = {
+  id: 'run-111',
+  load_plan_id: 'plan-1',
+  status: 'completed',
+  started_at: '2024-03-01T10:00:00Z',
+  completed_at: '2024-03-01T10:05:00Z',
+  total_records: 500,
+  total_success: 500,
+  total_errors: 0,
+  initiated_by: 'admin',
+  error_summary: null,
+  is_retry: false,
+}
+
+const mockPlanDetailDml: LoadPlanDetail = {
+  id: 'plan-1',
+  connection_id: 'conn-1',
+  name: 'Test Plan',
+  description: null,
+  abort_on_step_failure: true,
+  error_threshold_pct: 10,
+  max_parallel_jobs: 5,
+  output_connection_id: null,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+  load_steps: [
+    {
+      id: 'step-1',
+      load_plan_id: 'plan-1',
+      sequence: 1,
+      object_name: 'Account',
+      operation: 'insert',
+      csv_file_pattern: 'accounts_*.csv',
+      partition_size: 10000,
+      external_id_field: null,
+      assignment_rule_id: null,
+      created_at: '2024-03-01T00:00:00Z',
+      updated_at: '2024-03-01T00:00:00Z',
+    },
+  ],
+}
+
+const mockPlanDetailQuery: LoadPlanDetail = {
+  ...mockPlanDetailDml,
+  load_steps: [
+    {
+      id: 'step-1',
+      load_plan_id: 'plan-1',
+      sequence: 1,
+      object_name: 'Account',
+      operation: 'query',
+      csv_file_pattern: null,
+      soql: 'SELECT Id, Name FROM Account',
+      partition_size: 10000,
+      external_id_field: null,
+      assignment_rule_id: null,
+      created_at: '2024-03-01T00:00:00Z',
+      updated_at: '2024-03-01T00:00:00Z',
+    },
+  ],
+}
+
+const mockPlanDetailQueryAll: LoadPlanDetail = {
+  ...mockPlanDetailDml,
+  load_steps: [
+    {
+      id: 'step-1',
+      load_plan_id: 'plan-1',
+      sequence: 1,
+      object_name: 'Contact',
+      operation: 'queryAll',
+      csv_file_pattern: null,
+      soql: 'SELECT Id, Name, IsDeleted FROM Contact',
+      partition_size: 10000,
+      external_id_field: null,
+      assignment_rule_id: null,
+      created_at: '2024-03-01T00:00:00Z',
+      updated_at: '2024-03-01T00:00:00Z',
+    },
+  ],
+}
+
+const jobQueryComplete: typeof jobComplete = {
+  ...jobComplete,
+  id: 'job-abc-123',
+  load_step_id: 'step-1',
+  records_processed: 500,
+  records_failed: 0,
+  error_file_path: null,
+  unprocessed_file_path: null,
+  success_file_path: '/output/query_result.csv',
+}
+
 // ─── Render helper ─────────────────────────────────────────────────────────────
 
 function renderJobDetail(runId = 'run-111', jobId = 'job-abc-123') {
@@ -120,6 +219,9 @@ describe('JobDetail', () => {
     vi.mocked(jobsApi.previewSuccessCsv).mockResolvedValue(successPreview)
     vi.mocked(jobsApi.previewErrorCsv).mockResolvedValue(errorPreview)
     vi.mocked(jobsApi.previewUnprocessedCsv).mockResolvedValue(successPreview)
+    // Default: return DML run + plan so existing tests are unaffected
+    vi.mocked(runsApi.get).mockResolvedValue(mockRun)
+    vi.mocked(plansApi.get).mockResolvedValue(mockPlanDetailDml)
   })
 
   // ── Loading / error states ─────────────────────────────────────────────────
@@ -509,6 +611,80 @@ describe('JobDetail', () => {
     await user.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeVisible())
     expect(screen.queryByText('Showing first 25 rows.')).not.toBeInTheDocument()
+  })
+
+  // ── Query step rendering ──────────────────────────────────────────────────
+
+  it('shows "Rows Returned" label instead of "Records Processed" for a query job', async () => {
+    vi.mocked(jobsApi.get).mockResolvedValue(jobQueryComplete)
+    vi.mocked(runsApi.get).mockResolvedValue(mockRun)
+    vi.mocked(plansApi.get).mockResolvedValue(mockPlanDetailQuery)
+
+    renderJobDetail()
+    await waitFor(() => {
+      expect(screen.getByText('Rows Returned')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Records Processed')).not.toBeInTheDocument()
+  })
+
+  it('hides "Records Failed" for a query job', async () => {
+    vi.mocked(jobsApi.get).mockResolvedValue(jobQueryComplete)
+    vi.mocked(runsApi.get).mockResolvedValue(mockRun)
+    vi.mocked(plansApi.get).mockResolvedValue(mockPlanDetailQuery)
+
+    renderJobDetail()
+    await waitFor(() => screen.getByText('Rows Returned'))
+    expect(screen.queryByText('Records Failed')).not.toBeInTheDocument()
+  })
+
+  it('shows SOQL block in the Overview tab for a query job', async () => {
+    vi.mocked(jobsApi.get).mockResolvedValue(jobQueryComplete)
+    vi.mocked(runsApi.get).mockResolvedValue(mockRun)
+    vi.mocked(plansApi.get).mockResolvedValue(mockPlanDetailQuery)
+
+    renderJobDetail()
+    await waitFor(() => {
+      expect(screen.getByText('SELECT Id, Name FROM Account')).toBeInTheDocument()
+    })
+  })
+
+  it('shows "SOQL" label in the Overview tab for a query job', async () => {
+    vi.mocked(jobsApi.get).mockResolvedValue(jobQueryComplete)
+    vi.mocked(runsApi.get).mockResolvedValue(mockRun)
+    vi.mocked(plansApi.get).mockResolvedValue(mockPlanDetailQuery)
+
+    renderJobDetail()
+    await waitFor(() => {
+      expect(screen.getByText('SOQL')).toBeInTheDocument()
+    })
+  })
+
+  it('shows "Result File" section in Logs tab for a query job (not "Success CSV")', async () => {
+    const user = userEvent.setup()
+    vi.mocked(jobsApi.get).mockResolvedValue(jobQueryComplete)
+    vi.mocked(runsApi.get).mockResolvedValue(mockRun)
+    vi.mocked(plansApi.get).mockResolvedValue(mockPlanDetailQuery)
+
+    renderJobDetail()
+    await waitFor(() => screen.getByRole('tab', { name: 'Logs' }))
+    await user.click(screen.getByRole('tab', { name: 'Logs' }))
+    await waitFor(() => {
+      expect(screen.getByText('Result File')).toBeVisible()
+    })
+    expect(screen.queryByText('Success CSV')).not.toBeInTheDocument()
+    expect(screen.queryByText('Error CSV')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unprocessed CSV')).not.toBeInTheDocument()
+  })
+
+  it('shows "Query All (incl. deleted)" operation badge for queryAll job', async () => {
+    vi.mocked(jobsApi.get).mockResolvedValue(jobQueryComplete)
+    vi.mocked(runsApi.get).mockResolvedValue(mockRun)
+    vi.mocked(plansApi.get).mockResolvedValue(mockPlanDetailQueryAll)
+
+    renderJobDetail()
+    await waitFor(() => {
+      expect(screen.getByText('Query All (incl. deleted)')).toBeInTheDocument()
+    })
   })
 
   // ── Tab switching ─────────────────────────────────────────────────────────

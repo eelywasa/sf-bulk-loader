@@ -1,9 +1,10 @@
 import { type ReactNode, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { jobsApi } from '../api/endpoints'
+import { jobsApi, runsApi, plansApi } from '../api/endpoints'
 import { ApiError, apiFetchBlob } from '../api/client'
 import type { CsvFetchParams, JobStatus } from '../api/types'
+import { isQueryOperation, operationLabel } from '../api/types'
 import { Badge, Button, Card, CsvPreviewPanel, Tabs } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
 import { ALERT_ERROR } from '../components/ui/formStyles'
@@ -134,6 +135,22 @@ export default function JobDetail() {
     enabled: !!jobId,
   })
 
+  // Fetch run + plan to retrieve the step's operation and SOQL
+  const { data: run } = useQuery({
+    queryKey: ['run', runId],
+    queryFn: () => runsApi.get(runId!),
+    enabled: !!runId,
+  })
+
+  const { data: planDetail } = useQuery({
+    queryKey: ['plan', run?.load_plan_id],
+    queryFn: () => plansApi.get(run!.load_plan_id),
+    enabled: !!run?.load_plan_id,
+  })
+
+  const step = planDetail?.load_steps?.find((s) => s.id === job?.load_step_id)
+  const isQuery = step ? isQueryOperation(step.operation) : false
+
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[200px]" aria-label="Loading">
@@ -175,20 +192,42 @@ export default function JobDetail() {
           job.sf_job_id ?? '—'
         )}
       </MetaField>
-      <MetaField label="Partition Index">{job.partition_index}</MetaField>
+      {step && (
+        <MetaField label="Operation">
+          <Badge variant="neutral">{operationLabel(step.operation)}</Badge>
+        </MetaField>
+      )}
+      {!isQuery && (
+        <MetaField label="Partition Index">{job.partition_index}</MetaField>
+      )}
       <MetaField label="Status">
         <Badge variant={jobStatusVariant(job.status)} dot>
           {job.status}
         </Badge>
       </MetaField>
-      <MetaField label="Records Processed">{job.records_processed ?? '—'}</MetaField>
-      <MetaField label="Records Failed">{job.records_failed ?? '—'}</MetaField>
+      {isQuery ? (
+        <MetaField label="Rows Returned">{job.records_processed ?? '—'}</MetaField>
+      ) : (
+        <>
+          <MetaField label="Records Processed">{job.records_processed ?? '—'}</MetaField>
+          <MetaField label="Records Failed">{job.records_failed ?? '—'}</MetaField>
+        </>
+      )}
       <MetaField label="Started At">{formatDate(job.started_at)}</MetaField>
       <MetaField label="Completed At">{formatDate(job.completed_at)}</MetaField>
       {job.error_message && (
         <div className="col-span-full">
           <MetaField label="Error Message">
             <p className="text-sm text-error-text font-mono whitespace-pre-wrap">{job.error_message}</p>
+          </MetaField>
+        </div>
+      )}
+      {isQuery && step?.soql && (
+        <div className="col-span-full">
+          <MetaField label="SOQL">
+            <pre className="mt-1 rounded-md bg-gray-900 px-3 py-2 text-xs text-gray-100 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+              {step.soql}
+            </pre>
           </MetaField>
         </div>
       )}
@@ -225,33 +264,47 @@ export default function JobDetail() {
 
   const logsContent = job ? (
     <div className="space-y-4 py-2">
-      <LogSection
-        label="Success CSV"
-        description="Records successfully processed by Salesforce."
-        downloadHref={jobsApi.successCsvUrl(jobId!)}
-        available={!!job.success_file_path}
-        queryKey={['job-preview', 'success', jobId]}
-        fetchPage={(params) => jobsApi.previewSuccessCsv(jobId!, params)}
-        filename={job.success_file_path ? basename(job.success_file_path) : undefined}
-      />
-      <LogSection
-        label="Error CSV"
-        description="Records that failed to process with error details."
-        downloadHref={jobsApi.errorCsvUrl(jobId!)}
-        available={!!job.error_file_path}
-        queryKey={['job-preview', 'error', jobId]}
-        fetchPage={(params) => jobsApi.previewErrorCsv(jobId!, params)}
-        filename={job.error_file_path ? basename(job.error_file_path) : undefined}
-      />
-      <LogSection
-        label="Unprocessed CSV"
-        description="Records not submitted due to job cancellation."
-        downloadHref={jobsApi.unprocessedCsvUrl(jobId!)}
-        available={!!job.unprocessed_file_path}
-        queryKey={['job-preview', 'unprocessed', jobId]}
-        fetchPage={(params) => jobsApi.previewUnprocessedCsv(jobId!, params)}
-        filename={job.unprocessed_file_path ? basename(job.unprocessed_file_path) : undefined}
-      />
+      {isQuery ? (
+        <LogSection
+          label="Result File"
+          description="Concatenated query result CSV produced by the query executor."
+          downloadHref={jobsApi.successCsvUrl(jobId!)}
+          available={!!job.success_file_path}
+          queryKey={['job-preview', 'success', jobId]}
+          fetchPage={(params) => jobsApi.previewSuccessCsv(jobId!, params)}
+          filename={job.success_file_path ? basename(job.success_file_path) : undefined}
+        />
+      ) : (
+        <>
+          <LogSection
+            label="Success CSV"
+            description="Records successfully processed by Salesforce."
+            downloadHref={jobsApi.successCsvUrl(jobId!)}
+            available={!!job.success_file_path}
+            queryKey={['job-preview', 'success', jobId]}
+            fetchPage={(params) => jobsApi.previewSuccessCsv(jobId!, params)}
+            filename={job.success_file_path ? basename(job.success_file_path) : undefined}
+          />
+          <LogSection
+            label="Error CSV"
+            description="Records that failed to process with error details."
+            downloadHref={jobsApi.errorCsvUrl(jobId!)}
+            available={!!job.error_file_path}
+            queryKey={['job-preview', 'error', jobId]}
+            fetchPage={(params) => jobsApi.previewErrorCsv(jobId!, params)}
+            filename={job.error_file_path ? basename(job.error_file_path) : undefined}
+          />
+          <LogSection
+            label="Unprocessed CSV"
+            description="Records not submitted due to job cancellation."
+            downloadHref={jobsApi.unprocessedCsvUrl(jobId!)}
+            available={!!job.unprocessed_file_path}
+            queryKey={['job-preview', 'unprocessed', jobId]}
+            fetchPage={(params) => jobsApi.previewUnprocessedCsv(jobId!, params)}
+            filename={job.unprocessed_file_path ? basename(job.unprocessed_file_path) : undefined}
+          />
+        </>
+      )}
     </div>
   ) : null
 

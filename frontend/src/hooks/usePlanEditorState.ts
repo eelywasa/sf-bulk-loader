@@ -225,7 +225,7 @@ export function usePlanEditorState(id: string | undefined) {
       setStepForm({
         object_name: step.object_name,
         operation: step.operation,
-        csv_file_pattern: step.csv_file_pattern,
+        csv_file_pattern: step.csv_file_pattern ?? '',
         partition_size: String(step.partition_size),
         external_id_field: step.external_id_field ?? '',
         assignment_rule_id: step.assignment_rule_id ?? '',
