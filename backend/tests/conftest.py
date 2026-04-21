@@ -218,7 +218,7 @@ def auth_client():
         id=str(uuid.uuid4()),
         username="test-user",
         hashed_password="x",
-        role="admin",
+        is_admin=True,
         status="active",
     )
 

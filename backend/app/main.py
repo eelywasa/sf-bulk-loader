@@ -34,6 +34,7 @@ from app.api.load_steps import router as load_steps_router
 from app.api.notification_subscriptions import router as notification_subscriptions_router
 from app.api.utility import router as utility_router
 from app.api.utility import ws_router
+from app.auth.permissions import ALL_PERMISSION_KEYS
 from app.database import AsyncSessionLocal, engine
 from app.services.auth import seed_admin
 from app.services.email import delivery_log as email_delivery_log
@@ -48,6 +49,22 @@ async def lifespan(app: FastAPI):
     # Startup: seed DB-backed settings from env vars / registry defaults
     _svc = init_settings_service(AsyncSessionLocal)
     await _svc.seed_from_env()
+
+    # Startup: validate permission keys in profile_permissions against the known
+    # vocabulary. Catches typos in seed data or hand-edits before they cause
+    # silent auth failures.
+    from sqlalchemy import text as _sql_text
+    async with AsyncSessionLocal() as _perm_session:
+        _rows = await _perm_session.execute(
+            _sql_text("SELECT DISTINCT permission_key FROM profile_permissions")
+        )
+        _db_keys = {row[0] for row in _rows}
+    _unknown = _db_keys - ALL_PERMISSION_KEYS
+    if _unknown:
+        raise RuntimeError(
+            f"Unknown permission key(s) in profile_permissions table: {sorted(_unknown)}. "
+            "Update app.auth.permissions.ALL_PERMISSION_KEYS or fix the seed data."
+        )
 
     # Startup: seed initial admin user if database is empty
     async with AsyncSessionLocal() as session:

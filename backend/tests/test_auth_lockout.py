@@ -32,11 +32,14 @@ from tests.conftest import _TestSession, _run_async
 
 
 def _make_user(**kwargs: Any) -> User:
+    # role kwarg dropped in migration 0022 — pop and convert to is_admin.
+    role = kwargs.pop("role", None)
+    if role == "admin" and "is_admin" not in kwargs:
+        kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
         username="testuser",
         hashed_password=hash_password("Str0ng&P4ss!"),
-        role="user",
         status="active",
         failed_login_count=0,
     )
@@ -45,11 +48,13 @@ def _make_user(**kwargs: Any) -> User:
 
 
 def _make_admin(**kwargs: Any) -> User:
+    # role kwarg dropped in migration 0022 — pop and convert to is_admin.
+    role = kwargs.pop("role", None)
     defaults = dict(
         id=str(uuid.uuid4()),
         username="admin",
         hashed_password=hash_password("Admin&P4ss123!"),
-        role="admin",
+        is_admin=True,
         status="active",
         failed_login_count=0,
     )

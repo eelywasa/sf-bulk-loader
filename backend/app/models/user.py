@@ -1,12 +1,15 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.profile import Profile
 
 # Valid status values — kept as a module-level tuple for reuse in schemas/auth.
 USER_STATUS_VALUES = ("invited", "active", "locked", "deactivated", "deleted")
@@ -42,11 +45,17 @@ class User(Base):
     )
     # Temp-password users must reset on first login.
     must_reset_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Admin flag — set TRUE for users with administrative privileges.
-    # Backfilled from role='admin' in migration 0019; Epic B will replace role with profile_id.
+    # Admin flag — set TRUE for users with administrative privileges (backfilled in 0019).
+    # Still present until SFBL-195 completes the permission-guard migration.
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
-    # Shared
-    role: Mapped[str] = mapped_column(String(50), nullable=False, default="user")
+    # Profile FK — replaces role column (migrated in 0022). lazy=joined so auth
+    # middleware gets profile + permissions in a single query.
+    profile_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("profiles.id"), nullable=True
+    )
+    profile: Mapped[Optional["Profile"]] = relationship(
+        "Profile", foreign_keys=[profile_id], lazy="selectin"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=func.now(), onupdate=func.now()
@@ -58,6 +67,16 @@ class User(Base):
     password_changed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+
+    @property
+    def role(self) -> str:
+        """Backward-compat property — derived from is_admin after 0022 drops the DB column.
+
+        Returns 'admin' when is_admin=True, 'user' otherwise. Callers that set
+        user.role="admin" directly must switch to is_admin=True; this property is
+        read-only. Retained for SFBL-195 to clean up all callsites.
+        """
+        return "admin" if self.is_admin else "user"
 
     @property
     def is_active(self) -> bool:

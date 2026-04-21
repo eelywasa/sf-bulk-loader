@@ -75,7 +75,6 @@ def sub_client(tmp_path, monkeypatch) -> Iterator[tuple[TestClient, User]]:
         id=str(uuid.uuid4()),
         username="sub-user",
         hashed_password="x",
-        role="user",
         status="active",
     )
     _seed_user(_TestSession, user)
@@ -193,7 +192,7 @@ def test_list_filters_by_current_user(sub_client):
     async def _seed_other():
         async with _TestSession() as s:
             s.add(User(id=other_user_id, username="other", hashed_password="x",
-                       role="user", status="active"))
+                       status="active"))
             await s.commit()
             s.add(NotificationSubscription(
                 user_id=other_user_id,
@@ -223,7 +222,7 @@ def test_get_cross_user_returns_403(sub_client):
     async def _seed():
         async with _TestSession() as s:
             s.add(User(id=other_user_id, username="victim", hashed_password="x",
-                       role="user", status="active"))
+                       status="active"))
             await s.commit()
             s.add(NotificationSubscription(
                 id=other_sub_id,

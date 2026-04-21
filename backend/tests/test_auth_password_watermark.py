@@ -27,11 +27,14 @@ from app.services.auth import (
 
 
 def _make_user(**kwargs) -> User:
+    # role kwarg dropped in migration 0022 — convert to is_admin for compat.
+    role = kwargs.pop("role", None)
+    if role == "admin" and "is_admin" not in kwargs:
+        kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
         username="testuser",
         hashed_password=hash_password("Str0ng&Secure#Pass"),
-        role="user",
         status="active",
         password_changed_at=None,
     )

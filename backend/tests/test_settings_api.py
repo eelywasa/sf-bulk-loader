@@ -40,7 +40,6 @@ def _admin_user() -> User:
     return User(
         id=str(uuid.uuid4()),
         username="settings-admin",
-        role="admin",
         status="active",
         is_admin=True,
     )
@@ -50,7 +49,6 @@ def _regular_user() -> User:
     return User(
         id=str(uuid.uuid4()),
         username="settings-user",
-        role="user",
         status="active",
         is_admin=False,
     )
