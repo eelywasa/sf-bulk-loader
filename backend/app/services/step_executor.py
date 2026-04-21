@@ -177,10 +177,21 @@ async def _execute_step(
         return 0, 0
 
     # ── 2. Build list of (partition_index, csv_bytes) ─────────────────────────
+    # Use step.partition_size if set; else fall back to the DB-backed default (SFBL-156).
+    if step.partition_size is not None:
+        _effective_partition_size: int = step.partition_size
+    else:
+        from app.services.settings.service import settings_service as _svc
+        if _svc is not None:
+            _effective_partition_size = await _svc.get("default_partition_size")
+        else:
+            from app.config import settings as _settings
+            _effective_partition_size = _settings.default_partition_size
+
     partitions: list[tuple[int, bytes]] = []
     for rel_path in rel_paths:
         with storage.open_text(rel_path) as fh:
-            for chunk in _partition(fh, step.partition_size):
+            for chunk in _partition(fh, _effective_partition_size):
                 partitions.append((len(partitions), chunk))
 
     if not partitions:

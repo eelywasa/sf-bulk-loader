@@ -117,6 +117,131 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
+# Security extras: JWT expiry, password-reset, email-change  (category="security")
+# ---------------------------------------------------------------------------
+
+_register(
+    SettingMeta(
+        key="jwt_expiry_minutes",
+        category="security",
+        type="int",
+        default=60,
+        description="JWT access token lifetime in minutes. Applies to new tokens; existing tokens retain their original expiry.",
+        env_var="JWT_EXPIRY_MINUTES",
+    ),
+    SettingMeta(
+        key="pw_reset_rate_limit_per_ip_hour",
+        category="security",
+        type="int",
+        default=5,
+        description="Maximum password-reset requests per IP address per hour.",
+        env_var="PW_RESET_RATE_LIMIT_PER_IP_HOUR",
+    ),
+    SettingMeta(
+        key="pw_reset_rate_limit_per_email_hour",
+        category="security",
+        type="int",
+        default=3,
+        description="Maximum password-reset requests per email address per hour.",
+        env_var="PW_RESET_RATE_LIMIT_PER_EMAIL_HOUR",
+    ),
+    SettingMeta(
+        key="email_change_rate_limit_per_user_hour",
+        category="security",
+        type="int",
+        default=3,
+        description="Maximum email-change requests per user per hour.",
+        env_var="EMAIL_CHANGE_RATE_LIMIT_PER_USER_HOUR",
+    ),
+    SettingMeta(
+        key="password_reset_ttl_minutes",
+        category="security",
+        type="int",
+        default=15,
+        description="Password-reset token validity period in minutes.",
+        env_var="PASSWORD_RESET_TTL_MINUTES",
+    ),
+    SettingMeta(
+        key="email_change_ttl_minutes",
+        category="security",
+        type="int",
+        default=30,
+        description="Email-change token validity period in minutes.",
+        env_var="EMAIL_CHANGE_TTL_MINUTES",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Salesforce  (category="salesforce")
+# ---------------------------------------------------------------------------
+
+_register(
+    SettingMeta(
+        key="sf_api_version",
+        category="salesforce",
+        type="str",
+        default="v62.0",
+        description="Salesforce API version used for all Bulk API 2.0 requests, e.g. v62.0.",
+        env_var="SF_API_VERSION",
+    ),
+    SettingMeta(
+        key="sf_poll_interval_initial",
+        category="salesforce",
+        type="int",
+        default=5,
+        description="Initial polling interval in seconds for Bulk API job status checks.",
+        env_var="SF_POLL_INTERVAL_INITIAL",
+    ),
+    SettingMeta(
+        key="sf_poll_interval_max",
+        category="salesforce",
+        type="int",
+        default=30,
+        description="Maximum polling interval in seconds (exponential backoff cap) for Bulk API job status checks.",
+        env_var="SF_POLL_INTERVAL_MAX",
+    ),
+    SettingMeta(
+        key="sf_job_timeout_minutes",
+        category="salesforce",
+        type="int",
+        default=30,
+        description="Soft wall-clock limit in minutes for a Bulk API job. A warning is logged when exceeded; polling continues.",
+        env_var="SF_JOB_TIMEOUT_MINUTES",
+    ),
+    SettingMeta(
+        key="sf_job_max_poll_seconds",
+        category="salesforce",
+        type="int",
+        default=3600,
+        description="Hard cap in seconds on the polling loop for a single Bulk API job. Set to 0 to disable (unbounded). See SFBL-111.",
+        env_var="SF_JOB_MAX_POLL_SECONDS",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Partitioning  (category="partitioning")
+# ---------------------------------------------------------------------------
+
+_register(
+    SettingMeta(
+        key="default_partition_size",
+        category="partitioning",
+        type="int",
+        default=10_000,
+        description="Default number of data rows per CSV partition when LoadStep.partition_size is not explicitly set.",
+        env_var="DEFAULT_PARTITION_SIZE",
+    ),
+    SettingMeta(
+        key="max_partition_size",
+        category="partitioning",
+        type="int",
+        default=100_000_000,
+        description="Maximum allowed partition size (rows). Requests exceeding this are rejected.",
+        env_var="MAX_PARTITION_SIZE",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # Email  (category="email")
 # ---------------------------------------------------------------------------
 

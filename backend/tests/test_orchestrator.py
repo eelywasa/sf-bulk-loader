@@ -1212,12 +1212,16 @@ async def test_poll_timeout_marks_job_failed_and_emits_metric(
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
         patch("app.services.partition_executor.asyncio", proxy),
-        patch("app.services.partition_executor.settings") as mock_pe_settings,
+        patch("app.services.partition_executor.settings"),
+        patch("app.services.settings.service.settings_service") as mock_svc,
     ):
-        mock_pe_settings.sf_poll_interval_initial = 5
-        mock_pe_settings.sf_poll_interval_max = 30
-        mock_pe_settings.sf_job_timeout_minutes = 60
-        mock_pe_settings.sf_job_max_poll_seconds = 10
+        _pe_vals = {
+            "sf_poll_interval_initial": 5,
+            "sf_poll_interval_max": 30,
+            "sf_job_timeout_minutes": 60,
+            "sf_job_max_poll_seconds": 10,
+        }
+        mock_svc.get = AsyncMock(side_effect=lambda key: _pe_vals.get(key, 60))
         await _execute_run(run.id, db, db_factory=db_factory)
 
     assert bulk_job_poll_timeout_total._value.get() - before == 1
@@ -1278,12 +1282,16 @@ async def test_poll_timeout_zero_preserves_unbounded_polling(
         patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
         patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
         patch("app.services.partition_executor.asyncio", proxy),
-        patch("app.services.partition_executor.settings") as mock_pe_settings,
+        patch("app.services.partition_executor.settings"),
+        patch("app.services.settings.service.settings_service") as mock_svc,
     ):
-        mock_pe_settings.sf_poll_interval_initial = 5
-        mock_pe_settings.sf_poll_interval_max = 30
-        mock_pe_settings.sf_job_timeout_minutes = 60
-        mock_pe_settings.sf_job_max_poll_seconds = 0
+        _pe_vals = {
+            "sf_poll_interval_initial": 5,
+            "sf_poll_interval_max": 30,
+            "sf_job_timeout_minutes": 60,
+            "sf_job_max_poll_seconds": 0,
+        }
+        mock_svc.get = AsyncMock(side_effect=lambda key: _pe_vals.get(key, 60))
         await _execute_run(run.id, db, db_factory=db_factory)
 
     assert bulk_job_poll_timeout_total._value.get() - before == 0

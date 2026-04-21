@@ -55,7 +55,11 @@ class Settings(BaseSettings):
     db_pool_size: int = 20
     db_pool_max_overflow: int = 10
 
-    # Salesforce defaults
+    # Salesforce defaults — migrated to DB-backed settings (SFBL-156).
+    # These fields are retained for backward compatibility only (fallback when
+    # SettingsService is not yet initialised, e.g. during tests). The live
+    # values are sourced from the settings API / UI after first boot.
+    # → now managed via /settings/salesforce UI
     sf_api_version: str = "v62.0"
     sf_poll_interval_initial: int = 5
     sf_poll_interval_max: int = 30
@@ -66,40 +70,47 @@ class Settings(BaseSettings):
     # preserve the previous unbounded behaviour. See SFBL-111.
     sf_job_max_poll_seconds: int = 3600
 
-    # Partitioning defaults
+    # Partitioning defaults — migrated to DB-backed settings (SFBL-156).
+    # → now managed via /settings/partitioning UI
     default_partition_size: int = 10_000
     max_partition_size: int = 100_000_000
 
-    # Authentication
+    # Authentication — jwt_secret_key and jwt_algorithm are bootstrap-only secrets.
+    # jwt_expiry_minutes is migrated to DB-backed settings (SFBL-156) but retained
+    # here as a fallback for create_access_token() when SettingsService is unavailable.
     jwt_secret_key: str = ""
     jwt_secret_key_file: str = "/data/db/jwt_secret.key"
     jwt_algorithm: str = "HS256"
+    # → now managed via /settings/security UI
     jwt_expiry_minutes: int = 60
     admin_username: str | None = None
     admin_password: str | None = None
 
-    # Auth: login rate limit (SFBL-190)
+    # Auth: login rate limit — migrated to DB-backed settings (SFBL-156).
+    # → now managed via /settings/security UI
     # Per-IP sliding-window limit across all usernames.  Per-process — each
     # worker maintains its own counter.  See services/rate_limit.py for details.
     login_rate_limit_attempts: int = 20
     login_rate_limit_window_seconds: int = 300
 
-    # Auth: progressive lockout (SFBL-191)
+    # Auth: progressive lockout — migrated to DB-backed settings (SFBL-156).
+    # → now managed via /settings/security UI
     # Tier 1 — temporary auto-lock: if ``login_tier1_threshold`` failed attempts
     # accumulate within ``login_tier1_window_minutes``, set locked_until for
     # ``login_tier1_lock_minutes``. Status stays 'active'; lock expires silently.
     login_tier1_threshold: int = 5
     login_tier1_window_minutes: int = 15
-    login_tier1_lock_minutes: int = 30
+    login_tier1_lock_minutes: int = 15
     # Tier 2 — hard lock: transitions status to 'locked' (requires admin unlock).
     # Triggered by either:
     #   A) ``login_tier2_threshold`` cumulative failed logins since last success.
     #   B) ``login_tier2_tier1_count`` tier-1 locks within ``login_tier2_window_hours``.
-    login_tier2_threshold: int = 10
+    login_tier2_threshold: int = 15
     login_tier2_tier1_count: int = 3
     login_tier2_window_hours: int = 24
 
-    # Auth: password reset & email change
+    # Auth: password reset & email change — migrated to DB-backed settings (SFBL-156).
+    # → now managed via /settings/security UI
     pw_reset_rate_limit_per_ip_hour: int = 5
     pw_reset_rate_limit_per_email_hour: int = 3
     email_change_rate_limit_per_user_hour: int = 3

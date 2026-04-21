@@ -93,11 +93,22 @@ async def login(
     username = body.username
 
     # ── Per-IP rate limit check ───────────────────────────────────────────────
+    # Read rate-limit params from DB-backed settings (SFBL-156).
+    # value applies to new rate-limit windows; existing in-flight windows use the value active when they started
+    from app.services.settings.service import settings_service as _svc
+    _rl_attempts: int = (
+        await _svc.get("login_rate_limit_attempts") if _svc is not None
+        else settings.login_rate_limit_attempts
+    )
+    _rl_window: int = (
+        await _svc.get("login_rate_limit_window_seconds") if _svc is not None
+        else settings.login_rate_limit_window_seconds
+    )
     rate_key = f"login:ip:{ip}"
     allowed = await check_and_record(
         rate_key,
-        settings.login_rate_limit_attempts,
-        settings.login_rate_limit_window_seconds,
+        _rl_attempts,
+        _rl_window,
     )
     if not allowed:
         _log.warning(
@@ -315,9 +326,15 @@ async def login(
     )
     await db.commit()
 
+    # Read JWT expiry from DB-backed settings (SFBL-156).
+    from app.services.settings.service import settings_service as _svc
+    _jwt_expiry: int = (
+        await _svc.get("jwt_expiry_minutes") if _svc is not None
+        else settings.jwt_expiry_minutes
+    )
     return TokenResponse(
-        access_token=create_access_token(user),
-        expires_in=settings.jwt_expiry_minutes * 60,
+        access_token=create_access_token(user, expiry_minutes=_jwt_expiry),
+        expires_in=_jwt_expiry * 60,
         must_reset_password=must_reset,
     )
 

@@ -205,11 +205,19 @@ async def _process_partition_body(
             await db.commit()
 
             try:
-                interval = float(settings.sf_poll_interval_initial)
-                max_interval = float(settings.sf_poll_interval_max)
-                timeout_s = settings.sf_job_timeout_minutes * 60
+                # Read Salesforce poll/timeout settings from DB-backed settings (SFBL-156).
+                from app.services.settings.service import settings_service as _svc
+                if _svc is not None:
+                    interval = float(await _svc.get("sf_poll_interval_initial"))
+                    max_interval = float(await _svc.get("sf_poll_interval_max"))
+                    timeout_s = int(await _svc.get("sf_job_timeout_minutes")) * 60
+                    max_poll_s = int(await _svc.get("sf_job_max_poll_seconds"))
+                else:
+                    interval = float(settings.sf_poll_interval_initial)
+                    max_interval = float(settings.sf_poll_interval_max)
+                    timeout_s = settings.sf_job_timeout_minutes * 60
+                    max_poll_s = int(settings.sf_job_max_poll_seconds)
                 # SFBL-111: absolute cap on the poll loop. 0 = unbounded (opt-out).
-                max_poll_s = int(settings.sf_job_max_poll_seconds)
                 loop_start = asyncio.get_event_loop().time()
                 timeout_warned = False
                 last_processed = -1  # sentinel so first poll always writes
@@ -253,7 +261,7 @@ async def _process_partition_body(
                             step.id,
                             job_rec.partition_index,
                             sf_job_id,
-                            settings.sf_job_timeout_minutes,
+                            timeout_s // 60,
                             extra={"event_name": SalesforceEvent.BULK_JOB_POLLED,
                                    "outcome_code": OutcomeCode.TIMEOUT,
                                    "run_id": run_id, "step_id": str(step.id),

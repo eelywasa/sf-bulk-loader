@@ -332,9 +332,15 @@ async def build_retry_partitions(
             current_idx = 0
             rel_paths = storage.discover_files(step.csv_file_pattern)
             found = False
+            # Use step.partition_size if set; else fall back to DB-backed default (SFBL-156).
+            if step.partition_size is not None:
+                _retry_partition_size: int = step.partition_size
+            else:
+                _retry_partition_size = partition_size  # caller-supplied default
+
             for rel_path in rel_paths:
                 with storage.open_text(rel_path) as fh:
-                    for chunk in partition_csv(fh, step.partition_size):
+                    for chunk in partition_csv(fh, _retry_partition_size):
                         if current_idx == target_idx:
                             track_b_chunks.append(chunk)
                             found = True
