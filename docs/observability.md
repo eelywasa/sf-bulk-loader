@@ -152,6 +152,7 @@ Emitted by `app.api.me`, `app.api.auth_reset`, `app.api.profile`, and
 | `AuthEvent.EMAIL_CHANGE_REQUESTED` | `auth.email.change.requested` | Email-change verification link dispatched |
 | `AuthEvent.EMAIL_CHANGE_CONFIRMED` | `auth.email.change.confirmed` | Email-change token redeemed; email updated |
 | `AuthEvent.TOKEN_REJECTED` | `auth.token_rejected` | JWT rejected by the watermark check |
+| `AuthEvent.PERMISSION_DENIED` | `auth.permission_denied` | Authenticated user attempted an action they lack permission for; emitted at WARN with `required_permission`, `user_id`, `profile` fields (SFBL-195). See `docs/specs/rbac-permission-matrix.md` for the full enforcement matrix. |
 
 Auth flow outcome codes (subset of `OutcomeCode`):
 
