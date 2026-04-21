@@ -40,7 +40,6 @@ from typing import Any, ClassVar
 import aioboto3
 from botocore.exceptions import ClientError, EndpointConnectionError
 
-from app.config import settings
 from app.observability.sanitization import safe_exc_message
 from app.services.email.backends.base import BackendResult
 from app.services.email.errors import EmailErrorReason
@@ -166,6 +165,17 @@ def classify(exc: BaseException) -> tuple[EmailErrorReason, str]:
 # ── SesBackend ────────────────────────────────────────────────────────────────
 
 
+async def _get_svc():
+    """Return the SettingsService singleton."""
+    from app.services.settings.service import settings_service
+    if settings_service is None:
+        raise RuntimeError(
+            "SettingsService has not been initialised. "
+            "Call init_settings_service() in the app lifespan."
+        )
+    return settings_service
+
+
 class SesBackend:
     """AWS SES v2 email backend.
 
@@ -177,12 +187,9 @@ class SesBackend:
 
     # ── internal helpers ──────────────────────────────────────────────────────
 
-    def _session(self) -> aioboto3.Session:
-        region = settings.email_ses_region or None
-        return aioboto3.Session()
-
-    def _region_name(self) -> str | None:
-        return settings.email_ses_region or None
+    async def _region_name(self) -> str | None:
+        svc = await _get_svc()
+        return (await svc.get("email_ses_region")) or None
 
     # ── send ──────────────────────────────────────────────────────────────────
 
@@ -192,13 +199,18 @@ class SesBackend:
         Always returns a BackendResult; never raises.
         """
         try:
+            svc = await _get_svc()
+            from_address = (await svc.get("email_from_address")) or ""
+            config_set = (await svc.get("email_ses_configuration_set")) or ""
+            region = await self._region_name()
+
             session = aioboto3.Session()
             async with session.client(
                 "sesv2",
-                region_name=self._region_name(),
+                region_name=region,
             ) as client:
                 kwargs: dict[str, Any] = {
-                    "FromEmailAddress": settings.email_from_address,
+                    "FromEmailAddress": from_address,
                     "Destination": {"ToAddresses": [message.to]},
                     "Content": {
                         "Simple": {
@@ -209,7 +221,6 @@ class SesBackend:
                     "ReplyToAddresses": [message.reply_to] if message.reply_to else [],
                 }
 
-                config_set = settings.email_ses_configuration_set
                 if config_set:
                     kwargs["ConfigurationSetName"] = config_set
 
@@ -271,13 +282,14 @@ class SesBackend:
         client.  Either proves connectivity and credential validity.
         """
         try:
+            region = await self._region_name()
             session = aioboto3.Session()
             # Try SES v2 GetAccount first (available in aioboto3 >= 12 with
             # recent botocore models).
             try:
                 async with session.client(
                     "sesv2",
-                    region_name=self._region_name(),
+                    region_name=region,
                 ) as client:
                     await client.get_account()
                 return True
@@ -287,7 +299,7 @@ class SesBackend:
                 pass
             async with session.client(
                 "ses",
-                region_name=self._region_name(),
+                region_name=region,
             ) as client:
                 await client.get_send_quota()
             return True

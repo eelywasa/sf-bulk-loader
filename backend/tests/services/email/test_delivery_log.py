@@ -42,27 +42,28 @@ class TestInsert:
 
     @pytest.mark.asyncio
     async def test_to_addr_none_by_default(self, session):
-        from app.config import settings
-
-        original = settings.email_log_recipients
-        settings.email_log_recipients = False
-        try:
-            row = await delivery_log.insert(
-                session,
-                msg=_msg(),
-                backend_name="noop",
-                category=EmailCategory.SYSTEM,
-            )
-        finally:
-            settings.email_log_recipients = original
+        # The conftest autouse fixture sets email_log_recipients=False by default
+        row = await delivery_log.insert(
+            session,
+            msg=_msg(),
+            backend_name="noop",
+            category=EmailCategory.SYSTEM,
+        )
         assert row.to_addr is None
 
     @pytest.mark.asyncio
     async def test_to_addr_populated_when_opted_in(self, session):
-        from app.config import settings
+        import app.services.settings.service as _svc_module
+        from tests.services.email.conftest import _EMAIL_DEFAULTS
 
-        original = settings.email_log_recipients
-        settings.email_log_recipients = True
+        class _LogRecipientsSvc:
+            async def get(self, key: str):
+                if key == "email_log_recipients":
+                    return True
+                return _EMAIL_DEFAULTS.get(key)
+
+        original = _svc_module.settings_service
+        _svc_module.settings_service = _LogRecipientsSvc()  # type: ignore[assignment]
         try:
             row = await delivery_log.insert(
                 session,
@@ -71,7 +72,7 @@ class TestInsert:
                 category=EmailCategory.AUTH,
             )
         finally:
-            settings.email_log_recipients = original
+            _svc_module.settings_service = original
         assert row.to_addr == "bob@test.org"
 
     @pytest.mark.asyncio
@@ -86,15 +87,14 @@ class TestInsert:
 
     @pytest.mark.asyncio
     async def test_max_attempts_snapshot(self, session):
-        from app.config import settings
-
+        # The conftest autouse fixture sets email_max_retries=3 by default
         row = await delivery_log.insert(
             session,
             msg=_msg(),
             backend_name="noop",
             category=EmailCategory.SYSTEM,
         )
-        assert row.max_attempts == settings.email_max_retries + 1
+        assert row.max_attempts == 4  # email_max_retries (3) + 1
 
     @pytest.mark.asyncio
     async def test_idempotency_key_stored(self, session):

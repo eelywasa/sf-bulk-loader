@@ -1,6 +1,6 @@
 """SmtpBackend — aiosmtplib-based EmailBackend implementation.
 
-Reads configuration from `settings` at call time so send() picks up any
+Reads configuration from SettingsService at call time so send() picks up any
 config changes without requiring a backend reinstantiation.
 
 TLS modes (mutually exclusive in practice):
@@ -24,7 +24,6 @@ from typing import Any, ClassVar
 
 import aiosmtplib
 
-from app.config import settings
 from app.observability.sanitization import safe_exc_message
 from app.services.email.backends.base import BackendResult
 from app.services.email.errors import EmailErrorReason
@@ -114,14 +113,28 @@ def classify(exc: BaseException) -> tuple[EmailErrorReason, str]:
     return EmailErrorReason.UNKNOWN, type(exc).__name__
 
 
-def _build_mime(msg: EmailMessage) -> email.message.EmailMessage:
+async def _get_svc():
+    """Return the SettingsService singleton (lazy import to avoid circular deps)."""
+    from app.services.settings.service import settings_service
+    if settings_service is None:
+        raise RuntimeError(
+            "SettingsService has not been initialised. "
+            "Call init_settings_service() in the app lifespan."
+        )
+    return settings_service
+
+
+async def _build_mime(msg: EmailMessage) -> email.message.EmailMessage:
     """Build a stdlib EmailMessage MIME object from our EmailMessage."""
+    svc = await _get_svc()
+    from_address = (await svc.get("email_from_address")) or ""
+    from_name = (await svc.get("email_from_name")) or ""
+
     mime = email.message.EmailMessage()
 
     # From — prefer "Display Name <addr>" if email_from_name is set
-    from_address = settings.email_from_address or ""
-    if settings.email_from_name and from_address:
-        mime["From"] = f"{settings.email_from_name} <{from_address}>"
+    if from_name and from_address:
+        mime["From"] = f"{from_name} <{from_address}>"
     else:
         mime["From"] = from_address
 
@@ -149,8 +162,12 @@ def _build_mime(msg: EmailMessage) -> email.message.EmailMessage:
 class SmtpBackend:
     """aiosmtplib-based EmailBackend.
 
-    Reads SMTP config from `settings` on every send() call.
+    Reads SMTP config from SettingsService on every send() call.
     No persistent connection — a new SMTP session is opened per message.
+
+    Invariant: if email_backend=smtp but email_smtp_password is empty,
+    a RuntimeError is raised at send time with a clear message pointing to
+    the settings UI.
     """
 
     name: ClassVar[str] = "smtp"
@@ -161,17 +178,32 @@ class SmtpBackend:
         Always returns a BackendResult — never raises.  Provider exceptions
         are caught, classified, and embedded in the result.
         """
-        mime = _build_mime(msg)
-        timeout = settings.email_timeout_seconds
+        svc = await _get_svc()
+
+        # Enforce SMTP password invariant lazily (SFBL-155)
+        password = (await svc.get("email_smtp_password")) or ""
+        if not password:
+            raise RuntimeError(
+                "SMTP backend requires email_smtp_password to be set. "
+                "Configure it via /settings/email in the admin UI."
+            )
+
+        mime = await _build_mime(msg)
+        timeout = await svc.get("email_timeout_seconds")
+        host = (await svc.get("email_smtp_host")) or "localhost"
+        port = await svc.get("email_smtp_port")
+        username = (await svc.get("email_smtp_username")) or None
+        use_tls = await svc.get("email_smtp_use_tls")
+        starttls = await svc.get("email_smtp_starttls")
 
         try:
             async with aiosmtplib.SMTP(
-                hostname=settings.email_smtp_host or "localhost",
-                port=settings.email_smtp_port,
-                username=settings.email_smtp_username or None,
-                password=settings.email_smtp_password or None,
-                use_tls=settings.email_smtp_use_tls,
-                start_tls=settings.email_smtp_starttls if not settings.email_smtp_use_tls else False,
+                hostname=host,
+                port=port,
+                username=username,
+                password=password or None,
+                use_tls=use_tls,
+                start_tls=starttls if not use_tls else False,
                 timeout=timeout,
             ) as client:
                 send_result = await client.send_message(mime)
@@ -224,8 +256,15 @@ class SmtpBackend:
         healthcheck is budget-sensitive and must not hold up /dependencies probes).
         Does NOT perform STARTTLS or auth.
         """
-        host = settings.email_smtp_host or "localhost"
-        port = settings.email_smtp_port
+        try:
+            svc = await _get_svc()
+            host = (await svc.get("email_smtp_host")) or "localhost"
+            port = await svc.get("email_smtp_port")
+        except RuntimeError:
+            # SettingsService not initialised (e.g. test env) — fall back to localhost
+            host = "localhost"
+            port = 587
+
         try:
             _, writer = await asyncio.wait_for(
                 asyncio.open_connection(host, port),

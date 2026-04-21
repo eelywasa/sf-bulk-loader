@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Mapping
 
-from app.config import settings
 from app.observability.sanitization import safe_exc_message
 from app.services.email.message import EmailCategory
 from app.services.notifications.channels.base import ChannelResult
@@ -36,7 +35,7 @@ class EmailChannel:
         subscription: "NotificationSubscription",
         context: Mapping[str, Any],
     ) -> ChannelResult:
-        template_context = _flatten_context(context)
+        template_context = await _flatten_context(context)
         try:
             delivery = await self._email.send_template(
                 _TEMPLATE_NAME,
@@ -72,7 +71,7 @@ class EmailChannel:
         )
 
 
-def _flatten_context(context: Mapping[str, Any]) -> dict[str, Any]:
+async def _flatten_context(context: Mapping[str, Any]) -> dict[str, Any]:
     """Produce the flat key set required by ``notifications/run_complete``.
 
     The dispatcher passes a shared context of shape ``{"run": {...}, "is_test":
@@ -96,12 +95,23 @@ def _flatten_context(context: Mapping[str, Any]) -> dict[str, Any]:
         "failed_rows": run.get("total_errors") or 0,
         "started_at": run.get("started_at") or "",
         "ended_at": run.get("completed_at") or "",
-        "run_url": _build_run_url(run_id),
+        "run_url": await _build_run_url(run_id),
     }
 
 
-def _build_run_url(run_id: str) -> str:
-    base = (settings.frontend_base_url or "").rstrip("/")
+async def _get_frontend_base_url() -> str:
+    """Resolve frontend_base_url from SettingsService."""
+    try:
+        from app.services.settings.service import settings_service as _svc
+        if _svc is not None:
+            return (await _svc.get("frontend_base_url")) or ""
+    except Exception:
+        pass
+    return ""
+
+
+async def _build_run_url(run_id: str) -> str:
+    base = (await _get_frontend_base_url()).rstrip("/")
     if not run_id:
         return base or ""
     if not base:

@@ -63,9 +63,17 @@ def _email_hash(email: str) -> str:
     return hashlib.sha256(email.lower().encode()).hexdigest()
 
 
-def _reset_url(raw_token: str, request: Request) -> str:
+async def _get_frontend_base_url() -> str:
+    """Resolve frontend_base_url from SettingsService."""
+    from app.services.settings.service import settings_service as _svc
+    if _svc is not None:
+        return (await _svc.get("frontend_base_url")) or ""
+    return ""
+
+
+async def _reset_url(raw_token: str, request: Request) -> str:
     """Build the frontend reset URL from config or request origin."""
-    base = settings.frontend_base_url
+    base = await _get_frontend_base_url()
     if not base:
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
@@ -168,7 +176,7 @@ async def request_password_reset(
         await db.commit()
         await db.refresh(token_row)
 
-        reset_url = _reset_url(raw_token, request)
+        reset_url = await _reset_url(raw_token, request)
         display_name = user.display_name or user.username or user.email or "User"
 
         await email_service.send_template(

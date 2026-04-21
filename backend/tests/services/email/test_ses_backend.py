@@ -109,11 +109,23 @@ def reset_healthcheck_cache():
 
 
 @pytest.fixture()
-def ses_settings(monkeypatch):
-    """Patch settings fields relevant to SES sends."""
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_from_address", _FROM)
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_region", None)
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_configuration_set", None)
+def ses_settings():
+    """Install a SettingsService mock with SES defaults for the test."""
+    import app.services.settings.service as _svc_module
+
+    class _SesSvc:
+        async def get(self, key: str) -> object:
+            defaults = {
+                "email_from_address": _FROM,
+                "email_ses_region": "",
+                "email_ses_configuration_set": "",
+            }
+            return defaults.get(key, "")
+
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _SesSvc()  # type: ignore[assignment]
+    yield
+    _svc_module.settings_service = original
 
 
 # ── 1. Happy path ─────────────────────────────────────────────────────────────
@@ -234,44 +246,62 @@ async def test_send_timeout(ses_settings):
 # ── 8. Configuration-set inclusion ───────────────────────────────────────────
 
 
-async def test_config_set_included_when_set(monkeypatch):
+async def test_config_set_included_when_set():
     """ConfigurationSetName appears in the SES request when setting is set."""
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_from_address", _FROM)
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_region", None)
-    monkeypatch.setattr(
-        "app.services.email.backends.ses.settings.email_ses_configuration_set",
-        "my-config-set",
-    )
+    import app.services.settings.service as _svc_module
 
-    captured: dict[str, Any] = {}
-    mock_session = _make_mock_session(
-        send_return_value={"MessageId": "cfg-set-msg-id"},
-        capture_kwargs=captured,
-    )
-    with patch("aioboto3.Session", return_value=mock_session):
-        result = await _fresh_backend().send(_SAMPLE_MSG)
+    class _CfgSetSvc:
+        async def get(self, key: str) -> object:
+            defaults = {
+                "email_from_address": _FROM,
+                "email_ses_region": "",
+                "email_ses_configuration_set": "my-config-set",
+            }
+            return defaults.get(key, "")
+
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _CfgSetSvc()  # type: ignore[assignment]
+    try:
+        captured: dict[str, Any] = {}
+        mock_session = _make_mock_session(
+            send_return_value={"MessageId": "cfg-set-msg-id"},
+            capture_kwargs=captured,
+        )
+        with patch("aioboto3.Session", return_value=mock_session):
+            result = await _fresh_backend().send(_SAMPLE_MSG)
+    finally:
+        _svc_module.settings_service = original
 
     assert result["accepted"] is True
     assert "ConfigurationSetName" in captured
     assert captured["ConfigurationSetName"] == "my-config-set"
 
 
-async def test_config_set_absent_when_not_set(monkeypatch):
-    """ConfigurationSetName is NOT in the request when setting is None."""
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_from_address", _FROM)
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_region", None)
-    monkeypatch.setattr(
-        "app.services.email.backends.ses.settings.email_ses_configuration_set",
-        None,
-    )
+async def test_config_set_absent_when_not_set():
+    """ConfigurationSetName is NOT in the request when setting is empty."""
+    import app.services.settings.service as _svc_module
 
-    captured: dict[str, Any] = {}
-    mock_session = _make_mock_session(
-        send_return_value={"MessageId": "no-cfg-set-id"},
-        capture_kwargs=captured,
-    )
-    with patch("aioboto3.Session", return_value=mock_session):
-        result = await _fresh_backend().send(_SAMPLE_MSG)
+    class _NoCfgSetSvc:
+        async def get(self, key: str) -> object:
+            defaults = {
+                "email_from_address": _FROM,
+                "email_ses_region": "",
+                "email_ses_configuration_set": "",
+            }
+            return defaults.get(key, "")
+
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _NoCfgSetSvc()  # type: ignore[assignment]
+    try:
+        captured: dict[str, Any] = {}
+        mock_session = _make_mock_session(
+            send_return_value={"MessageId": "no-cfg-set-id"},
+            capture_kwargs=captured,
+        )
+        with patch("aioboto3.Session", return_value=mock_session):
+            result = await _fresh_backend().send(_SAMPLE_MSG)
+    finally:
+        _svc_module.settings_service = original
 
     assert result["accepted"] is True
     assert "ConfigurationSetName" not in captured
@@ -280,43 +310,91 @@ async def test_config_set_absent_when_not_set(monkeypatch):
 # ── 9. Region resolution ──────────────────────────────────────────────────────
 
 
-def test_region_name_explicit(monkeypatch):
+@pytest.mark.asyncio
+async def test_region_name_explicit():
     """Explicit EMAIL_SES_REGION is returned by _region_name()."""
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_region", "eu-west-1")
-    assert _fresh_backend()._region_name() == "eu-west-1"
+    import app.services.settings.service as _svc_module
+
+    class _RegionSvc:
+        async def get(self, key: str) -> object:
+            return "eu-west-1" if key == "email_ses_region" else ""
+
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _RegionSvc()  # type: ignore[assignment]
+    try:
+        result = await _fresh_backend()._region_name()
+        assert result == "eu-west-1"
+    finally:
+        _svc_module.settings_service = original
 
 
-def test_region_name_unset(monkeypatch):
+@pytest.mark.asyncio
+async def test_region_name_unset():
     """Unset EMAIL_SES_REGION returns None (boto3 resolves via default chain)."""
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_region", None)
-    assert _fresh_backend()._region_name() is None
+    import app.services.settings.service as _svc_module
+
+    class _NoRegionSvc:
+        async def get(self, key: str) -> object:
+            return "" if key == "email_ses_region" else ""
+
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _NoRegionSvc()  # type: ignore[assignment]
+    try:
+        result = await _fresh_backend()._region_name()
+        assert result is None
+    finally:
+        _svc_module.settings_service = original
 
 
-async def test_region_passed_to_client(monkeypatch):
+@pytest.mark.asyncio
+async def test_region_passed_to_client():
     """When EMAIL_SES_REGION is set, region_name is forwarded to client()."""
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_from_address", _FROM)
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_region", "ap-southeast-1")
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_configuration_set", None)
+    import app.services.settings.service as _svc_module
 
-    mock_session = _make_mock_session(send_return_value={"MessageId": "region-test-id"})
-    with patch("aioboto3.Session", return_value=mock_session) as mock_session_cls:
-        await _fresh_backend().send(_SAMPLE_MSG)
+    class _RegionSvc:
+        async def get(self, key: str) -> object:
+            return {
+                "email_from_address": _FROM,
+                "email_ses_region": "ap-southeast-1",
+                "email_ses_configuration_set": "",
+            }.get(key, "")
 
-    # Verify the client() call received the expected region_name
-    mock_session.client.assert_called_once_with("sesv2", region_name="ap-southeast-1")
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _RegionSvc()  # type: ignore[assignment]
+    try:
+        mock_session = _make_mock_session(send_return_value={"MessageId": "region-test-id"})
+        with patch("aioboto3.Session", return_value=mock_session):
+            await _fresh_backend().send(_SAMPLE_MSG)
+
+        # Verify the client() call received the expected region_name
+        mock_session.client.assert_called_once_with("sesv2", region_name="ap-southeast-1")
+    finally:
+        _svc_module.settings_service = original
 
 
-async def test_region_none_when_unset(monkeypatch):
+@pytest.mark.asyncio
+async def test_region_none_when_unset():
     """When EMAIL_SES_REGION is unset, region_name=None is passed to client()."""
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_from_address", _FROM)
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_region", None)
-    monkeypatch.setattr("app.services.email.backends.ses.settings.email_ses_configuration_set", None)
+    import app.services.settings.service as _svc_module
 
-    mock_session = _make_mock_session(send_return_value={"MessageId": "no-region-id"})
-    with patch("aioboto3.Session", return_value=mock_session):
-        await _fresh_backend().send(_SAMPLE_MSG)
+    class _NoRegionSvc:
+        async def get(self, key: str) -> object:
+            return {
+                "email_from_address": _FROM,
+                "email_ses_region": "",
+                "email_ses_configuration_set": "",
+            }.get(key, "")
 
-    mock_session.client.assert_called_once_with("sesv2", region_name=None)
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _NoRegionSvc()  # type: ignore[assignment]
+    try:
+        mock_session = _make_mock_session(send_return_value={"MessageId": "no-region-id"})
+        with patch("aioboto3.Session", return_value=mock_session):
+            await _fresh_backend().send(_SAMPLE_MSG)
+
+        mock_session.client.assert_called_once_with("sesv2", region_name=None)
+    finally:
+        _svc_module.settings_service = original
 
 
 # ── 10. healthcheck() cache ───────────────────────────────────────────────────
