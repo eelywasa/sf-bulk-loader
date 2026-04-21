@@ -40,6 +40,10 @@ _log = logging.getLogger(__name__)
 _CACHE_TTL_HEADER = "X-Settings-Cache-TTL"
 _CACHE_TTL_VALUE = "60"
 
+# Must match the dispatch table in build_email_service() — persisting any other
+# value silently breaks startup on the next process restart.
+_EMAIL_BACKEND_ALLOWED = {"noop", "smtp", "ses"}
+
 router = APIRouter(
     prefix="/api/settings",
     tags=["settings"],
@@ -199,9 +203,25 @@ async def patch_category_settings(
         # 4. Type coercion
         try:
             from app.services.settings.service import _coerce  # noqa: PLC0415
-            coerced[key] = _coerce(value, meta.type)
+            coerced_value = _coerce(value, meta.type)
         except (ValueError, TypeError):
             errors.append({"field": key, "error": f"cannot coerce value to type '{meta.type}'"})
+            continue
+
+        # 5. Enum-style allow-list for known-constrained keys.  Kept inline here
+        # rather than adding an `allowed_values` field to SettingMeta since this
+        # is the only key (today) with a hard enum constraint at write time.
+        # Accepting arbitrary strings silently persists them, which then breaks
+        # init_email_service_async() on next restart because build_email_service
+        # raises for unknown backends.
+        if key == "email_backend" and coerced_value not in _EMAIL_BACKEND_ALLOWED:
+            errors.append({
+                "field": key,
+                "error": f"must be one of {sorted(_EMAIL_BACKEND_ALLOWED)}",
+            })
+            continue
+
+        coerced[key] = coerced_value
 
     if errors:
         raise HTTPException(

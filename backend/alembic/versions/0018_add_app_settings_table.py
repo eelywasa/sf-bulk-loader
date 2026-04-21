@@ -36,7 +36,7 @@ def upgrade() -> None:
             "updated_at",
             sa.DateTime(),
             nullable=False,
-            server_default=sa.text("(datetime('now'))"),
+            server_default=sa.func.now(),
         ),
         sa.PrimaryKeyConstraint("key"),
     )

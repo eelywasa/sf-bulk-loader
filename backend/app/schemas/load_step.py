@@ -47,7 +47,7 @@ class LoadStepBase(BaseModel):
     external_id_field: Optional[str] = None
     csv_file_pattern: Optional[str] = None
     soql: Optional[str] = None
-    partition_size: int = 10_000
+    partition_size: Optional[int] = None
     assignment_rule_id: Optional[str] = None
     input_connection_id: Optional[str] = None
 

@@ -299,6 +299,37 @@ def test_patch_security_invalid_type_returns_422(client: TestClient) -> None:
     ), f"Expected type error for login_tier1_threshold, got: {detail}"
 
 
+def test_patch_email_backend_rejects_unknown_value(client: TestClient) -> None:
+    """PATCH /email with an unsupported email_backend → 422.
+
+    Persisting an unknown backend string silently breaks startup on the next
+    process restart because build_email_service raises for unknown backends.
+    """
+    _admin_client(client, _admin_user())
+    resp = client.patch(
+        "/api/settings/email",
+        json={"email_backend": "sendgrid"},
+    )
+    assert resp.status_code == 422
+
+    detail = resp.json().get("detail", [])
+    assert any(
+        e.get("field") == "email_backend" and "noop" in e.get("error", "")
+        for e in detail
+    ), f"Expected allow-list error for email_backend, got: {detail}"
+
+
+def test_patch_email_backend_accepts_known_values(client: TestClient) -> None:
+    """PATCH /email with each supported backend → 200."""
+    _admin_client(client, _admin_user())
+    for backend in ("noop", "smtp", "ses"):
+        resp = client.patch(
+            "/api/settings/email",
+            json={"email_backend": backend},
+        )
+        assert resp.status_code == 200, f"backend={backend} failed: {resp.text}"
+
+
 def test_patch_cache_ttl_header(client: TestClient) -> None:
     """PATCH /{category} must include X-Settings-Cache-TTL: 60 header."""
     _admin_client(client, _admin_user())
