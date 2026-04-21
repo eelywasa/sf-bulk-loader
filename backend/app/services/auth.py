@@ -79,7 +79,7 @@ def decode_access_token(token: str) -> dict:
 # ── FastAPI dependencies ──────────────────────────────────────────────────────
 
 
-_DESKTOP_USER = User(id="desktop", username="desktop", role="admin", status="active", is_admin=True)
+_DESKTOP_USER = User(id="desktop", username="desktop", status="active", is_admin=True)
 
 
 async def get_current_user(
@@ -296,7 +296,6 @@ async def seed_admin(db: AsyncSession) -> None:
     admin = User(
         username=username,
         hashed_password=hash_password(password),
-        role="admin",
         is_admin=True,
         status="active",
     )

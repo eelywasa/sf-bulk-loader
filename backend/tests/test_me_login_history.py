@@ -26,11 +26,14 @@ from tests.conftest import _TestSession, _run_async
 
 
 def _make_user(**kwargs) -> User:
+    # role kwarg dropped in migration 0022 — pop and convert to is_admin.
+    role = kwargs.pop("role", None)
+    if role == "admin" and "is_admin" not in kwargs:
+        kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
         username=f"user_{uuid.uuid4().hex[:8]}",
         hashed_password=hash_password("Str0ng&P4ss!"),
-        role="user",
         status="active",
     )
     defaults.update(kwargs)

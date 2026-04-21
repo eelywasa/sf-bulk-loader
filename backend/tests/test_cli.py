@@ -34,7 +34,7 @@ async def _create_user(
             username=username,
             hashed_password=hash_password(password),
             email=username,
-            role=role,
+            is_admin=(role == "admin"),
             status=status,
         )
         session.add(user)
@@ -166,7 +166,6 @@ async def test_unlock_active_user_stays_active(capsys):
             username="activelocked@example.com",
             hashed_password=hash_password("Pass123!"),
             email="activelocked@example.com",
-            role="user",
             status="active",
             failed_login_count=3,
             locked_until=datetime.now(timezone.utc) + timedelta(minutes=10),
@@ -230,7 +229,7 @@ async def test_list_admins_shows_locked_status(capsys):
             username="lockedadmin@example.com",
             hashed_password=hash_password("Pass123!"),
             email="lockedadmin@example.com",
-            role="admin",
+            is_admin=True,
             status="active",
             locked_until=datetime.now(timezone.utc) + timedelta(minutes=10),
         )

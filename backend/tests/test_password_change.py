@@ -29,7 +29,7 @@ def _seed_user(
         id=str(uuid.uuid4()),
         username=username,
         hashed_password=hash_password(password) if password is not None else None,
-        role=role,
+        is_admin=(role == "admin"),
         status="active" if is_active else "deactivated",
     )
 

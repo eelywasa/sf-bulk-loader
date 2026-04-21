@@ -34,7 +34,7 @@ def _make_admin() -> User:
         id=str(uuid.uuid4()),
         username="admin-test",
         hashed_password=hash_password("Test-Admin-P4ss!"),
-        role="admin",
+        is_admin=True,
         status="active",
     )
 
@@ -44,7 +44,7 @@ def _make_regular_user() -> User:
         id=str(uuid.uuid4()),
         username="regular-user",
         hashed_password=hash_password("Test-Admin-P4ss!"),
-        role="user",
+        is_admin=False,
         status="active",
     )
 
