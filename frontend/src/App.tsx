@@ -19,6 +19,7 @@ import SettingsEmailPage from './pages/SettingsEmailPage'
 import SettingsSalesforcePage from './pages/SettingsSalesforcePage'
 import SettingsPartitioningPage from './pages/SettingsPartitioningPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
+import ForbiddenPage from './pages/ForbiddenPage'
 
 const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter : createBrowserRouter
 
@@ -27,6 +28,8 @@ const router = createRouter([
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/reset-password/:token', element: <ResetPassword /> },
   { path: '/verify-email/:token', element: <VerifyEmail /> },
+  // /403 is accessible even when authenticated (no ProtectedRoute wrapper)
+  { path: '/403', element: <ForbiddenPage /> },
   {
     element: (
       <ProtectedRoute>
@@ -35,23 +38,109 @@ const router = createRouter([
     ),
     children: [
       { path: '/', element: <Dashboard /> },
-      { path: '/connections', element: <Connections /> },
-      { path: '/plans', element: <PlansPage /> },
-      { path: '/plans/:id', element: <PlanEditor /> },
-      { path: '/runs', element: <RunsPage /> },
-      { path: '/runs/:id', element: <RunDetail /> },
-      { path: '/runs/:runId/jobs/:jobId', element: <JobDetail /> },
-      { path: '/files', element: <FilesPage /> },
+      {
+        path: '/connections',
+        element: (
+          <ProtectedRoute permission="connections.view">
+            <Connections />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/plans',
+        element: (
+          <ProtectedRoute permission="plans.view">
+            <PlansPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/plans/:id',
+        element: (
+          <ProtectedRoute permission="plans.view">
+            <PlanEditor />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/runs',
+        element: (
+          <ProtectedRoute permission="runs.view">
+            <RunsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/runs/:id',
+        element: (
+          <ProtectedRoute permission="runs.view">
+            <RunDetail />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/runs/:runId/jobs/:jobId',
+        element: (
+          <ProtectedRoute permission="runs.view">
+            <JobDetail />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/files',
+        element: (
+          <ProtectedRoute permission="files.view">
+            <FilesPage />
+          </ProtectedRoute>
+        ),
+      },
       // Legacy /settings → tabs for Notifications; kept for backward compat
-      { path: '/settings', element: <Settings /> },
+      {
+        path: '/settings',
+        element: (
+          <ProtectedRoute permission="system.settings">
+            <Settings />
+          </ProtectedRoute>
+        ),
+      },
       // Admin settings pages (DB-backed, SFBL-157)
-      { path: '/settings/email', element: <SettingsEmailPage /> },
-      { path: '/settings/salesforce', element: <SettingsSalesforcePage /> },
-      { path: '/settings/partitioning', element: <SettingsPartitioningPage /> },
-      { path: '/settings/security', element: <SettingsSecurityPage /> },
+      {
+        path: '/settings/email',
+        element: (
+          <ProtectedRoute permission="system.settings">
+            <SettingsEmailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/settings/salesforce',
+        element: (
+          <ProtectedRoute permission="system.settings">
+            <SettingsSalesforcePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/settings/partitioning',
+        element: (
+          <ProtectedRoute permission="system.settings">
+            <SettingsPartitioningPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/settings/security',
+        element: (
+          <ProtectedRoute permission="system.settings">
+            <SettingsSecurityPage />
+          </ProtectedRoute>
+        ),
+      },
       { path: '/profile', element: <Profile /> },
     ],
   },
+  // Catch-all redirect
+  { path: '*', element: <Navigate to="/" replace /> },
 ])
 
 export default function App() {

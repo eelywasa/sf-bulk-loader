@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { type Theme, useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
+import { usePermission } from '../hooks/usePermission'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
@@ -30,14 +31,16 @@ interface NavItem {
   label: string
   icon: IconDefinition
   end?: boolean
+  /** Permission key required to see this nav item. Omit for always-visible items. */
+  permission?: string
 }
 
-const navItems: NavItem[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: faGaugeHigh, end: true },
-  { path: '/files', label: 'Files', icon: faFolderOpen },
-  { path: '/connections', label: 'Connections', icon: faPlug },
-  { path: '/plans', label: 'Load Plans', icon: faListCheck },
-  { path: '/runs', label: 'Runs', icon: faPlay },
+  { path: '/files', label: 'Files', icon: faFolderOpen, permission: 'files.view' },
+  { path: '/connections', label: 'Connections', icon: faPlug, permission: 'connections.view' },
+  { path: '/plans', label: 'Load Plans', icon: faListCheck, permission: 'plans.view' },
+  { path: '/runs', label: 'Runs', icon: faPlay, permission: 'runs.view' },
 ]
 
 const themeOptions: { value: Theme; label: string }[] = [
@@ -49,6 +52,7 @@ const themeOptions: { value: Theme; label: string }[] = [
 function SettingsMenu({ collapsed }: { collapsed: boolean }) {
   const { theme, setTheme } = useTheme()
   const { authRequired } = useAuth()
+  const canSettings = usePermission('system.settings')
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
@@ -116,8 +120,8 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
             </button>
           )}
 
-          {/* Admin settings rows — only shown to admins */}
-          {authRequired && (
+          {/* Admin settings rows — only shown to users with system.settings permission */}
+          {authRequired && canSettings && (
             <>
               <button
                 onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/email') }}
@@ -199,10 +203,15 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
 }
 
 export default function AppShell() {
-  const { user, logout, authRequired } = useAuth()
+  const { user, logout, authRequired, permissions } = useAuth()
   const displayName = user?.display_name ?? user?.username ?? null
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('sidebarCollapsed') === 'true'
+  )
+
+  // Filter nav items to only those the user has permission to see
+  const navItems = ALL_NAV_ITEMS.filter(
+    (item) => !item.permission || permissions.has(item.permission),
   )
 
   function toggleCollapsed() {

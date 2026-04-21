@@ -34,8 +34,8 @@ const MOCK_USER: UserResponse = {
   username: 'alice',
   email: 'alice@example.com',
   display_name: 'Alice',
-  role: 'user',
-  is_active: true,
+  profile: { name: 'operator' },
+  permissions: ['plans.view', 'runs.view', 'files.view', 'connections.view'],
 }
 
 const MOCK_EXISTING: NotificationSubscription = {

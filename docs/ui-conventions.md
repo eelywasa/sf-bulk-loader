@@ -284,6 +284,43 @@ one-off equivalents inline.
 | `Progress` | Percentage or step-based progress indicators |
 | `CsvPreviewPanel` | All CSV file preview contexts |
 | `ComboInput` | Text input with autocomplete suggestions |
+| `PermissionGate` | Conditionally render UI based on RBAC permissions |
+
+### PermissionGate
+
+`src/components/PermissionGate.tsx` — conditionally renders children based on the current user's RBAC permissions.
+
+```tsx
+// Single permission check
+<PermissionGate permission="connections.manage">
+  <Button>New Connection</Button>
+</PermissionGate>
+
+// Any-of (OR) check
+<PermissionGate any={['plans.manage', 'runs.execute']}>
+  <ActionMenu />
+</PermissionGate>
+
+// All-of (AND) check
+<PermissionGate all={['plans.manage', 'runs.execute']}>
+  <AdvancedButton />
+</PermissionGate>
+
+// With fallback content
+<PermissionGate permission="files.view_contents" fallback={<p>Access restricted.</p>}>
+  <CsvPreviewPanel ... />
+</PermissionGate>
+```
+
+Props:
+- `permission?: string` — a single permission key; the gate passes if the user has it
+- `any?: string[]` — an OR list; passes if the user has at least one
+- `all?: string[]` — an AND list; passes if the user has all of them
+- `fallback?: React.ReactNode` — rendered when the gate does not pass (default: `null`)
+
+For imperative checks outside of JSX, use `usePermission(key)` (returns `boolean`) or `usePermissions()` (returns `Set<string>`) from `src/hooks/usePermission.ts`. Both hooks use `useAuthOptional()` internally and return `false` / empty `Set` when called outside an `AuthProvider`.
+
+**Rule:** Never use permission checks to hide navigation items from the URL bar (that is route-level enforcement via `ProtectedRoute`). Use `PermissionGate` and `usePermission` for in-page element visibility only.
 
 ### Button variants
 

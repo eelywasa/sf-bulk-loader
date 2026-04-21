@@ -6,6 +6,8 @@ import { useToast } from '../components/ui/Toast'
 import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from '../components/ui/formStyles'
 import { connectionsApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
+import PermissionGate from '../components/PermissionGate'
+import { usePermission } from '../hooks/usePermission'
 import type {
   Connection,
   ConnectionCreate,
@@ -91,6 +93,7 @@ const EMPTY_INPUT_FORM: InputConnFormData = {
 export default function Connections() {
   const queryClient = useQueryClient()
   const toast = useToast()
+  const canManage = usePermission('connections.manage')
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false)
@@ -442,26 +445,30 @@ export default function Connections() {
           >
             Test
           </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={(e) => {
-              e.stopPropagation()
-              openEdit(c)
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={(e) => {
-              e.stopPropagation()
-              setDeleteTarget(c)
-            }}
-          >
-            Delete
-          </Button>
+          {canManage && (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openEdit(c)
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDeleteTarget(c)
+                }}
+              >
+                Delete
+              </Button>
+            </>
+          )}
         </div>
       ),
     },
@@ -518,26 +525,30 @@ export default function Connections() {
           >
             Test
           </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={(e) => {
-              e.stopPropagation()
-              openInputEdit(c)
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={(e) => {
-              e.stopPropagation()
-              setInputDeleteTarget(c)
-            }}
-          >
-            Delete
-          </Button>
+          {canManage && (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openInputEdit(c)
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setInputDeleteTarget(c)
+                }}
+              >
+                Delete
+              </Button>
+            </>
+          )}
         </div>
       ),
     },
@@ -568,7 +579,9 @@ export default function Connections() {
               JWT Bearer auth — one entry per org.
             </p>
           </div>
-          <Button onClick={openCreate}>New Salesforce Connection</Button>
+          <PermissionGate permission="connections.manage">
+            <Button onClick={openCreate}>New Salesforce Connection</Button>
+          </PermissionGate>
         </div>
 
         {/* SF test result panel */}
@@ -655,7 +668,9 @@ export default function Connections() {
               Remote S3 buckets used as CSV input sources or output destinations for load steps.
             </p>
           </div>
-          <Button onClick={openInputCreate}>New Storage Connection</Button>
+          <PermissionGate permission="connections.manage">
+            <Button onClick={openInputCreate}>New Storage Connection</Button>
+          </PermissionGate>
         </div>
 
         {/* Input test result panel */}

@@ -7,6 +7,7 @@ import { ApiError } from '../api/client'
 import type { InputConnection, InputDirectoryEntry } from '../api/types'
 import { Card, CsvPreviewPanel, EmptyState } from '../components/ui'
 import { ALERT_ERROR, LABEL_CLASS, SELECT_CLASS } from '../components/ui/formStyles'
+import { usePermission } from '../hooks/usePermission'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -139,6 +140,7 @@ export default function FilesPage() {
   const [currentPath, setCurrentPath] = useState('')
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [source, setSource] = useState<string>('local')
+  const canViewContents = usePermission('files.view_contents')
 
   function handleNavigate(path: string) {
     setCurrentPath(path)
@@ -273,12 +275,23 @@ export default function FilesPage() {
 
   let previewPanel: React.ReactNode
 
-  if (!selectedFile) {
+  if (!canViewContents) {
+    // Viewer role: show a callout explaining previews are restricted
+    previewPanel = (
+      <Card>
+        <div className="py-6 px-4 text-center space-y-2">
+          <p className="text-sm font-medium text-content-secondary">File previews are not available for your role.</p>
+          <p className="text-xs text-content-muted">Contact your administrator to request access.</p>
+        </div>
+      </Card>
+    )
+  } else if (!selectedFile) {
     previewPanel = <PreviewEmpty />
   } else {
     previewPanel = (
       <Card>
         <CsvPreviewPanel
+          key={selectedFile}
           queryKey={['files', 'preview', source, selectedFile]}
           fetchPage={(params) =>
             isOutputSource

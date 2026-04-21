@@ -1,12 +1,36 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../../components/ui/Toast'
+import { ThemeProvider } from '../../context/ThemeContext'
+import { AuthProvider } from '../../context/AuthContext'
+import * as client from '../../api/client'
 import PlansPage from '../../pages/PlansPage'
-import type { LoadPlan, Connection } from '../../api/types'
+import type { LoadPlan, Connection, RuntimeConfig, UserResponse } from '../../api/types'
+
+const MOCK_RUNTIME: RuntimeConfig = {
+  auth_mode: 'local',
+  app_distribution: 'self_hosted',
+  transport_mode: 'http',
+  input_storage_mode: 'local',
+}
+
+const MOCK_USER: UserResponse = {
+  id: 'test-user',
+  username: 'testuser',
+  email: null,
+  display_name: null,
+  is_admin: true,
+  profile: { name: 'admin' },
+  permissions: [
+    'plans.view', 'plans.manage', 'runs.execute',
+    'connections.view', 'runs.view', 'files.view',
+    'system.settings',
+  ],
+}
 
 // ─── Mock the endpoints module ─────────────────────────────────────────────────
 
@@ -72,18 +96,28 @@ function renderPlansPage() {
     },
   })
 
+  localStorage.setItem('auth_token', 'test-token')
+  vi.spyOn(client, 'apiFetch').mockImplementation((url: string) => {
+    if (url === '/api/runtime') return Promise.resolve(MOCK_RUNTIME)
+    return Promise.resolve(MOCK_USER)
+  })
+
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <MemoryRouter initialEntries={['/plans']}>
-          <Routes>
-            <Route path="/plans" element={<PlansPage />} />
-            <Route path="/plans/new" element={<div data-testid="new-plan-page" />} />
-            <Route path="/plans/:id" element={<div data-testid="plan-editor-page" />} />
-          </Routes>
-        </MemoryRouter>
-      </ToastProvider>
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <MemoryRouter initialEntries={['/plans']}>
+              <Routes>
+                <Route path="/plans" element={<PlansPage />} />
+                <Route path="/plans/new" element={<div data-testid="new-plan-page" />} />
+                <Route path="/plans/:id" element={<div data-testid="plan-editor-page" />} />
+              </Routes>
+            </MemoryRouter>
+          </ToastProvider>
+        </QueryClientProvider>
+      </AuthProvider>
+    </ThemeProvider>,
   )
 }
 
@@ -99,6 +133,11 @@ describe('PlansPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(connectionsApi.list).mockResolvedValue([conn1])
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
   })
 
   // ── Loading / empty / error states ─────────────────────────────────────────

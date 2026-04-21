@@ -5,6 +5,8 @@ import { Button, DataTable, EmptyState, Modal, type Column } from '../components
 import { useToast } from '../components/ui/Toast'
 import { ALERT_ERROR } from '../components/ui/formStyles'
 import { plansApi, connectionsApi } from '../api/endpoints'
+import PermissionGate from '../components/PermissionGate'
+import { usePermission } from '../hooks/usePermission'
 import type { LoadPlan } from '../api/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -23,6 +25,7 @@ export default function PlansPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const toast = useToast()
+  const canManage = usePermission('plans.manage')
 
   const [deleteTarget, setDeleteTarget] = useState<LoadPlan | null>(null)
 
@@ -106,38 +109,44 @@ export default function PlansPage() {
       className: 'text-right whitespace-nowrap',
       render: (p) => (
         <div className="flex items-center justify-end gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={(e) => {
-              e.stopPropagation()
-              navigate(`/plans/${p.id}`)
-            }}
-          >
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={duplicateMutation.isPending && duplicateMutation.variables === p.id}
-            disabled={duplicateMutation.isPending}
-            onClick={(e) => {
-              e.stopPropagation()
-              duplicateMutation.mutate(p.id)
-            }}
-          >
-            Duplicate
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={(e) => {
-              e.stopPropagation()
-              setDeleteTarget(p)
-            }}
-          >
-            Delete
-          </Button>
+          {canManage && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate(`/plans/${p.id}`)
+              }}
+            >
+              Edit
+            </Button>
+          )}
+          {canManage && (
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={duplicateMutation.isPending && duplicateMutation.variables === p.id}
+              disabled={duplicateMutation.isPending}
+              onClick={(e) => {
+                e.stopPropagation()
+                duplicateMutation.mutate(p.id)
+              }}
+            >
+              Duplicate
+            </Button>
+          )}
+          {canManage && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={(e) => {
+                e.stopPropagation()
+                setDeleteTarget(p)
+              }}
+            >
+              Delete
+            </Button>
+          )}
         </div>
       ),
     },
@@ -155,7 +164,9 @@ export default function PlansPage() {
             Define and manage data load configurations.
           </p>
         </div>
-        <Button onClick={() => navigate('/plans/new')}>New Plan</Button>
+        <PermissionGate permission="plans.manage">
+          <Button onClick={() => navigate('/plans/new')}>New Plan</Button>
+        </PermissionGate>
       </div>
 
       {/* Content */}
@@ -177,7 +188,11 @@ export default function PlansPage() {
         <EmptyState
           title="No load plans yet"
           description="Create a load plan to define which Salesforce objects to load, in what order, with which CSV files."
-          action={<Button onClick={() => navigate('/plans/new')}>Create Plan</Button>}
+          action={
+            canManage ? (
+              <Button onClick={() => navigate('/plans/new')}>Create Plan</Button>
+            ) : undefined
+          }
         />
       ) : (
         <DataTable
