@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.permissions import FILES_VIEW, FILES_VIEW_CONTENTS, require_permission
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
@@ -32,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["utility"])
 ws_router = APIRouter(tags=["websocket"])
+
+_require_files_view = require_permission(FILES_VIEW)
+_require_files_view_contents = require_permission(FILES_VIEW_CONTENTS)
 
 
 # ── Metrics endpoint ────────────────────────────────────────────────────────────
@@ -87,7 +91,7 @@ async def list_input_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
     source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_require_files_view),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories at the given path within the input directory."""
     try:
@@ -128,7 +132,7 @@ async def preview_input_file(
     filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
     source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_require_files_view_contents),
 ) -> InputPreviewResponse:
     """Return a paginated page of data rows (plus header) from a CSV file."""
     try:
@@ -197,7 +201,7 @@ async def preview_input_file(
 @router.get("/api/files/output", response_model=List[InputDirectoryEntry])
 async def list_output_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_require_files_view),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories at the given path within the local output directory."""
     storage = LocalInputStorage(settings.output_dir)
@@ -225,7 +229,7 @@ async def preview_output_file(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_require_files_view_contents),
 ) -> InputPreviewResponse:
     """Return a paginated page of data rows from a CSV file in the local output directory."""
     parsed_filters: list[dict[str, str]] | None = None

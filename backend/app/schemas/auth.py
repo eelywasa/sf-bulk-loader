@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
@@ -19,6 +19,12 @@ class TokenResponse(BaseModel):
     must_reset_password: bool = False
 
 
+class ProfileSummary(BaseModel):
+    """Minimal profile shape included in the /me response."""
+
+    name: str
+
+
 class UserResponse(BaseModel):
     id: str
     username: Optional[str]
@@ -30,6 +36,11 @@ class UserResponse(BaseModel):
     # computed by the User.is_active property on the ORM model.
     status: str
     is_active: bool
+    # SFBL-195: profile and permissions for frontend permission checks.
+    # profile.name is "admin" | "operator" | "viewer" | "desktop" (desktop mode).
+    # permissions is a sorted list of permission keys held by the user.
+    profile: Optional[ProfileSummary] = None
+    permissions: List[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 

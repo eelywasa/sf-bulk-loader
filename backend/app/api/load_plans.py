@@ -21,13 +21,18 @@ from app.schemas.load_plan import (
     LoadPlanUpdate,
 )
 from app.schemas.load_run import LoadRunResponse
+from app.auth.permissions import PLANS_MANAGE, PLANS_VIEW, RUNS_EXECUTE, require_permission
 from app.services import orchestrator
 from app.services.auth import get_current_user
 from app.services import load_plan_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/load-plans", tags=["load-plans"], dependencies=[Depends(get_current_user)])
+_require_view = require_permission(PLANS_VIEW)
+_require_manage = require_permission(PLANS_MANAGE)
+_require_execute = require_permission(RUNS_EXECUTE)
+
+router = APIRouter(prefix="/api/load-plans", tags=["load-plans"], dependencies=[Depends(_require_view)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -73,7 +78,11 @@ async def _validate_output_connection(output_connection_id: str, db: AsyncSessio
 
 
 @router.post("/", response_model=LoadPlanResponse, status_code=status.HTTP_201_CREATED)
-async def create_load_plan(data: LoadPlanCreate, db: AsyncSession = Depends(get_db)) -> LoadPlan:
+async def create_load_plan(
+    data: LoadPlanCreate,
+    db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
+) -> LoadPlan:
     # Validate the referenced Salesforce connection exists
     conn = await db.get(Connection, data.connection_id)
     if conn is None:
@@ -101,6 +110,7 @@ async def update_load_plan(
     plan_id: str,
     data: LoadPlanUpdate,
     db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
 ) -> LoadPlan:
     plan = await _get_plan_with_steps(plan_id, db)
     update_data = data.model_dump(exclude_unset=True)
@@ -121,7 +131,11 @@ async def update_load_plan(
 
 
 @router.delete("/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_load_plan(
+    plan_id: str,
+    db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
+) -> None:
     plan = await db.get(LoadPlan, plan_id)
     if plan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
@@ -130,7 +144,11 @@ async def delete_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> 
 
 
 @router.post("/{plan_id}/duplicate", response_model=LoadPlanResponse, status_code=status.HTTP_201_CREATED)
-async def duplicate_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> LoadPlan:
+async def duplicate_load_plan(
+    plan_id: str,
+    db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
+) -> LoadPlan:
     """Create a copy of an existing load plan including all its steps."""
     return await load_plan_service.duplicate_plan(db, plan_id)
 
@@ -140,7 +158,7 @@ async def start_load_run(
     plan_id: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_require_execute),
 ) -> LoadRun:
     """Create a new Load Run for a plan and enqueue it for background execution."""
     run = await load_plan_service.create_run(db, plan_id, current_user.username)

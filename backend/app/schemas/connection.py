@@ -39,8 +39,31 @@ class ConnectionUpdate(BaseModel):
     is_sandbox: Optional[bool] = None
 
 
+class ConnectionPublic(BaseModel):
+    """Public connection shape — no credential fields.
+
+    Returned to users holding ``connections.view`` but not ``connections.view_credentials``.
+    Contains only the non-sensitive identification fields.
+    """
+
+    id: str
+    name: str
+    instance_url: str
+    login_url: str
+    username: str
+    is_sandbox: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ConnectionResponse(ConnectionBase):
-    """Secrets (private_key, access_token) are intentionally omitted."""
+    """Full connection shape — credential fields included (minus private_key / access_token).
+
+    Returned to users holding ``connections.view_credentials``.
+    Secrets (private_key, access_token) are intentionally omitted from both shapes.
+    """
 
     id: str
     created_at: datetime

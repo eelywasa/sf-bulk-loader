@@ -1,4 +1,4 @@
-"""Settings API — admin-only CRUD for DB-backed runtime settings (SFBL-154).
+"""Settings API — settings CRUD for DB-backed runtime settings (SFBL-154).
 
 Endpoints
 ---------
@@ -6,7 +6,9 @@ GET  /api/settings                  — all categories (secrets masked)
 GET  /api/settings/{category}       — single category (secrets masked, 404 if unknown)
 PATCH /api/settings/{category}      — update keys within a category
 
-All endpoints require admin auth via the ``require_admin`` dependency.
+All endpoints require ``system.settings`` permission (SFBL-195).
+Previously guarded by ``require_admin``; refactored to the permission model so that
+any profile with ``system.settings`` can manage settings, not only is_admin accounts.
 
 Cache propagation note (PATCH)
 -------------------------------
@@ -31,9 +33,11 @@ from app.database import get_db
 from app.models.app_setting import AppSetting
 from app.models.user import User
 from app.schemas.settings import AllSettings, CategorySettings, PatchRequest, SettingValue
-from app.services.auth import require_admin
+from app.auth.permissions import require_permission, SYSTEM_SETTINGS
 from app.services.settings.registry import SETTINGS_REGISTRY
 import app.services.settings.service as _settings_svc_module
+
+_require_settings = require_permission(SYSTEM_SETTINGS)
 
 _log = logging.getLogger(__name__)
 
@@ -47,7 +51,7 @@ _EMAIL_BACKEND_ALLOWED = {"noop", "smtp", "ses"}
 router = APIRouter(
     prefix="/api/settings",
     tags=["settings"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(_require_settings)],
 )
 
 
@@ -124,7 +128,7 @@ def _known_categories() -> list[str]:
 async def get_all_settings(
     response: Response,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(_require_settings),
 ) -> AllSettings:
     """Return all settings grouped by category. Secrets are masked as '***'."""
     categories = _known_categories()
@@ -138,7 +142,7 @@ async def get_category_settings(
     category: str,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(_require_settings),
 ) -> CategorySettings:
     """Return settings for a single category. 404 if the category is unknown."""
     if category not in _known_categories():
@@ -157,7 +161,7 @@ async def patch_category_settings(
     body: PatchRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(_require_settings),
 ) -> CategorySettings:
     """Update one or more settings within *category*.
 
