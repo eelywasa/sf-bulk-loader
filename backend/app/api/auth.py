@@ -15,6 +15,7 @@ from app.observability.events import AuthEvent, OutcomeCode
 from app.observability.metrics import record_auth_login_attempt
 from app.schemas.auth import AuthConfigResponse, LoginRequest, TokenResponse, UserResponse
 from app.services.auth import create_access_token, get_current_user, verify_password
+from app.services.auth_lockout import handle_failed_attempt, handle_successful_login
 from app.services.rate_limit import check_and_record
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -256,8 +257,11 @@ async def login(
             outcome=OutcomeCode.WRONG_PASSWORD,
             user_id=user.id,
         )
-        # TODO(SFBL-191): call lockout hook here to increment failed_login_count
-        # and set locked_until when the threshold is breached.
+        # SFBL-191: progressive lockout — increments counters and sets locked_until
+        # / transitions status as required.  Must be called after _persist_login_attempt
+        # is flushed so the attempt row counts are accurate.
+        await db.flush()
+        await handle_failed_attempt(db, user, ip=ip, username=username, user_agent=ua)
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -291,6 +295,9 @@ async def login(
                 "user_id": user.id,
             },
         )
+
+    # SFBL-191: reset lockout counters on successful authentication
+    await handle_successful_login(db, user)
 
     record_auth_login_attempt(outcome_code)
     await _persist_login_attempt(

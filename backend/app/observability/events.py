@@ -177,6 +177,10 @@ class AuthEvent:
     # SFBL-193: break-glass CLI admin password recovery
     ADMIN_RECOVERED = "auth.admin.recovered"
 
+    # SFBL-191: progressive lockout + admin unlock
+    ACCOUNT_LOCKED = "auth.account.locked"
+    ACCOUNT_UNLOCKED = "auth.account.unlocked"
+
 
 class EmailEvent:
     """Outbound email delivery lifecycle events."""
@@ -266,6 +270,14 @@ class OutcomeCode:
     user_locked         — account status is 'locked' or tier-1 lockout is active
     must_reset_password — credentials valid but must_reset_password flag is set
     ip_limit            — per-IP rate limit (20/5 min) exceeded
+
+    Progressive lockout codes (SFBL-191)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    tier1_auto          — account received a tier-1 auto-lock (locked_until set, status=active)
+    tier2_hard          — account transitioned to status='locked' (hard lock, admin unlock needed)
+    tier1_auto_expired  — tier-1 lock had already expired at login time (auto-cleared)
+    admin_manual        — admin explicitly unlocked an account via the unlock endpoint
+    admin_unlock        — login_attempt audit row written when admin performs an unlock
     """
 
     # Baseline
@@ -339,3 +351,15 @@ class OutcomeCode:
 
     # Break-glass CLI (SFBL-193)
     CLI_RECOVERY = "cli_recovery"
+
+    # Progressive lockout (SFBL-191)
+    # tier1_auto          — account received a tier-1 auto-lock (locked_until set)
+    # tier2_hard          — account transitioned to status='locked' (hard lock)
+    # tier1_auto_expired  — tier-1 lock had already expired at login time (auto-cleared)
+    # admin_manual        — admin explicitly unlocked the account via the API
+    # admin_unlock        — login_attempt row written when admin performs unlock
+    TIER1_AUTO = "tier1_auto"
+    TIER2_HARD = "tier2_hard"
+    TIER1_AUTO_EXPIRED = "tier1_auto_expired"
+    ADMIN_MANUAL = "admin_manual"
+    ADMIN_UNLOCK = "admin_unlock"
