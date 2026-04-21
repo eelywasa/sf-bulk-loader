@@ -14,6 +14,9 @@ import {
   faFolderOpen,
   faGear,
   faEnvelope,
+  faCloud,
+  faTableColumns,
+  faShieldHalved,
   faUser,
   faChevronDown,
   faChevronLeft,
@@ -113,15 +116,43 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
             </button>
           )}
 
-          {/* Email row — navigates to the Settings page for admin test-send */}
-          <button
-            onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings') }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
-            role="menuitem"
-          >
-            <FontAwesomeIcon icon={faEnvelope} className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>Email</span>
-          </button>
+          {/* Admin settings rows — only shown to admins */}
+          {authRequired && (
+            <>
+              <button
+                onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/email') }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+                role="menuitem"
+              >
+                <FontAwesomeIcon icon={faEnvelope} className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Email</span>
+              </button>
+              <button
+                onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/salesforce') }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+                role="menuitem"
+              >
+                <FontAwesomeIcon icon={faCloud} className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Salesforce</span>
+              </button>
+              <button
+                onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/partitioning') }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+                role="menuitem"
+              >
+                <FontAwesomeIcon icon={faTableColumns} className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Partitioning</span>
+              </button>
+              <button
+                onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/security') }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+                role="menuitem"
+              >
+                <FontAwesomeIcon icon={faShieldHalved} className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Security</span>
+              </button>
+            </>
+          )}
 
           {/* Theme row */}
           <div className="relative">

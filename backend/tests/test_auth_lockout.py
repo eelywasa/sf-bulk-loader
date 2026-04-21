@@ -13,9 +13,10 @@ Tests cover:
 """
 
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any
-from unittest.mock import patch
+from typing import Any, Generator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -113,11 +114,7 @@ def test_tier1_lock_applied_after_threshold_failures(client):
     _seed_user(user)
 
     # Patch to threshold=5, window=15 min (matches defaults but ensures isolation)
-    with patch("app.api.auth.settings") as mock_settings, patch(
-        "app.services.auth_lockout.settings"
-    ) as mock_lockout_settings:
-        _configure_lockout_settings(mock_settings, mock_lockout_settings)
-
+    with _lockout_settings_patch():
         for _ in range(5):
             resp = client.post(
                 "/api/auth/login",
@@ -126,11 +123,7 @@ def test_tier1_lock_applied_after_threshold_failures(client):
             assert resp.status_code == 401
 
     # 6th attempt: account should now be tier-1 locked
-    with patch("app.api.auth.settings") as mock_settings, patch(
-        "app.services.auth_lockout.settings"
-    ) as mock_lockout_settings:
-        _configure_lockout_settings(mock_settings, mock_lockout_settings)
-
+    with _lockout_settings_patch():
         resp = client.post(
             "/api/auth/login",
             json={"username": "testuser", "password": "wrongpass"},
@@ -205,16 +198,10 @@ def test_tier2_cumulative_threshold_locks_account(client):
     user = _make_user(failed_login_count=9)
     _seed_user(user)
 
-    with patch("app.api.auth.settings") as mock_settings, patch(
-        "app.services.auth_lockout.settings"
-    ) as mock_lockout_settings:
-        _configure_lockout_settings(
-            mock_settings,
-            mock_lockout_settings,
-            tier1_threshold=100,  # disable tier-1 so wrong-password path is always reached
-            tier2_threshold=10,
-        )
-
+    with _lockout_settings_patch(
+        tier1_threshold=100,  # disable tier-1 so wrong-password path is always reached
+        tier2_threshold=10,
+    ):
         resp = client.post(
             "/api/auth/login",
             json={"username": "testuser", "password": "wrongpass"},
@@ -248,13 +235,7 @@ def test_tier2_repeated_tier1_locks_hard_locks_account(client):
     _seed_login_attempts(existing_tier1_rows)
 
     # Now trigger another tier-1 lock (5 failures in window)
-    with patch("app.api.auth.settings") as mock_settings, patch(
-        "app.services.auth_lockout.settings"
-    ) as mock_lockout_settings:
-        _configure_lockout_settings(
-            mock_settings, mock_lockout_settings, tier2_tier1_count=3
-        )
-
+    with _lockout_settings_patch(tier2_tier1_count=3):
         for _ in range(5):
             resp = client.post(
                 "/api/auth/login",
@@ -416,10 +397,7 @@ def test_tier1_lock_increments_metric(client):
 
     before = auth_account_locks_total.labels(tier=OutcomeCode.TIER1_AUTO)._value.get()
 
-    with patch("app.api.auth.settings") as mock_settings, patch(
-        "app.services.auth_lockout.settings"
-    ) as mock_lockout_settings:
-        _configure_lockout_settings(mock_settings, mock_lockout_settings)
+    with _lockout_settings_patch():
         for _ in range(5):
             client.post(
                 "/api/auth/login",
@@ -508,3 +486,49 @@ def _configure_lockout_settings(
         mock.login_tier2_threshold = tier2_threshold
         mock.login_tier2_tier1_count = tier2_tier1_count
         mock.login_tier2_window_hours = tier2_window_hours
+
+
+@contextmanager
+def _lockout_settings_patch(
+    *,
+    tier1_threshold: int = 5,
+    tier1_window_minutes: int = 15,
+    tier1_lock_minutes: int = 30,
+    tier2_threshold: int = 10,
+    tier2_tier1_count: int = 3,
+    tier2_window_hours: int = 24,
+) -> Generator[None, None, None]:
+    """Context manager that patches both `settings` and `settings_service` for lockout tests.
+
+    SFBL-156: lockout thresholds are now read from settings_service (DB-backed).
+    This helper patches both the legacy `settings` object (for backward compat with
+    existing test assertions) and `settings_service` so the new DB-backed reads see
+    the correct test values.
+    """
+    _values: dict[str, Any] = {
+        "login_rate_limit_attempts": 100,
+        "login_rate_limit_window_seconds": 300,
+        "jwt_expiry_minutes": 60,
+        "login_tier1_threshold": tier1_threshold,
+        "login_tier1_window_minutes": tier1_window_minutes,
+        "login_tier1_lock_minutes": tier1_lock_minutes,
+        "login_tier2_threshold": tier2_threshold,
+        "login_tier2_tier1_count": tier2_tier1_count,
+        "login_tier2_window_hours": tier2_window_hours,
+    }
+    mock_svc = AsyncMock()
+    mock_svc.get = AsyncMock(side_effect=lambda key: _values.get(key))
+
+    with (
+        patch("app.api.auth.settings") as mock_auth,
+        patch("app.services.auth_lockout.settings") as mock_lockout,
+        patch("app.services.settings.service.settings_service", mock_svc),
+    ):
+        _configure_lockout_settings(mock_auth, mock_lockout,
+                                    tier1_threshold=tier1_threshold,
+                                    tier1_window_minutes=tier1_window_minutes,
+                                    tier1_lock_minutes=tier1_lock_minutes,
+                                    tier2_threshold=tier2_threshold,
+                                    tier2_tier1_count=tier2_tier1_count,
+                                    tier2_window_hours=tier2_window_hours)
+        yield

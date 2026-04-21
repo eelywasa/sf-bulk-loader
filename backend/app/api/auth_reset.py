@@ -44,11 +44,32 @@ _log = logging.getLogger(__name__)
 
 # ── Rate-limit dependencies ────────────────────────────────────────────────────
 
-_ip_limiter = rate_limit(
-    ip_key,
-    limit=settings.pw_reset_rate_limit_per_ip_hour,
-    window_seconds=3600,
-)
+async def _get_pw_reset_ip_limit() -> int:
+    """Resolve pw_reset_rate_limit_per_ip_hour from DB-backed settings (SFBL-156).
+
+    # value applies to new rate-limit windows; existing in-flight windows use the value active when they started
+    """
+    from app.services.settings.service import settings_service as _svc
+    if _svc is not None:
+        return await _svc.get("pw_reset_rate_limit_per_ip_hour")
+    return settings.pw_reset_rate_limit_per_ip_hour
+
+
+# Note: _ip_limiter is a FastAPI dependency that reads the limit at request time.
+# The limit value is fetched from DB-backed settings per-request so changes take
+# effect for new windows immediately.
+async def _ip_limiter(request: Request) -> None:  # type: ignore[misc]
+    """Per-IP rate limit dependency for password-reset endpoints."""
+    ip = request.client.host if request.client else "unknown"
+    rate_key = ip_key(request)
+    limit = await _get_pw_reset_ip_limit()
+    # value applies to new rate-limit windows; existing in-flight windows use the value active when they started
+    allowed = await check_and_record(rate_key, limit, 3600)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests",
+        )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -63,9 +84,17 @@ def _email_hash(email: str) -> str:
     return hashlib.sha256(email.lower().encode()).hexdigest()
 
 
-def _reset_url(raw_token: str, request: Request) -> str:
+async def _get_frontend_base_url() -> str:
+    """Resolve frontend_base_url from SettingsService."""
+    from app.services.settings.service import settings_service as _svc
+    if _svc is not None:
+        return (await _svc.get("frontend_base_url")) or ""
+    return ""
+
+
+async def _reset_url(raw_token: str, request: Request) -> str:
     """Build the frontend reset URL from config or request origin."""
-    base = settings.frontend_base_url
+    base = await _get_frontend_base_url()
     if not base:
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
@@ -108,10 +137,16 @@ async def request_password_reset(
         email_h = _email_hash(email_address)
 
         # Per-email rate limit (checked manually so we can use the email from body)
+        # value applies to new rate-limit windows; existing in-flight windows use the value active when they started
+        from app.services.settings.service import settings_service as _svc
+        _email_rl_limit: int = (
+            await _svc.get("pw_reset_rate_limit_per_email_hour") if _svc is not None
+            else settings.pw_reset_rate_limit_per_email_hour
+        )
         email_rl_key = hashed_email_key(email_address)
         allowed = await check_and_record(
             email_rl_key,
-            limit=settings.pw_reset_rate_limit_per_email_hour,
+            limit=_email_rl_limit,
             window_seconds=3600,
         )
         if not allowed:
@@ -153,9 +188,12 @@ async def request_password_reset(
         raw_token = secrets.token_urlsafe(32)
         token_hash = _sha256_hex(raw_token)
         now_utc = datetime.now(timezone.utc)
-        expires_at = now_utc.replace(microsecond=0)
         from datetime import timedelta
-        expires_at = now_utc + timedelta(minutes=settings.password_reset_ttl_minutes)
+        _pw_reset_ttl: int = (
+            await _svc.get("password_reset_ttl_minutes") if _svc is not None
+            else settings.password_reset_ttl_minutes
+        )
+        expires_at = now_utc + timedelta(minutes=_pw_reset_ttl)
 
         token_row = PasswordResetToken(
             user_id=user.id,
@@ -168,7 +206,7 @@ async def request_password_reset(
         await db.commit()
         await db.refresh(token_row)
 
-        reset_url = _reset_url(raw_token, request)
+        reset_url = await _reset_url(raw_token, request)
         display_name = user.display_name or user.username or user.email or "User"
 
         await email_service.send_template(
@@ -176,7 +214,7 @@ async def request_password_reset(
             {
                 "user_display_name": display_name,
                 "reset_url": reset_url,
-                "expires_in_minutes": settings.password_reset_ttl_minutes,
+                "expires_in_minutes": _pw_reset_ttl,
             },
             to=user.email,  # type: ignore[arg-type]
             category=EmailCategory.AUTH,

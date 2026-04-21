@@ -1,3 +1,4 @@
+from app.models.app_setting import AppSetting
 from app.models.connection import Connection
 from app.models.email_change_token import EmailChangeToken
 from app.models.email_delivery import EmailDelivery
@@ -20,6 +21,7 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 
 __all__ = [
+    "AppSetting",
     "Connection",
     "EmailChangeToken",
     "EmailDelivery",

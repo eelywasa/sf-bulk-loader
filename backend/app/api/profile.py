@@ -47,14 +47,22 @@ def _sha256_hex(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _verify_url(raw_token: str, request: Request) -> str:
+async def _get_frontend_base_url() -> str:
+    """Resolve frontend_base_url from SettingsService."""
+    from app.services.settings.service import settings_service as _svc
+    if _svc is not None:
+        return (await _svc.get("frontend_base_url")) or ""
+    return ""
+
+
+async def _verify_url(raw_token: str, request: Request) -> str:
     """Build the email-change verify URL from config or request origin.
 
     Mirrors the fallback in auth_reset._reset_url: if FRONTEND_BASE_URL is
     unset, derive the origin from the inbound request's Origin/Referer header
     rather than emitting `None/verify-email/...`.
     """
-    base = settings.frontend_base_url
+    base = await _get_frontend_base_url()
     if not base:
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
@@ -164,10 +172,16 @@ async def request_email_change(
         new_email = str(body.new_email).lower()
 
         # Per-user rate limit
+        # value applies to new rate-limit windows; existing in-flight windows use the value active when they started
+        from app.services.settings.service import settings_service as _svc
+        _ec_rl_limit: int = (
+            await _svc.get("email_change_rate_limit_per_user_hour") if _svc is not None
+            else settings.email_change_rate_limit_per_user_hour
+        )
         rate_key = f"rl:email_change:user:{current_user.id}"
         allowed = await check_and_record(
             rate_key,
-            limit=settings.email_change_rate_limit_per_user_hour,
+            limit=_ec_rl_limit,
             window_seconds=3600,
         )
         if not allowed:
@@ -234,7 +248,11 @@ async def request_email_change(
         raw_token = secrets.token_hex(32)
         token_hash = _sha256_hex(raw_token)
         now_utc = datetime.now(timezone.utc)
-        expires_at = now_utc + timedelta(minutes=settings.email_change_ttl_minutes)
+        _ec_ttl: int = (
+            await _svc.get("email_change_ttl_minutes") if _svc is not None
+            else settings.email_change_ttl_minutes
+        )
+        expires_at = now_utc + timedelta(minutes=_ec_ttl)
 
         # Invalidate all prior unused email-change tokens for this user
         prior_tokens_result = await db.execute(
@@ -259,7 +277,7 @@ async def request_email_change(
         await db.refresh(token_record)
 
         token_id = token_record.id
-        confirm_url = _verify_url(raw_token, request)
+        confirm_url = await _verify_url(raw_token, request)
         display_name = current_user.display_name or current_user.username or "User"
 
         # Send verification email to new_email
@@ -269,7 +287,7 @@ async def request_email_change(
                 "user_display_name": display_name,
                 "confirm_url": confirm_url,
                 "new_email": new_email,
-                "expires_in_minutes": settings.email_change_ttl_minutes,
+                "expires_in_minutes": _ec_ttl,
             },
             to=new_email,
             category=EmailCategory.AUTH,

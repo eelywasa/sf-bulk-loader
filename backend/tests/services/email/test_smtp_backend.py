@@ -44,7 +44,8 @@ os.environ.setdefault("JWT_SECRET_KEY", "smtp-test-jwt-secret")
 os.environ.setdefault("ADMIN_USERNAME", "test-admin")
 os.environ.setdefault("ADMIN_PASSWORD", "Test-Admin-P4ss!")
 
-from app.config import settings  # noqa: E402
+from unittest.mock import AsyncMock  # noqa: E402 (already imported above but ensure here)
+
 from app.services.email.backends.smtp import SmtpBackend, classify  # noqa: E402
 from app.services.email.errors import EmailErrorReason  # noqa: E402
 from app.services.email.message import EmailMessage  # noqa: E402
@@ -166,37 +167,64 @@ class _DisconnectHandler:
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
+# Default values used by most SMTP tests (can be overridden via **extra)
+_DEFAULT_SMTP_SETTINGS = {
+    "email_smtp_host": "127.0.0.1",
+    "email_smtp_port": 587,
+    "email_smtp_username": "",
+    "email_smtp_password": "test-password",
+    "email_smtp_starttls": False,
+    "email_smtp_use_tls": False,
+    "email_from_address": "sender@example.com",
+    "email_from_name": "",
+    "email_timeout_seconds": 5.0,
+}
+
 
 def _patch_settings(host: str, port: int, **extra: Any) -> dict[str, Any]:
-    """Return a dict of settings overrides for the given test SMTP server."""
-    return {
-        "email_smtp_host": host,
-        "email_smtp_port": port,
-        "email_smtp_username": None,
-        "email_smtp_password": "",
-        "email_smtp_starttls": False,
-        "email_smtp_use_tls": False,
-        "email_from_address": "sender@example.com",
-        "email_from_name": None,
-        "email_timeout_seconds": 5.0,
-        **extra,
-    }
+    """Return a dict of SettingsService.get overrides for the given test SMTP server."""
+    overrides = dict(_DEFAULT_SMTP_SETTINGS)
+    overrides["email_smtp_host"] = host
+    overrides["email_smtp_port"] = port
+    overrides.update(extra)
+    return overrides
 
 
 def _apply_settings(overrides: dict[str, Any]) -> "contextlib.AbstractContextManager":
-    """Patch multiple settings attributes simultaneously."""
+    """Patch SettingsService.get so calls return values from *overrides*.
+
+    Any key not in *overrides* falls through to the real SettingsService (or
+    raises KeyError if none is initialised — acceptable in unit tests).
+    """
     import contextlib
 
     @contextlib.contextmanager
     def _ctx():
-        originals = {k: getattr(settings, k) for k in overrides}
-        for k, v in overrides.items():
-            setattr(settings, k, v)
-        try:
-            yield
-        finally:
-            for k, v in originals.items():
-                setattr(settings, k, v)
+        # Build a fake SettingsService with an AsyncMock .get()
+        class _FakeSvc:
+            async def get(self, key: str) -> Any:
+                if key in overrides:
+                    return overrides[key]
+                # Fall through to sensible defaults for keys not in overrides
+                return _DEFAULT_SMTP_SETTINGS.get(key, None)
+
+        fake_svc = _FakeSvc()
+        with patch(
+            "app.services.email.backends.smtp.settings_service",
+            new=fake_svc,
+            create=True,
+        ), patch(
+            "app.services.email.backends.smtp._get_svc",
+            return_value=fake_svc,
+        ):
+            # Also patch the module-level import used by _get_svc
+            import app.services.settings.service as _svc_module
+            original = _svc_module.settings_service
+            _svc_module.settings_service = fake_svc  # type: ignore[assignment]
+            try:
+                yield
+            finally:
+                _svc_module.settings_service = original
 
     return _ctx()
 
@@ -603,21 +631,34 @@ def test_backoff_jitter_bounds():
 
     For each attempt index i, delay must be in [raw, raw + base].
     """
+    import asyncio as _asyncio
     from app.services.email.service import _backoff_seconds
 
-    base = settings.email_retry_backoff_seconds
-    cap = settings.email_retry_backoff_max_seconds
+    base = 2.0   # registry default for email_retry_backoff_seconds
+    cap = 120.0  # registry default for email_retry_backoff_max_seconds
 
-    for attempt_idx in range(5):
-        raw = min(base * (2**attempt_idx), cap)
-        low = raw
-        high = raw + base
-        samples = [_backoff_seconds(attempt_idx) for _ in range(1000)]
-        for s in samples:
-            assert low <= s <= high + 1e-9, (
-                f"Backoff sample {s} out of bounds [{low}, {high}] "
-                f"for attempt_idx={attempt_idx}"
-            )
+    class _FakeSvc:
+        async def get(self, key: str) -> Any:
+            return {"email_retry_backoff_seconds": base, "email_retry_backoff_max_seconds": cap}[key]
+
+    import app.services.settings.service as _svc_module
+    original = _svc_module.settings_service
+    _svc_module.settings_service = _FakeSvc()  # type: ignore[assignment]
+    try:
+        loop = _asyncio.new_event_loop()
+        for attempt_idx in range(5):
+            raw = min(base * (2**attempt_idx), cap)
+            low = raw
+            high = raw + base
+            samples = [loop.run_until_complete(_backoff_seconds(attempt_idx)) for _ in range(200)]
+            for s in samples:
+                assert low <= s <= high + 1e-9, (
+                    f"Backoff sample {s} out of bounds [{low}, {high}] "
+                    f"for attempt_idx={attempt_idx}"
+                )
+        loop.close()
+    finally:
+        _svc_module.settings_service = original
 
 
 # ── 11. Healthcheck ──────────────────────────────────────────────────────────

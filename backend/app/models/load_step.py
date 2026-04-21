@@ -48,7 +48,9 @@ class LoadStep(Base):
     csv_file_pattern: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     # Required for query/queryAll operations; null for DML ops
     soql: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    partition_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10_000)
+    # partition_size: None means "use the DB-backed default_partition_size setting"
+    # (SFBL-156). New steps should omit this field to inherit the live default.
+    partition_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None)
     assignment_rule_id: Mapped[Optional[str]] = mapped_column(String(18), nullable=True)
     # Loosely-typed source identifier: None/""/"local" → local input tree,
     # "local-output" → local output tree (SFBL-178), else an InputConnection

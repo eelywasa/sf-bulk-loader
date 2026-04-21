@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 from app.observability.events import EmailEvent, OutcomeCode
 from app.api.admin_email import router as admin_email_router
 from app.api.admin_users import router as admin_users_router
+from app.api.settings import router as settings_router
 from app.api.auth import router as auth_router
 from app.api.auth_reset import router as auth_reset_router
 from app.api.me import router as me_router
@@ -37,27 +38,33 @@ from app.database import AsyncSessionLocal, engine
 from app.services.auth import seed_admin
 from app.services.email import delivery_log as email_delivery_log
 from app.services.email import init_email_service
-from app.services.email.service import get_email_service
+from app.services.email.service import get_email_service, init_email_service_async
 from app.services.notifications import init_notification_dispatcher
+from app.services.settings.service import init_settings_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: seed DB-backed settings from env vars / registry defaults
+    _svc = init_settings_service(AsyncSessionLocal)
+    await _svc.seed_from_env()
+
     # Startup: seed initial admin user if database is empty
     async with AsyncSessionLocal() as session:
         await seed_admin(session)
 
-    # Startup: initialise email service singleton
-    init_email_service(AsyncSessionLocal)
+    # Startup: initialise email service singleton (reads email_backend from DB)
+    await init_email_service_async(AsyncSessionLocal)
 
     # Startup: initialise notification dispatcher singleton (SFBL-181)
     init_notification_dispatcher(await get_email_service(), AsyncSessionLocal)
 
     # Startup: boot-sweep — reap any stale pending email_delivery rows left
     # over from a crashed or OOM-killed process.
+    _stale_minutes = await _svc.get("email_pending_stale_minutes")
     async with AsyncSessionLocal() as session:
         reaped = await email_delivery_log.boot_sweep(
-            session, settings.email_pending_stale_minutes
+            session, _stale_minutes
         )
     logger.info(
         "Email boot-sweep completed",
@@ -113,6 +120,7 @@ app.add_middleware(RequestIDMiddleware, settings=settings)
 if settings.auth_mode != "none":
     app.include_router(admin_email_router)
     app.include_router(admin_users_router)
+    app.include_router(settings_router)
 app.include_router(auth_router)
 app.include_router(auth_reset_router)
 app.include_router(me_router)
