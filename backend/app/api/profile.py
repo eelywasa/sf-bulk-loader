@@ -47,14 +47,22 @@ def _sha256_hex(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _verify_url(raw_token: str, request: Request) -> str:
+async def _get_frontend_base_url() -> str:
+    """Resolve frontend_base_url from SettingsService."""
+    from app.services.settings.service import settings_service as _svc
+    if _svc is not None:
+        return (await _svc.get("frontend_base_url")) or ""
+    return ""
+
+
+async def _verify_url(raw_token: str, request: Request) -> str:
     """Build the email-change verify URL from config or request origin.
 
     Mirrors the fallback in auth_reset._reset_url: if FRONTEND_BASE_URL is
     unset, derive the origin from the inbound request's Origin/Referer header
     rather than emitting `None/verify-email/...`.
     """
-    base = settings.frontend_base_url
+    base = await _get_frontend_base_url()
     if not base:
         origin = request.headers.get("origin") or request.headers.get("referer")
         if origin:
@@ -259,7 +267,7 @@ async def request_email_change(
         await db.refresh(token_record)
 
         token_id = token_record.id
-        confirm_url = _verify_url(raw_token, request)
+        confirm_url = await _verify_url(raw_token, request)
         display_name = current_user.display_name or current_user.username or "User"
 
         # Send verification email to new_email

@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.config import settings as _settings
 from app.models.email_delivery import EmailDelivery
 from app.observability.events import EmailEvent, OutcomeCode
 from app.observability.metrics import (
@@ -105,6 +104,39 @@ def build_email_service(
 _email_service: "EmailService | None" = None
 
 
+async def _get_settings_svc():
+    """Return the SettingsService singleton (lazy import to avoid circular deps)."""
+    from app.services.settings.service import settings_service
+    if settings_service is None:
+        raise RuntimeError(
+            "SettingsService has not been initialised. "
+            "Call init_settings_service() in the app lifespan."
+        )
+    return settings_service
+
+
+async def init_email_service_async(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Async version of init_email_service.
+
+    Reads email_backend from SettingsService (DB-backed). Must be called after
+    init_settings_service() and seed_from_env() have run.
+    """
+    global _email_service
+    svc = await _get_settings_svc()
+    backend_name = (await svc.get("email_backend")) or "noop"
+    _email_service = build_email_service(backend_name, session_factory)
+    logger.info(
+        "Email service initialised",
+        extra={
+            "event_name": EmailEvent.SERVICE_INITIALISED,
+            "outcome_code": OutcomeCode.OK,
+            "backend": backend_name,
+        },
+    )
+
+
 def init_email_service(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -112,8 +144,13 @@ def init_email_service(
 
     Must be called once during app startup (lifespan) after the DB connection
     is established.
+
+    Note: this synchronous shim uses the config.py settings.email_backend as
+    a fallback for contexts where SettingsService is not yet available.
+    Prefer init_email_service_async() when called from an async lifespan.
     """
     global _email_service
+    from app.config import settings as _settings
     backend_name = _settings.email_backend or "noop"
     _email_service = build_email_service(backend_name, session_factory)
     logger.info(
@@ -139,7 +176,7 @@ async def get_email_service() -> "EmailService":
 # ── Backoff helper ────────────────────────────────────────────────────────────
 
 
-def _backoff_seconds(attempt_idx: int) -> float:
+async def _backoff_seconds(attempt_idx: int) -> float:
     """Compute capped exponential backoff with additive jitter.
 
     Formula from spec:
@@ -150,8 +187,9 @@ def _backoff_seconds(attempt_idx: int) -> float:
     Additive jitter (not multiplicative) breaks thundering herds without
     pathologically long waits.
     """
-    base = _settings.email_retry_backoff_seconds
-    cap = _settings.email_retry_backoff_max_seconds
+    svc = await _get_settings_svc()
+    base = await svc.get("email_retry_backoff_seconds")
+    cap = await svc.get("email_retry_backoff_max_seconds")
     raw = min(base * (2**attempt_idx), cap)
     jitter = random.uniform(0, base)
     return raw + jitter
@@ -440,7 +478,7 @@ class EmailService:
             can_retry = transient and reason.is_transient() and attempts_after < delivery.max_attempts
 
             if can_retry:
-                delay = _backoff_seconds(delivery.attempts)
+                delay = await _backoff_seconds(delivery.attempts)
                 next_at = datetime.fromtimestamp(
                     datetime.now(tz=timezone.utc).timestamp() + delay,
                     tz=timezone.utc,
@@ -527,12 +565,14 @@ class EmailService:
 
         # Try to claim and attempt in the same session so the delivery object
         # remains persistent throughout _attempt.
+        svc = await _get_settings_svc()
+        claim_lease = await svc.get("email_claim_lease_seconds")
         async with self._session_factory() as session:
             claimed = await delivery_log.claim(
                 session,
                 delivery_id,
                 delivery_log.WORKER_ID,
-                _settings.email_claim_lease_seconds,
+                claim_lease,
             )
 
             if claimed is None:

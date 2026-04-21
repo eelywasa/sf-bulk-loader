@@ -396,7 +396,16 @@ async def health_dependencies(db: AsyncSession = Depends(get_db)) -> Any:
             deps["database"]["detail"] = db_error
 
         # Email probe — always included; noop backend reports healthy without a network call
-        email_status, email_detail = await _check_email(settings.email_backend or "noop")
+        _email_backend_name = "noop"
+        try:
+            from app.services.settings.service import settings_service as _svc
+            if _svc is not None:
+                _email_backend_name = (await _svc.get("email_backend")) or "noop"
+            else:
+                _email_backend_name = settings.email_backend or "noop"
+        except Exception:
+            _email_backend_name = settings.email_backend or "noop"
+        email_status, email_detail = await _check_email(_email_backend_name)
         deps["email"] = {"status": email_status}
         if email_detail:
             deps["email"]["detail"] = email_detail

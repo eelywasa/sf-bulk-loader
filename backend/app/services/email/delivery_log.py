@@ -32,7 +32,6 @@ from datetime import datetime, timezone
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.models.email_delivery import DeliveryStatus, EmailDelivery
 from app.observability.sanitization import safe_exc_message
 from app.services.email.errors import EmailErrorReason
@@ -43,6 +42,17 @@ logger = logging.getLogger(__name__)
 # Stable worker identity for CAS lease claims.
 # Format: "{hostname}:{pid}" — written to email_delivery.claimed_by.
 WORKER_ID: str = f"{socket.gethostname()}:{os.getpid()}"
+
+
+async def _get_svc():
+    """Return the SettingsService singleton (lazy import to avoid circular deps)."""
+    from app.services.settings.service import settings_service
+    if settings_service is None:
+        raise RuntimeError(
+            "SettingsService has not been initialised. "
+            "Call init_settings_service() in the app lifespan."
+        )
+    return settings_service
 
 
 def _compute_to_hash(addr: str) -> str:
@@ -79,9 +89,14 @@ async def insert(
     """
     import email.utils
 
+    svc = await _get_svc()
+    claim_lease_seconds = await svc.get("email_claim_lease_seconds")
+    log_recipients = await svc.get("email_log_recipients")
+    max_retries = await svc.get("email_max_retries")
+
     now = _now_utc()
     lease_expires = datetime.fromtimestamp(
-        now.timestamp() + settings.email_claim_lease_seconds,
+        now.timestamp() + claim_lease_seconds,
         tz=timezone.utc,
     )
 
@@ -89,7 +104,7 @@ async def insert(
     _, addr_spec = email.utils.parseaddr(msg.to)
     addr_for_hash = addr_spec if addr_spec else msg.to
 
-    to_addr_value: str | None = addr_spec if settings.email_log_recipients else None
+    to_addr_value: str | None = addr_spec if log_recipients else None
 
     delivery = EmailDelivery(
         created_at=now,
@@ -104,7 +119,7 @@ async def insert(
         status=DeliveryStatus.pending,
         attempts=0,
         # Snapshot retry budget so per-row limits survive config changes mid-flight
-        max_attempts=settings.email_max_retries + 1,
+        max_attempts=max_retries + 1,
         idempotency_key=idempotency_key,
         claimed_by=WORKER_ID,
         claim_expires_at=lease_expires,

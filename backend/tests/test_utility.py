@@ -827,15 +827,21 @@ class TestHealthDependencies:
 
     def test_noop_email_backend_is_healthy(self, client):
         """noop backend must report healthy without a network probe."""
-        from app.config import settings
+        import app.services.settings.service as _svc_module
 
-        original = settings.email_backend
+        class _NoopSvc:
+            async def get(self, key: str) -> object:
+                if key == "email_backend":
+                    return "noop"
+                return None
+
+        original = _svc_module.settings_service
+        _svc_module.settings_service = _NoopSvc()  # type: ignore[assignment]
         try:
-            settings.email_backend = "noop"
             response = client.get("/api/health/dependencies")
             data = response.json()
         finally:
-            settings.email_backend = original
+            _svc_module.settings_service = original
 
         email_dep = data["dependencies"]["email"]
         assert email_dep["status"] == "ok"
@@ -843,17 +849,11 @@ class TestHealthDependencies:
 
     def test_smtp_healthcheck_failure_yields_degraded_not_failed(self, client):
         """When SMTP healthcheck() returns False, status must be 'degraded'."""
-        from app.config import settings
         from unittest.mock import AsyncMock, patch
 
-        original = settings.email_backend
-        try:
-            settings.email_backend = "smtp"
-            with patch("app.api.utility._check_email", new=AsyncMock(return_value=("degraded", "smtp healthcheck returned False"))):
-                response = client.get("/api/health/dependencies")
-                data = response.json()
-        finally:
-            settings.email_backend = original
+        with patch("app.api.utility._check_email", new=AsyncMock(return_value=("degraded", "smtp healthcheck returned False"))):
+            response = client.get("/api/health/dependencies")
+            data = response.json()
 
         email_dep = data["dependencies"]["email"]
         assert email_dep["status"] == "degraded"

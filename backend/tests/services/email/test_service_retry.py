@@ -162,17 +162,23 @@ class TestTransientRetry:
     @pytest.mark.asyncio
     async def test_exhausted_retries_becomes_failed(self):
         """When max_attempts is reached, transient failure is terminal."""
-        from app.config import settings
+        import app.services.settings.service as _svc_module
+        from tests.services.email.conftest import _EMAIL_DEFAULTS
 
-        # Set max_retries to 0 so the first attempt is the only one
-        original = settings.email_max_retries
-        settings.email_max_retries = 0
+        class _ZeroRetryFakeSvc:
+            async def get(self, key: str) -> object:
+                if key == "email_max_retries":
+                    return 0
+                return _EMAIL_DEFAULTS.get(key)
+
+        original = _svc_module.settings_service
+        _svc_module.settings_service = _ZeroRetryFakeSvc()  # type: ignore[assignment]
         try:
             backend = FailNTimesBackend(fail_count=99)
             svc = EmailService(backend=backend, session_factory=EmailTestSession)
             delivery = await svc.send(_msg(), category=EmailCategory.NOTIFICATION)
         finally:
-            settings.email_max_retries = original
+            _svc_module.settings_service = original
 
         assert delivery.status == DeliveryStatus.failed
 
@@ -194,10 +200,17 @@ class TestObservabilityMetrics:
 
         backend = FailNTimesBackend(fail_count=99)
         # Prevent retries exhausting — we only care about the first scheduling
-        from app.config import settings
+        import app.services.settings.service as _svc_module
+        from tests.services.email.conftest import _EMAIL_DEFAULTS
 
-        original = settings.email_max_retries
-        settings.email_max_retries = 5
+        class _FivRetryFakeSvc:
+            async def get(self, key: str) -> object:
+                if key == "email_max_retries":
+                    return 5
+                return _EMAIL_DEFAULTS.get(key)
+
+        original = _svc_module.settings_service
+        _svc_module.settings_service = _FivRetryFakeSvc()  # type: ignore[assignment]
         try:
             svc = EmailService(backend=backend, session_factory=EmailTestSession)
             before = _get_retry("fake_transient", "transient_network")
@@ -206,7 +219,7 @@ class TestObservabilityMetrics:
             after = _get_retry("fake_transient", "transient_network")
             assert after == before + 1.0
         finally:
-            settings.email_max_retries = original
+            _svc_module.settings_service = original
 
     @pytest.mark.asyncio
     async def test_permanent_failure_increments_send_total_failed(self):
