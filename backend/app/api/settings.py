@@ -119,6 +119,7 @@ def _known_categories() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+@router.get("", response_model=AllSettings, include_in_schema=False)
 @router.get("/", response_model=AllSettings)
 async def get_all_settings(
     response: Response,

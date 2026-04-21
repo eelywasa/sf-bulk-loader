@@ -166,6 +166,17 @@ def test_get_all_settings_masks_secrets(client: TestClient) -> None:
             svc._cache.pop("_test_api_secret", None)
 
 
+def test_get_all_settings_no_trailing_slash_no_redirect(client: TestClient) -> None:
+    """GET /api/settings (no trailing slash) must return 200 directly, not 307.
+
+    Some HTTP clients strip the Authorization header when following redirects,
+    which breaks auth for callers that omit the trailing slash.
+    """
+    _admin_client(client, _admin_user())
+    resp = client.get("/api/settings", follow_redirects=False)
+    assert resp.status_code == 200
+
+
 def test_get_all_settings_cache_ttl_header(client: TestClient) -> None:
     """GET / must include X-Settings-Cache-TTL: 60 header."""
     _admin_client(client, _admin_user())
