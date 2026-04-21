@@ -336,3 +336,109 @@ docker compose logs -f            # all services
 docker compose logs -f backend    # backend only
 docker compose logs -f frontend   # nginx only
 ```
+
+---
+
+## Break-Glass CLI
+
+The break-glass CLI lets an operator recover admin access from the host shell when no
+admin login is available — for example, if every admin account is locked or has an
+unknown password. It runs **without** the web server and connects directly to the
+SQLite (or PostgreSQL) database.
+
+### When to use it
+
+- You cannot log in to any admin account.
+- You need to unlock an account that was auto-locked by the rate-limit policy.
+- You need to audit which admin accounts exist and their current status.
+
+### How to run
+
+Execute the CLI inside the running backend container:
+
+```bash
+# Enter the backend container
+docker compose exec backend bash
+
+# Inside the container:
+python -m app.cli --help
+```
+
+Or run a one-shot command without entering an interactive shell:
+
+```bash
+docker compose exec backend python -m app.cli admin-recover admin@example.com
+docker compose exec backend python -m app.cli unlock user@example.com
+docker compose exec backend python -m app.cli list-admins
+```
+
+### Subcommands
+
+#### `admin-recover <email>`
+
+Resets the password for an admin user and forces a password-change on next login:
+
+```bash
+python -m app.cli admin-recover admin@example.com
+```
+
+Output:
+
+```
+============================================================
+  BREAK-GLASS ADMIN RECOVERY
+============================================================
+  User:             admin@example.com
+  Temporary password: <random-token>
+
+  The user MUST change this password on first login.
+  Store it securely — it will not be shown again.
+============================================================
+```
+
+The command:
+- Generates a random 16-character temporary password.
+- Sets `must_reset_password = true` so the user is forced to change it at next login.
+- Clears `locked_until` and `failed_login_count`.
+- Transitions `status` to `active` (from `invited`, `locked`, or `deactivated`).
+- Emits a WARNING-level audit log entry (`auth.admin.recovered` / `cli_recovery`).
+- Writes a `login_attempt` row for the audit trail.
+
+Exits non-zero if:
+- No user is found for the email (exit 2).
+- The user is not an admin (exit 3).
+- The user has `status = deleted` (exit 4).
+
+#### `unlock <email>`
+
+Clears lockout fields for any user without changing their password:
+
+```bash
+python -m app.cli unlock user@example.com
+```
+
+Sets `locked_until = NULL` and `failed_login_count = 0`. If `status = locked` it
+transitions to `active`. Works on all roles. Exits 2 if the user is not found.
+
+#### `list-admins`
+
+Prints a table of all admin users with their current status:
+
+```bash
+python -m app.cli list-admins
+```
+
+Columns: email/username, status, last login, and whether the account is currently
+locked (status is `locked`, or `locked_until` is a future timestamp).
+
+### Security implications
+
+**Anyone with shell access to the backend container can recover any admin account.**
+This is intentional — it is the last resort when no other path is available.
+
+Recommendations:
+- Restrict container shell access to authorised operators only (e.g. IAM roles, SSH
+  certificate policies).
+- Review the WARNING log line and `login_attempt` row that `admin-recover` produces
+  after each recovery.
+- Rotate the temporary password immediately after handing it to the user.

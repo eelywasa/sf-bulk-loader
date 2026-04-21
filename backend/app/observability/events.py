@@ -150,8 +150,8 @@ class AuthEvent:
     """Authentication and account management events.
 
     Covers password-change (SFBL-146), password-reset flow (SFBL-147),
-    profile/email-change (SFBL-148), token rejection (SFBL-145), and
-    login attempt lifecycle (SFBL-190).
+    profile/email-change (SFBL-148), token rejection (SFBL-145),
+    login attempt lifecycle (SFBL-190), and break-glass CLI recovery (SFBL-193).
     """
 
     # SFBL-190: login attempt lifecycle
@@ -173,6 +173,9 @@ class AuthEvent:
 
     # SFBL-145: JWT watermark rejection
     TOKEN_REJECTED = "auth.token_rejected"
+
+    # SFBL-193: break-glass CLI admin password recovery
+    ADMIN_RECOVERED = "auth.admin.recovered"
 
 
 class EmailEvent:
@@ -333,3 +336,6 @@ class OutcomeCode:
     USER_LOCKED = "user_locked"
     MUST_RESET_PASSWORD = "must_reset_password"
     IP_LIMIT = "ip_limit"
+
+    # Break-glass CLI (SFBL-193)
+    CLI_RECOVERY = "cli_recovery"
