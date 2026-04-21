@@ -297,11 +297,25 @@ async def seed_admin(db: AsyncSession) -> None:
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
 
+    # Look up the seeded admin profile (from migration 0021) so the new user
+    # satisfies the NOT NULL profile_id constraint (migration 0022).
+    from app.models.profile import Profile  # noqa: PLC0415
+
+    admin_profile_id = await db.scalar(
+        select(Profile.id).where(Profile.name == "admin")
+    )
+    if admin_profile_id is None:
+        raise RuntimeError(
+            "Admin profile not found. Ensure profile-seed migrations have run "
+            "before seed_admin."
+        )
+
     admin = User(
         username=username,
         hashed_password=hash_password(password),
         is_admin=True,
         status="active",
+        profile_id=admin_profile_id,
     )
     db.add(admin)
     await db.commit()
