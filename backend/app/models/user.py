@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +42,9 @@ class User(Base):
     )
     # Temp-password users must reset on first login.
     must_reset_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Admin flag — set TRUE for users with administrative privileges.
+    # Backfilled from role='admin' in migration 0019; Epic B will replace role with profile_id.
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
     # Shared
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="user")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
