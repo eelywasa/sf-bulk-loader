@@ -42,18 +42,23 @@ async def _persist_login_attempt(
     outcome: str,
     user_id: str | None,
 ) -> None:
-    """Persist a LoginAttempt row.  Errors are logged but never propagate."""
+    """Persist a LoginAttempt row.  Errors are logged but never propagate.
+
+    The insert runs inside a SAVEPOINT so a flush failure rolls back only the
+    login_attempt write, leaving any outer-transaction mutations (e.g. lockout
+    counter updates in SFBL-191) intact for the subsequent ``db.commit()``.
+    """
     try:
-        attempt = LoginAttempt(
-            user_id=user_id,
-            username=username,
-            ip=ip,
-            user_agent=user_agent,
-            outcome=outcome,
-            attempted_at=datetime.now(timezone.utc),
-        )
-        db.add(attempt)
-        await db.flush()
+        async with db.begin_nested():
+            attempt = LoginAttempt(
+                user_id=user_id,
+                username=username,
+                ip=ip,
+                user_agent=user_agent,
+                outcome=outcome,
+                attempted_at=datetime.now(timezone.utc),
+            )
+            db.add(attempt)
     except Exception:
         _log.exception(
             "Failed to persist login attempt row",

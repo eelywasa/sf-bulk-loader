@@ -167,10 +167,12 @@ async def handle_failed_attempt(
     # The primary failed-attempt row was already flushed by the caller, so the
     # query count already includes the current attempt.
     tier1_window_start = now - timedelta(minutes=settings.login_tier1_window_minutes)
+    # MUST_RESET_PASSWORD is emitted on SUCCESSFUL auth with a temp password,
+    # so it is deliberately excluded from the failure set — counting it would
+    # penalise users legitimately completing a temp-password first login.
     _failed_outcomes = (
         OutcomeCode.WRONG_PASSWORD,
         OutcomeCode.USER_LOCKED,
-        OutcomeCode.MUST_RESET_PASSWORD,
         OutcomeCode.USER_INACTIVE,
     )
     recent_fail_count: int = await db.scalar(

@@ -67,10 +67,11 @@ def upgrade() -> None:
             )
         )
 
-    # Step 2: backfill status from is_active (SQLite uses 1/0 for booleans).
+    # Step 2: backfill status from is_active. Uses boolean-safe CASE expression
+    # that works on both SQLite (1/0 integer booleans) and PostgreSQL.
     op.execute(
         sa.text(
-            "UPDATE \"user\" SET status = CASE WHEN is_active = 1 THEN 'active' ELSE 'deactivated' END"
+            "UPDATE \"user\" SET status = CASE WHEN is_active THEN 'active' ELSE 'deactivated' END"
         )
     )
 
@@ -100,7 +101,8 @@ def downgrade() -> None:
     # Step 1: add is_active as nullable boolean.
     bind.execute(sa.text('ALTER TABLE "user" ADD COLUMN is_active BOOLEAN'))
 
-    # Step 2: backfill is_active from status.
+    # Step 2: backfill is_active from status. SQLite stores booleans as 1/0;
+    # this downgrade is SQLite-only (see comment above) so integer literal is fine.
     bind.execute(
         sa.text(
             "UPDATE \"user\" SET is_active = CASE WHEN status = 'active' THEN 1 ELSE 0 END"
