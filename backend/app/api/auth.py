@@ -13,7 +13,7 @@ from app.models.login_attempt import LoginAttempt
 from app.models.user import User
 from app.observability.events import AuthEvent, OutcomeCode
 from app.observability.metrics import record_auth_login_attempt
-from app.schemas.auth import AuthConfigResponse, LoginRequest, TokenResponse, UserResponse
+from app.schemas.auth import AuthConfigResponse, LoginRequest, ProfileSummary, TokenResponse, UserResponse
 from app.services.auth import create_access_token, get_current_user, verify_password
 from app.services.auth_lockout import handle_failed_attempt, handle_successful_login
 from app.services.rate_limit import check_and_record
@@ -341,7 +341,49 @@ async def login(
 
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse.model_validate(current_user)
+    """Return the authenticated user's profile including RBAC permissions.
+
+    Contract with SFBL-196 (frontend):
+    - ``profile.name``: "admin" | "operator" | "viewer" | "desktop"
+    - ``permissions``: sorted list of permission keys held by the user.
+      In desktop mode (auth_mode=none) returns all keys and profile.name="desktop".
+    """
+    from app.config import settings as _settings
+    from app.auth.permissions import ALL_PERMISSION_KEYS
+
+    # Build the base response from the ORM user, excluding the ORM profile
+    # relationship (which is a Profile model, not ProfileSummary).
+    base = UserResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        display_name=current_user.display_name,
+        role=current_user.role,
+        status=current_user.status,
+        is_active=current_user.is_active,
+        profile=None,
+        permissions=[],
+    )
+
+    if _settings.auth_mode == "none":
+        # Desktop mode — virtual desktop user; no DB profile
+        return base.model_copy(update={
+            "profile": ProfileSummary(name="desktop"),
+            "permissions": sorted(ALL_PERMISSION_KEYS),
+        })
+
+    # Hosted mode — derive from the profile relationship (loaded via selectin)
+    if current_user.profile is not None:
+        profile_summary = ProfileSummary(name=current_user.profile.name)
+        permission_list = sorted(current_user.profile.permission_keys)
+    else:
+        profile_summary = None
+        permission_list = []
+
+    return base.model_copy(update={
+        "profile": profile_summary,
+        "permissions": permission_list,
+    })
 
 
 @router.get("/config", response_model=AuthConfigResponse)

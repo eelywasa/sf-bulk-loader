@@ -14,6 +14,8 @@ from app.database import get_db
 from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep, QUERY_OPERATIONS
+from app.models.user import User
+from app.auth.permissions import PLANS_MANAGE, PLANS_VIEW, require_permission
 from app.services.auth import get_current_user
 from app.services.input_storage import (
     InputConnectionNotFoundError,
@@ -39,8 +41,11 @@ from app.schemas.load_step import (
 
 logger = logging.getLogger(__name__)
 
+_require_view = require_permission(PLANS_VIEW)
+_require_manage = require_permission(PLANS_MANAGE)
+
 # Steps are nested under /api/load-plans
-router = APIRouter(prefix="/api/load-plans", tags=["load-steps"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/api/load-plans", tags=["load-steps"], dependencies=[Depends(_require_view)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -92,6 +97,7 @@ async def add_step(
     plan_id: str,
     data: LoadStepCreate,
     db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
 ) -> LoadStep:
     await _get_plan_or_404(plan_id, db)
 
@@ -114,6 +120,7 @@ async def reorder_steps(
     plan_id: str,
     data: StepReorderRequest,
     db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
 ) -> List[LoadStep]:
     """Reassign step sequences based on the ordered list of step IDs provided."""
     await _get_plan_or_404(plan_id, db)
@@ -126,6 +133,7 @@ async def update_step(
     step_id: str,
     data: LoadStepUpdate,
     db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
 ) -> LoadStep:
     step = await _get_step_or_404(plan_id, step_id, db)
     update_data = data.model_dump(exclude_unset=True)
@@ -169,6 +177,7 @@ async def delete_step(
     plan_id: str,
     step_id: str,
     db: AsyncSession = Depends(get_db),
+    _manage: User = Depends(_require_manage),
 ) -> None:
     step = await _get_step_or_404(plan_id, step_id, db)
     await db.delete(step)

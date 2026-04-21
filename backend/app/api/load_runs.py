@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.auth.permissions import RUNS_ABORT, RUNS_EXECUTE, RUNS_VIEW, require_permission
 from app.database import get_db
 from app.services.auth import get_current_user
 from app.models.load_run import LoadRun, RunStatus
-from app.models.user import User
+from app.models.user import User  # noqa: F401 (used in type hints for dependency params)
 from app.schemas.load_run import (
     LoadRunDetailResponse,
     LoadRunResponse,
@@ -23,7 +24,11 @@ from app.services import load_run_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/runs", tags=["load-runs"], dependencies=[Depends(get_current_user)])
+_require_view = require_permission(RUNS_VIEW)
+_require_execute = require_permission(RUNS_EXECUTE)
+_require_abort = require_permission(RUNS_ABORT)
+
+router = APIRouter(prefix="/api/runs", tags=["load-runs"], dependencies=[Depends(_require_view)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -75,7 +80,11 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> LoadRun:
 
 
 @router.post("/{run_id}/abort", response_model=LoadRunResponse)
-async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)) -> LoadRun:
+async def abort_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    _abort: User = Depends(_require_abort),
+) -> LoadRun:
     """Abort a pending or running load. In-progress jobs are marked aborted."""
     return await load_run_service.abort_run(db, run_id)
 
@@ -116,7 +125,7 @@ async def retry_step(
     step_id: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_require_execute),
 ) -> LoadRun:
     """Create a new LoadRun that retries only the failed/aborted jobs of one step."""
     new_run, partitions = await load_run_service.prepare_retry_step(

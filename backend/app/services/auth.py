@@ -187,6 +187,10 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     Raises HTTP 403 if the user is authenticated but is not an admin.
     In desktop profile (auth_mode=none) the injected _DESKTOP_USER already
     has is_admin=True so this dependency is always satisfied.
+
+    # DEPRECATED: use require_permission(...) from app.auth.permissions instead.
+    # Removal tracked as a follow-up cleanup ticket (post SFBL-195).
+    # Kept as a shim so existing callsites and tests continue to pass.
     """
     if not current_user.is_admin:
         raise HTTPException(
