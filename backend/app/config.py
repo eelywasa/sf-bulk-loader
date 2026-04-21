@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     # Frontend — base URL used by password-reset and email-change links
     frontend_base_url: str | None = None
 
+    # Auth: login rate limit (SFBL-190)
+    # Per-IP sliding-window limit across all usernames.  Per-process — each
+    # worker maintains its own counter.  See services/rate_limit.py for details.
+    login_rate_limit_attempts: int = 20
+    login_rate_limit_window_seconds: int = 300
+
     # Auth: password reset & email change
     pw_reset_rate_limit_per_ip_hour: int = 5
     pw_reset_rate_limit_per_email_hour: int = 3

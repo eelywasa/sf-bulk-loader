@@ -150,8 +150,14 @@ class AuthEvent:
     """Authentication and account management events.
 
     Covers password-change (SFBL-146), password-reset flow (SFBL-147),
-    profile/email-change (SFBL-148), and token rejection (SFBL-145).
+    profile/email-change (SFBL-148), token rejection (SFBL-145), and
+    login attempt lifecycle (SFBL-190).
     """
+
+    # SFBL-190: login attempt lifecycle
+    LOGIN_SUCCEEDED = "auth.login.succeeded"
+    LOGIN_FAILED = "auth.login.failed"
+    LOGIN_RATE_LIMITED = "auth.login.rate_limited"
 
     # SFBL-146: authenticated password change
     PASSWORD_CHANGED = "auth.password.changed"
@@ -249,6 +255,14 @@ class OutcomeCode:
     expired                   — JWT past its exp claim
     invalid_signature         — JWT signature verification failure
     user_inactive             — token holder's account is deactivated
+
+    Login attempt outcome codes (SFBL-190)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    wrong_password      — credentials supplied but password did not match
+    unknown_user        — submitted username did not match any account
+    user_locked         — account status is 'locked' or tier-1 lockout is active
+    must_reset_password — credentials valid but must_reset_password flag is set
+    ip_limit            — per-IP rate limit (20/5 min) exceeded
     """
 
     # Baseline
@@ -312,3 +326,10 @@ class OutcomeCode:
 
     # Notifications (SFBL-180)
     NOTIFICATION_WEBHOOK_ERROR = "notification_webhook_error"
+
+    # Login attempt outcomes (SFBL-190)
+    WRONG_PASSWORD = "wrong_password"
+    UNKNOWN_USER = "unknown_user"
+    USER_LOCKED = "user_locked"
+    MUST_RESET_PASSWORD = "must_reset_password"
+    IP_LIMIT = "ip_limit"

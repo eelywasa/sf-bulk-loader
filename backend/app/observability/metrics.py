@@ -278,6 +278,24 @@ notification_webhook_retry_total = Counter(
 # ── Email metric helpers ──────────────────────────────────────────────────────
 
 
+# ── Login attempt counter (SFBL-190) ─────────────────────────────────────────
+#
+# Per-attempt counter with a single ``outcome`` label drawn from OutcomeCode
+# login attempt values.  Cardinality ceiling: ~7 values (ok, wrong_password,
+# unknown_user, user_inactive, user_locked, must_reset_password, ip_limit).
+
+auth_login_attempts_total = Counter(
+    "sfbl_auth_login_attempts_total",
+    "Total login attempts against /api/auth/login, by outcome.",
+    ["outcome"],
+)
+
+
+def record_auth_login_attempt(outcome: str) -> None:
+    """Increment the login-attempt counter with the given outcome label."""
+    auth_login_attempts_total.labels(outcome=outcome).inc()
+
+
 # ── Auth / password-reset + email-change counters (SFBL-151) ─────────────────
 #
 # Cardinality: each counter has a single ``outcome`` label drawn from the fixed

@@ -12,6 +12,11 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    # SFBL-190: must_reset_password flag — set when credentials are valid but the
+    # user's must_reset_password flag is True.  The JWT is still issued so the
+    # frontend can authenticate the password-change API, but clients MUST redirect
+    # to the reset flow before granting normal access.  Frontend wiring: SFBL-202.
+    must_reset_password: bool = False
 
 
 class UserResponse(BaseModel):

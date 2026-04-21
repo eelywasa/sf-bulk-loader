@@ -1,29 +1,312 @@
 """Auth API — login, session inspection, and auth configuration."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.login_attempt import LoginAttempt
 from app.models.user import User
+from app.observability.events import AuthEvent, OutcomeCode
+from app.observability.metrics import record_auth_login_attempt
 from app.schemas.auth import AuthConfigResponse, LoginRequest, TokenResponse, UserResponse
 from app.services.auth import create_access_token, get_current_user, verify_password
+from app.services.rate_limit import check_and_record
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+_log = logging.getLogger(__name__)
+
+
+def _ip_from_request(request: Request) -> str:
+    """Return the client IP address, falling back to 'unknown'."""
+    return (request.client.host if request.client else None) or "unknown"
+
+
+def _user_agent_from_request(request: Request) -> str | None:
+    """Return the User-Agent header value, or None if absent."""
+    return request.headers.get("user-agent")
+
+
+async def _persist_login_attempt(
+    db: AsyncSession,
+    *,
+    username: str,
+    ip: str,
+    user_agent: str | None,
+    outcome: str,
+    user_id: str | None,
+) -> None:
+    """Persist a LoginAttempt row.  Errors are logged but never propagate."""
+    try:
+        attempt = LoginAttempt(
+            user_id=user_id,
+            username=username,
+            ip=ip,
+            user_agent=user_agent,
+            outcome=outcome,
+            attempted_at=datetime.now(timezone.utc),
+        )
+        db.add(attempt)
+        await db.flush()
+    except Exception:
+        _log.exception(
+            "Failed to persist login attempt row",
+            extra={
+                "event_name": AuthEvent.LOGIN_FAILED,
+                "outcome_code": OutcomeCode.DATABASE_ERROR,
+                "username": username,
+                "ip": ip,
+            },
+        )
+
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    result = await db.execute(select(User).where(User.username == body.username))
+async def login(
+    body: LoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    """Authenticate with username + password and return a JWT.
+
+    Every attempt — success or failure — is persisted to ``login_attempt``
+    and emitted as a structured log event.
+
+    Per-IP rate limit: ``LOGIN_RATE_LIMIT_ATTEMPTS`` (default 20) attempts
+    per ``LOGIN_RATE_LIMIT_WINDOW_SECONDS`` (default 300 s).  The limit is
+    per-process only — see ``services/rate_limit.py`` for the in-memory
+    implementation note.  On breach the attempt row is still persisted and
+    HTTP 429 is returned before any credential check.
+    """
+    ip = _ip_from_request(request)
+    ua = _user_agent_from_request(request)
+    username = body.username
+
+    # ── Per-IP rate limit check ───────────────────────────────────────────────
+    rate_key = f"login:ip:{ip}"
+    allowed = await check_and_record(
+        rate_key,
+        settings.login_rate_limit_attempts,
+        settings.login_rate_limit_window_seconds,
+    )
+    if not allowed:
+        _log.warning(
+            "Login rate limit exceeded",
+            extra={
+                "event_name": AuthEvent.LOGIN_RATE_LIMITED,
+                "outcome_code": OutcomeCode.IP_LIMIT,
+                "ip": ip,
+                "username": username,
+            },
+        )
+        record_auth_login_attempt(OutcomeCode.IP_LIMIT)
+        await _persist_login_attempt(
+            db,
+            username=username,
+            ip=ip,
+            user_agent=ua,
+            outcome=OutcomeCode.IP_LIMIT,
+            user_id=None,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts — please try again later",
+        )
+
+    # ── Look up user ──────────────────────────────────────────────────────────
+    result = await db.execute(select(User).where(User.username == username))
     user: User | None = result.scalars().first()
-    if user is None or not user.hashed_password or not verify_password(body.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive")
+
+    if user is None:
+        # Unknown username — persist with user_id=null
+        _log.warning(
+            "Login failed: unknown user",
+            extra={
+                "event_name": AuthEvent.LOGIN_FAILED,
+                "outcome_code": OutcomeCode.UNKNOWN_USER,
+                "ip": ip,
+                "username": username,
+            },
+        )
+        record_auth_login_attempt(OutcomeCode.UNKNOWN_USER)
+        await _persist_login_attempt(
+            db,
+            username=username,
+            ip=ip,
+            user_agent=ua,
+            outcome=OutcomeCode.UNKNOWN_USER,
+            user_id=None,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    # ── Check status before password verification ─────────────────────────────
+
+    # Check tier-1 auto-lockout (locked_until still in the future).
+    if user.locked_until is not None:
+        lu = user.locked_until
+        if lu.tzinfo is None:
+            lu = lu.replace(tzinfo=timezone.utc)
+        if lu > datetime.now(timezone.utc):
+            _log.warning(
+                "Login failed: account under tier-1 lockout",
+                extra={
+                    "event_name": AuthEvent.LOGIN_FAILED,
+                    "outcome_code": OutcomeCode.USER_LOCKED,
+                    "ip": ip,
+                    "username": username,
+                    "user_id": user.id,
+                    "locked_until": lu.isoformat(),
+                },
+            )
+            record_auth_login_attempt(OutcomeCode.USER_LOCKED)
+            await _persist_login_attempt(
+                db,
+                username=username,
+                ip=ip,
+                user_agent=ua,
+                outcome=OutcomeCode.USER_LOCKED,
+                user_id=user.id,
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account temporarily locked — please try again later",
+            )
+
+    if user.status == "locked":
+        _log.warning(
+            "Login failed: account is locked",
+            extra={
+                "event_name": AuthEvent.LOGIN_FAILED,
+                "outcome_code": OutcomeCode.USER_LOCKED,
+                "ip": ip,
+                "username": username,
+                "user_id": user.id,
+            },
+        )
+        record_auth_login_attempt(OutcomeCode.USER_LOCKED)
+        await _persist_login_attempt(
+            db,
+            username=username,
+            ip=ip,
+            user_agent=ua,
+            outcome=OutcomeCode.USER_LOCKED,
+            user_id=user.id,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is locked",
+        )
+
+    if user.status in ("deactivated", "deleted", "invited"):
+        _log.warning(
+            "Login failed: account is not active",
+            extra={
+                "event_name": AuthEvent.LOGIN_FAILED,
+                "outcome_code": OutcomeCode.USER_INACTIVE,
+                "ip": ip,
+                "username": username,
+                "user_id": user.id,
+                "user_status": user.status,
+            },
+        )
+        record_auth_login_attempt(OutcomeCode.USER_INACTIVE)
+        await _persist_login_attempt(
+            db,
+            username=username,
+            ip=ip,
+            user_agent=ua,
+            outcome=OutcomeCode.USER_INACTIVE,
+            user_id=user.id,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User is inactive",
+        )
+
+    # ── Password verification ─────────────────────────────────────────────────
+    if not user.hashed_password or not verify_password(body.password, user.hashed_password):
+        _log.warning(
+            "Login failed: wrong password",
+            extra={
+                "event_name": AuthEvent.LOGIN_FAILED,
+                "outcome_code": OutcomeCode.WRONG_PASSWORD,
+                "ip": ip,
+                "username": username,
+                "user_id": user.id,
+            },
+        )
+        record_auth_login_attempt(OutcomeCode.WRONG_PASSWORD)
+        await _persist_login_attempt(
+            db,
+            username=username,
+            ip=ip,
+            user_agent=ua,
+            outcome=OutcomeCode.WRONG_PASSWORD,
+            user_id=user.id,
+        )
+        # TODO(SFBL-191): call lockout hook here to increment failed_login_count
+        # and set locked_until when the threshold is breached.
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    # ── Successful authentication ─────────────────────────────────────────────
+    must_reset = user.must_reset_password
+
+    if must_reset:
+        outcome_code = OutcomeCode.MUST_RESET_PASSWORD
+        _log.info(
+            "Login succeeded (must reset password)",
+            extra={
+                "event_name": AuthEvent.LOGIN_SUCCEEDED,
+                "outcome_code": outcome_code,
+                "ip": ip,
+                "username": username,
+                "user_id": user.id,
+            },
+        )
+    else:
+        outcome_code = OutcomeCode.OK
+        _log.info(
+            "Login succeeded",
+            extra={
+                "event_name": AuthEvent.LOGIN_SUCCEEDED,
+                "outcome_code": outcome_code,
+                "ip": ip,
+                "username": username,
+                "user_id": user.id,
+            },
+        )
+
+    record_auth_login_attempt(outcome_code)
+    await _persist_login_attempt(
+        db,
+        username=username,
+        ip=ip,
+        user_agent=ua,
+        outcome=outcome_code,
+        user_id=user.id,
+    )
+    await db.commit()
+
     return TokenResponse(
         access_token=create_access_token(user),
         expires_in=settings.jwt_expiry_minutes * 60,
+        must_reset_password=must_reset,
     )
 
 

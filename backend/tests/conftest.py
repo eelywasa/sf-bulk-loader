@@ -146,6 +146,7 @@ def clean_db():
     from app.models.load_plan import LoadPlan
     from app.models.load_run import LoadRun
     from app.models.load_step import LoadStep
+    from app.models.login_attempt import LoginAttempt
     from app.models.notification_delivery import NotificationDelivery
     from app.models.notification_subscription import NotificationSubscription
     from app.models.user import User
@@ -153,6 +154,7 @@ def clean_db():
     async def _clean():
         async with _TestSession() as session:
             for model in [
+                LoginAttempt,
                 NotificationDelivery,
                 NotificationSubscription,
                 JobRecord,
