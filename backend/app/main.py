@@ -39,10 +39,15 @@ from app.services.email import delivery_log as email_delivery_log
 from app.services.email import init_email_service
 from app.services.email.service import get_email_service
 from app.services.notifications import init_notification_dispatcher
+from app.services.settings.service import init_settings_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: seed DB-backed settings from env vars / registry defaults
+    _svc = init_settings_service(AsyncSessionLocal)
+    await _svc.seed_from_env()
+
     # Startup: seed initial admin user if database is empty
     async with AsyncSessionLocal() as session:
         await seed_admin(session)

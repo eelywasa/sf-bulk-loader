@@ -140,6 +140,7 @@ def clean_db():
     yield
     from sqlalchemy import delete
 
+    from app.models.app_setting import AppSetting
     from app.models.connection import Connection
     from app.models.input_connection import InputConnection
     from app.models.job import JobRecord
@@ -154,6 +155,7 @@ def clean_db():
     async def _clean():
         async with _TestSession() as session:
             for model in [
+                AppSetting,
                 LoginAttempt,
                 NotificationDelivery,
                 NotificationSubscription,
