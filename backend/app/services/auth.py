@@ -69,7 +69,7 @@ def decode_access_token(token: str) -> dict:
 # ── FastAPI dependencies ──────────────────────────────────────────────────────
 
 
-_DESKTOP_USER = User(id="desktop", username="desktop", role="admin", status="active")
+_DESKTOP_USER = User(id="desktop", username="desktop", role="admin", status="active", is_admin=True)
 
 
 async def get_current_user(
@@ -169,6 +169,21 @@ async def get_current_user(
                 )
 
     return user
+
+
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency that requires the authenticated user to have is_admin=True.
+
+    Raises HTTP 403 if the user is authenticated but is not an admin.
+    In desktop profile (auth_mode=none) the injected _DESKTOP_USER already
+    has is_admin=True so this dependency is always satisfied.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
 
 
 # ── Password policy ───────────────────────────────────────────────────────────
@@ -272,6 +287,7 @@ async def seed_admin(db: AsyncSession) -> None:
         username=username,
         hashed_password=hash_password(password),
         role="admin",
+        is_admin=True,
         status="active",
     )
     db.add(admin)
