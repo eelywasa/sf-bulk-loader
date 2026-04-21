@@ -47,3 +47,6 @@ infrastructure/dist/
 # Local test databases and scratch files
 backend/test_*.db
 runs.html
+
+# Claude Code local state
+.claude/
