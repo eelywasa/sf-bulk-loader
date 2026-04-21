@@ -35,7 +35,10 @@ _STATUS_CHECK = f"status IN ({', '.join(_STATUS_VALUES)})"
 def upgrade() -> None:
     # Step 1: add the new columns alongside the existing is_active column.
     # status is temporarily nullable to allow backfill before making it NOT NULL.
-    with op.batch_alter_table("user", recreate="always") as batch_op:
+    # Uses default recreate="auto" so Postgres runs straight ALTERs (avoiding
+    # PK-drop cascades from FKs in dependent tables) while SQLite still
+    # recreates the table when required for its ALTER limitations.
+    with op.batch_alter_table("user") as batch_op:
         batch_op.add_column(
             sa.Column(
                 "status",
@@ -75,8 +78,9 @@ def upgrade() -> None:
         )
     )
 
-    # Step 3: make status NOT NULL and drop is_active — single batch recreate.
-    with op.batch_alter_table("user", recreate="always") as batch_op:
+    # Step 3: make status NOT NULL and drop is_active.  Default recreate="auto"
+    # again — Postgres uses straight ALTERs; SQLite recreates the table.
+    with op.batch_alter_table("user") as batch_op:
         batch_op.alter_column("status", nullable=False)
         batch_op.drop_column("is_active")
 
