@@ -69,7 +69,7 @@ def decode_access_token(token: str) -> dict:
 # ── FastAPI dependencies ──────────────────────────────────────────────────────
 
 
-_DESKTOP_USER = User(id="desktop", username="desktop", role="admin", is_active=True)
+_DESKTOP_USER = User(id="desktop", username="desktop", role="admin", status="active")
 
 
 async def get_current_user(
@@ -94,12 +94,51 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     user = await db.get(User, user_id)
-    if user is None or not user.is_active:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Gate on status — only 'active' accounts may authenticate.
+    if user.status != "active":
+        _log.warning(
+            "Token rejected: user status is not active",
+            extra={
+                "event_name": AuthEvent.TOKEN_REJECTED,
+                "outcome_code": OutcomeCode.USER_INACTIVE,
+                "user_id": user_id,
+                "user_status": user.status,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Gate on tier-1 auto-lockout — locked_until is set when the threshold is
+    # breached and clears automatically once the window passes.
+    if user.locked_until is not None:
+        lu = user.locked_until
+        if lu.tzinfo is None:
+            lu = lu.replace(tzinfo=timezone.utc)
+        if lu > datetime.now(timezone.utc):
+            _log.warning(
+                "Token rejected: account under tier-1 lockout",
+                extra={
+                    "event_name": AuthEvent.TOKEN_REJECTED,
+                    "outcome_code": OutcomeCode.USER_INACTIVE,
+                    "user_id": user_id,
+                    "locked_until": lu.isoformat(),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account temporarily locked — please try again later",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     # JWT invalidation watermark — reject tokens issued before the last
     # password (or email) change.  ``iat`` is an integer Unix timestamp;
@@ -233,7 +272,7 @@ async def seed_admin(db: AsyncSession) -> None:
         username=username,
         hashed_password=hash_password(password),
         role="admin",
-        is_active=True,
+        status="active",
     )
     db.add(admin)
     await db.commit()

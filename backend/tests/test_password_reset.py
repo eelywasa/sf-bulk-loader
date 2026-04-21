@@ -67,7 +67,7 @@ def _seed_user(
         display_name="Alice",
         hashed_password=pw,
         role="user",
-        is_active=is_active,
+        status="active" if is_active else "deactivated",
     )
 
     async def _insert():

@@ -11,6 +11,7 @@ import type {
   InputConnection,
   InputConnectionCreate,
   InputConnectionTestResponse,
+  LoginHistoryEntry,
   LoadPlan,
   LoadPlanDetail,
   LoadStep,
@@ -314,6 +315,9 @@ export const meApi = {
 
   confirmEmailChange: (body: { token: string }): Promise<void> =>
     api.post<void>('/api/me/email-change/confirm', body),
+
+  getLoginHistory: (limit = 10): Promise<LoginHistoryEntry[]> =>
+    api.get<LoginHistoryEntry[]>(`/api/me/login-history?limit=${limit}`),
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────

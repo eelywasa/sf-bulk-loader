@@ -32,7 +32,7 @@ def _make_user(**kwargs) -> User:
         username="testuser",
         hashed_password=hash_password("Str0ng&Secure#Pass"),
         role="user",
-        is_active=True,
+        status="active",
         password_changed_at=None,
     )
     defaults.update(kwargs)

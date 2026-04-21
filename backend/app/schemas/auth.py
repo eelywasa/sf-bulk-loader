@@ -12,6 +12,11 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    # SFBL-190: must_reset_password flag — set when credentials are valid but the
+    # user's must_reset_password flag is True.  The JWT is still issued so the
+    # frontend can authenticate the password-change API, but clients MUST redirect
+    # to the reset flow before granting normal access.  Frontend wiring: SFBL-202.
+    must_reset_password: bool = False
 
 
 class UserResponse(BaseModel):
@@ -20,6 +25,10 @@ class UserResponse(BaseModel):
     email: Optional[str]
     display_name: Optional[str]
     role: str
+    # status replaces is_active as the canonical state field (SFBL-189).
+    # is_active is kept as a read-only derived field for API compatibility —
+    # computed by the User.is_active property on the ORM model.
+    status: str
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)

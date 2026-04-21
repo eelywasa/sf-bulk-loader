@@ -30,7 +30,7 @@ def _seed_user(
         username=username,
         hashed_password=hash_password(password) if password is not None else None,
         role=role,
-        is_active=is_active,
+        status="active" if is_active else "deactivated",
     )
 
     async def _insert():

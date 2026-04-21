@@ -82,6 +82,27 @@ class Settings(BaseSettings):
     # Frontend — base URL used by password-reset and email-change links
     frontend_base_url: str | None = None
 
+    # Auth: login rate limit (SFBL-190)
+    # Per-IP sliding-window limit across all usernames.  Per-process — each
+    # worker maintains its own counter.  See services/rate_limit.py for details.
+    login_rate_limit_attempts: int = 20
+    login_rate_limit_window_seconds: int = 300
+
+    # Auth: progressive lockout (SFBL-191)
+    # Tier 1 — temporary auto-lock: if ``login_tier1_threshold`` failed attempts
+    # accumulate within ``login_tier1_window_minutes``, set locked_until for
+    # ``login_tier1_lock_minutes``. Status stays 'active'; lock expires silently.
+    login_tier1_threshold: int = 5
+    login_tier1_window_minutes: int = 15
+    login_tier1_lock_minutes: int = 30
+    # Tier 2 — hard lock: transitions status to 'locked' (requires admin unlock).
+    # Triggered by either:
+    #   A) ``login_tier2_threshold`` cumulative failed logins since last success.
+    #   B) ``login_tier2_tier1_count`` tier-1 locks within ``login_tier2_window_hours``.
+    login_tier2_threshold: int = 10
+    login_tier2_tier1_count: int = 3
+    login_tier2_window_hours: int = 24
+
     # Auth: password reset & email change
     pw_reset_rate_limit_per_ip_hour: int = 5
     pw_reset_rate_limit_per_email_hour: int = 3

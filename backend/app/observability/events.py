@@ -150,8 +150,14 @@ class AuthEvent:
     """Authentication and account management events.
 
     Covers password-change (SFBL-146), password-reset flow (SFBL-147),
-    profile/email-change (SFBL-148), and token rejection (SFBL-145).
+    profile/email-change (SFBL-148), token rejection (SFBL-145),
+    login attempt lifecycle (SFBL-190), and break-glass CLI recovery (SFBL-193).
     """
+
+    # SFBL-190: login attempt lifecycle
+    LOGIN_SUCCEEDED = "auth.login.succeeded"
+    LOGIN_FAILED = "auth.login.failed"
+    LOGIN_RATE_LIMITED = "auth.login.rate_limited"
 
     # SFBL-146: authenticated password change
     PASSWORD_CHANGED = "auth.password.changed"
@@ -167,6 +173,13 @@ class AuthEvent:
 
     # SFBL-145: JWT watermark rejection
     TOKEN_REJECTED = "auth.token_rejected"
+
+    # SFBL-193: break-glass CLI admin password recovery
+    ADMIN_RECOVERED = "auth.admin.recovered"
+
+    # SFBL-191: progressive lockout + admin unlock
+    ACCOUNT_LOCKED = "auth.account.locked"
+    ACCOUNT_UNLOCKED = "auth.account.unlocked"
 
 
 class EmailEvent:
@@ -249,6 +262,22 @@ class OutcomeCode:
     expired                   — JWT past its exp claim
     invalid_signature         — JWT signature verification failure
     user_inactive             — token holder's account is deactivated
+
+    Login attempt outcome codes (SFBL-190)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    wrong_password      — credentials supplied but password did not match
+    unknown_user        — submitted username did not match any account
+    user_locked         — account status is 'locked' or tier-1 lockout is active
+    must_reset_password — credentials valid but must_reset_password flag is set
+    ip_limit            — per-IP rate limit (20/5 min) exceeded
+
+    Progressive lockout codes (SFBL-191)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    tier1_auto          — account received a tier-1 auto-lock (locked_until set, status=active)
+    tier2_hard          — account transitioned to status='locked' (hard lock, admin unlock needed)
+    tier1_auto_expired  — tier-1 lock had already expired at login time (auto-cleared)
+    admin_manual        — admin explicitly unlocked an account via the unlock endpoint
+    admin_unlock        — login_attempt audit row written when admin performs an unlock
     """
 
     # Baseline
@@ -312,3 +341,25 @@ class OutcomeCode:
 
     # Notifications (SFBL-180)
     NOTIFICATION_WEBHOOK_ERROR = "notification_webhook_error"
+
+    # Login attempt outcomes (SFBL-190)
+    WRONG_PASSWORD = "wrong_password"
+    UNKNOWN_USER = "unknown_user"
+    USER_LOCKED = "user_locked"
+    MUST_RESET_PASSWORD = "must_reset_password"
+    IP_LIMIT = "ip_limit"
+
+    # Break-glass CLI (SFBL-193)
+    CLI_RECOVERY = "cli_recovery"
+
+    # Progressive lockout (SFBL-191)
+    # tier1_auto          — account received a tier-1 auto-lock (locked_until set)
+    # tier2_hard          — account transitioned to status='locked' (hard lock)
+    # tier1_auto_expired  — tier-1 lock had already expired at login time (auto-cleared)
+    # admin_manual        — admin explicitly unlocked the account via the API
+    # admin_unlock        — login_attempt row written when admin performs unlock
+    TIER1_AUTO = "tier1_auto"
+    TIER2_HARD = "tier2_hard"
+    TIER1_AUTO_EXPIRED = "tier1_auto_expired"
+    ADMIN_MANUAL = "admin_manual"
+    ADMIN_UNLOCK = "admin_unlock"

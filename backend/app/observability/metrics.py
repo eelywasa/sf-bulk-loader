@@ -278,6 +278,61 @@ notification_webhook_retry_total = Counter(
 # ── Email metric helpers ──────────────────────────────────────────────────────
 
 
+# ── Login attempt counter (SFBL-190) ─────────────────────────────────────────
+#
+# Per-attempt counter with a single ``outcome`` label drawn from OutcomeCode
+# login attempt values.  Cardinality ceiling: ~7 values (ok, wrong_password,
+# unknown_user, user_inactive, user_locked, must_reset_password, ip_limit).
+
+auth_login_attempts_total = Counter(
+    "sfbl_auth_login_attempts_total",
+    "Total login attempts against /api/auth/login, by outcome.",
+    ["outcome"],
+)
+
+
+def record_auth_login_attempt(outcome: str) -> None:
+    """Increment the login-attempt counter with the given outcome label."""
+    auth_login_attempts_total.labels(outcome=outcome).inc()
+
+
+# ── Progressive lockout counters (SFBL-191) ───────────────────────────────────
+#
+# Two counters track the lockout lifecycle:
+#   auth_account_locks_total{tier}    — accounts locked (tier1_auto | tier2_hard)
+#   auth_account_unlocks_total{method} — accounts unlocked (tier1_auto_expired | admin_manual)
+#
+# Cardinality ceiling: 2 series on each counter.
+
+auth_account_locks_total = Counter(
+    "sfbl_auth_account_locks_total",
+    "Total account lockout events, classified by tier.",
+    ["tier"],
+)
+
+auth_account_unlocks_total = Counter(
+    "sfbl_auth_account_unlocks_total",
+    "Total account unlock events, classified by method.",
+    ["method"],
+)
+
+
+def record_account_locked(tier: str) -> None:
+    """Increment the account-locked counter.
+
+    ``tier`` should be ``OutcomeCode.TIER1_AUTO`` or ``OutcomeCode.TIER2_HARD``.
+    """
+    auth_account_locks_total.labels(tier=tier).inc()
+
+
+def record_account_unlocked(method: str) -> None:
+    """Increment the account-unlocked counter.
+
+    ``method`` should be ``OutcomeCode.TIER1_AUTO_EXPIRED`` or ``OutcomeCode.ADMIN_MANUAL``.
+    """
+    auth_account_unlocks_total.labels(method=method).inc()
+
+
 # ── Auth / password-reset + email-change counters (SFBL-151) ─────────────────
 #
 # Cardinality: each counter has a single ``outcome`` label drawn from the fixed

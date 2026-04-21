@@ -9,6 +9,12 @@ export interface RuntimeConfig {
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 
+export interface LoginHistoryEntry {
+  attempted_at: string  // ISO-8601 datetime string
+  ip: string
+  outcome: 'Success' | 'Failed'
+}
+
 export interface TokenResponse {
   access_token: string
   token_type: string

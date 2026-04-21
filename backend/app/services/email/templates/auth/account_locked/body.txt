@@ -1,0 +1,10 @@
+{% extends "base/layout.txt" %}
+{% block content %}
+Hello {{ user_display_name }},
+
+Your Salesforce Bulk Loader account has been locked due to repeated failed sign-in attempts.
+
+Please contact your administrator to regain access.
+
+If you did not attempt to sign in, please notify your administrator immediately.
+{% endblock %}

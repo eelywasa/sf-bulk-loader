@@ -44,7 +44,7 @@ def _seed_user(
         display_name=display_name,
         hashed_password=hashed_password or hash_password("OldP4ss!Secure#"),
         role=role,
-        is_active=is_active,
+        status="active" if is_active else "deactivated",
     )
 
     async def _insert():
