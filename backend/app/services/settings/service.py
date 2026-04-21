@@ -206,3 +206,16 @@ def init_settings_service(session_factory: async_sessionmaker[AsyncSession]) -> 
     global settings_service
     settings_service = SettingsService(session_factory)
     return settings_service
+
+
+def get_settings_service() -> SettingsService:
+    """Return the module-level singleton.
+
+    Raises RuntimeError if called before init_settings_service().
+    """
+    if settings_service is None:
+        raise RuntimeError(
+            "SettingsService has not been initialised. "
+            "Call init_settings_service() in the app lifespan before using this function."
+        )
+    return settings_service

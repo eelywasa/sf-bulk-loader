@@ -41,9 +41,19 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ── JWT helpers ───────────────────────────────────────────────────────────────
 
 
-def create_access_token(user: User) -> str:
+def create_access_token(user: User, expiry_minutes: Optional[int] = None) -> str:
+    """Create a signed JWT for *user*.
+
+    Args:
+        user: The authenticated User instance.
+        expiry_minutes: Token lifetime in minutes.  When omitted, falls back to
+            ``settings.jwt_expiry_minutes`` (the config default).  Callers in
+            async contexts should resolve the DB-backed value via
+            ``await settings_service.get("jwt_expiry_minutes")`` and pass it here.
+    """
+    _expiry = expiry_minutes if expiry_minutes is not None else settings.jwt_expiry_minutes
     now = datetime.now(tz=timezone.utc)
-    exp = int(now.timestamp()) + settings.jwt_expiry_minutes * 60
+    exp = int(now.timestamp()) + _expiry * 60
     payload = {
         "sub": user.id,
         "username": user.username,

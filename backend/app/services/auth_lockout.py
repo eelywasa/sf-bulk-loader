@@ -146,7 +146,15 @@ async def handle_failed_attempt(
     user.last_failed_login_at = now
 
     # ── 2. Tier-2 trigger A: cumulative threshold ─────────────────────────────
-    if user.failed_login_count >= settings.login_tier2_threshold and user.status == "active":
+    from app.services.settings.service import settings_service as _svc
+
+    async def _get(key: str, fallback):  # type: ignore[return]
+        if _svc is not None:
+            return await _svc.get(key)
+        return getattr(settings, key, fallback)
+
+    _login_tier2_threshold: int = await _get("login_tier2_threshold", settings.login_tier2_threshold)
+    if user.failed_login_count >= _login_tier2_threshold and user.status == "active":
         user.status = "locked"
         _log.warning(
             "Account tier-2 hard-locked (cumulative threshold)",
@@ -166,7 +174,8 @@ async def handle_failed_attempt(
     # Count failed attempts in the sliding window via login_attempt rows.
     # The primary failed-attempt row was already flushed by the caller, so the
     # query count already includes the current attempt.
-    tier1_window_start = now - timedelta(minutes=settings.login_tier1_window_minutes)
+    _login_tier1_window_minutes: int = await _get("login_tier1_window_minutes", settings.login_tier1_window_minutes)
+    tier1_window_start = now - timedelta(minutes=_login_tier1_window_minutes)
     # MUST_RESET_PASSWORD is emitted on SUCCESSFUL auth with a temp password,
     # so it is deliberately excluded from the failure set — counting it would
     # penalise users legitimately completing a temp-password first login.
@@ -185,7 +194,8 @@ async def handle_failed_attempt(
         )
     ) or 0
 
-    tier1_triggered = recent_fail_count >= settings.login_tier1_threshold
+    _login_tier1_threshold: int = await _get("login_tier1_threshold", settings.login_tier1_threshold)
+    tier1_triggered = recent_fail_count >= _login_tier1_threshold
 
     if not tier1_triggered:
         return
@@ -198,7 +208,8 @@ async def handle_failed_attempt(
         return
 
     # ── 4. Apply tier-1 lock ──────────────────────────────────────────────────
-    user.locked_until = now + timedelta(minutes=settings.login_tier1_lock_minutes)
+    _login_tier1_lock_minutes: int = await _get("login_tier1_lock_minutes", settings.login_tier1_lock_minutes)
+    user.locked_until = now + timedelta(minutes=_login_tier1_lock_minutes)
     _log.warning(
         "Account tier-1 auto-locked",
         extra={
@@ -229,7 +240,8 @@ async def handle_failed_attempt(
     if user.status != "active":
         return
 
-    tier2_window_start = now - timedelta(hours=settings.login_tier2_window_hours)
+    _login_tier2_window_hours: int = await _get("login_tier2_window_hours", settings.login_tier2_window_hours)
+    tier2_window_start = now - timedelta(hours=_login_tier2_window_hours)
     tier1_lock_count: int = await db.scalar(
         select(func.count())
         .select_from(LoginAttempt)
@@ -240,7 +252,8 @@ async def handle_failed_attempt(
         )
     ) or 0
 
-    if tier1_lock_count >= settings.login_tier2_tier1_count:
+    _login_tier2_tier1_count: int = await _get("login_tier2_tier1_count", settings.login_tier2_tier1_count)
+    if tier1_lock_count >= _login_tier2_tier1_count:
         user.status = "locked"
         _log.warning(
             "Account tier-2 hard-locked (repeated tier-1 locks)",

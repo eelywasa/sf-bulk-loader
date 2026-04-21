@@ -152,10 +152,16 @@ async def change_password(
         obs_metrics.record_auth_password_change(outcome)
 
         # Step 5 — issue fresh JWT
-        token = create_access_token(user)
+        # Read JWT expiry from DB-backed settings (SFBL-156).
+        from app.services.settings.service import settings_service as _svc
+        _jwt_expiry: int = (
+            await _svc.get("jwt_expiry_minutes") if _svc is not None
+            else settings.jwt_expiry_minutes
+        )
+        token = create_access_token(user, expiry_minutes=_jwt_expiry)
         return TokenResponse(
             access_token=token,
-            expires_in=settings.jwt_expiry_minutes * 60,
+            expires_in=_jwt_expiry * 60,
         )
 
 

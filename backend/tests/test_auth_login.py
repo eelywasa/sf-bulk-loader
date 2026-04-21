@@ -13,7 +13,7 @@ Tests cover:
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -172,16 +172,20 @@ def test_login_tier1_lockout_returns_401(client):
 
 
 def test_login_rate_limit_breach_returns_429(client):
-    """The 21st attempt from the same IP within the window returns HTTP 429."""
+    """The 6th attempt from the same IP within the window returns HTTP 429 when limit=5."""
     user = _make_user()
     _seed_user(user)
 
-    # Patch settings to use a tight limit so the test runs fast
-    with patch("app.api.auth.settings") as mock_settings:
-        mock_settings.login_rate_limit_attempts = 5
-        mock_settings.login_rate_limit_window_seconds = 300
-        mock_settings.jwt_expiry_minutes = 60
+    # Patch the DB-backed settings service to return a tight limit so the test runs fast
+    _limits = {
+        "login_rate_limit_attempts": 5,
+        "login_rate_limit_window_seconds": 300,
+        "jwt_expiry_minutes": 60,
+    }
+    mock_svc = AsyncMock()
+    mock_svc.get = AsyncMock(side_effect=lambda key: _limits.get(key, 60))
 
+    with patch("app.services.settings.service.settings_service", mock_svc):
         # Exhaust the limit with wrong passwords
         for _ in range(5):
             client.post("/api/auth/login", json={"username": "alice", "password": "wrong!"})
@@ -203,11 +207,15 @@ def test_login_rate_limit_persists_ip_limit_attempt(client):
     user = _make_user()
     _seed_user(user)
 
-    with patch("app.api.auth.settings") as mock_settings:
-        mock_settings.login_rate_limit_attempts = 1
-        mock_settings.login_rate_limit_window_seconds = 300
-        mock_settings.jwt_expiry_minutes = 60
+    _limits = {
+        "login_rate_limit_attempts": 1,
+        "login_rate_limit_window_seconds": 300,
+        "jwt_expiry_minutes": 60,
+    }
+    mock_svc = AsyncMock()
+    mock_svc.get = AsyncMock(side_effect=lambda key: _limits.get(key, 60))
 
+    with patch("app.services.settings.service.settings_service", mock_svc):
         # First attempt consumes the limit
         client.post("/api/auth/login", json={"username": "alice", "password": "wrong!"})
         # Second attempt is rate-limited

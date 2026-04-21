@@ -172,10 +172,16 @@ async def request_email_change(
         new_email = str(body.new_email).lower()
 
         # Per-user rate limit
+        # value applies to new rate-limit windows; existing in-flight windows use the value active when they started
+        from app.services.settings.service import settings_service as _svc
+        _ec_rl_limit: int = (
+            await _svc.get("email_change_rate_limit_per_user_hour") if _svc is not None
+            else settings.email_change_rate_limit_per_user_hour
+        )
         rate_key = f"rl:email_change:user:{current_user.id}"
         allowed = await check_and_record(
             rate_key,
-            limit=settings.email_change_rate_limit_per_user_hour,
+            limit=_ec_rl_limit,
             window_seconds=3600,
         )
         if not allowed:
@@ -242,7 +248,11 @@ async def request_email_change(
         raw_token = secrets.token_hex(32)
         token_hash = _sha256_hex(raw_token)
         now_utc = datetime.now(timezone.utc)
-        expires_at = now_utc + timedelta(minutes=settings.email_change_ttl_minutes)
+        _ec_ttl: int = (
+            await _svc.get("email_change_ttl_minutes") if _svc is not None
+            else settings.email_change_ttl_minutes
+        )
+        expires_at = now_utc + timedelta(minutes=_ec_ttl)
 
         # Invalidate all prior unused email-change tokens for this user
         prior_tokens_result = await db.execute(
@@ -277,7 +287,7 @@ async def request_email_change(
                 "user_display_name": display_name,
                 "confirm_url": confirm_url,
                 "new_email": new_email,
-                "expires_in_minutes": settings.email_change_ttl_minutes,
+                "expires_in_minutes": _ec_ttl,
             },
             to=new_email,
             category=EmailCategory.AUTH,
