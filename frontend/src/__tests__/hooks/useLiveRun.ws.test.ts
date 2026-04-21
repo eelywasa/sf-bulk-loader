@@ -27,7 +27,8 @@ vi.mock('../../api/client', () => ({
 }))
 
 vi.mock('../../context/AuthContext', () => ({
-  useAuth: vi.fn(() => ({ authRequired: true })),
+  useAuth: vi.fn(() => ({ authRequired: true, permissions: new Set() })),
+  useAuthOptional: vi.fn(() => ({ authRequired: true, permissions: new Set() })),
 }))
 
 import { runsApi, plansApi } from '../../api/endpoints'

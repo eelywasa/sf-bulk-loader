@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { Badge, Button, Progress } from '../../components/ui'
 import type { LoadRun, JobRecord, LoadPlanDetail } from '../../api/types'
 import { formatDate, formatElapsed } from './utils'
+import PermissionGate from '../../components/PermissionGate'
 
 function Stat({
   label,
@@ -83,9 +84,11 @@ export function RunSummaryCard({
         </div>
 
         {isLive && (
-          <Button variant="danger" size="sm" onClick={onAbort}>
-            Abort Run
-          </Button>
+          <PermissionGate permission="runs.abort">
+            <Button variant="danger" size="sm" onClick={onAbort}>
+              Abort Run
+            </Button>
+          </PermissionGate>
         )}
       </div>
 

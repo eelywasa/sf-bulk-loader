@@ -7,6 +7,39 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../../components/ui/Toast'
 import PlanEditor from '../../pages/PlanEditor'
 
+// ─── Mock AuthContext — admin permissions so permission-gated UI is visible ────
+
+const MOCK_ALL_PERMISSIONS = new Set([
+  'connections.view', 'connections.view_credentials', 'connections.manage',
+  'plans.view', 'plans.manage',
+  'runs.view', 'runs.execute', 'runs.abort',
+  'files.view', 'files.view_contents',
+  'users.manage', 'system.settings',
+])
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: vi.fn(() => ({
+    token: 'test-token',
+    user: { id: '1', username: 'admin', is_admin: true, profile: { name: 'admin' }, permissions: [...MOCK_ALL_PERMISSIONS] },
+    permissions: MOCK_ALL_PERMISSIONS,
+    profileName: 'admin',
+    isBootstrapping: false,
+    authRequired: true,
+    login: vi.fn(),
+    logout: vi.fn(),
+  })),
+  useAuthOptional: vi.fn(() => ({
+    token: 'test-token',
+    user: { id: '1', username: 'admin', is_admin: true, profile: { name: 'admin' }, permissions: [...MOCK_ALL_PERMISSIONS] },
+    permissions: MOCK_ALL_PERMISSIONS,
+    profileName: 'admin',
+    isBootstrapping: false,
+    authRequired: true,
+    login: vi.fn(),
+    logout: vi.fn(),
+  })),
+}))
+
 // ─── Mock the endpoints module ─────────────────────────────────────────────────
 
 vi.mock('../../api/endpoints', () => ({
@@ -35,9 +68,15 @@ vi.mock('../../api/endpoints', () => ({
     listInput: vi.fn(),
     previewInput: vi.fn(),
   },
+  notificationSubscriptionsApi: {
+    list: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
 
-import { plansApi, stepsApi, connectionsApi, inputConnectionsApi, filesApi } from '../../api/endpoints'
+import { plansApi, stepsApi, connectionsApi, inputConnectionsApi, filesApi, notificationSubscriptionsApi } from '../../api/endpoints'
 
 // ─── Test fixtures ─────────────────────────────────────────────────────────────
 
@@ -211,6 +250,7 @@ describe('PlanEditor', () => {
       limit: 1,
       has_next: false,
     })
+    vi.mocked(notificationSubscriptionsApi.list).mockResolvedValue([])
   })
 
   // ── New plan mode ──────────────────────────────────────────────────────────

@@ -22,13 +22,29 @@ const MOCK_RUNTIME_DESKTOP: RuntimeConfig = {
   input_storage_mode: 'local',
 }
 
+const ALL_PERMISSIONS = [
+  'connections.view',
+  'connections.view_credentials',
+  'connections.manage',
+  'plans.view',
+  'plans.manage',
+  'runs.view',
+  'runs.execute',
+  'runs.abort',
+  'files.view',
+  'files.view_contents',
+  'users.manage',
+  'system.settings',
+]
+
 const MOCK_USER: UserResponse = {
   id: '1',
   username: 'alice',
   email: null,
   display_name: null,
-  role: 'admin',
-  is_active: true,
+  is_admin: true,
+  profile: { name: 'admin' },
+  permissions: ALL_PERMISSIONS,
 }
 
 const MOCK_USER_DISPLAY: UserResponse = {
@@ -41,6 +57,11 @@ function renderAppShell(initialPath = '/', mockUser: UserResponse | null = null)
     localStorage.setItem('auth_token', 'test-token')
     vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
     vi.mocked(client.apiFetch).mockResolvedValueOnce(mockUser)
+  } else {
+    // Default: local runtime with an admin user (token stored so /me is called)
+    localStorage.setItem('auth_token', 'test-token')
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_USER)
   }
   const router = createMemoryRouter(
     [
@@ -82,13 +103,15 @@ describe('AppShell', () => {
     expect(screen.getByText('Bulk Loader')).toBeInTheDocument()
   })
 
-  it('renders all navigation links', () => {
+  it('renders all navigation links', async () => {
     renderAppShell()
-    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Connections' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Load Plans' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Runs' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Files' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Connections' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Load Plans' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Runs' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Files' })).toBeInTheDocument()
+    })
   })
 
   it('renders the outlet content for the current route', () => {
@@ -106,17 +129,21 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/')
   })
 
-  it('connections link has correct href', () => {
+  it('connections link has correct href', async () => {
     renderAppShell()
-    expect(screen.getByRole('link', { name: 'Connections' })).toHaveAttribute(
-      'href',
-      '/connections',
-    )
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Connections' })).toHaveAttribute(
+        'href',
+        '/connections',
+      )
+    })
   })
 
-  it('plans link has correct href', () => {
+  it('plans link has correct href', async () => {
     renderAppShell()
-    expect(screen.getByRole('link', { name: 'Load Plans' })).toHaveAttribute('href', '/plans')
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Load Plans' })).toHaveAttribute('href', '/plans')
+    })
   })
 
   it('has a main navigation landmark', () => {
@@ -177,7 +204,6 @@ describe('AppShell', () => {
   })
 
   it('shows sign out button when auth is required', async () => {
-    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
     renderAppShell()
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
@@ -185,8 +211,22 @@ describe('AppShell', () => {
   })
 
   it('hides sign out button in desktop profile', async () => {
-    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
-    renderAppShell()
+    // Override: desktop runtime + desktop user (no stored token needed)
+    localStorage.removeItem('auth_token')
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+      .mockResolvedValueOnce({ ...MOCK_USER, profile: { name: 'desktop' } })
+    const router = createMemoryRouter(
+      [{ element: <AppShell />, children: [{ path: '/', element: <div>Dashboard page</div> }] }],
+      { initialEntries: ['/'] },
+    )
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <RouterProvider router={router} />
+        </AuthProvider>
+      </ThemeProvider>,
+    )
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument()
     })

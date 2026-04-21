@@ -4,8 +4,29 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '../../components/ui/Toast'
+import { ThemeProvider } from '../../context/ThemeContext'
+import { AuthProvider } from '../../context/AuthContext'
+import * as client from '../../api/client'
 import FilesPage, { formatFileSize } from '../../pages/FilesPage'
-import type { InputDirectoryEntry, InputFilePreview } from '../../api/types'
+import type { InputDirectoryEntry, InputFilePreview, RuntimeConfig, UserResponse } from '../../api/types'
+
+const MOCK_RUNTIME: RuntimeConfig = {
+  auth_mode: 'local',
+  app_distribution: 'self_hosted',
+  transport_mode: 'http',
+  input_storage_mode: 'local',
+}
+
+const MOCK_USER: UserResponse = {
+  id: 'test-user',
+  username: 'testuser',
+  email: null,
+  display_name: null,
+  is_admin: true,
+  profile: { name: 'admin' },
+  // Admin has files.view_contents so preview panel is visible
+  permissions: ['files.view', 'files.view_contents', 'connections.view'],
+}
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -83,14 +104,24 @@ function renderFilesPage() {
     },
   })
 
+  localStorage.setItem('auth_token', 'test-token')
+  vi.spyOn(client, 'apiFetch').mockImplementation((url: string) => {
+    if (url === '/api/runtime') return Promise.resolve(MOCK_RUNTIME)
+    return Promise.resolve(MOCK_USER)
+  })
+
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <MemoryRouter>
-          <FilesPage />
-        </MemoryRouter>
-      </ToastProvider>
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <MemoryRouter>
+              <FilesPage />
+            </MemoryRouter>
+          </ToastProvider>
+        </QueryClientProvider>
+      </AuthProvider>
+    </ThemeProvider>,
   )
 }
 
@@ -132,6 +163,11 @@ describe('FilesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
   })
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -522,9 +558,17 @@ describe('FilesPage', () => {
       has_next: false,
     }
 
+    const accountsPage2: InputFilePreview = {
+      ...accountsPreview,
+      offset: 50,
+      has_next: false,
+      rows: [],
+    }
+
     vi.mocked(filesApi.previewInput)
-      .mockResolvedValueOnce(accountsPreview)
-      .mockResolvedValueOnce(contactsPreview)
+      .mockResolvedValueOnce(accountsPreview)   // accounts.csv page 1
+      .mockResolvedValueOnce(accountsPage2)     // accounts.csv page 2 (Next page click)
+      .mockResolvedValueOnce(contactsPreview)   // contacts.csv page 1
 
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))

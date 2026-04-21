@@ -21,13 +21,22 @@ export interface TokenResponse {
   expires_in: number
 }
 
+export interface UserProfile {
+  name: 'admin' | 'operator' | 'viewer' | 'desktop' | string
+}
+
 export interface UserResponse {
   id: string
   username: string | null
   email: string | null
   display_name: string | null
-  role: string
-  is_active: boolean
+  /** Deprecated — use profile.name instead. Kept for backward compatibility. */
+  role?: string
+  is_active?: boolean
+  is_admin?: boolean
+  profile?: UserProfile
+  /** Sorted list of permission keys granted to this user. */
+  permissions?: string[]
 }
 
 // ─── Status enums ─────────────────────────────────────────────────────────────
