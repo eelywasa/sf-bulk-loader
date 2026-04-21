@@ -383,6 +383,32 @@ export interface NotificationTestResponse {
   email_delivery_id: string | null
 }
 
+// ─── DB-backed settings (SFBL-157) ───────────────────────────────────────────
+
+export type SettingType = 'str' | 'int' | 'bool' | 'float'
+
+export interface SettingValue {
+  key: string
+  value: string | number | boolean | null
+  type: SettingType
+  is_secret: boolean
+  description: string
+  restart_required: boolean
+  updated_at: string | null
+}
+
+export interface CategorySettings {
+  category: string
+  settings: SettingValue[]
+}
+
+export interface AllSettings {
+  categories: CategorySettings[]
+}
+
+/** Free-form key→value patch body sent to PATCH /api/settings/{category} */
+export type SettingsPatch = Record<string, string | number | boolean>
+
 // ─── Dependencies health ──────────────────────────────────────────────────────
 
 export interface DependencyStatus {

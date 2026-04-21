@@ -1,5 +1,8 @@
 import { api, apiFetch } from './client'
 import type {
+  AllSettings,
+  CategorySettings,
+  SettingsPatch,
   Connection,
   ConnectionCreate,
   CsvFetchParams,
@@ -241,6 +244,95 @@ export const notificationSubscriptionsApi = {
 
 export const dependenciesApi = {
   get: () => api.get<DependenciesResponse>('/api/health/dependencies'),
+}
+
+// ─── DB-backed settings (SFBL-157) ────────────────────────────────────────────
+
+/**
+ * GET /api/settings
+ *
+ * Returns all categories. We also capture the X-Settings-Cache-TTL header so
+ * callers can display the propagation banner; this requires a raw fetch rather
+ * than the api.get helper (which only returns the JSON body).
+ */
+export async function getAllSettings(): Promise<{ data: AllSettings; cacheTtl: number }> {
+  const { BASE_URL, getStoredToken, ApiError } = await import('./client')
+  const headers = new Headers()
+  const token = getStoredToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const res = await fetch(`${BASE_URL}/api/settings/`, { headers })
+  if (!res.ok) {
+    throw new ApiError({ status: res.status, message: res.statusText || `HTTP ${res.status}` })
+  }
+  const cacheTtl = parseInt(res.headers.get('X-Settings-Cache-TTL') ?? '60', 10)
+  const data: AllSettings = await res.json()
+  return { data, cacheTtl }
+}
+
+/**
+ * GET /api/settings/{category}
+ *
+ * Returns settings for a single category plus the cache TTL.
+ */
+export async function getSettingsCategory(
+  category: string,
+): Promise<{ data: CategorySettings; cacheTtl: number }> {
+  const { BASE_URL, getStoredToken, ApiError } = await import('./client')
+  const headers = new Headers()
+  const token = getStoredToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const res = await fetch(`${BASE_URL}/api/settings/${category}`, { headers })
+  if (!res.ok) {
+    throw new ApiError({ status: res.status, message: res.statusText || `HTTP ${res.status}` })
+  }
+  const cacheTtl = parseInt(res.headers.get('X-Settings-Cache-TTL') ?? '60', 10)
+  const data: CategorySettings = await res.json()
+  return { data, cacheTtl }
+}
+
+/**
+ * PATCH /api/settings/{category}
+ *
+ * Sends only changed fields. Returns updated CategorySettings plus cache TTL.
+ * On 422, the ApiError detail will be an array of {field, error} objects.
+ */
+export async function updateSettingsCategory(
+  category: string,
+  patch: SettingsPatch,
+): Promise<{ data: CategorySettings; cacheTtl: number }> {
+  const { BASE_URL, getStoredToken, ApiError } = await import('./client')
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  const token = getStoredToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const res = await fetch(`${BASE_URL}/api/settings/${category}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(patch),
+  })
+
+  if (!res.ok) {
+    let detail: unknown
+    let message = res.statusText || `HTTP ${res.status}`
+    try {
+      const body = await res.json()
+      if (res.status === 422 && Array.isArray(body.detail)) {
+        detail = body.detail
+        message = 'Validation error'
+      } else if (typeof body.detail === 'string') {
+        message = body.detail
+      }
+    } catch {
+      // ignore
+    }
+    throw new ApiError({ status: res.status, message, detail: detail as never })
+  }
+
+  const cacheTtl = parseInt(res.headers.get('X-Settings-Cache-TTL') ?? '60', 10)
+  const data: CategorySettings = await res.json()
+  return { data, cacheTtl }
 }
 
 // ─── SFBL-150: public auth (forgot password, reset password) ───
