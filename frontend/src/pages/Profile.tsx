@@ -3,11 +3,11 @@
  * request an email address change, and change their password.
  *
  * Route: /profile (protected)
- * SFBL-149
+ * SFBL-149 + SFBL-192
  */
 
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -20,6 +20,7 @@ import {
 } from '../components/ui/formStyles'
 import { meApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
+import type { LoginHistoryEntry } from '../api/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -330,6 +331,128 @@ function PasswordCard() {
   )
 }
 
+// ─── Helpers: date formatting ────────────────────────────────────────────────
+
+/**
+ * Returns a relative time string (e.g. "3 minutes ago") using the
+ * Intl.RelativeTimeFormat API, falling back to the absolute ISO string
+ * if the browser doesn't support it.
+ */
+function relativeTime(isoString: string): string {
+  try {
+    const date = new Date(isoString)
+    const diffMs = date.getTime() - Date.now()
+    const diffSec = Math.round(diffMs / 1000)
+    const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+
+    const thresholds: [number, Intl.RelativeTimeFormatUnit][] = [
+      [60, 'second'],
+      [3600, 'minute'],
+      [86400, 'hour'],
+      [86400 * 30, 'day'],
+      [86400 * 365, 'month'],
+      [Infinity, 'year'],
+    ]
+
+    let divisor = 1
+    let unit: Intl.RelativeTimeFormatUnit = 'second'
+    for (const [limit, u] of thresholds) {
+      unit = u
+      if (Math.abs(diffSec) < limit) break
+      divisor = limit
+    }
+    return rtf.format(Math.round(diffSec / divisor), unit)
+  } catch {
+    return isoString
+  }
+}
+
+function absoluteTime(isoString: string): string {
+  try {
+    return new Date(isoString).toLocaleString()
+  } catch {
+    return isoString
+  }
+}
+
+// ─── Card: Recent sign-in activity ──────────────────────────────────────────
+
+function LoginHistoryCard() {
+  const { data: entries, isLoading, isError } = useQuery<LoginHistoryEntry[]>({
+    queryKey: ['me', 'login-history'],
+    queryFn: () => meApi.getLoginHistory(10),
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  return (
+    <section
+      className="bg-surface-raised border border-border-base rounded-lg p-6 space-y-4"
+      data-testid="login-history-card"
+    >
+      <h2 className="text-sm font-semibold text-content-primary">Recent sign-in activity</h2>
+
+      {isLoading && (
+        <p className="text-sm text-content-muted">Loading…</p>
+      )}
+
+      {isError && (
+        <p className="text-sm text-content-muted">Could not load sign-in history.</p>
+      )}
+
+      {!isLoading && !isError && entries && entries.length === 0 && (
+        <p className="text-sm text-content-muted" data-testid="login-history-empty">
+          No sign-in activity recorded yet.
+        </p>
+      )}
+
+      {!isLoading && !isError && entries && entries.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" data-testid="login-history-table">
+            <thead>
+              <tr className="border-b border-border-base text-left">
+                <th className="pb-2 text-xs font-medium text-content-muted uppercase tracking-wide pr-6">
+                  Time
+                </th>
+                <th className="pb-2 text-xs font-medium text-content-muted uppercase tracking-wide pr-6">
+                  IP
+                </th>
+                <th className="pb-2 text-xs font-medium text-content-muted uppercase tracking-wide">
+                  Result
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-base">
+              {entries.map((entry, idx) => (
+                <tr key={idx} className="py-2">
+                  <td className="py-2 pr-6 text-content-secondary whitespace-nowrap">
+                    <span
+                      title={absoluteTime(entry.attempted_at)}
+                      className="cursor-default"
+                    >
+                      {relativeTime(entry.attempted_at)}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-6 font-mono text-content-primary">
+                    {entry.ip}
+                  </td>
+                  <td className="py-2">
+                    {entry.outcome === 'Success' ? (
+                      <Badge variant="success">{entry.outcome}</Badge>
+                    ) : (
+                      <Badge variant="warning">{entry.outcome}</Badge>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ─── Profile page ─────────────────────────────────────────────────────────────
 
 export default function Profile() {
@@ -341,6 +464,7 @@ export default function Profile() {
         <DisplayNameCard />
         <EmailCard />
         <PasswordCard />
+        <LoginHistoryCard />
       </div>
     </div>
   )

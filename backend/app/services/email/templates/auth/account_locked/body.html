@@ -1,0 +1,8 @@
+{% extends "base/layout.html" %}
+{% block content %}
+<h2>Account Locked</h2>
+<p>Hello {{ user_display_name }},</p>
+<p>Your Salesforce Bulk Loader account has been locked due to repeated failed sign-in attempts.</p>
+<p>Please contact your administrator to regain access.</p>
+<p>If you did not attempt to sign in, please notify your administrator immediately.</p>
+{% endblock %}

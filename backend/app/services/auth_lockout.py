@@ -32,10 +32,20 @@ Observability
 Every tier-1 or tier-2 lock emits:
 - ``auth.account.locked`` log event with appropriate ``outcome_code``
 - ``auth_account_locks_total{tier}`` metric counter
+
+SFBL-192: Account-locked email
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+On every tier-2 transition (both trigger A and B), if the user has an email
+address on file, an account-locked notification email is sent via the
+email service singleton.  The send is non-blocking (asyncio.create_task) and
+email failures never propagate to the login endpoint.  If the email service
+is not configured (noop backend) the send still proceeds silently; if the
+user has no email address, a WARNING is logged and the send is skipped.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -50,6 +60,55 @@ from app.observability.events import AuthEvent, OutcomeCode
 from app.observability.metrics import record_account_locked
 
 _log = logging.getLogger(__name__)
+
+
+# ── Email helper ───────────────────────────────────────────────────────────────
+
+
+def _schedule_account_locked_email(user: User) -> None:
+    """Fire-and-forget: send account-locked email to ``user`` if possible.
+
+    Uses ``asyncio.create_task`` so email failures never surface to the caller.
+    If the user has no email address on file, logs a WARNING and skips.
+    """
+    if not user.email:
+        _log.warning(
+            "Account tier-2 locked but user has no email address; skipping notification",
+            extra={
+                "event_name": AuthEvent.ACCOUNT_LOCKED,
+                "outcome_code": OutcomeCode.TIER2_HARD,
+                "user_id": user.id,
+            },
+        )
+        return
+
+    user_email = user.email
+    display_name = user.display_name or user.username or user_email
+
+    async def _send() -> None:
+        try:
+            from app.services.email.service import get_email_service
+            from app.services.email.message import EmailCategory
+
+            svc = await get_email_service()
+            await svc.send_template(
+                "auth/account_locked",
+                {"user_display_name": display_name},
+                to=user_email,
+                category=EmailCategory.AUTH,
+            )
+        except Exception:
+            _log.warning(
+                "Failed to send account-locked email; lockout persists",
+                extra={
+                    "event_name": AuthEvent.ACCOUNT_LOCKED,
+                    "outcome_code": OutcomeCode.TIER2_HARD,
+                    "user_id": user.id,
+                },
+                exc_info=True,
+            )
+
+    asyncio.create_task(_send(), name=f"account_locked_email_{user.id}")
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
@@ -100,6 +159,7 @@ async def handle_failed_attempt(
             },
         )
         record_account_locked(OutcomeCode.TIER2_HARD)
+        _schedule_account_locked_email(user)
         return
 
     # ── 3. Tier-1 threshold check ─────────────────────────────────────────────
@@ -191,6 +251,7 @@ async def handle_failed_attempt(
             },
         )
         record_account_locked(OutcomeCode.TIER2_HARD)
+        _schedule_account_locked_email(user)
 
 
 async def handle_successful_login(db: AsyncSession, user: User) -> None:

@@ -1,5 +1,5 @@
 /**
- * Tests for Profile.tsx — SFBL-149
+ * Tests for Profile.tsx — SFBL-149 + SFBL-192
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -13,7 +13,7 @@ import { ToastProvider } from '../components/ui/Toast'
 import * as client from '../api/client'
 import * as endpoints from '../api/endpoints'
 import Profile from './Profile'
-import type { RuntimeConfig, UserResponse, TokenResponse } from '../api/types'
+import type { RuntimeConfig, UserResponse, TokenResponse, LoginHistoryEntry } from '../api/types'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -265,6 +265,84 @@ describe('Profile page', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Too many requests/)).toBeInTheDocument()
+    })
+  })
+})
+
+// ─── LoginHistoryCard tests (SFBL-192) ────────────────────────────────────────
+
+describe('Profile page — LoginHistoryCard', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.spyOn(client, 'apiFetch')
+    vi.spyOn(endpoints.meApi, 'getLoginHistory')
+    // Stub other meApi methods to prevent unhandled rejection noise
+    vi.spyOn(endpoints.meApi, 'updateProfile')
+    vi.spyOn(endpoints.meApi, 'changePassword')
+    vi.spyOn(endpoints.meApi, 'requestEmailChange')
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('renders empty state when history is empty', async () => {
+    localStorage.setItem('auth_token', 'test-token')
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(MOCK_USER)
+    vi.mocked(endpoints.meApi.getLoginHistory).mockResolvedValueOnce([])
+
+    renderProfile()
+
+    await waitFor(() => {
+      expect(screen.getByText('Recent sign-in activity')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('login-history-empty')).toBeInTheDocument()
+    })
+    expect(screen.getByText(/No sign-in activity recorded yet/)).toBeInTheDocument()
+  })
+
+  it('renders the history table when data is present', async () => {
+    localStorage.setItem('auth_token', 'test-token')
+
+    const mockHistory: LoginHistoryEntry[] = [
+      { attempted_at: '2024-06-01T10:00:00Z', ip: '192.168.1.1', outcome: 'Success' },
+      { attempted_at: '2024-06-01T09:00:00Z', ip: '10.0.0.1', outcome: 'Failed' },
+    ]
+
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(MOCK_USER)
+    vi.mocked(endpoints.meApi.getLoginHistory).mockResolvedValueOnce(mockHistory)
+
+    renderProfile()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('login-history-table')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('192.168.1.1')).toBeInTheDocument()
+    expect(screen.getByText('10.0.0.1')).toBeInTheDocument()
+    expect(screen.getByText('Success')).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+  })
+
+  it('shows the section heading', async () => {
+    localStorage.setItem('auth_token', 'test-token')
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(MOCK_USER)
+    vi.mocked(endpoints.meApi.getLoginHistory).mockResolvedValueOnce([])
+
+    renderProfile()
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Recent sign-in activity', level: 2 }),
+      ).toBeInTheDocument()
     })
   })
 })

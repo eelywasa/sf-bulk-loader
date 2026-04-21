@@ -2,12 +2,16 @@
 
 import logging
 from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.login_attempt import LoginAttempt
 from app.models.user import User
 from app.observability.events import AuthEvent, OutcomeCode
 from app.observability import metrics as obs_metrics
@@ -153,3 +157,55 @@ async def change_password(
             access_token=token,
             expires_in=settings.jwt_expiry_minutes * 60,
         )
+
+
+# ── Login history ─────────────────────────────────────────────────────────────
+
+_OUTCOME_MASK: dict[str, str] = {
+    OutcomeCode.OK: "Success",
+}
+"""Map fine-grained outcome codes to the user-visible label.
+
+Any outcome not present here is shown as ``"Failed"`` — this ensures we never
+leak internal outcome code strings (e.g. ``tier1_auto``, ``wrong_password``)
+to the end-user.  The only positive outcome is ``ok`` (written on successful
+login) → ``"Success"``.
+"""
+
+
+class LoginHistoryEntry(BaseModel):
+    attempted_at: datetime
+    ip: str
+    outcome: str  # "Success" or "Failed" — coarse mask
+
+
+@router.get("/login-history", response_model=list[LoginHistoryEntry])
+async def get_login_history(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> list[LoginHistoryEntry]:
+    """Return recent sign-in activity for the authenticated user.
+
+    - Only returns rows where ``user_id == current_user.id``
+      (unknown-user rows with null user_id are excluded).
+    - Outcome codes are masked to ``"Success"`` or ``"Failed"`` — fine-grained
+      codes are for operator logs only.
+    - Results ordered newest-first, bounded to ``limit`` (1–50, default 10).
+    """
+    rows = await db.execute(
+        select(LoginAttempt)
+        .where(LoginAttempt.user_id == current_user.id)
+        .order_by(LoginAttempt.attempted_at.desc())
+        .limit(limit)
+    )
+    attempts = rows.scalars().all()
+
+    return [
+        LoginHistoryEntry(
+            attempted_at=row.attempted_at,
+            ip=row.ip,
+            outcome=_OUTCOME_MASK.get(row.outcome, "Failed"),
+        )
+        for row in attempts
+    ]
