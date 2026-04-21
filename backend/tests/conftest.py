@@ -215,7 +215,7 @@ def auth_client():
         username="test-user",
         hashed_password="x",
         role="admin",
-        is_active=True,
+        status="active",
     )
 
     async def override_get_db():

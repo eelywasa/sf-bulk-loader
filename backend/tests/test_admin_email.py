@@ -35,7 +35,7 @@ def _make_admin() -> User:
         username="admin-test",
         hashed_password=hash_password("Test-Admin-P4ss!"),
         role="admin",
-        is_active=True,
+        status="active",
     )
 
 
@@ -45,7 +45,7 @@ def _make_regular_user() -> User:
         username="regular-user",
         hashed_password=hash_password("Test-Admin-P4ss!"),
         role="user",
-        is_active=True,
+        status="active",
     )
 
 

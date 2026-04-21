@@ -694,7 +694,7 @@ def _ws_token() -> str:
     from app.models.user import User
     from app.services.auth import create_access_token
 
-    user = User(id=str(uuid.uuid4()), username="wstest", role="user", is_active=True)
+    user = User(id=str(uuid.uuid4()), username="wstest", role="user", status="active")
     return create_access_token(user)
 
 

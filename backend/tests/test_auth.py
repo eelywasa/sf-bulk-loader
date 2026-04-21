@@ -20,12 +20,16 @@ from app.services.auth import (
 
 
 def _make_user(**kwargs) -> User:
+    # Translate legacy is_active kwarg to the new status column.
+    if "is_active" in kwargs:
+        is_active = kwargs.pop("is_active")
+        kwargs.setdefault("status", "active" if is_active else "deactivated")
     defaults = dict(
         id=str(uuid.uuid4()),
         username="alice",
         hashed_password=hash_password("secret"),
         role="user",
-        is_active=True,
+        status="active",
     )
     defaults.update(kwargs)
     return User(**defaults)

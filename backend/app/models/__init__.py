@@ -6,6 +6,7 @@ from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep
 from app.models.load_run import LoadRun
 from app.models.job import JobRecord
+from app.models.login_attempt import LoginAttempt
 from app.models.notification_delivery import (
     NotificationDelivery,
     NotificationDeliveryStatus,
@@ -27,6 +28,7 @@ __all__ = [
     "LoadStep",
     "LoadRun",
     "JobRecord",
+    "LoginAttempt",
     "NotificationChannel",
     "NotificationDelivery",
     "NotificationDeliveryStatus",

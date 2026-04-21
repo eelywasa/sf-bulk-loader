@@ -20,6 +20,10 @@ class UserResponse(BaseModel):
     email: Optional[str]
     display_name: Optional[str]
     role: str
+    # status replaces is_active as the canonical state field (SFBL-189).
+    # is_active is kept as a read-only derived field for API compatibility —
+    # computed by the User.is_active property on the ORM model.
+    status: str
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)

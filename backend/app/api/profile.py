@@ -209,7 +209,7 @@ async def request_email_change(
         existing_result = await db.execute(
             select(User).where(
                 User.email.ilike(new_email),
-                User.is_active.is_(True),
+                User.status == "active",
                 User.id != current_user.id,
             )
         )
@@ -387,7 +387,7 @@ async def confirm_email_change(
         existing_result = await db.execute(
             select(User).where(
                 User.email.ilike(new_email),
-                User.is_active.is_(True),
+                User.status == "active",
                 User.id != token_record.user_id,
             )
         )
