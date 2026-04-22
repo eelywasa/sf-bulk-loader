@@ -58,6 +58,33 @@ stays green, but do not open the PR until the final ticket of the epic is
 implemented. The PR description lists all child tickets with a brief note per
 ticket.
 
+### Epic Definition of Done — documentation
+
+Before opening the epic PR, audit `docs/` and `README.md` for staleness
+introduced by the epic's changes. Treat documentation updates as part of the
+epic's DoD, not a follow-up task. Specifically:
+
+- **User-facing behaviour changes** (new settings, env vars, UI flows, CLI
+  commands, profiles/permissions, file formats) must have corresponding
+  updates to the relevant page under `docs/` (usage, deployment guides,
+  admin-recovery, etc.) and to `.env.example` where applicable.
+- **Spec changes** — if the shipped reality diverges from the spec file under
+  `docs/specs/`, update the spec in the same PR. Specs that have been fully
+  implemented should be moved to `docs/specs/implemented/` or have a banner
+  added at the top noting what superseded them.
+- **UI conventions** — any new reusable component, modal pattern, form style,
+  or navigation change needs a matching note in `docs/ui-conventions.md`.
+- **README** — confirm the quick-start, feature list, and screenshots still
+  reflect the shipped product. Keep it a signpost only — add detail to
+  `docs/`, not the README.
+- **Stale references** — grep for references to any env var, route, CLI flag,
+  or terminology the epic removed or renamed. Missed references in deployment
+  guides are the most common source of post-release confusion.
+
+If any of the above is skipped, the epic PR is not ready to open. A "docs
+refresh" follow-up story is an anti-pattern — it tends to be deprioritised
+and leaves the product in a state where the docs actively mislead users.
+
 ## Documentation Structure
 User-facing documentation lives in `docs/`:
 - `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)
