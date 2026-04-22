@@ -122,16 +122,21 @@ function statusLabel(status: string): string {
 
 // ─── One-time reveal modal ─────────────────────────────────────────────────────
 
+interface RevealField {
+  label: string
+  value: string
+  helpText?: string
+}
+
 interface RevealModalProps {
   open: boolean
   title: string
-  label: string
-  value: string
   warning: string
+  fields: RevealField[]
   onClose: () => void
 }
 
-function RevealModal({ open, title, label, value, warning, onClose }: RevealModalProps) {
+function CopyableField({ label, value, helpText }: RevealField) {
   const [copied, setCopied] = useState(false)
 
   function handleCopy() {
@@ -141,6 +146,23 @@ function RevealModal({ open, title, label, value, warning, onClose }: RevealModa
     })
   }
 
+  return (
+    <div>
+      <label className={LABEL_CLASS}>{label}</label>
+      <div className="flex items-center gap-2 mt-1">
+        <code className="flex-1 px-3 py-2 bg-surface-sunken border border-border-strong rounded text-sm font-mono text-content-primary break-all">
+          {value}
+        </code>
+        <Button variant="secondary" size="sm" onClick={handleCopy}>
+          {copied ? 'Copied!' : 'Copy'}
+        </Button>
+      </div>
+      {helpText && <p className="mt-1 text-xs text-content-muted">{helpText}</p>}
+    </div>
+  )
+}
+
+function RevealModal({ open, title, warning, fields, onClose }: RevealModalProps) {
   return (
     <Modal
       open={open}
@@ -158,17 +180,9 @@ function RevealModal({ open, title, label, value, warning, onClose }: RevealModa
         <div className={ALERT_WARNING}>
           <strong>Warning:</strong> {warning}
         </div>
-        <div>
-          <label className={LABEL_CLASS}>{label}</label>
-          <div className="flex items-center gap-2 mt-1">
-            <code className="flex-1 px-3 py-2 bg-surface-sunken border border-border-strong rounded text-sm font-mono text-content-primary break-all">
-              {value}
-            </code>
-            <Button variant="secondary" size="sm" onClick={handleCopy}>
-              {copied ? 'Copied!' : 'Copy'}
-            </Button>
-          </div>
-        </div>
+        {fields.map((f) => (
+          <CopyableField key={f.label} {...f} />
+        ))}
       </div>
     </Modal>
   )
@@ -477,86 +491,68 @@ interface ActionsMenuProps {
 }
 
 function ActionsMenu({ user, onAction }: ActionsMenuProps) {
-  const [open, setOpen] = useState(false)
-
-  const actions: { label: string; action: ActionType; show: boolean }[] = [
-    { label: 'Edit', action: 'edit', show: user.status !== 'deleted' },
+  const actions: {
+    label: string
+    action: ActionType
+    show: boolean
+    variant: 'secondary' | 'danger'
+  }[] = [
+    { label: 'Edit', action: 'edit', show: user.status !== 'deleted', variant: 'secondary' },
     {
       label: 'Deactivate',
       action: 'deactivate',
       show: user.status === 'active',
+      variant: 'secondary',
     },
     {
       label: 'Reactivate',
       action: 'reactivate',
       show: user.status === 'deactivated',
+      variant: 'secondary',
     },
     {
       label: 'Unlock',
       action: 'unlock',
       show: user.status === 'locked',
+      variant: 'secondary',
     },
     {
       label: 'Reset Password',
       action: 'reset-password',
       show: user.status !== 'deleted' && user.status !== 'invited',
+      variant: 'secondary',
     },
     {
       label: 'Resend Invitation',
       action: 'resend-invite',
       show: user.status === 'invited',
+      variant: 'secondary',
     },
     {
       label: 'Delete',
       action: 'delete',
       show: user.status !== 'deleted',
+      variant: 'danger',
     },
   ]
 
   const visibleActions = actions.filter((a) => a.show)
 
   return (
-    <div className="relative">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setOpen((v) => !v)}
-        aria-label={`Actions for ${user.email}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        ···
-      </Button>
-      {open && (
-        <>
-          {/* Backdrop to close menu */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="absolute right-0 mt-1 bg-surface-elevated border border-border-base rounded-md shadow-lg z-20 min-w-[160px]">
-            {visibleActions.map((a) => (
-              <button
-                key={a.action}
-                className={clsx(
-                  'w-full text-left px-4 py-2 text-sm transition-colors',
-                  a.action === 'delete'
-                    ? 'text-error-text hover:bg-error-bg'
-                    : 'text-content-secondary hover:bg-surface-hover',
-                )}
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false)
-                  onAction(a.action, user)
-                }}
-              >
-                {a.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+    <div className="flex items-center justify-end gap-2">
+      {visibleActions.map((a) => (
+        <Button
+          key={a.action}
+          size="sm"
+          variant={a.variant}
+          onClick={(e) => {
+            e.stopPropagation()
+            onAction(a.action, user)
+          }}
+        >
+          {a.label}
+        </Button>
+      ))}
     </div>
   )
 }
@@ -892,10 +888,20 @@ export default function AdminUsersPage() {
       {revealToken && (
         <RevealModal
           open
-          title="Invitation Token"
-          label="Invitation token (raw)"
-          value={revealToken.token}
-          warning={`This invitation token for ${revealToken.email} is shown once and cannot be retrieved again. Copy it now to send the invitation link.`}
+          title="Invitation Link"
+          warning={`An invitation email has been sent to ${revealToken.email}. If it doesn't arrive, copy the link below and send it to them directly. This is shown once and cannot be retrieved again.`}
+          fields={[
+            {
+              label: 'Invitation link',
+              value: `${window.location.origin}/invite/accept?token=${revealToken.token}`,
+              helpText: 'Full URL — paste this into an email or chat message.',
+            },
+            {
+              label: 'Raw token',
+              value: revealToken.token,
+              helpText: 'Only needed if the recipient is using a non-default frontend URL.',
+            },
+          ]}
           onClose={() => setRevealToken(null)}
         />
       )}
@@ -904,9 +910,8 @@ export default function AdminUsersPage() {
         <RevealModal
           open
           title="Temporary Password"
-          label="Temporary password"
-          value={revealPassword}
           warning="This temporary password is shown once and cannot be retrieved again. The user must change it on next login."
+          fields={[{ label: 'Temporary password', value: revealPassword }]}
           onClose={() => setRevealPassword(null)}
         />
       )}

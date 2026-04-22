@@ -55,7 +55,7 @@ function IdentityCard() {
         <div>
           <dt className="text-content-muted text-xs uppercase tracking-wide mb-1">Role</dt>
           <dd>
-            <Badge variant="neutral">{user?.profile?.name ?? (user?.is_admin ? 'admin' : '—')}</Badge>
+            <Badge variant="neutral">{user?.profile?.name ?? '—'}</Badge>
           </dd>
         </div>
         <div>

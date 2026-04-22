@@ -242,10 +242,13 @@ describe('AdminUsersPage', () => {
     // Submit
     await user.click(screen.getByRole('button', { name: 'Send Invitation' }))
 
-    // Reveal modal should appear with the token
+    // Reveal modal should appear with the invite link + raw token
     await waitFor(() => {
-      expect(screen.getByText('Invitation Token')).toBeInTheDocument()
+      expect(screen.getByText('Invitation Link')).toBeInTheDocument()
     })
+    expect(
+      screen.getByText(/\/invite\/accept\?token=abc123secrettoken/),
+    ).toBeInTheDocument()
     expect(screen.getByText('abc123secrettoken')).toBeInTheDocument()
     expect(screen.getByText(/shown once/i)).toBeInTheDocument()
     // Must confirm explicitly — no auto-dismiss
@@ -262,14 +265,9 @@ describe('AdminUsersPage', () => {
       expect(screen.getByText('alice@example.com')).toBeInTheDocument()
     })
 
-    // Open action menu for alice (first "actions for" button)
-    const actionBtns = screen.getAllByRole('button', { name: /actions for/i })
-    await user.click(actionBtns[0])
-
-    await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
-    })
-    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    // Click the inline Delete button on alice's row (first "Delete" on the page)
+    const deleteButtonsRow = screen.getAllByRole('button', { name: 'Delete' })
+    await user.click(deleteButtonsRow[0])
 
     // Confirm dialog appears
     await waitFor(() => {
@@ -279,7 +277,6 @@ describe('AdminUsersPage', () => {
 
     // Click the "Delete" confirm button in the dialog footer
     const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
-    // The footer button is outside the actions menu backdrop
     await user.click(deleteButtons[deleteButtons.length - 1])
 
     await waitFor(() => {
@@ -303,19 +300,17 @@ describe('AdminUsersPage', () => {
       expect(screen.getByText('alice@example.com')).toBeInTheDocument()
     })
 
-    const actionBtns = screen.getAllByRole('button', { name: /actions for/i })
-    await user.click(actionBtns[0])
-
-    await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: 'Deactivate' })).toBeInTheDocument()
-    })
-    await user.click(screen.getByRole('menuitem', { name: 'Deactivate' }))
+    // Click the inline Deactivate button on alice's row
+    const deactivateBtns = screen.getAllByRole('button', { name: 'Deactivate' })
+    await user.click(deactivateBtns[0])
 
     await waitFor(() => {
       expect(screen.getByText('Deactivate User')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: 'Deactivate' }))
+    // Confirm in the modal footer
+    const confirmBtns = screen.getAllByRole('button', { name: 'Deactivate' })
+    await user.click(confirmBtns[confirmBtns.length - 1])
 
     await waitFor(() => {
       expect(
