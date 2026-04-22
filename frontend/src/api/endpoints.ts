@@ -41,6 +41,7 @@ import type {
   AdminResetPasswordResponse,
   ResendInviteResponse,
   ProfileListItem,
+  AdminStatsResponse,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -295,6 +296,7 @@ export const adminUsersApi = {
     api.post<ResendInviteResponse>(`/api/admin/users/${id}/resend-invite`),
   delete: (id: string) => api.delete(`/api/admin/users/${id}`),
   listProfiles: () => api.get<ProfileListItem[]>('/api/admin/profiles'),
+  stats: () => api.get<AdminStatsResponse>('/api/admin/users/stats'),
 }
 
 export const dependenciesApi = {

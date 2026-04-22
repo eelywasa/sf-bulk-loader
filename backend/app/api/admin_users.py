@@ -173,6 +173,33 @@ async def list_users(
     )
 
 
+# ── Admin stats ───────────────────────────────────────────────────────────────
+
+
+class AdminStatsResponse(BaseModel):
+    """Lightweight statistics for the admin users page."""
+
+    active_admin_count: int
+
+
+@router.get("/stats", response_model=AdminStatsResponse, summary="Admin user statistics")
+async def get_admin_stats(
+    current_user: _UsersManageUser,
+    db: AsyncSession = Depends(get_db),
+) -> AdminStatsResponse:
+    """Return lightweight admin statistics.
+
+    Currently returns the count of active (active + invited) admin-profile
+    users.  The frontend uses this to display the single-admin warning banner
+    when ``active_admin_count == 1``.
+    """
+    admin_profile = await _get_admin_profile(db)
+    if admin_profile is None:
+        return AdminStatsResponse(active_admin_count=0)
+    count = await _count_active_admins(db, admin_profile.id)
+    return AdminStatsResponse(active_admin_count=count)
+
+
 # ── Get user ──────────────────────────────────────────────────────────────────
 
 

@@ -19,6 +19,22 @@ from app.services.auth import (
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
+def _get_admin_profile_id() -> str | None:
+    """Return the id of the seeded 'admin' profile row, or None if not found."""
+    from sqlalchemy import select as sa_select
+
+    from app.models.profile import Profile
+    from tests.conftest import _TestSession, _run_async
+
+    async def _fetch() -> str | None:
+        async with _TestSession() as session:
+            result = await session.execute(sa_select(Profile).where(Profile.name == "admin"))
+            p = result.scalar_one_or_none()
+            return p.id if p else None
+
+    return _run_async(_fetch())
+
+
 def _make_user(**kwargs) -> User:
     # Translate legacy is_active kwarg to the new status column.
     if "is_active" in kwargs:
@@ -28,6 +44,10 @@ def _make_user(**kwargs) -> User:
     role = kwargs.pop("role", None)
     if role == "admin" and "is_admin" not in kwargs:
         kwargs["is_admin"] = True
+    # SFBL-203: is_admin backstop removed — admin users need a profile_id to
+    # pass require_permission() checks in hosted mode.
+    if kwargs.get("is_admin") and "profile_id" not in kwargs:
+        kwargs["profile_id"] = _get_admin_profile_id()
     defaults = dict(
         id=str(uuid.uuid4()),
         email="alice@example.com",

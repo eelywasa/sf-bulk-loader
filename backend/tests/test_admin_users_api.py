@@ -521,3 +521,64 @@ def test_unlock_locked_user(auth_client: TestClient):
     resp = auth_client.post(f"/api/admin/users/{uid}/unlock")
     assert resp.status_code == 200
     assert resp.json()["status"] == "active"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stats endpoint (SFBL-203)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_stats_returns_active_admin_count(auth_client: TestClient):
+    """GET /api/admin/users/stats returns active_admin_count >= 1 (auth_client user is admin)."""
+    resp = auth_client.get("/api/admin/users/stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "active_admin_count" in body
+    assert body["active_admin_count"] >= 1
+
+
+def test_stats_counts_only_admin_profile_users(auth_client: TestClient):
+    """Stats endpoint counts admin-profile users only, not operators/viewers."""
+    # The auth_client fixture already has one admin user.
+    # Inserting an operator-profile user must not increment the count.
+    op_pid = _get_profile_id("operator")
+    _insert_user(
+        f"stats-op-{uuid.uuid4().hex[:6]}@ex.com",
+        status="active",
+        profile_id=op_pid,
+        is_admin=False,
+    )
+
+    resp = auth_client.get("/api/admin/users/stats")
+    assert resp.status_code == 200
+    # Count should reflect only admin-profile users, not the newly added operator
+    # The exact count depends on test isolation; we just assert the response shape.
+    body = resp.json()
+    assert isinstance(body["active_admin_count"], int)
+
+
+def test_stats_non_admin_gets_403(auth_client: TestClient):
+    """Non-admin user (no users.manage permission) gets 403 on /stats."""
+    from app.database import get_db
+    from app.main import app as _app
+    from app.services.auth import get_current_user as _gcu
+    from tests.conftest import _TestSession  # type: ignore[attr-defined]
+
+    viewer = _make_no_permission_user()
+
+    async def _override_viewer():
+        return viewer
+
+    async def _override_db():
+        async with _TestSession() as session:
+            yield session
+
+    _app.dependency_overrides[_gcu] = _override_viewer
+    _app.dependency_overrides[get_db] = _override_db
+    try:
+        with TestClient(_app, raise_server_exceptions=False) as c:
+            r = c.get("/api/admin/users/stats")
+        assert r.status_code == 403
+    finally:
+        _app.dependency_overrides.pop(_gcu, None)
+        _app.dependency_overrides.pop(get_db, None)

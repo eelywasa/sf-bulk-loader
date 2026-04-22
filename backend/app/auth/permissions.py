@@ -90,12 +90,6 @@ def require_permission(key: str) -> Callable[..., Awaitable[User]]:
         if _settings.auth_mode == "none":
             return current_user
 
-        # Migration backstop: is_admin=True users without a profile assigned yet
-        # retain full access during the transition window (spec §5.4).
-        # Once all users have profiles this path becomes dead code.
-        if current_user.is_admin and current_user.profile is None:
-            return current_user
-
         # Hosted mode — check profile permission_keys
         profile = current_user.profile
         if profile is None or key not in profile.permission_keys:
