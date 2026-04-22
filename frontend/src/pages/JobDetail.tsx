@@ -8,6 +8,7 @@ import { isQueryOperation, operationLabel } from '../api/types'
 import { Badge, Button, Card, CsvPreviewPanel, Tabs } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
 import { ALERT_ERROR } from '../components/ui/formStyles'
+import { usePermission } from '../hooks/usePermission'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,7 @@ function LogSection({
 export default function JobDetail() {
   const { runId, jobId } = useParams<{ runId: string; jobId: string }>()
   const navigate = useNavigate()
+  const canViewFileContents = usePermission('files.view_contents')
 
   const { data: job, isLoading, isError, error } = useQuery({
     queryKey: ['job', jobId],
@@ -311,7 +313,9 @@ export default function JobDetail() {
   const tabs = [
     { id: 'overview', label: 'Overview', content: overviewContent },
     { id: 'payload', label: 'Raw SF Payload', content: payloadContent },
-    { id: 'logs', label: 'Logs', content: logsContent },
+    ...(canViewFileContents
+      ? [{ id: 'logs', label: 'Logs', content: logsContent }]
+      : []),
   ]
 
   return (

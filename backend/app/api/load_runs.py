@@ -10,7 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth.permissions import RUNS_ABORT, RUNS_EXECUTE, RUNS_VIEW, require_permission
+from app.auth.permissions import (
+    FILES_VIEW_CONTENTS,
+    RUNS_ABORT,
+    RUNS_EXECUTE,
+    RUNS_VIEW,
+    require_permission,
+)
 from app.database import get_db
 from app.services.auth import get_current_user
 from app.models.load_run import LoadRun, RunStatus
@@ -27,6 +33,7 @@ logger = logging.getLogger(__name__)
 _require_view = require_permission(RUNS_VIEW)
 _require_execute = require_permission(RUNS_EXECUTE)
 _require_abort = require_permission(RUNS_ABORT)
+_require_file_contents = require_permission(FILES_VIEW_CONTENTS)
 
 router = APIRouter(prefix="/api/runs", tags=["load-runs"], dependencies=[Depends(_require_view)])
 
@@ -89,7 +96,7 @@ async def abort_run(
     return await load_run_service.abort_run(db, run_id)
 
 
-@router.get("/{run_id}/logs.zip")
+@router.get("/{run_id}/logs.zip", dependencies=[Depends(_require_file_contents)])
 async def download_logs_zip(
     run_id: str,
     success: bool = True,

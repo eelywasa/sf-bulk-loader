@@ -31,12 +31,17 @@ const MOCK_ALL_PERMISSIONS = new Set([
   'users.manage', 'system.settings',
 ])
 
+const MOCK_VIEWER_PERMISSIONS = new Set([
+  'connections.view', 'plans.view', 'runs.view', 'files.view',
+])
+
 vi.mock('../../context/AuthContext', () => ({
   useAuth: vi.fn(() => ({ authRequired: true, permissions: MOCK_ALL_PERMISSIONS })),
   useAuthOptional: vi.fn(() => ({ authRequired: true, permissions: MOCK_ALL_PERMISSIONS })),
 }))
 
 import { runsApi, plansApi } from '../../api/endpoints'
+import { useAuthOptional } from '../../context/AuthContext'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -844,6 +849,29 @@ describe('RunDetail', () => {
     await waitFor(() => {
       // Multiple instances of "rows returned" are expected (step header + job row)
       expect(screen.getAllByText(/500 rows returned/).length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  // ── SFBL-206: Viewer gating ────────────────────────────────────────────────
+  describe('without files.view_contents (Viewer)', () => {
+    beforeEach(() => {
+      vi.mocked(useAuthOptional).mockReturnValue({
+        authRequired: true,
+        permissions: MOCK_VIEWER_PERMISSIONS,
+      } as ReturnType<typeof useAuthOptional>)
+    })
+
+    it('hides the Download Logs card for a viewer', async () => {
+      vi.mocked(runsApi.get).mockResolvedValue(runCompleted)
+      vi.mocked(runsApi.jobs).mockResolvedValue([jobComplete])
+      vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+      renderRunDetail()
+      await waitFor(() => screen.getByText(/Q1 Migration/i))
+      expect(screen.queryByText('Download Logs')).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /Download ZIP/i }),
+      ).not.toBeInTheDocument()
     })
   })
 })
