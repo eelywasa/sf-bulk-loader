@@ -25,10 +25,10 @@ jobs:
       - name: Create CI env file
         # ENCRYPTION_KEY and JWT_SECRET_KEY are intentionally omitted — the backend
         # auto-generates them on first start and writes to /data/db/*.key (writable volume).
-        # ADMIN_USERNAME/PASSWORD are required on first boot to seed the initial admin user.
+        # ADMIN_EMAIL/PASSWORD are required on first boot to seed the initial admin user.
         run: |
           echo 'APP_DISTRIBUTION=self_hosted' > .env
-          echo 'ADMIN_USERNAME=ci-admin' >> .env
+          echo 'ADMIN_EMAIL=ci-admin@example.com' >> .env
           echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
       - name: Build and start (SQLite mode)
@@ -73,7 +73,7 @@ jobs:
       - name: Create CI env file
         run: |
           echo 'APP_DISTRIBUTION=self_hosted' > .env
-          echo 'ADMIN_USERNAME=ci-admin' >> .env
+          echo 'ADMIN_EMAIL=ci-admin@example.com' >> .env
           echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
       - name: Build and start (PostgreSQL mode)
