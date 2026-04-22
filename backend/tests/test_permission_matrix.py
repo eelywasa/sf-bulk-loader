@@ -420,6 +420,44 @@ def test_runs_retry_step_permission(auth_client, profile, expect_403):
         )
 
 
+# ── Job result CSV + logs.zip (SFBL-206: gated on files.view_contents) ───────
+
+@pytest.mark.parametrize("path", [
+    "/api/jobs/nonexistent-job/success-csv",
+    "/api/jobs/nonexistent-job/error-csv",
+    "/api/jobs/nonexistent-job/unprocessed-csv",
+    "/api/jobs/nonexistent-job/success-csv/preview",
+    "/api/jobs/nonexistent-job/error-csv/preview",
+    "/api/jobs/nonexistent-job/unprocessed-csv/preview",
+    "/api/runs/nonexistent-run/logs.zip",
+])
+@pytest.mark.parametrize("profile,expect_403", [
+    ("admin",    False),
+    ("operator", False),
+    ("viewer",   True),
+], ids=["admin", "operator", "viewer"])
+def test_job_result_files_require_files_view_contents(auth_client, profile, expect_403, path):
+    """SFBL-206: job CSV endpoints + /runs/{id}/logs.zip all require files.view_contents.
+
+    Viewer has runs.view but not files.view_contents, so should get 403. Admin/operator
+    have both, so permission passes — they hit the resource lookup and get 404
+    (nonexistent job/run).
+    """
+    resp = _call_as(auth_client, profile, "GET", path)
+    if expect_403:
+        assert resp.status_code == 403, (
+            f"Expected 403 for {profile!r} on {path}, got {resp.status_code}: {resp.text}"
+        )
+        detail = resp.json().get("detail")
+        assert isinstance(detail, dict) and detail.get("required_permission") == "files.view_contents", (
+            f"Expected required_permission=files.view_contents on 403 for {path}, got {detail!r}"
+        )
+    else:
+        assert resp.status_code != 403, (
+            f"Expected non-403 for {profile!r} on {path}, got {resp.status_code}: {resp.text}"
+        )
+
+
 # ── Files routes ──────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("profile,expected", [

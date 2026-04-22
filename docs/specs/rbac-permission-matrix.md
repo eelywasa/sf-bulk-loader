@@ -98,7 +98,7 @@ For the full design rationale see `docs/specs/multi-user-rbac.md` §5.
 | `GET` | `/api/runs/` | `runs.view` | List runs (router-level) |
 | `GET` | `/api/runs/{id}` | `runs.view` | Get run detail |
 | `POST` | `/api/runs/{id}/abort` | `runs.abort` | Abort run |
-| `GET` | `/api/runs/{id}/logs.zip` | `runs.view` | Download logs archive |
+| `GET` | `/api/runs/{id}/logs.zip` | `runs.view` + `files.view_contents` | ZIP bundles per-job success/error/unprocessed CSVs — same PII as the individual CSV endpoints, so gated on both (SFBL-206) |
 | `POST` | `/api/runs/{id}/retry-step/{step_id}` | `runs.execute` | Retry failed step |
 
 ### Jobs (`/api/jobs/`, `/api/runs/{id}/jobs`)
@@ -107,12 +107,12 @@ For the full design rationale see `docs/specs/multi-user-rbac.md` §5.
 |---|---|---|---|
 | `GET` | `/api/runs/{id}/jobs` | `runs.view` | List jobs for a run |
 | `GET` | `/api/jobs/{id}` | `runs.view` | Get job detail |
-| `GET` | `/api/jobs/{id}/success-csv` | `runs.view` | Download success CSV |
-| `GET` | `/api/jobs/{id}/error-csv` | `runs.view` | Download error CSV |
-| `GET` | `/api/jobs/{id}/unprocessed-csv` | `runs.view` | Download unprocessed CSV |
-| `GET` | `/api/jobs/{id}/success-csv/preview` | `runs.view` | Preview success rows |
-| `GET` | `/api/jobs/{id}/error-csv/preview` | `runs.view` | Preview error rows |
-| `GET` | `/api/jobs/{id}/unprocessed-csv/preview` | `runs.view` | Preview unprocessed rows |
+| `GET` | `/api/jobs/{id}/success-csv` | `runs.view` + `files.view_contents` | Download success CSV (SFBL-206) |
+| `GET` | `/api/jobs/{id}/error-csv` | `runs.view` + `files.view_contents` | Download error CSV (SFBL-206) |
+| `GET` | `/api/jobs/{id}/unprocessed-csv` | `runs.view` + `files.view_contents` | Download unprocessed CSV (SFBL-206) |
+| `GET` | `/api/jobs/{id}/success-csv/preview` | `runs.view` + `files.view_contents` | Preview success rows (SFBL-206) |
+| `GET` | `/api/jobs/{id}/error-csv/preview` | `runs.view` + `files.view_contents` | Preview error rows (SFBL-206) |
+| `GET` | `/api/jobs/{id}/unprocessed-csv/preview` | `runs.view` + `files.view_contents` | Preview unprocessed rows (SFBL-206) |
 
 ### Files (`/api/files/`)
 

@@ -27,6 +27,25 @@ vi.mock('../../api/endpoints', () => ({
   },
 }))
 
+const MOCK_ALL_PERMISSIONS = new Set([
+  'connections.view', 'connections.view_credentials', 'connections.manage',
+  'plans.view', 'plans.manage',
+  'runs.view', 'runs.execute', 'runs.abort',
+  'files.view', 'files.view_contents',
+  'users.manage', 'system.settings',
+])
+
+const MOCK_VIEWER_PERMISSIONS = new Set([
+  'connections.view', 'plans.view', 'runs.view', 'files.view',
+])
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: vi.fn(() => ({ authRequired: true, permissions: MOCK_ALL_PERMISSIONS })),
+  useAuthOptional: vi.fn(() => ({ authRequired: true, permissions: MOCK_ALL_PERMISSIONS })),
+}))
+
+import { useAuthOptional } from '../../context/AuthContext'
+
 import { jobsApi, runsApi, plansApi } from '../../api/endpoints'
 import type { InputFilePreview, LoadRun, LoadPlanDetail } from '../../api/types'
 
@@ -701,6 +720,25 @@ describe('JobDetail', () => {
     await user.click(screen.getByRole('tab', { name: 'Overview' }))
     await waitFor(() => {
       expect(screen.getByText('sf-xyz-456')).toBeVisible()
+    })
+  })
+
+  // ── SFBL-206: Viewer gating ──────────────────────────────────────────────
+  describe('without files.view_contents (Viewer)', () => {
+    beforeEach(() => {
+      vi.mocked(useAuthOptional).mockReturnValue({
+        authRequired: true,
+        permissions: MOCK_VIEWER_PERMISSIONS,
+      } as ReturnType<typeof useAuthOptional>)
+    })
+
+    it('hides the Logs tab entirely for a viewer', async () => {
+      vi.mocked(jobsApi.get).mockResolvedValue(jobComplete)
+      renderJobDetail()
+      await waitFor(() => screen.getByRole('tab', { name: 'Overview' }))
+      expect(screen.queryByRole('tab', { name: 'Logs' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Success CSV')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Download/ })).not.toBeInTheDocument()
     })
   })
 })

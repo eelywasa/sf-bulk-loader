@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.permissions import RUNS_VIEW, require_permission
+from app.auth.permissions import FILES_VIEW_CONTENTS, RUNS_VIEW, require_permission
 from app.config import settings
 from app.database import get_db
 from app.models.job import JobRecord, JobStatus
@@ -28,6 +28,7 @@ from app.services.output_storage import OutputStorage, OutputStorageError, get_o
 logger = logging.getLogger(__name__)
 
 _require_view = require_permission(RUNS_VIEW)
+_require_file_contents = require_permission(FILES_VIEW_CONTENTS)
 
 router = APIRouter(tags=["jobs"], dependencies=[Depends(_require_view)])
 
@@ -290,25 +291,25 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> JobRespons
     return response
 
 
-@router.get("/api/jobs/{job_id}/success-csv")
+@router.get("/api/jobs/{job_id}/success-csv", dependencies=[Depends(_require_file_contents)])
 async def download_success_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
     job = await _get_job_or_404(job_id, db)
     return await _serve_result_file(job, job.success_file_path, "Success CSV", db)
 
 
-@router.get("/api/jobs/{job_id}/error-csv")
+@router.get("/api/jobs/{job_id}/error-csv", dependencies=[Depends(_require_file_contents)])
 async def download_error_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
     job = await _get_job_or_404(job_id, db)
     return await _serve_result_file(job, job.error_file_path, "Error CSV", db)
 
 
-@router.get("/api/jobs/{job_id}/unprocessed-csv")
+@router.get("/api/jobs/{job_id}/unprocessed-csv", dependencies=[Depends(_require_file_contents)])
 async def download_unprocessed_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
     job = await _get_job_or_404(job_id, db)
     return await _serve_result_file(job, job.unprocessed_file_path, "Unprocessed records CSV", db)
 
 
-@router.get("/api/jobs/{job_id}/success-csv/preview")
+@router.get("/api/jobs/{job_id}/success-csv/preview", dependencies=[Depends(_require_file_contents)])
 async def preview_success_csv(
     job_id: str,
     limit: int = Query(default=50, ge=1, le=500),
@@ -321,7 +322,7 @@ async def preview_success_csv(
     return await _preview_result_file(job, job.success_file_path, "Success CSV", limit, offset, parsed_filters, db)
 
 
-@router.get("/api/jobs/{job_id}/error-csv/preview")
+@router.get("/api/jobs/{job_id}/error-csv/preview", dependencies=[Depends(_require_file_contents)])
 async def preview_error_csv(
     job_id: str,
     limit: int = Query(default=50, ge=1, le=500),
@@ -334,7 +335,7 @@ async def preview_error_csv(
     return await _preview_result_file(job, job.error_file_path, "Error CSV", limit, offset, parsed_filters, db)
 
 
-@router.get("/api/jobs/{job_id}/unprocessed-csv/preview")
+@router.get("/api/jobs/{job_id}/unprocessed-csv/preview", dependencies=[Depends(_require_file_contents)])
 async def preview_unprocessed_csv(
     job_id: str,
     limit: int = Query(default=50, ge=1, le=500),

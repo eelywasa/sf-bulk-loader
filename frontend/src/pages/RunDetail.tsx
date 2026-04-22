@@ -4,6 +4,7 @@ import type { JobRecord } from '../api/types'
 import { useLiveRun } from '../hooks/useLiveRun'
 import { useRunActions } from '../hooks/useRunActions'
 import { Button, Card, Modal } from '../components/ui'
+import PermissionGate from '../components/PermissionGate'
 import { RunSummaryCard } from './RunDetail/RunSummaryCard'
 import { RunStepPanel } from './RunDetail/RunStepPanel'
 import { RunLogDownload } from './RunDetail/RunLogDownloadModal'
@@ -125,7 +126,9 @@ export default function RunDetail() {
         )}
       </Card>
 
-      <RunLogDownload runId={run.id} jobs={jobs} />
+      <PermissionGate permission="files.view_contents">
+        <RunLogDownload runId={run.id} jobs={jobs} />
+      </PermissionGate>
 
       {/* Abort confirmation modal */}
       <Modal
