@@ -278,7 +278,7 @@ async def request_email_change(
 
         token_id = token_record.id
         confirm_url = await _verify_url(raw_token, request)
-        display_name = current_user.display_name or current_user.username or "User"
+        display_name = current_user.display_name or current_user.email or "User"
 
         # Send verification email to new_email
         await email_service.send_template(

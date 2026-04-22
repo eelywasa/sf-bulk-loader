@@ -93,7 +93,7 @@ def _make_user(profile_name: str) -> User:
     profile = _make_profile(profile_name)
     user = User(
         id=str(uuid.uuid4()),
-        username=f"test-{profile_name}",
+        email=f"test-{profile_name}@example.com",
         hashed_password="x",
         is_admin=(profile_name == "admin"),
         status="active",
@@ -607,7 +607,7 @@ def test_is_admin_backstop_allows_admin_routes_without_profile(auth_client):
     """
     user = User(
         id=str(uuid.uuid4()),
-        username="legacy-admin",
+        email="legacy-admin@example.com",
         hashed_password="x",
         is_admin=True,
         status="active",
@@ -641,7 +641,7 @@ def test_is_admin_false_and_no_profile_still_denied(auth_client):
     """Without is_admin and without profile, user must be denied on permission-gated routes."""
     user = User(
         id=str(uuid.uuid4()),
-        username="no-profile-no-admin",
+        email="no-profile-no-admin@example.com",
         hashed_password="x",
         is_admin=False,
         status="active",

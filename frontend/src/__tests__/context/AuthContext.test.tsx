@@ -7,8 +7,7 @@ import type { RuntimeConfig, UserResponse } from '../../api/types'
 
 const MOCK_USER: UserResponse = {
   id: '1',
-  username: 'alice',
-  email: null,
+  email: 'alice@example.com',
   display_name: null,
   is_admin: true,
   profile: { name: 'admin' },
@@ -17,8 +16,7 @@ const MOCK_USER: UserResponse = {
 
 const MOCK_DESKTOP_USER: UserResponse = {
   id: 'desktop',
-  username: 'desktop',
-  email: null,
+  email: 'desktop@localhost',
   display_name: null,
   is_admin: true,
   profile: { name: 'desktop' },
@@ -46,7 +44,7 @@ function AuthDisplay() {
     <div>
       <span data-testid="bootstrapping">{String(isBootstrapping)}</span>
       <span data-testid="token">{token ?? 'none'}</span>
-      <span data-testid="username">{user?.username ?? 'none'}</span>
+      <span data-testid="email">{user?.email ?? 'none'}</span>
       <span data-testid="auth-required">{String(authRequired)}</span>
       <button onClick={() => login('test-token')}>Login</button>
       <button onClick={logout}>Logout</button>
@@ -94,7 +92,7 @@ describe('AuthContext', () => {
         expect(screen.getByTestId('bootstrapping').textContent).toBe('false')
       })
       expect(screen.getByTestId('token').textContent).toBe('none')
-      expect(screen.getByTestId('username').textContent).toBe('none')
+      expect(screen.getByTestId('email').textContent).toBe('none')
     })
 
     it('sets authRequired to true', async () => {
@@ -118,7 +116,7 @@ describe('AuthContext', () => {
       renderAuth()
 
       await waitFor(() => {
-        expect(screen.getByTestId('username').textContent).toBe('alice')
+        expect(screen.getByTestId('email').textContent).toBe('alice@example.com')
       })
       expect(screen.getByTestId('token').textContent).toBe('stored-token')
       expect(screen.getByTestId('bootstrapping').textContent).toBe('false')
@@ -138,7 +136,7 @@ describe('AuthContext', () => {
         expect(screen.getByTestId('bootstrapping').textContent).toBe('false')
       })
       expect(screen.getByTestId('token').textContent).toBe('none')
-      expect(screen.getByTestId('username').textContent).toBe('none')
+      expect(screen.getByTestId('email').textContent).toBe('none')
     })
   })
 
@@ -159,7 +157,7 @@ describe('AuthContext', () => {
 
       expect(localStorage.getItem('auth_token')).toBe('test-token')
       expect(screen.getByTestId('token').textContent).toBe('test-token')
-      expect(screen.getByTestId('username').textContent).toBe('alice')
+      expect(screen.getByTestId('email').textContent).toBe('alice@example.com')
     })
   })
 
@@ -195,7 +193,7 @@ describe('AuthContext', () => {
 
       renderAuth()
       await waitFor(() => {
-        expect(screen.getByTestId('username').textContent).toBe('alice')
+        expect(screen.getByTestId('email').textContent).toBe('alice@example.com')
       })
 
       await act(async () => {
@@ -204,7 +202,7 @@ describe('AuthContext', () => {
 
       expect(localStorage.getItem('auth_token')).toBeNull()
       expect(screen.getByTestId('token').textContent).toBe('none')
-      expect(screen.getByTestId('username').textContent).toBe('none')
+      expect(screen.getByTestId('email').textContent).toBe('none')
       expect(mockLocation.href).toBe('/login')
 
       vi.unstubAllGlobals()

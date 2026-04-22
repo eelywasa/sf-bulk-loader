@@ -152,7 +152,7 @@ export function SettingsPageShell({
 
   // Admin gate — redirect non-admins to /
   useEffect(() => {
-    if (user && user.role !== 'admin') {
+    if (user && !user.is_admin) {
       navigate('/', { replace: true })
     }
   }, [user, navigate])

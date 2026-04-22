@@ -38,8 +38,8 @@ _log = logging.getLogger(__name__)
 
 
 def require_admin(current_user: Annotated[User, Depends(get_current_user)]) -> User:
-    """Dependency that requires the current user to have the 'admin' role."""
-    if current_user.role != "admin":
+    """Dependency that requires the current user to have admin privileges."""
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required",
@@ -95,7 +95,7 @@ async def admin_unlock_user(
     audit_row = LoginAttempt(
         id=str(uuid.uuid4()),
         user_id=target.id,
-        username=target.username or "",
+        username=target.email,  # username column stores email post-SFBL-198
         ip="admin",
         user_agent=None,
         outcome=OutcomeCode.ADMIN_UNLOCK,

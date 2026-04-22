@@ -26,11 +26,10 @@ class User(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    # Local auth
-    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)
+    # Local auth — email is the unique login identifier (SFBL-198: username dropped)
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    # SAML / profile
-    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Identity
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     saml_name_id: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     # User state — replaces is_active (SFBL-189)
@@ -67,16 +66,6 @@ class User(Base):
     password_changed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
-
-    @property
-    def role(self) -> str:
-        """Backward-compat property — derived from is_admin after 0022 drops the DB column.
-
-        Returns 'admin' when is_admin=True, 'user' otherwise. Callers that set
-        user.role="admin" directly must switch to is_admin=True; this property is
-        read-only. Retained for SFBL-195 to clean up all callsites.
-        """
-        return "admin" if self.is_admin else "user"
 
     @property
     def is_active(self) -> bool:

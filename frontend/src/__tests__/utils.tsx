@@ -36,7 +36,6 @@ const DEFAULT_RUNTIME: RuntimeConfig = {
 export function makeTestUser(permissions: string[] = ADMIN_PERMISSIONS): UserResponse {
   return {
     id: 'test-user',
-    username: 'testuser',
     email: 'test@example.com',
     display_name: 'Test User',
     is_admin: permissions.includes('system.settings'),

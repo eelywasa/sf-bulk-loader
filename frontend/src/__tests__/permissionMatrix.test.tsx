@@ -96,7 +96,6 @@ const MOCK_RUNTIME_DESKTOP: RuntimeConfig = {
 function makeUser(profileName: string): UserResponse {
   return {
     id: `user-${profileName}`,
-    username: profileName,
     email: `${profileName}@example.com`,
     display_name: profileName,
     is_admin: profileName === 'admin' || profileName === 'desktop',

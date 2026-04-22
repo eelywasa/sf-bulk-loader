@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class LoginRequest(BaseModel):
-    username: str
+    email: EmailStr
     password: str
 
 
@@ -27,10 +27,8 @@ class ProfileSummary(BaseModel):
 
 class UserResponse(BaseModel):
     id: str
-    username: Optional[str]
-    email: Optional[str]
+    email: str
     display_name: Optional[str]
-    role: str
     # status replaces is_active as the canonical state field (SFBL-189).
     # is_active is kept as a read-only derived field for API compatibility —
     # computed by the User.is_active property on the ORM model.

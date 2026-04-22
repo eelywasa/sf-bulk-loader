@@ -207,7 +207,7 @@ async def request_password_reset(
         await db.refresh(token_row)
 
         reset_url = await _reset_url(raw_token, request)
-        display_name = user.display_name or user.username or user.email or "User"
+        display_name = user.display_name or user.email or "User"
 
         await email_service.send_template(
             "auth/password_reset",

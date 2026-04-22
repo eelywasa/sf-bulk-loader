@@ -45,13 +45,13 @@ def _make_profile(name: str, *keys: str) -> Profile:
 
 
 def _user_with_profile(profile: Profile) -> User:
-    user = User(id=str(uuid.uuid4()), username="test", status="active", is_admin=False)
+    user = User(id=str(uuid.uuid4()), email="test@example.com", status="active", is_admin=False)
     user.profile = profile
     return user
 
 
 def _user_without_profile() -> User:
-    user = User(id=str(uuid.uuid4()), username="desktop", status="active", is_admin=True)
+    user = User(id=str(uuid.uuid4()), email="desktop@localhost", status="active", is_admin=True)
     user.profile = None
     return user
 
@@ -62,7 +62,7 @@ def _make_app(key: str) -> FastAPI:
 
     @_app.get("/protected")
     async def protected(user: User = Depends(dep)) -> dict:
-        return {"username": user.username}
+        return {"email": user.email}
 
     return _app
 
@@ -103,7 +103,7 @@ def test_require_permission_user_has_permission_returns_200():
             resp = client.get("/protected")
 
     assert resp.status_code == 200
-    assert resp.json()["username"] == "test"
+    assert resp.json()["email"] == "test@example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ def test_require_permission_user_lacks_permission_returns_403():
 
 def test_require_permission_no_profile_returns_403():
     """A user with no profile at all (profile=None) in hosted mode gets 403."""
-    user = User(id=str(uuid.uuid4()), username="profileless", status="active", is_admin=False)
+    user = User(id=str(uuid.uuid4()), email="profileless@example.com", status="active", is_admin=False)
     user.profile = None
     app = _make_app(RUNS_VIEW)
 

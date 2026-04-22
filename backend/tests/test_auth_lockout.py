@@ -38,7 +38,7 @@ def _make_user(**kwargs: Any) -> User:
         kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
-        username="testuser",
+        email="testuser@example.com",
         hashed_password=hash_password("Str0ng&P4ss!"),
         status="active",
         failed_login_count=0,
@@ -52,7 +52,7 @@ def _make_admin(**kwargs: Any) -> User:
     role = kwargs.pop("role", None)
     defaults = dict(
         id=str(uuid.uuid4()),
-        username="admin",
+        email="admin@example.com",
         hashed_password=hash_password("Admin&P4ss123!"),
         is_admin=True,
         status="active",
@@ -123,7 +123,7 @@ def test_tier1_lock_applied_after_threshold_failures(client):
         for _ in range(5):
             resp = client.post(
                 "/api/auth/login",
-                json={"username": "testuser", "password": "wrongpass"},
+                json={"email": "testuser@example.com", "password": "wrongpass"},
             )
             assert resp.status_code == 401
 
@@ -131,7 +131,7 @@ def test_tier1_lock_applied_after_threshold_failures(client):
     with _lockout_settings_patch():
         resp = client.post(
             "/api/auth/login",
-            json={"username": "testuser", "password": "wrongpass"},
+            json={"email": "testuser@example.com", "password": "wrongpass"},
         )
 
     assert resp.status_code == 401
@@ -160,7 +160,7 @@ def test_tier1_lock_blocks_further_logins_with_user_locked_outcome(client):
 
     resp = client.post(
         "/api/auth/login",
-        json={"username": "testuser", "password": "Str0ng&P4ss!"},
+        json={"email": "testuser@example.com", "password": "Str0ng&P4ss!"},
     )
     assert resp.status_code == 401
 
@@ -177,7 +177,7 @@ def test_tier1_lock_auto_clears_after_expiry(client):
 
     resp = client.post(
         "/api/auth/login",
-        json={"username": "testuser", "password": "Str0ng&P4ss!"},
+        json={"email": "testuser@example.com", "password": "Str0ng&P4ss!"},
     )
     assert resp.status_code == 200, f"Expected 200 but got {resp.status_code}: {resp.json()}"
 
@@ -209,7 +209,7 @@ def test_tier2_cumulative_threshold_locks_account(client):
     ):
         resp = client.post(
             "/api/auth/login",
-            json={"username": "testuser", "password": "wrongpass"},
+            json={"email": "testuser@example.com", "password": "wrongpass"},
         )
         assert resp.status_code == 401
 
@@ -229,7 +229,7 @@ def test_tier2_repeated_tier1_locks_hard_locks_account(client):
         LoginAttempt(
             id=str(uuid.uuid4()),
             user_id=user.id,
-            username=user.username or "",
+            username=user.email or "",
             ip="1.2.3.4",
             user_agent=None,
             outcome=OutcomeCode.TIER1_AUTO,
@@ -244,7 +244,7 @@ def test_tier2_repeated_tier1_locks_hard_locks_account(client):
         for _ in range(5):
             resp = client.post(
                 "/api/auth/login",
-                json={"username": "testuser", "password": "wrongpass"},
+                json={"email": "testuser@example.com", "password": "wrongpass"},
             )
             assert resp.status_code == 401
 
@@ -261,7 +261,7 @@ def test_admin_unlock_clears_tier1_lock(client):
     admin = _make_admin()
     target = _make_user(
         id=str(uuid.uuid4()),
-        username="target_user",
+        email="target_user@example.com",
         locked_until=datetime.now(timezone.utc) + timedelta(minutes=30),
         failed_login_count=5,
     )
@@ -271,7 +271,7 @@ def test_admin_unlock_clears_tier1_lock(client):
     # Log in as admin
     login_resp = client.post(
         "/api/auth/login",
-        json={"username": "admin", "password": "Admin&P4ss123!"},
+        json={"email": "admin@example.com", "password": "Admin&P4ss123!"},
     )
     assert login_resp.status_code == 200
     token = login_resp.json()["access_token"]
@@ -298,7 +298,7 @@ def test_admin_unlock_transitions_hard_locked_to_active(client):
     admin = _make_admin()
     target = _make_user(
         id=str(uuid.uuid4()),
-        username="target_user",
+        email="target_user@example.com",
         status="locked",
         locked_until=datetime.now(timezone.utc) + timedelta(hours=1),
         failed_login_count=10,
@@ -308,7 +308,7 @@ def test_admin_unlock_transitions_hard_locked_to_active(client):
 
     login_resp = client.post(
         "/api/auth/login",
-        json={"username": "admin", "password": "Admin&P4ss123!"},
+        json={"email": "admin@example.com", "password": "Admin&P4ss123!"},
     )
     assert login_resp.status_code == 200
     token = login_resp.json()["access_token"]
@@ -332,7 +332,7 @@ def test_non_admin_cannot_unlock(client):
     regular = _make_user()
     target = _make_user(
         id=str(uuid.uuid4()),
-        username="target_user",
+        email="target_user@example.com",
         status="locked",
     )
     _seed_user(regular)
@@ -340,7 +340,7 @@ def test_non_admin_cannot_unlock(client):
 
     login_resp = client.post(
         "/api/auth/login",
-        json={"username": "testuser", "password": "Str0ng&P4ss!"},
+        json={"email": "testuser@example.com", "password": "Str0ng&P4ss!"},
     )
     assert login_resp.status_code == 200
     token = login_resp.json()["access_token"]
@@ -359,7 +359,7 @@ def test_admin_cannot_self_unlock(client):
 
     login_resp = client.post(
         "/api/auth/login",
-        json={"username": "admin", "password": "Admin&P4ss123!"},
+        json={"email": "admin@example.com", "password": "Admin&P4ss123!"},
     )
     assert login_resp.status_code == 200
     token = login_resp.json()["access_token"]
@@ -378,7 +378,7 @@ def test_unlock_nonexistent_user_returns_404(client):
 
     login_resp = client.post(
         "/api/auth/login",
-        json={"username": "admin", "password": "Admin&P4ss123!"},
+        json={"email": "admin@example.com", "password": "Admin&P4ss123!"},
     )
     assert login_resp.status_code == 200
     token = login_resp.json()["access_token"]
@@ -406,7 +406,7 @@ def test_tier1_lock_increments_metric(client):
         for _ in range(5):
             client.post(
                 "/api/auth/login",
-                json={"username": "testuser", "password": "wrongpass"},
+                json={"email": "testuser@example.com", "password": "wrongpass"},
             )
 
     after = auth_account_locks_total.labels(tier=OutcomeCode.TIER1_AUTO)._value.get()
@@ -420,7 +420,7 @@ def test_admin_unlock_increments_metric(client):
     admin = _make_admin()
     target = _make_user(
         id=str(uuid.uuid4()),
-        username="target_user",
+        email="target_user@example.com",
         status="locked",
     )
     _seed_user(admin)
@@ -430,7 +430,7 @@ def test_admin_unlock_increments_metric(client):
 
     login_resp = client.post(
         "/api/auth/login",
-        json={"username": "admin", "password": "Admin&P4ss123!"},
+        json={"email": "admin@example.com", "password": "Admin&P4ss123!"},
     )
     token = login_resp.json()["access_token"]
     client.post(
@@ -456,7 +456,7 @@ def test_successful_login_resets_failed_count(client):
 
     resp = client.post(
         "/api/auth/login",
-        json={"username": "testuser", "password": "Str0ng&P4ss!"},
+        json={"email": "testuser@example.com", "password": "Str0ng&P4ss!"},
     )
     assert resp.status_code == 200
 

@@ -111,11 +111,13 @@ def test_permission_keys_cached(monkeypatch):
     assert first is second
 
 
-def test_user_role_property_admin():
-    u = User(id=str(uuid.uuid4()), username="admin", is_admin=True, status="active")
-    assert u.role == "admin"
+def test_user_is_admin_admin():
+    """is_admin=True marks user as admin (role property removed in SFBL-198)."""
+    u = User(id=str(uuid.uuid4()), email="admin@example.com", is_admin=True, status="active")
+    assert u.is_admin is True
 
 
-def test_user_role_property_non_admin():
-    u = User(id=str(uuid.uuid4()), username="viewer", is_admin=False, status="active")
-    assert u.role == "user"
+def test_user_is_admin_non_admin():
+    """is_admin=False marks user as non-admin."""
+    u = User(id=str(uuid.uuid4()), email="viewer@example.com", is_admin=False, status="active")
+    assert u.is_admin is False

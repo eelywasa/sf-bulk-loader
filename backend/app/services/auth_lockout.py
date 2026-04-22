@@ -83,7 +83,7 @@ def _schedule_account_locked_email(user: User) -> None:
         return
 
     user_email = user.email
-    display_name = user.display_name or user.username or user_email
+    display_name = user.display_name or user_email
 
     async def _send() -> None:
         try:
@@ -139,7 +139,7 @@ async def handle_failed_attempt(
     5. If tier-2 (B) triggered after a tier-1 lock, transition ``status='locked'``.
     """
     now = datetime.now(timezone.utc)
-    _username = username or (user.username or "")
+    _username = username or user.email or ""
 
     # ── 1. Increment counters ─────────────────────────────────────────────────
     user.failed_login_count = (user.failed_login_count or 0) + 1

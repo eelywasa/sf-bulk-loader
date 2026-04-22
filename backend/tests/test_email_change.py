@@ -30,8 +30,7 @@ def _sha256_hex(raw: str) -> str:
 
 def _seed_user(
     *,
-    username: str = "alice",
-    email: str | None = "alice@example.com",
+    email: str = "alice@example.com",
     display_name: str | None = "Alice",
     role: str = "user",
     is_active: bool = True,
@@ -39,7 +38,6 @@ def _seed_user(
 ) -> User:
     user = User(
         id=str(uuid.uuid4()),
-        username=username,
         email=email,
         display_name=display_name,
         hashed_password=hashed_password or hash_password("OldP4ss!Secure#"),
@@ -185,8 +183,8 @@ def test_email_change_case_insensitive_same_email_returns_400(client):
 
 def test_email_change_email_in_use_returns_400(client):
     """Email already used by another active user → 400."""
-    user = _seed_user(username="alice", email="alice@example.com")
-    _seed_user(username="bob", email="bob@example.com")
+    user = _seed_user(email="alice@example.com")
+    _seed_user(email="bob@example.com")
     token = create_access_token(user)
 
     resp = client.post(
@@ -329,11 +327,11 @@ def test_email_change_confirm_invalid_token_returns_400(client):
 
 def test_email_change_confirm_email_taken_at_confirm_time_returns_400(client):
     """Email taken by another user between request and confirm → 400; token left unused."""
-    user = _seed_user(username="alice", email="alice@example.com")
+    user = _seed_user(email="alice@example.com")
     raw_token, token_record = _seed_token(user.id, new_email="taken@example.com")
 
     # Another user claims that email after token was created
-    _seed_user(username="carol", email="taken@example.com")
+    _seed_user(email="taken@example.com")
 
     resp = client.post("/api/me/email-change/confirm", json={"token": raw_token})
     assert resp.status_code == 400

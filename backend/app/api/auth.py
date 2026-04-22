@@ -36,7 +36,7 @@ def _user_agent_from_request(request: Request) -> str | None:
 async def _persist_login_attempt(
     db: AsyncSession,
     *,
-    username: str,
+    email: str,
     ip: str,
     user_agent: str | None,
     outcome: str,
@@ -52,7 +52,7 @@ async def _persist_login_attempt(
         async with db.begin_nested():
             attempt = LoginAttempt(
                 user_id=user_id,
-                username=username,
+                username=email,  # username column stores the submitted email for audit trail
                 ip=ip,
                 user_agent=user_agent,
                 outcome=outcome,
@@ -65,7 +65,7 @@ async def _persist_login_attempt(
             extra={
                 "event_name": AuthEvent.LOGIN_FAILED,
                 "outcome_code": OutcomeCode.DATABASE_ERROR,
-                "username": username,
+                "email": email,
                 "ip": ip,
             },
         )
@@ -77,7 +77,10 @@ async def login(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    """Authenticate with username + password and return a JWT.
+    """Authenticate with email + password and return a JWT.
+
+    SFBL-198: login identifier is now email (was username). Old {username, password}
+    shape returns 422 automatically because the schema requires an ``email`` field.
 
     Every attempt — success or failure — is persisted to ``login_attempt``
     and emitted as a structured log event.
@@ -90,7 +93,7 @@ async def login(
     """
     ip = _ip_from_request(request)
     ua = _user_agent_from_request(request)
-    username = body.username
+    email = str(body.email)
 
     # ── Per-IP rate limit check ───────────────────────────────────────────────
     # Read rate-limit params from DB-backed settings (SFBL-156).
@@ -117,13 +120,13 @@ async def login(
                 "event_name": AuthEvent.LOGIN_RATE_LIMITED,
                 "outcome_code": OutcomeCode.IP_LIMIT,
                 "ip": ip,
-                "username": username,
+                "email": email,
             },
         )
         record_auth_login_attempt(OutcomeCode.IP_LIMIT)
         await _persist_login_attempt(
             db,
-            username=username,
+            email=email,
             ip=ip,
             user_agent=ua,
             outcome=OutcomeCode.IP_LIMIT,
@@ -136,24 +139,24 @@ async def login(
         )
 
     # ── Look up user ──────────────────────────────────────────────────────────
-    result = await db.execute(select(User).where(User.username == username))
+    result = await db.execute(select(User).where(User.email == email))
     user: User | None = result.scalars().first()
 
     if user is None:
-        # Unknown username — persist with user_id=null
+        # Unknown email — persist with user_id=null
         _log.warning(
             "Login failed: unknown user",
             extra={
                 "event_name": AuthEvent.LOGIN_FAILED,
                 "outcome_code": OutcomeCode.UNKNOWN_USER,
                 "ip": ip,
-                "username": username,
+                "email": email,
             },
         )
         record_auth_login_attempt(OutcomeCode.UNKNOWN_USER)
         await _persist_login_attempt(
             db,
-            username=username,
+            email=email,
             ip=ip,
             user_agent=ua,
             outcome=OutcomeCode.UNKNOWN_USER,
@@ -179,7 +182,7 @@ async def login(
                     "event_name": AuthEvent.LOGIN_FAILED,
                     "outcome_code": OutcomeCode.USER_LOCKED,
                     "ip": ip,
-                    "username": username,
+                    "email": email,
                     "user_id": user.id,
                     "locked_until": lu.isoformat(),
                 },
@@ -187,7 +190,7 @@ async def login(
             record_auth_login_attempt(OutcomeCode.USER_LOCKED)
             await _persist_login_attempt(
                 db,
-                username=username,
+                email=email,
                 ip=ip,
                 user_agent=ua,
                 outcome=OutcomeCode.USER_LOCKED,
@@ -206,14 +209,14 @@ async def login(
                 "event_name": AuthEvent.LOGIN_FAILED,
                 "outcome_code": OutcomeCode.USER_LOCKED,
                 "ip": ip,
-                "username": username,
+                "email": email,
                 "user_id": user.id,
             },
         )
         record_auth_login_attempt(OutcomeCode.USER_LOCKED)
         await _persist_login_attempt(
             db,
-            username=username,
+            email=email,
             ip=ip,
             user_agent=ua,
             outcome=OutcomeCode.USER_LOCKED,
@@ -232,7 +235,7 @@ async def login(
                 "event_name": AuthEvent.LOGIN_FAILED,
                 "outcome_code": OutcomeCode.USER_INACTIVE,
                 "ip": ip,
-                "username": username,
+                "email": email,
                 "user_id": user.id,
                 "user_status": user.status,
             },
@@ -240,7 +243,7 @@ async def login(
         record_auth_login_attempt(OutcomeCode.USER_INACTIVE)
         await _persist_login_attempt(
             db,
-            username=username,
+            email=email,
             ip=ip,
             user_agent=ua,
             outcome=OutcomeCode.USER_INACTIVE,
@@ -260,14 +263,14 @@ async def login(
                 "event_name": AuthEvent.LOGIN_FAILED,
                 "outcome_code": OutcomeCode.WRONG_PASSWORD,
                 "ip": ip,
-                "username": username,
+                "email": email,
                 "user_id": user.id,
             },
         )
         record_auth_login_attempt(OutcomeCode.WRONG_PASSWORD)
         await _persist_login_attempt(
             db,
-            username=username,
+            email=email,
             ip=ip,
             user_agent=ua,
             outcome=OutcomeCode.WRONG_PASSWORD,
@@ -277,7 +280,7 @@ async def login(
         # / transitions status as required.  Must be called after _persist_login_attempt
         # is flushed so the attempt row counts are accurate.
         await db.flush()
-        await handle_failed_attempt(db, user, ip=ip, username=username, user_agent=ua)
+        await handle_failed_attempt(db, user, ip=ip, username=email, user_agent=ua)
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -295,7 +298,7 @@ async def login(
                 "event_name": AuthEvent.LOGIN_SUCCEEDED,
                 "outcome_code": outcome_code,
                 "ip": ip,
-                "username": username,
+                "email": email,
                 "user_id": user.id,
             },
         )
@@ -307,7 +310,7 @@ async def login(
                 "event_name": AuthEvent.LOGIN_SUCCEEDED,
                 "outcome_code": outcome_code,
                 "ip": ip,
-                "username": username,
+                "email": email,
                 "user_id": user.id,
             },
         )
@@ -318,7 +321,7 @@ async def login(
     record_auth_login_attempt(outcome_code)
     await _persist_login_attempt(
         db,
-        username=username,
+        email=email,
         ip=ip,
         user_agent=ua,
         outcome=outcome_code,
@@ -355,10 +358,8 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     # relationship (which is a Profile model, not ProfileSummary).
     base = UserResponse(
         id=current_user.id,
-        username=current_user.username,
         email=current_user.email,
         display_name=current_user.display_name,
-        role=current_user.role,
         status=current_user.status,
         is_active=current_user.is_active,
         profile=None,

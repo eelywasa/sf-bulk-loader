@@ -31,9 +31,8 @@ async def _create_user(
 ) -> User:
     async with AsyncSessionLocal() as session:
         user = User(
-            username=username,
+            email=username,  # username arg doubles as email in CLI tests
             hashed_password=hash_password(password),
-            email=username,
             is_admin=(role == "admin"),
             status=status,
         )
@@ -112,7 +111,7 @@ async def test_admin_recover_temp_password_is_valid(capsys):
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(User).where(User.username == "verify@example.com")
+            select(User).where(User.email == "verify@example.com")
         )
         user = result.scalar_one()
     assert verify_password(temp_pw, user.hashed_password)
@@ -163,9 +162,8 @@ async def test_unlock_locked_user(capsys):
 async def test_unlock_active_user_stays_active(capsys):
     async with AsyncSessionLocal() as session:
         user = User(
-            username="activelocked@example.com",
-            hashed_password=hash_password("Pass123!"),
             email="activelocked@example.com",
+            hashed_password=hash_password("Pass123!"),
             status="active",
             failed_login_count=3,
             locked_until=datetime.now(timezone.utc) + timedelta(minutes=10),
@@ -226,9 +224,8 @@ async def test_list_admins_shows_admin_users(capsys):
 async def test_list_admins_shows_locked_status(capsys):
     async with AsyncSessionLocal() as session:
         user = User(
-            username="lockedadmin@example.com",
-            hashed_password=hash_password("Pass123!"),
             email="lockedadmin@example.com",
+            hashed_password=hash_password("Pass123!"),
             is_admin=True,
             status="active",
             locked_until=datetime.now(timezone.utc) + timedelta(minutes=10),

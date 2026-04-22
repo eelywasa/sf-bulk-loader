@@ -20,7 +20,7 @@ const MOCK_ALL_PERMISSIONS = new Set([
 vi.mock('../../context/AuthContext', () => ({
   useAuth: vi.fn(() => ({
     token: 'test-token',
-    user: { id: '1', username: 'admin', is_admin: true, profile: { name: 'admin' }, permissions: [...MOCK_ALL_PERMISSIONS] },
+    user: { id: '1', email: 'admin@example.com', is_admin: true, profile: { name: 'admin' }, permissions: [...MOCK_ALL_PERMISSIONS] },
     permissions: MOCK_ALL_PERMISSIONS,
     profileName: 'admin',
     isBootstrapping: false,
@@ -30,7 +30,7 @@ vi.mock('../../context/AuthContext', () => ({
   })),
   useAuthOptional: vi.fn(() => ({
     token: 'test-token',
-    user: { id: '1', username: 'admin', is_admin: true, profile: { name: 'admin' }, permissions: [...MOCK_ALL_PERMISSIONS] },
+    user: { id: '1', email: 'admin@example.com', is_admin: true, profile: { name: 'admin' }, permissions: [...MOCK_ALL_PERMISSIONS] },
     permissions: MOCK_ALL_PERMISSIONS,
     profileName: 'admin',
     isBootstrapping: false,

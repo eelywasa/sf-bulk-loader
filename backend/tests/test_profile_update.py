@@ -15,14 +15,14 @@ from tests.conftest import _TestSession, _run_async
 
 def _seed_user(
     *,
-    username: str = "alice",
+    email: str = "alice@example.com",
     display_name: str | None = None,
     role: str = "user",
     is_active: bool = True,
 ) -> User:
     user = User(
         id=str(uuid.uuid4()),
-        username=username,
+        email=email,
         hashed_password=hash_password("OldP4ss!Secure#"),
         display_name=display_name,
         is_admin=(role == "admin"),
