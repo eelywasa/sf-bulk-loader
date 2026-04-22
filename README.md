@@ -46,16 +46,35 @@ For HTTPS, PostgreSQL, or combined setups see [docs/deployment/docker.md](docs/d
 
 ## Documentation
 
+**Architecture & design**
+
+| Document | Description |
+|----------|-------------|
+| [docs/architecture.md](docs/architecture.md) | System overview — backend, frontend, data model, distribution profiles |
+| [docs/architecture/auth-and-rbac.md](docs/architecture/auth-and-rbac.md) | Auth modes, JWT sessions, RBAC model, invitations |
+| [docs/architecture/run-execution.md](docs/architecture/run-execution.md) | Orchestrator, partitioning, Salesforce Bulk API, polling, aborts |
+| [docs/architecture/storage.md](docs/architecture/storage.md) | Input discovery, output sinks, encryption at rest |
+
+**Operations & developer**
+
 | Document | Description |
 |----------|-------------|
 | [docs/deployment/docker.md](docs/deployment/docker.md) | Self-hosted Docker deployment — configuration, HTTPS, PostgreSQL, troubleshooting |
-| [docs/deployment/desktop.md](docs/deployment/desktop.md) | Desktop (Electron) deployment — planned |
-| [docs/deployment/aws.md](docs/deployment/aws.md) | AWS-hosted deployment — planned |
-| [docs/usage.md](docs/usage.md) | Using the app — Salesforce setup, CSV format, load plans |
+| [docs/deployment/desktop.md](docs/deployment/desktop.md) | Desktop (Electron) deployment |
+| [docs/deployment/aws.md](docs/deployment/aws.md) | AWS-hosted deployment |
 | [docs/development.md](docs/development.md) | Local development, running tests, database migrations |
+| [docs/admin-recovery.md](docs/admin-recovery.md) | Break-glass CLI for locked-out admins |
+| [docs/observability.md](docs/observability.md) | Event taxonomy, metrics, spans, DoD checklist |
+| [docs/ci.md](docs/ci.md) | CI workflow topology |
+| [docs/email.md](docs/email.md) | Outbound email — backend selection, SMTP credentials, delivery log, troubleshooting |
+
+**Usage**
+
+| Document | Description |
+|----------|-------------|
+| [docs/usage.md](docs/usage.md) | Using the app — Salesforce setup, CSV format, load plans |
 | [docs/salesforce-jwt-setup.md](docs/salesforce-jwt-setup.md) | Detailed Salesforce Connected App setup |
 | [docs/s3-connection-setup.md](docs/s3-connection-setup.md) | S3 input source configuration |
-| [docs/email.md](docs/email.md) | Outbound email — backend selection, SMTP credentials, delivery log, troubleshooting |
 
 ---
 
