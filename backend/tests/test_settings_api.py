@@ -24,6 +24,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings as app_settings
+from app.models.profile import Profile
+from app.models.profile_permission import ProfilePermission
 from app.models.user import User
 from app.services.auth import get_current_user
 import app.services.settings.service as _svc_mod
@@ -36,13 +38,47 @@ from tests.conftest import _TestSession, _run_async
 # ---------------------------------------------------------------------------
 
 
+def _get_admin_profile() -> Profile | None:
+    """Fetch the seeded admin Profile with permissions eagerly loaded."""
+    from sqlalchemy import select as sa_select
+
+    async def _fetch() -> tuple[str | None, list[str]]:
+        async with _TestSession() as session:
+            result = await session.execute(sa_select(Profile).where(Profile.name == "admin"))
+            p = result.scalar_one_or_none()
+            if p is None:
+                return None, []
+            from sqlalchemy import select as _sel
+            pp_result = await session.execute(
+                _sel(ProfilePermission).where(ProfilePermission.profile_id == p.id)
+            )
+            perms = [row.permission_key for row in pp_result.scalars().all()]
+            return p.id, perms
+
+    profile_id, perm_keys = _run_async(_fetch())
+    if profile_id is None:
+        return None
+    from app.auth.permissions import ALL_PERMISSION_KEYS
+    profile = Profile(id=profile_id, name="admin", description="admin profile (test)", is_system=True)
+    profile.permissions = [
+        ProfilePermission(profile_id=profile_id, permission_key=k)
+        for k in (perm_keys or sorted(ALL_PERMISSION_KEYS))
+    ]
+    return profile
+
+
 def _admin_user() -> User:
-    return User(
+    # SFBL-203: backstop removed — must assign admin profile so require_permission passes.
+    admin_profile = _get_admin_profile()
+    user = User(
         id=str(uuid.uuid4()),
         email="settings-admin@example.com",
         status="active",
         is_admin=True,
+        profile_id=admin_profile.id if admin_profile else None,
     )
+    user.profile = admin_profile
+    return user
 
 
 def _regular_user() -> User:

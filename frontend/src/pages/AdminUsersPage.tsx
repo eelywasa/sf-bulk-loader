@@ -29,6 +29,42 @@ import { adminUsersApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import type { AdminUser, ProfileListItem } from '../api/types'
 
+// ─── Sole-admin warning banner ────────────────────────────────────────────────
+
+const SOLE_ADMIN_DISMISS_KEY = 'sfbl_sole_admin_banner_dismissed'
+
+interface SoleAdminBannerProps {
+  onDismiss: () => void
+}
+
+function SoleAdminBanner({ onDismiss }: SoleAdminBannerProps) {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-warning-bg border border-warning-border text-warning-text text-sm">
+      <span className="text-base leading-none mt-0.5" aria-hidden="true">&#9888;</span>
+      <div className="flex-1">
+        <strong>Only one admin configured.</strong>{' '}
+        Promote a second user to the admin profile to avoid being locked out.{' '}
+        <a
+          href="/docs/admin-recovery.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:no-underline"
+        >
+          Admin recovery guide
+        </a>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="shrink-0 text-warning-text opacity-70 hover:opacity-100 transition-opacity"
+        aria-label="Dismiss warning for this session"
+      >
+        &#x2715;
+      </button>
+    </div>
+  )
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string | null | undefined): string {
@@ -536,6 +572,16 @@ export default function AdminUsersPage() {
   const queryClient = useQueryClient()
   const toast = useToast()
 
+  // Sole-admin banner dismiss (session-only via localStorage)
+  const [bannerDismissed, setBannerDismissed] = useState<boolean>(
+    () => sessionStorage.getItem(SOLE_ADMIN_DISMISS_KEY) === 'true',
+  )
+
+  function dismissBanner() {
+    sessionStorage.setItem(SOLE_ADMIN_DISMISS_KEY, 'true')
+    setBannerDismissed(true)
+  }
+
   // Filter state
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [includeDeleted, setIncludeDeleted] = useState(false)
@@ -567,6 +613,11 @@ export default function AdminUsersPage() {
     queryFn: () => adminUsersApi.listProfiles(),
   })
 
+  const { data: adminStats } = useQuery({
+    queryKey: ['admin-stats'],
+    queryFn: () => adminUsersApi.stats(),
+  })
+
   // Action mutation
   const actionMutation = useMutation({
     mutationFn: async ({ action, user }: { action: ActionType; user: AdminUser }) => {
@@ -589,6 +640,7 @@ export default function AdminUsersPage() {
     },
     onSuccess: (data, { action, user }) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-stats'] })
       setConfirmAction(null)
 
       if (action === 'reset-password' && data && 'temp_password' in data) {
@@ -627,6 +679,7 @@ export default function AdminUsersPage() {
 
   function handleInviteSuccess(token: string, email: string) {
     queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    queryClient.invalidateQueries({ queryKey: ['admin-stats'] })
     setRevealToken({ token, email })
   }
 
@@ -728,8 +781,14 @@ export default function AdminUsersPage() {
       ? confirmMessages[confirmAction.action](confirmAction.user)
       : null
 
+  const showSoleAdminBanner =
+    !bannerDismissed && adminStats != null && adminStats.active_admin_count === 1
+
   return (
     <div className="p-6 space-y-6">
+      {/* Sole-admin warning banner */}
+      {showSoleAdminBanner && <SoleAdminBanner onDismiss={dismissBanner} />}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

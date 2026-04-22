@@ -494,6 +494,10 @@ export interface ProfileListItem {
   description: string | null
 }
 
+export interface AdminStatsResponse {
+  active_admin_count: number
+}
+
 // ─── Dependencies health ──────────────────────────────────────────────────────
 
 export interface DependencyStatus {

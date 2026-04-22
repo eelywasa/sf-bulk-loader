@@ -47,9 +47,29 @@ def _make_user(**kwargs: Any) -> User:
     return User(**defaults)
 
 
+def _get_admin_profile_id() -> str | None:
+    """Return the id of the seeded 'admin' profile row, or None if not found."""
+    from sqlalchemy import select as sa_select
+
+    from app.models.profile import Profile
+
+    async def _fetch() -> str | None:
+        async with _TestSession() as session:
+            result = await session.execute(sa_select(Profile).where(Profile.name == "admin"))
+            p = result.scalar_one_or_none()
+            return p.id if p else None
+
+    return _run_async(_fetch())
+
+
 def _make_admin(**kwargs: Any) -> User:
     # role kwarg dropped in migration 0022 — pop and convert to is_admin.
-    role = kwargs.pop("role", None)
+    kwargs.pop("role", None)
+    # Assign the admin profile so require_permission() grants full access.
+    # The is_admin=True backstop was removed in SFBL-203; all users must have
+    # a profile_id to pass permission checks in hosted mode.
+    if "profile_id" not in kwargs:
+        kwargs["profile_id"] = _get_admin_profile_id()
     defaults = dict(
         id=str(uuid.uuid4()),
         email="admin@example.com",

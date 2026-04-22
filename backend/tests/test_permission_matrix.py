@@ -594,16 +594,15 @@ def test_connection_credential_redaction_by_profile(auth_client, profile, expect
         )
 
 
-# ── is_admin backstop tests ───────────────────────────────────────────────────
+# ── is_admin backstop removal tests (SFBL-203) ────────────────────────────────
 
-def test_is_admin_backstop_allows_admin_routes_without_profile(auth_client):
-    """Spec §5.4: is_admin=True + profile=None → full access during Epic B→C transition.
+def test_is_admin_without_profile_gets_403_after_backstop_removal(auth_client):
+    """SFBL-203: the is_admin=True backstop has been removed.
 
-    The backstop in require_permission() lets legacy admin users through even
-    without a profile_id. This must remain until Epic C migrates all users.
-
-    NOTE: After Epic C completes the user migration, this backstop should be
-    removed (tracked as a follow-up on SFBL-197 Jira issue).
+    All users must now have a profile (enforced by migration 0022 NOT NULL).
+    A user who somehow has is_admin=True but profile=None is denied in hosted
+    mode just like any profileless user — the backstop no longer bypasses the
+    permission check.
     """
     user = User(
         id=str(uuid.uuid4()),
@@ -612,7 +611,7 @@ def test_is_admin_backstop_allows_admin_routes_without_profile(auth_client):
         is_admin=True,
         status="active",
     )
-    user.profile = None  # No profile — pre-migration state
+    user.profile = None  # No profile — represents a hypothetical pre-migration state
 
     async def _override_user():
         return user
@@ -631,9 +630,9 @@ def test_is_admin_backstop_allows_admin_routes_without_profile(auth_client):
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
-    assert resp.status_code == 200, (
-        f"is_admin backstop FAILED: expected 200 for is_admin=True + profile=None "
-        f"on system.settings-gated route, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 403, (
+        f"Expected 403 for is_admin=True + profile=None after backstop removal, "
+        f"got {resp.status_code}: {resp.text}"
     )
 
 

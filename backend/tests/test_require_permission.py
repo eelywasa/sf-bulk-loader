@@ -150,6 +150,31 @@ def test_require_permission_no_profile_returns_403():
     assert resp.json()["detail"]["required_permission"] == RUNS_VIEW
 
 
+def test_require_permission_admin_flag_without_profile_gets_403():
+    """is_admin=True without a profile assigned must NOT bypass the permission check.
+
+    The migration backstop (SFBL-Epic-B) has been removed — all users now have
+    profile_id NOT NULL (migration 0022).  This test confirms the legacy backstop
+    path no longer exists: a user who somehow has is_admin=True but profile=None
+    is denied in hosted mode just like any other profileless user.
+    """
+    user = User(id=str(uuid.uuid4()), email="oldadmin@example.com", status="active", is_admin=True)
+    user.profile = None
+    app = _make_app(PLANS_VIEW)
+
+    async def _override():
+        return user
+
+    app.dependency_overrides[get_current_user] = _override
+    with TestClient(app, raise_server_exceptions=True) as client:
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.auth_mode = "jwt"
+            resp = client.get("/protected")
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["required_permission"] == PLANS_VIEW
+
+
 # ---------------------------------------------------------------------------
 # Desktop mode — always passes (no profile required)
 # ---------------------------------------------------------------------------
