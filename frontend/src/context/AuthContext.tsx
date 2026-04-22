@@ -2,9 +2,48 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { apiFetch, clearStoredToken, getStoredToken, storeToken } from '../api/client'
 import type { RuntimeConfig, UserResponse } from '../api/types'
 
+// All permission keys from the RBAC spec §5.1
+export const ALL_PERMISSION_KEYS = [
+  'connections.view',
+  'connections.view_credentials',
+  'connections.manage',
+  'plans.view',
+  'plans.manage',
+  'runs.view',
+  'runs.execute',
+  'runs.abort',
+  'files.view',
+  'files.view_contents',
+  'users.manage',
+  'system.settings',
+] as const
+
+export type PermissionKey = typeof ALL_PERMISSION_KEYS[number]
+
+function permissionsFromUser(u: UserResponse | null): Set<string> {
+  if (!u) return new Set()
+  if (u.permissions && Array.isArray(u.permissions)) {
+    return new Set(u.permissions)
+  }
+  // Fallback: if no permissions array (pre-SFBL-195 backend), derive from role
+  if (u.role === 'admin' || u.is_admin) {
+    return new Set(ALL_PERMISSION_KEYS)
+  }
+  return new Set()
+}
+
+function profileNameFromUser(u: UserResponse | null): string | null {
+  if (!u) return null
+  if (u.profile?.name) return u.profile.name
+  // Fallback for old backend
+  return u.role ?? null
+}
+
 interface AuthContextValue {
   token: string | null
   user: UserResponse | null
+  permissions: Set<string>
+  profileName: string | null
   isBootstrapping: boolean
   /** False when the active distribution profile requires no login (e.g. desktop). */
   authRequired: boolean
@@ -17,16 +56,37 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<UserResponse | null>(null)
+  const [permissions, setPermissions] = useState<Set<string>>(new Set())
+  const [profileName, setProfileName] = useState<string | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [authRequired, setAuthRequired] = useState(true)
+
+  function applyUser(u: UserResponse | null) {
+    setUser(u)
+    setPermissions(permissionsFromUser(u))
+    setProfileName(profileNameFromUser(u))
+  }
 
   useEffect(() => {
     apiFetch<RuntimeConfig>('/api/runtime')
       .then((cfg) => {
         if (cfg.auth_mode === 'none') {
-          // Desktop / no-login profile — skip token validation entirely
+          // Desktop / no-login profile — fetch /me to get permissions for the virtual desktop user
           setAuthRequired(false)
-          setIsBootstrapping(false)
+          apiFetch<UserResponse>('/api/auth/me')
+            .then((u) => applyUser(u))
+            .catch(() => {
+              // /me not yet returning permissions (pre-SFBL-195 backend); use full set for desktop
+              applyUser({
+                id: 'desktop',
+                username: 'desktop',
+                email: null,
+                display_name: null,
+                permissions: [...ALL_PERMISSION_KEYS],
+                profile: { name: 'desktop' },
+              })
+            })
+            .finally(() => setIsBootstrapping(false))
           return
         }
 
@@ -39,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setToken(stored)
         apiFetch<UserResponse>('/api/auth/me')
-          .then((u) => setUser(u))
+          .then((u) => applyUser(u))
           .catch(() => {
             // Token was invalid — client already cleared it; reset local state
             setToken(null)
@@ -55,7 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setToken(stored)
         apiFetch<UserResponse>('/api/auth/me')
-          .then((u) => setUser(u))
+          .then((u) => applyUser(u))
           .catch(() => setToken(null))
           .finally(() => setIsBootstrapping(false))
       })
@@ -65,20 +125,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     storeToken(newToken)
     setToken(newToken)
     const u = await apiFetch<UserResponse>('/api/auth/me')
-    setUser(u)
+    applyUser(u)
   }
 
   function logout(): void {
     clearStoredToken()
     setToken(null)
-    setUser(null)
+    applyUser(null)
     if (authRequired) {
       window.location.href = '/login'
     }
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, isBootstrapping, authRequired, login, logout }}>
+    <AuthContext.Provider
+      value={{ token, user, permissions, profileName, isBootstrapping, authRequired, login, logout }}
+    >
       {children}
     </AuthContext.Provider>
   )

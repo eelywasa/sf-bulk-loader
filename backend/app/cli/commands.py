@@ -82,9 +82,9 @@ async def _do_admin_recover(email: str) -> None:
             print(f"ERROR: No user found for '{email}'.", file=sys.stderr)
             sys.exit(2)
 
-        if user.role != "admin":
+        if not user.is_admin:
             print(
-                f"ERROR: User '{email}' is not an admin (role='{user.role}'). "
+                f"ERROR: User '{email}' is not an admin (is_admin=False). "
                 "admin-recover is restricted to admin accounts.",
                 file=sys.stderr,
             )
@@ -205,7 +205,7 @@ async def _do_list_admins() -> None:
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(User).where(User.role == "admin").order_by(User.created_at)
+            select(User).where(User.is_admin.is_(True)).order_by(User.created_at)
         )
         admins = result.scalars().all()
 

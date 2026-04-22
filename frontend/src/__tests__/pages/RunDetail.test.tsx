@@ -23,8 +23,17 @@ vi.mock('../../api/endpoints', () => ({
   },
 }))
 
+const MOCK_ALL_PERMISSIONS = new Set([
+  'connections.view', 'connections.view_credentials', 'connections.manage',
+  'plans.view', 'plans.manage',
+  'runs.view', 'runs.execute', 'runs.abort',
+  'files.view', 'files.view_contents',
+  'users.manage', 'system.settings',
+])
+
 vi.mock('../../context/AuthContext', () => ({
-  useAuth: vi.fn(() => ({ authRequired: true })),
+  useAuth: vi.fn(() => ({ authRequired: true, permissions: MOCK_ALL_PERMISSIONS })),
+  useAuthOptional: vi.fn(() => ({ authRequired: true, permissions: MOCK_ALL_PERMISSIONS })),
 }))
 
 import { runsApi, plansApi } from '../../api/endpoints'

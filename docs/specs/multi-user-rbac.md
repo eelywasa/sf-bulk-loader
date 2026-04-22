@@ -184,6 +184,11 @@ First-class permission strings. Initial set:
 
 Note: operator *can* manage load plans (including editing) — the rationale for trigger-only was rejected here since plans-as-code are typically the operator's job.
 
+> **Canonical enforcement matrix:** `docs/specs/rbac-permission-matrix.md` contains the flat
+> permission table, the full route guard reference, and links to the automated test suite that
+> proves every cell is enforced. Update that document (and `docs/specs/rbac-permission-matrix.yml`)
+> when this table changes.
+
 **Viewer:** view-only, no file contents, no run execution.  
 **Operator:** runs the show day-to-day, cannot invite users or change connection credentials.  
 **Admin:** everything.

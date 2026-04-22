@@ -24,11 +24,14 @@ def _make_user(**kwargs) -> User:
     if "is_active" in kwargs:
         is_active = kwargs.pop("is_active")
         kwargs.setdefault("status", "active" if is_active else "deactivated")
+    # Translate legacy role kwarg — role column dropped in migration 0022.
+    role = kwargs.pop("role", None)
+    if role == "admin" and "is_admin" not in kwargs:
+        kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
         username="alice",
         hashed_password=hash_password("secret"),
-        role="user",
         status="active",
     )
     defaults.update(kwargs)
@@ -388,8 +391,10 @@ def test_start_run_sets_initiated_by_from_token(client):
     from app.models.load_plan import LoadPlan
     from app.services.salesforce_auth import encrypt_private_key
 
-    # Seed a real user and log in
-    _seed_user(client, username="runner", password="pass123")
+    # Seed a real user and log in.
+    # is_admin=True so the RBAC migration-backstop allows the /run endpoint
+    # (SFBL-195: is_admin users without a profile retain full access during transition).
+    _seed_user(client, username="runner", password="pass123", role="admin")
     headers = {"Authorization": "Bearer " + client.post(
         "/api/auth/login", json={"username": "runner", "password": "pass123"}
     ).json()["access_token"]}

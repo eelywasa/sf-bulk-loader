@@ -181,6 +181,9 @@ class AuthEvent:
     ACCOUNT_LOCKED = "auth.account.locked"
     ACCOUNT_UNLOCKED = "auth.account.unlocked"
 
+    # SFBL-195: permission enforcement
+    PERMISSION_DENIED = "auth.permission_denied"
+
 
 class EmailEvent:
     """Outbound email delivery lifecycle events."""
@@ -351,6 +354,9 @@ class OutcomeCode:
 
     # Break-glass CLI (SFBL-193)
     CLI_RECOVERY = "cli_recovery"
+
+    # Permission enforcement (SFBL-195)
+    PERMISSION_DENIED = "permission_denied"
 
     # Progressive lockout (SFBL-191)
     # tier1_auto          — account received a tier-1 auto-lock (locked_until set)

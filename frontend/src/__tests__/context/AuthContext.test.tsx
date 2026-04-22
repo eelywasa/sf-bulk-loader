@@ -10,8 +10,19 @@ const MOCK_USER: UserResponse = {
   username: 'alice',
   email: null,
   display_name: null,
-  role: 'admin',
-  is_active: true,
+  is_admin: true,
+  profile: { name: 'admin' },
+  permissions: ['connections.view', 'plans.view', 'runs.view', 'system.settings'],
+}
+
+const MOCK_DESKTOP_USER: UserResponse = {
+  id: 'desktop',
+  username: 'desktop',
+  email: null,
+  display_name: null,
+  is_admin: true,
+  profile: { name: 'desktop' },
+  permissions: ['connections.view', 'plans.view', 'runs.view', 'system.settings'],
 }
 
 const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
@@ -154,7 +165,9 @@ describe('AuthContext', () => {
 
   describe('logout()', () => {
     it('does not redirect to /login in desktop profile', async () => {
-      vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+      vi.mocked(client.apiFetch)
+        .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+        .mockResolvedValueOnce(MOCK_DESKTOP_USER)
       const mockLocation = { href: '', pathname: '/' }
       vi.stubGlobal('location', mockLocation)
 
@@ -200,7 +213,9 @@ describe('AuthContext', () => {
 
   describe('desktop profile (auth_mode=none)', () => {
     it('sets authRequired to false', async () => {
-      vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+      vi.mocked(client.apiFetch)
+        .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+        .mockResolvedValueOnce(MOCK_DESKTOP_USER)
 
       renderAuth()
       await waitFor(() => {
@@ -209,25 +224,44 @@ describe('AuthContext', () => {
       expect(screen.getByTestId('auth-required').textContent).toBe('false')
     })
 
-    it('completes bootstrap without calling /api/auth/me', async () => {
-      vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+    it('calls /api/auth/me to populate permissions for the virtual desktop user', async () => {
+      vi.mocked(client.apiFetch)
+        .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+        .mockResolvedValueOnce(MOCK_DESKTOP_USER)
 
       renderAuth()
       await waitFor(() => {
         expect(screen.getByTestId('bootstrapping').textContent).toBe('false')
       })
-      expect(client.apiFetch).toHaveBeenCalledTimes(1)
-      expect(client.apiFetch).toHaveBeenCalledWith('/api/runtime')
+      expect(client.apiFetch).toHaveBeenCalledTimes(2)
+      expect(client.apiFetch).toHaveBeenNthCalledWith(1, '/api/runtime')
+      expect(client.apiFetch).toHaveBeenNthCalledWith(2, '/api/auth/me')
     })
 
     it('does not require a stored token to complete bootstrap', async () => {
-      vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+      vi.mocked(client.apiFetch)
+        .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+        .mockResolvedValueOnce(MOCK_DESKTOP_USER)
       // No localStorage token set
 
       renderAuth()
       await waitFor(() => {
         expect(screen.getByTestId('bootstrapping').textContent).toBe('false')
       })
+      expect(screen.getByTestId('token').textContent).toBe('none')
+    })
+
+    it('falls back to full permissions when /api/auth/me fails in desktop mode', async () => {
+      vi.mocked(client.apiFetch)
+        .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+        .mockRejectedValueOnce(new Error('Not available'))
+
+      renderAuth()
+      await waitFor(() => {
+        expect(screen.getByTestId('bootstrapping').textContent).toBe('false')
+      })
+      // Even when /me fails, bootstrap completes and auth is not required
+      expect(screen.getByTestId('auth-required').textContent).toBe('false')
       expect(screen.getByTestId('token').textContent).toBe('none')
     })
   })

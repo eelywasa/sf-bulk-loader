@@ -1,0 +1,46 @@
+# RBAC Permission Matrix — Canonical Source
+#
+# This file is the single source of truth for profile permission assignments.
+# Both the Markdown doc (docs/specs/rbac-permission-matrix.md) and the
+# consistency-check test (backend/tests/test_permission_matrix.py) reference it.
+#
+# Regenerate docs/specs/rbac-permission-matrix.md when this file changes.
+# See backend/tests/test_permission_matrix.py::test_matrix_doc_matches_seed_data
+# for automated drift detection.
+
+profiles:
+  admin:
+    description: "Full access to all features including user management."
+    permissions:
+      - connections.view
+      - connections.view_credentials
+      - connections.manage
+      - plans.view
+      - plans.manage
+      - runs.view
+      - runs.execute
+      - runs.abort
+      - files.view
+      - files.view_contents
+      - users.manage
+      - system.settings
+
+  operator:
+    description: "Day-to-day operations: manage plans, execute runs. Cannot manage users or connection credentials."
+    permissions:
+      - connections.view
+      - plans.view
+      - plans.manage
+      - runs.view
+      - runs.execute
+      - runs.abort
+      - files.view
+      - files.view_contents
+
+  viewer:
+    description: "Read-only access. Cannot execute runs or view file contents."
+    permissions:
+      - connections.view
+      - plans.view
+      - runs.view
+      - files.view

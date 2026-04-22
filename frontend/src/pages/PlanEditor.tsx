@@ -9,6 +9,7 @@ import { usePlanEditorState } from '../hooks/usePlanEditorState'
 import { useStepPreview } from '../hooks/useStepPreview'
 import { NotifyMeButton } from '../components/NotifyMeButton'
 import { useAuthOptional } from '../context/AuthContext'
+import { usePermission } from '../hooks/usePermission'
 
 export default function PlanEditor() {
   const { id } = useParams<{ id: string }>()
@@ -60,6 +61,8 @@ export default function PlanEditor() {
 
   const auth = useAuthOptional()
   const showNotifyButton = !isNew && auth?.authRequired === true && !!id
+  const canExecuteRun = usePermission('runs.execute')
+  const canManagePlans = usePermission('plans.manage')
 
   return (
     <div className="p-6 space-y-6">
@@ -87,7 +90,7 @@ export default function PlanEditor() {
               Run Preflight
             </Button>
           )}
-          {!isNew && (
+          {!isNew && canExecuteRun && (
             <Button
               variant="secondary"
               loading={startRunMutation.isPending}
@@ -96,9 +99,11 @@ export default function PlanEditor() {
               Start Run
             </Button>
           )}
-          <Button loading={isSavingPlan} onClick={handleSavePlan}>
-            {isNew ? 'Save Plan' : 'Save Changes'}
-          </Button>
+          {canManagePlans && (
+            <Button loading={isSavingPlan} onClick={handleSavePlan}>
+              {isNew ? 'Save Plan' : 'Save Changes'}
+            </Button>
+          )}
         </div>
       </div>
 

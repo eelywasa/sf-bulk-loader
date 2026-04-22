@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Import Base so all models are registered on its metadata
 from app.database import Base
-from app.models import Connection, EmailDelivery, InputConnection, JobRecord, LoadPlan, LoadRun, LoadStep, LoginAttempt  # noqa: F401
+from app.models import Connection, EmailDelivery, InputConnection, JobRecord, LoadPlan, LoadRun, LoadStep, LoginAttempt, Profile, ProfilePermission  # noqa: F401
 
 config = context.config
 

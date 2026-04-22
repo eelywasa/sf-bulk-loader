@@ -117,6 +117,35 @@ def setup_test_database():
     async def _create():
         async with _engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        # Seed profile rows that migration 0021 would normally create —
+        # Base.metadata.create_all only creates tables, not seed data.
+        from app.auth.permissions import ALL_PERMISSION_KEYS
+        from app.models.profile import Profile
+        from app.models.profile_permission import ProfilePermission
+
+        _PROFILE_PERMISSIONS = {
+            "admin": sorted(ALL_PERMISSION_KEYS),
+            "operator": [
+                "connections.view", "connections.manage",
+                "plans.view", "plans.manage",
+                "runs.view", "runs.execute", "runs.abort",
+                "files.view", "files.view_contents",
+            ],
+            "viewer": [
+                "connections.view",
+                "plans.view",
+                "runs.view",
+                "files.view",
+            ],
+        }
+        async with _TestSession() as session:
+            for name, keys in _PROFILE_PERMISSIONS.items():
+                profile = Profile(name=name, description=f"{name} profile (test seed)", is_system=True)
+                session.add(profile)
+                await session.flush()
+                for key in keys:
+                    session.add(ProfilePermission(profile_id=profile.id, permission_key=key))
+            await session.commit()
 
     async def _drop():
         async with _engine.begin() as conn:
@@ -218,7 +247,7 @@ def auth_client():
         id=str(uuid.uuid4()),
         username="test-user",
         hashed_password="x",
-        role="admin",
+        is_admin=True,
         status="active",
     )
 

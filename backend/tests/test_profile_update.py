@@ -25,7 +25,7 @@ def _seed_user(
         username=username,
         hashed_password=hash_password("OldP4ss!Secure#"),
         display_name=display_name,
-        role=role,
+        is_admin=(role == "admin"),
         status="active" if is_active else "deactivated",
     )
 

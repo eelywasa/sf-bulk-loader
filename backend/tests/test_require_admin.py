@@ -38,7 +38,6 @@ def _admin_user() -> User:
     return User(
         id=str(uuid.uuid4()),
         username="admin",
-        role="admin",
         status="active",
         is_admin=True,
     )
@@ -48,7 +47,6 @@ def _regular_user() -> User:
     return User(
         id=str(uuid.uuid4()),
         username="regular",
-        role="user",
         status="active",
         is_admin=False,
     )
@@ -93,13 +91,12 @@ def test_require_admin_admin_user_passes():
     assert resp.json()["username"] == "admin"
 
 
-def test_require_admin_role_admin_but_is_admin_false_returns_403():
-    """role='admin' alone is NOT sufficient — is_admin must be True."""
+def test_require_admin_non_admin_is_admin_false_returns_403():
+    """is_admin=False always returns 403, regardless of any legacy role value."""
     app = _make_test_app()
     user = User(
         id=str(uuid.uuid4()),
         username="role-admin-only",
-        role="admin",
         status="active",
         is_admin=False,
     )

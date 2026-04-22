@@ -79,7 +79,7 @@ def decode_access_token(token: str) -> dict:
 # ── FastAPI dependencies ──────────────────────────────────────────────────────
 
 
-_DESKTOP_USER = User(id="desktop", username="desktop", role="admin", status="active", is_admin=True)
+_DESKTOP_USER = User(id="desktop", username="desktop", status="active", is_admin=True)
 
 
 async def get_current_user(
@@ -187,6 +187,10 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     Raises HTTP 403 if the user is authenticated but is not an admin.
     In desktop profile (auth_mode=none) the injected _DESKTOP_USER already
     has is_admin=True so this dependency is always satisfied.
+
+    # DEPRECATED: use require_permission(...) from app.auth.permissions instead.
+    # Removal tracked as a follow-up cleanup ticket (post SFBL-195).
+    # Kept as a shim so existing callsites and tests continue to pass.
     """
     if not current_user.is_admin:
         raise HTTPException(
@@ -293,12 +297,25 @@ async def seed_admin(db: AsyncSession) -> None:
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
 
+    # Look up the seeded admin profile (from migration 0021) so the new user
+    # satisfies the NOT NULL profile_id constraint (migration 0022).
+    from app.models.profile import Profile  # noqa: PLC0415
+
+    admin_profile_id = await db.scalar(
+        select(Profile.id).where(Profile.name == "admin")
+    )
+    if admin_profile_id is None:
+        raise RuntimeError(
+            "Admin profile not found. Ensure profile-seed migrations have run "
+            "before seed_admin."
+        )
+
     admin = User(
         username=username,
         hashed_password=hash_password(password),
-        role="admin",
         is_admin=True,
         status="active",
+        profile_id=admin_profile_id,
     )
     db.add(admin)
     await db.commit()

@@ -6,6 +6,7 @@ import { ToastProvider } from '../components/ui/Toast'
 import { ThemeProvider } from '../context/ThemeContext'
 import { AuthProvider } from '../context/AuthContext'
 import * as client from '../api/client'
+import type { RuntimeConfig } from '../api/types'
 import AppShell from '../layout/AppShell'
 import Login from '../pages/Login'
 import Dashboard from '../pages/Dashboard'
@@ -23,8 +24,15 @@ const MOCK_USER: UserResponse = {
   username: 'testuser',
   email: null,
   display_name: null,
-  role: 'admin',
-  is_active: true,
+  is_admin: true,
+  profile: { name: 'admin' },
+  permissions: [
+    'connections.view', 'connections.view_credentials', 'connections.manage',
+    'plans.view', 'plans.manage',
+    'runs.view', 'runs.execute', 'runs.abort',
+    'files.view', 'files.view_contents',
+    'users.manage', 'system.settings',
+  ],
 }
 
 const queryClient = new QueryClient({
@@ -65,10 +73,20 @@ function renderRoute(path: string) {
   )
 }
 
+const MOCK_RUNTIME: RuntimeConfig = {
+  auth_mode: 'local',
+  app_distribution: 'self_hosted',
+  transport_mode: 'http',
+  input_storage_mode: 'local',
+}
+
 describe('Routing', () => {
   beforeEach(() => {
     localStorage.clear()
-    vi.spyOn(client, 'apiFetch').mockResolvedValue(MOCK_USER)
+    vi.spyOn(client, 'apiFetch').mockImplementation((url: string) => {
+      if (url === '/api/runtime') return Promise.resolve(MOCK_RUNTIME)
+      return Promise.resolve(MOCK_USER)
+    })
     localStorage.setItem('auth_token', 'test-token')
   })
 

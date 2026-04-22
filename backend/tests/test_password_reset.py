@@ -66,7 +66,6 @@ def _seed_user(
         email=email.lower(),
         display_name="Alice",
         hashed_password=pw,
-        role="user",
         status="active" if is_active else "deactivated",
     )
 

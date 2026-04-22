@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.permissions import RUNS_VIEW, require_permission
 from app.config import settings
 from app.database import get_db
 from app.models.job import JobRecord, JobStatus
@@ -26,7 +27,9 @@ from app.services.output_storage import OutputStorage, OutputStorageError, get_o
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["jobs"], dependencies=[Depends(get_current_user)])
+_require_view = require_permission(RUNS_VIEW)
+
+router = APIRouter(tags=["jobs"], dependencies=[Depends(_require_view)])
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
