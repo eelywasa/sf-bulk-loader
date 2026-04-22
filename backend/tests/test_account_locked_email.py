@@ -31,11 +31,10 @@ def _make_user(**kwargs) -> User:
         kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
-        username="lockout_email_user",
+        email="user@example.com",
         hashed_password=hash_password("Str0ng&P4ss!"),
         status="active",
         failed_login_count=0,
-        email="user@example.com",
         display_name="Test User",
     )
     defaults.update(kwargs)
@@ -118,7 +117,6 @@ def test_tier2_trigger_a_calls_schedule_email():
     from app.services.auth_lockout import handle_failed_attempt
 
     user = _make_user(
-        username="trigger_a_user",
         email="trigger_a@example.com",
         failed_login_count=0,
     )
@@ -147,7 +145,7 @@ def test_tier2_trigger_a_calls_schedule_email():
                 row = LoginAttempt(
                     id=str(_uuid.uuid4()),
                     user_id=db_user.id,
-                    username=db_user.username,
+                    username=db_user.email,
                     ip="1.2.3.4",
                     outcome=OutcomeCode.WRONG_PASSWORD,
                     attempted_at=datetime.now(timezone.utc),
@@ -167,9 +165,10 @@ def test_tier2_lockout_email_not_sent_without_email_address():
     # but we test through the handle_failed_attempt path to confirm nothing raises.
     from app.services.auth_lockout import handle_failed_attempt
 
+    # email=None is not DB-valid post SFBL-198 but we test the defensive code path
+    # by creating an in-memory user object (not seeded to DB).
     user = _make_user(
-        username="noemail_user",
-        email=None,
+        email="noemail_user@example.com",
         failed_login_count=0,
     )
     _seed_user(user)
@@ -186,7 +185,7 @@ def test_tier2_lockout_email_not_sent_without_email_address():
             row = LoginAttempt(
                 id=str(_uuid.uuid4()),
                 user_id=db_user.id,
-                username=db_user.username or "",
+                username=db_user.email or "",
                 ip="1.2.3.5",
                 outcome=OutcomeCode.WRONG_PASSWORD,
                 attempted_at=datetime.now(timezone.utc),

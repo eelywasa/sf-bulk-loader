@@ -204,7 +204,7 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
 
 export default function AppShell() {
   const { user, logout, authRequired, permissions } = useAuth()
-  const displayName = user?.display_name ?? user?.username ?? null
+  const displayName = user?.display_name ?? user?.email ?? null
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('sidebarCollapsed') === 'true'
   )

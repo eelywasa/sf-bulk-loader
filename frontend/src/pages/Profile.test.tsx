@@ -26,11 +26,11 @@ const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
 
 const MOCK_USER: UserResponse = {
   id: '1',
-  username: 'alice',
   email: 'alice@example.com',
   display_name: 'Alice',
-  role: 'admin',
+  is_admin: true,
   is_active: true,
+  profile: { name: 'admin' },
 }
 
 const MOCK_TOKEN_RESPONSE: TokenResponse = {
@@ -107,9 +107,9 @@ describe('Profile page', () => {
 
     renderProfile()
 
-    // Username is in the identity card; wait for AuthProvider to finish bootstrapping
+    // Email is in the identity card; wait for AuthProvider to finish bootstrapping
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument()
+      expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0)
     }, { timeout: 3000 })
     expect(screen.getByText('admin')).toBeInTheDocument()
     expect(screen.getByText('active')).toBeInTheDocument()

@@ -129,7 +129,7 @@ async def retry_step(
 ) -> LoadRun:
     """Create a new LoadRun that retries only the failed/aborted jobs of one step."""
     new_run, partitions = await load_run_service.prepare_retry_step(
-        db, run_id, step_id, current_user.username
+        db, run_id, step_id, current_user.email
     )
     background_tasks.add_task(orchestrator.execute_retry_run, new_run.id, step_id, partitions)
     return new_run

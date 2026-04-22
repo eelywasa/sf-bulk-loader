@@ -49,13 +49,13 @@ function IdentityCard() {
       <h2 className="text-sm font-semibold text-content-primary">Account identity</h2>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
         <div>
-          <dt className="text-content-muted text-xs uppercase tracking-wide mb-1">Username</dt>
-          <dd className="text-content-primary font-mono">{user?.username ?? '—'}</dd>
+          <dt className="text-content-muted text-xs uppercase tracking-wide mb-1">Email</dt>
+          <dd className="text-content-primary font-mono">{user?.email ?? '—'}</dd>
         </div>
         <div>
           <dt className="text-content-muted text-xs uppercase tracking-wide mb-1">Role</dt>
           <dd>
-            <Badge variant="neutral">{user?.role ?? '—'}</Badge>
+            <Badge variant="neutral">{user?.profile?.name ?? (user?.is_admin ? 'admin' : '—')}</Badge>
           </dd>
         </div>
         <div>

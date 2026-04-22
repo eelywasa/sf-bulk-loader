@@ -21,7 +21,6 @@ const MOCK_RUNTIME: RuntimeConfig = {
 function makeUser(permissions: string[]): UserResponse {
   return {
     id: 'u1',
-    username: 'testuser',
     email: 'test@example.com',
     display_name: 'Test',
     profile: { name: 'admin' },

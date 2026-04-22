@@ -32,7 +32,7 @@ def _make_user(**kwargs) -> User:
         kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
-        username=f"user_{uuid.uuid4().hex[:8]}",
+        email=f"user-{uuid.uuid4().hex[:8]}@example.com",
         hashed_password=hash_password("Str0ng&P4ss!"),
         status="active",
     )
@@ -78,7 +78,7 @@ def _login_and_token(client, user: User, password: str = "Str0ng&P4ss!") -> str:
     """Login via the real login endpoint and return a bearer token."""
     resp = client.post(
         "/api/auth/login",
-        json={"username": user.username, "password": password},
+        json={"email": user.email, "password": password},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
@@ -107,8 +107,8 @@ def test_login_history_requires_auth(client):
 
 def test_login_history_returns_only_current_user_rows(client):
     """Only rows for the authenticated user are returned; other users' rows excluded."""
-    user_a = _make_user(username="alice_hist")
-    user_b = _make_user(username="bob_hist")
+    user_a = _make_user(email="alice-hist@example.com")
+    user_b = _make_user(email="bob-hist@example.com")
     _seed_user(user_a)
     _seed_user(user_b)
 
@@ -137,7 +137,7 @@ def test_login_history_returns_only_current_user_rows(client):
 
 def test_login_history_masks_outcomes(client):
     """'ok' maps to 'Success'; everything else maps to 'Failed'."""
-    user = _make_user(username="carol_hist")
+    user = _make_user(email="carol-hist@example.com")
     _seed_user(user)
 
     _seed_attempt(user_id=user.id, outcome=OutcomeCode.OK, ip="10.0.0.1")
@@ -165,7 +165,7 @@ def test_login_history_masks_outcomes(client):
 
 def test_login_history_default_limit(client):
     """Default limit is 10 — seeding 15 rows returns at most 10."""
-    user = _make_user(username="dave_hist")
+    user = _make_user(email="dave-hist@example.com")
     _seed_user(user)
 
     for i in range(15):
@@ -182,7 +182,7 @@ def test_login_history_default_limit(client):
 
 def test_login_history_limit_param_respected(client):
     """?limit=3 returns at most 3 rows."""
-    user = _make_user(username="eve_hist")
+    user = _make_user(email="eve-hist@example.com")
     _seed_user(user)
 
     for i in range(5):
@@ -199,7 +199,7 @@ def test_login_history_limit_param_respected(client):
 
 def test_login_history_limit_clamped_to_50(client):
     """?limit=999 is rejected with 422 (exceeds max 50)."""
-    user = _make_user(username="frank_hist")
+    user = _make_user(email="frank-hist@example.com")
     _seed_user(user)
     token = _login_and_token(client, user)
     resp = client.get(
@@ -211,7 +211,7 @@ def test_login_history_limit_clamped_to_50(client):
 
 def test_login_history_limit_below_1_rejected(client):
     """?limit=0 is rejected with 422 (below min 1)."""
-    user = _make_user(username="grace_hist")
+    user = _make_user(email="grace-hist@example.com")
     _seed_user(user)
     token = _login_and_token(client, user)
     resp = client.get(
@@ -223,7 +223,7 @@ def test_login_history_limit_below_1_rejected(client):
 
 def test_login_history_excludes_null_user_id_rows(client):
     """Unknown-user rows (user_id=None) are excluded from the response."""
-    user = _make_user(username="helen_hist")
+    user = _make_user(email="helen-hist@example.com")
     _seed_user(user)
 
     # Seed an unknown-user attempt
@@ -244,7 +244,7 @@ def test_login_history_ordered_newest_first(client):
     """Results are returned newest-first (descending attempted_at)."""
     from datetime import timedelta
 
-    user = _make_user(username="ivan_hist")
+    user = _make_user(email="ivan-hist@example.com")
     _seed_user(user)
 
     base = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)

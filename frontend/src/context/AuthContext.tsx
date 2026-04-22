@@ -25,8 +25,8 @@ function permissionsFromUser(u: UserResponse | null): Set<string> {
   if (u.permissions && Array.isArray(u.permissions)) {
     return new Set(u.permissions)
   }
-  // Fallback: if no permissions array (pre-SFBL-195 backend), derive from role
-  if (u.role === 'admin' || u.is_admin) {
+  // Fallback: if no permissions array, derive from is_admin
+  if (u.is_admin) {
     return new Set(ALL_PERMISSION_KEYS)
   }
   return new Set()
@@ -35,8 +35,7 @@ function permissionsFromUser(u: UserResponse | null): Set<string> {
 function profileNameFromUser(u: UserResponse | null): string | null {
   if (!u) return null
   if (u.profile?.name) return u.profile.name
-  // Fallback for old backend
-  return u.role ?? null
+  return null
 }
 
 interface AuthContextValue {
@@ -79,8 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // /me not yet returning permissions (pre-SFBL-195 backend); use full set for desktop
               applyUser({
                 id: 'desktop',
-                username: 'desktop',
-                email: null,
+                email: 'desktop@localhost',
                 display_name: null,
                 permissions: [...ALL_PERMISSION_KEYS],
                 profile: { name: 'desktop' },

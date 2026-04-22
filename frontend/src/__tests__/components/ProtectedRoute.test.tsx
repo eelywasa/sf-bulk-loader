@@ -9,10 +9,8 @@ import type { RuntimeConfig, UserResponse } from '../../api/types'
 
 const MOCK_USER: UserResponse = {
   id: '1',
-  username: 'alice',
-  email: null,
+  email: 'test@example.com',
   display_name: null,
-  role: 'admin',
   is_active: true,
 }
 

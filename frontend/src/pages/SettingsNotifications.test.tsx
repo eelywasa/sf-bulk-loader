@@ -39,10 +39,8 @@ const MOCK_RUNTIME_DESKTOP: RuntimeConfig = {
 
 const MOCK_USER: UserResponse = {
   id: 'u1',
-  username: 'alice',
   email: 'alice@example.com',
   display_name: 'Alice',
-  role: 'user',
   is_active: true,
 }
 

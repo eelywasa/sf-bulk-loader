@@ -21,8 +21,7 @@ import type { UserResponse } from '../api/types'
 
 const MOCK_USER: UserResponse = {
   id: '1',
-  username: 'testuser',
-  email: null,
+  email: 'test@example.com',
   display_name: null,
   is_admin: true,
   profile: { name: 'admin' },
@@ -167,7 +166,7 @@ describe('Routing', () => {
     vi.restoreAllMocks()
     renderRoute('/login')
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
-    expect(screen.getByLabelText('Username')).toBeInTheDocument()
+    expect(screen.getByLabelText('Email')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
 })

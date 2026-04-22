@@ -33,7 +33,7 @@ def _make_user(**kwargs) -> User:
         kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
-        username="testuser",
+        email="testuser@example.com",
         hashed_password=hash_password("Str0ng&Secure#Pass"),
         status="active",
         password_changed_at=None,
@@ -47,8 +47,7 @@ def _payload_with_iat(user: User, iat: int) -> dict:
     exp = iat + settings.jwt_expiry_minutes * 60
     return {
         "sub": user.id,
-        "username": user.username,
-        "role": user.role,
+        "email": user.email,
         "iat": iat,
         "exp": exp,
     }

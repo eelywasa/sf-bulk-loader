@@ -27,11 +27,8 @@ export interface UserProfile {
 
 export interface UserResponse {
   id: string
-  username: string | null
-  email: string | null
+  email: string
   display_name: string | null
-  /** Deprecated — use profile.name instead. Kept for backward compatibility. */
-  role?: string
   is_active?: boolean
   is_admin?: boolean
   profile?: UserProfile

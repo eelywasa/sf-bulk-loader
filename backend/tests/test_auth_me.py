@@ -38,8 +38,8 @@ def _make_profile(name: str, *keys: str) -> Profile:
     return profile
 
 
-def _user_with_profile(profile: Profile | None, username: str = "test") -> User:
-    user = User(id=str(uuid.uuid4()), username=username, status="active", is_admin=False)
+def _user_with_profile(profile: Profile | None, email: str = "test@example.com") -> User:
+    user = User(id=str(uuid.uuid4()), email=email, status="active", is_admin=False)
     user.profile = profile
     return user
 
@@ -53,7 +53,7 @@ def test_me_admin_profile(client):
     """Admin user with system.settings + all keys → correct profile name + permissions."""
     admin_keys = sorted(ALL_PERMISSION_KEYS)
     profile = _make_profile("admin", *admin_keys)
-    user = _user_with_profile(profile, username="admin-user")
+    user = _user_with_profile(profile, email="admin-user@example.com")
     user.is_admin = True
 
     async def _override():
@@ -141,7 +141,7 @@ def test_me_no_profile(client):
 
 def test_me_desktop_mode(client):
     """Desktop mode (auth_mode=none) → profile.name=desktop, all keys sorted."""
-    user = User(id="desktop", username="desktop", status="active", is_admin=True)
+    user = User(id="desktop", email="desktop@localhost", status="active", is_admin=True)
     user.profile = None  # desktop user has no DB profile
 
     async def _override():

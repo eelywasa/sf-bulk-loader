@@ -29,7 +29,6 @@ const MOCK_RUNTIME_DESKTOP: RuntimeConfig = {
 function makeAdminUser(): UserResponse {
   return {
     id: 'admin-1',
-    username: 'admin',
     email: 'admin@example.com',
     display_name: 'Admin',
     is_admin: true,
@@ -47,7 +46,6 @@ function makeAdminUser(): UserResponse {
 function makeViewerUser(): UserResponse {
   return {
     id: 'viewer-1',
-    username: 'viewer',
     email: 'viewer@example.com',
     display_name: 'Viewer',
     is_admin: false,
@@ -59,8 +57,7 @@ function makeViewerUser(): UserResponse {
 function makeDesktopUser(): UserResponse {
   return {
     id: 'desktop',
-    username: 'desktop',
-    email: null,
+    email: 'test@example.com',
     display_name: null,
     is_admin: true,
     profile: { name: 'desktop' },

@@ -39,7 +39,7 @@ from tests.conftest import _TestSession, _run_async
 def _admin_user() -> User:
     return User(
         id=str(uuid.uuid4()),
-        username="settings-admin",
+        email="settings-admin@example.com",
         status="active",
         is_admin=True,
     )
@@ -48,7 +48,7 @@ def _admin_user() -> User:
 def _regular_user() -> User:
     return User(
         id=str(uuid.uuid4()),
-        username="settings-user",
+        email="settings-user@example.com",
         status="active",
         is_admin=False,
     )

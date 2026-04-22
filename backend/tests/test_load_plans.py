@@ -213,7 +213,7 @@ def test_start_run_returns_201(auth_client):
     body = resp.json()
     assert body["load_plan_id"] == plan_id
     assert body["status"] == "pending"
-    assert body["initiated_by"] == "test-user"
+    assert body["initiated_by"] == "test-user@example.com"
 
 
 def test_start_run_plan_not_found_returns_404(auth_client):

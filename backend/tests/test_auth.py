@@ -30,7 +30,7 @@ def _make_user(**kwargs) -> User:
         kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
-        username="alice",
+        email="alice@example.com",
         hashed_password=hash_password("secret"),
         status="active",
     )
@@ -38,12 +38,12 @@ def _make_user(**kwargs) -> User:
     return User(**defaults)
 
 
-def _seed_user(client, username="alice", password="secret", role="user", is_active=True) -> dict:
+def _seed_user(client, email="alice@example.com", password="secret", role="user", is_active=True) -> dict:
     """Insert a user directly via the DB override and return basic info."""
     from tests.conftest import _TestSession, _run_async
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    user = _make_user(username=username, hashed_password=hash_password(password), role=role, is_active=is_active)
+    user = _make_user(email=email, hashed_password=hash_password(password), role=role, is_active=is_active)
 
     async def _insert():
         async with _TestSession() as session:
@@ -51,7 +51,7 @@ def _seed_user(client, username="alice", password="secret", role="user", is_acti
             await session.commit()
 
     _run_async(_insert())
-    return {"id": user.id, "username": user.username, "role": user.role}
+    return {"id": user.id, "email": user.email}
 
 
 # ── Password helpers ──────────────────────────────────────────────────────────
@@ -76,8 +76,9 @@ def test_create_and_decode_token():
     token = create_access_token(user)
     payload = decode_access_token(token)
     assert payload["sub"] == user.id
-    assert payload["username"] == user.username
-    assert payload["role"] == user.role
+    assert payload["email"] == user.email
+    assert "username" not in payload
+    assert "role" not in payload
     assert "iat" in payload
     assert "exp" in payload
 
@@ -112,8 +113,7 @@ def test_decode_expired_token_raises_401():
 
     payload = {
         "sub": str(uuid.uuid4()),
-        "username": "expired",
-        "role": "user",
+        "email": "expired@example.com",
         "iat": 1000,
         "exp": 1001,  # already in the past
     }
@@ -154,7 +154,7 @@ def test_validate_ws_token_invalid_raises_401():
 
 def test_login_returns_token(client):
     _seed_user(client)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "secret"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["token_type"] == "bearer"
@@ -164,18 +164,18 @@ def test_login_returns_token(client):
 
 def test_login_wrong_password_returns_401(client):
     _seed_user(client)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "wrong"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "wrong"})
     assert resp.status_code == 401
 
 
 def test_login_unknown_user_returns_401(client):
-    resp = client.post("/api/auth/login", json={"username": "nobody", "password": "x"})
+    resp = client.post("/api/auth/login", json={"email": "nobody@example.com", "password": "x"})
     assert resp.status_code == 401
 
 
 def test_login_inactive_user_returns_401(client):
     _seed_user(client, is_active=False)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "secret"})
     assert resp.status_code == 401
 
 
@@ -184,7 +184,7 @@ def test_login_inactive_user_returns_401(client):
 
 def _auth_headers(client) -> dict:
     _seed_user(client)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "secret"})
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
@@ -194,8 +194,7 @@ def test_me_returns_current_user(client):
     resp = client.get("/api/auth/me", headers=headers)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["username"] == "alice"
-    assert body["role"] == "user"
+    assert body["email"] == "alice@example.com"
     assert body["is_active"] is True
 
 
@@ -241,9 +240,9 @@ def test_seed_admin_creates_admin_on_empty_db():
             await seed_admin(session)
 
         async with _TestSession() as session:
-            result = await session.execute(select(User).where(User.username == settings.admin_username))
+            result = await session.execute(select(User).where(User.email == settings.admin_email))
             user = result.scalar_one()
-            assert user.role == "admin"
+            assert user.is_admin is True
             assert user.is_active is True
             assert verify_password(settings.admin_password, user.hashed_password)
 
@@ -278,7 +277,7 @@ def test_seed_admin_skips_when_users_exist():
     async def _run():
         # Pre-seed a user
         async with _TestSession() as session:
-            session.add(_make_user(username="existing"))
+            session.add(_make_user(email="existing@example.com"))
             await session.commit()
 
         # seed_admin should not add another
@@ -300,10 +299,11 @@ def test_seed_admin_fails_without_credentials():
 
     async def _run():
         with patch("app.services.auth.settings") as mock_settings:
-            mock_settings.admin_username = None
+            mock_settings.auth_mode = "local"
+            mock_settings.admin_email = None
             mock_settings.admin_password = None
             async with _TestSession() as session:
-                with pytest.raises(RuntimeError, match="ADMIN_USERNAME"):
+                with pytest.raises(RuntimeError, match="ADMIN_EMAIL"):
                     await seed_admin(session)
 
     _run_async(_run())
@@ -394,9 +394,9 @@ def test_start_run_sets_initiated_by_from_token(client):
     # Seed a real user and log in.
     # is_admin=True so the RBAC migration-backstop allows the /run endpoint
     # (SFBL-195: is_admin users without a profile retain full access during transition).
-    _seed_user(client, username="runner", password="pass123", role="admin")
+    _seed_user(client, email="runner@example.com", password="pass123", role="admin")
     headers = {"Authorization": "Bearer " + client.post(
-        "/api/auth/login", json={"username": "runner", "password": "pass123"}
+        "/api/auth/login", json={"email": "runner@example.com", "password": "pass123"}
     ).json()["access_token"]}
 
     # Seed a connection and plan directly via DB
@@ -420,7 +420,7 @@ def test_start_run_sets_initiated_by_from_token(client):
     plan_id = _run_async(_seed_plan())
     resp = client.post(f"/api/load-plans/{plan_id}/run", headers=headers)
     assert resp.status_code == 201
-    assert resp.json()["initiated_by"] == "runner"
+    assert resp.json()["initiated_by"] == "runner@example.com"
 
 
 # ── Ticket 7: WebSocket token enforcement ─────────────────────────────────────
@@ -428,7 +428,7 @@ def test_start_run_sets_initiated_by_from_token(client):
 
 def _ws_token() -> str:
     """Generate a valid JWT for WebSocket authentication in tests."""
-    user = _make_user(username="wsuser")
+    user = _make_user(email="wsuser@example.com")
     return create_access_token(user)
 
 

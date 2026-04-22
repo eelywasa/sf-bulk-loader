@@ -19,7 +19,7 @@ _STRONG_NEW = "NewP4ss!Secure#"
 
 def _seed_user(
     *,
-    username: str = "alice",
+    email: str = "alice@example.com",
     password: str | None = _STRONG_CURRENT,
     role: str = "user",
     is_active: bool = True,
@@ -27,7 +27,7 @@ def _seed_user(
     """Insert a user directly into the test DB and return the ORM object."""
     user = User(
         id=str(uuid.uuid4()),
-        username=username,
+        email=email,
         hashed_password=hash_password(password) if password is not None else None,
         is_admin=(role == "admin"),
         status="active" if is_active else "deactivated",
@@ -70,7 +70,7 @@ def test_change_password_returns_new_token(client):
     # New token must be accepted by /api/auth/me
     me_resp_new = client.get("/api/auth/me", headers=_bearer(new_token))
     assert me_resp_new.status_code == 200
-    assert me_resp_new.json()["username"] == "alice"
+    assert me_resp_new.json()["email"] == "alice@example.com"
 
     # Old token must be rejected (watermark invalidation) — but only if the
     # password_changed_at timestamp differs from iat.  When both are issued

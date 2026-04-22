@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     # → now managed via /settings/security UI
     jwt_expiry_minutes: int = 60
+    # SFBL-198: ADMIN_EMAIL is the new required bootstrap var for first-boot seeding.
+    # ADMIN_USERNAME is retained only for use as display_name on the seeded admin account.
+    admin_email: str | None = None
     admin_username: str | None = None
     admin_password: str | None = None
 
