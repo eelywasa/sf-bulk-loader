@@ -184,6 +184,15 @@ class AuthEvent:
     # SFBL-195: permission enforcement
     PERMISSION_DENIED = "auth.permission_denied"
 
+    # SFBL-200: admin user-management lifecycle
+    USER_INVITED = "auth.user.invited"
+    USER_PROFILE_CHANGED = "auth.user.profile_changed"
+    USER_DEACTIVATED = "auth.user.deactivated"
+    USER_REACTIVATED = "auth.user.reactivated"
+    USER_DELETED = "auth.user.deleted"
+    TEMP_PASSWORD_ISSUED = "auth.user.temp_password_issued"
+    INVITE_RESENT = "auth.user.invite_resent"
+
 
 class EmailEvent:
     """Outbound email delivery lifecycle events."""
@@ -369,3 +378,7 @@ class OutcomeCode:
     TIER1_AUTO_EXPIRED = "tier1_auto_expired"
     ADMIN_MANUAL = "admin_manual"
     ADMIN_UNLOCK = "admin_unlock"
+
+    # Admin user-management outcome codes (SFBL-200)
+    INVITATION_ISSUED = "invitation_issued"
+    LAST_ADMIN_GUARD = "last_admin_guard"
