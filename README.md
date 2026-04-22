@@ -72,7 +72,7 @@ For HTTPS, PostgreSQL, or combined setups see [docs/deployment/docker.md](docs/d
 
 | Document | Description |
 |----------|-------------|
-| [docs/usage.md](docs/usage.md) | Using the app — Salesforce setup, CSV format, load plans |
+| [docs/usage/](docs/usage/index.md) | Using the app — Salesforce setup, CSV format, load plans, notifications, user management |
 | [docs/salesforce-jwt-setup.md](docs/salesforce-jwt-setup.md) | Detailed Salesforce Connected App setup |
 | [docs/s3-connection-setup.md](docs/s3-connection-setup.md) | S3 input source configuration |
 
