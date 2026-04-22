@@ -3,7 +3,7 @@
 Records a user's subscription to run-complete notifications for one or all
 plans, delivered via one channel (email or webhook) to a single destination.
 
-See docs/specs/notifications-spec.md and the locked design decisions on
+See docs/specs/implemented/notifications-spec.md and the locked design decisions on
 SFBL-117 (D1/D2/D3) for context.
 """
 

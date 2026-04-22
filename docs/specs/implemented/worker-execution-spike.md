@@ -1,3 +1,7 @@
+> **Archived — SFBL-210 (2026-04-22).** This document captured the design at delivery. For current behaviour see the pillar docs under `docs/` or the relevant Jira epic. No further edits — historical reference only.
+
+---
+
 # Spec: Worker Execution Architecture Spike
 
 **Jira:** SFBL-120 (spike) — follow-up implementation Epic TBD

@@ -14,7 +14,7 @@ Three system profiles are seeded on startup: `admin`, `operator`, `viewer`.
 A fourth virtual profile `desktop` is used in desktop mode (`auth_mode=none`) and
 holds all permission keys — no enforcement cost in that mode.
 
-For the full design rationale see `docs/specs/multi-user-rbac.md` §5.
+For the full design rationale see `docs/specs/implemented/multi-user-rbac.md` §5 (archived).
 
 > **Note:** The `docs/specs/rbac-permission-matrix.yml` file is the single source of
 > truth for profile permission assignments. The table below and the backend test suite

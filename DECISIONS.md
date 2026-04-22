@@ -386,7 +386,7 @@ path remains as the desktop executor and as a degraded-mode fallback for
 hosted. Both paths share the `partition_executor` body — only the dispatch
 boundary differs — which limits the duplication cost.
 
-**Spike reference:** `docs/specs/worker-execution-spike.md` (SFBL-120) documents
+**Spike reference:** `docs/specs/implemented/worker-execution-spike.md` (SFBL-120) documents
 the full evaluation including Celery reconsideration and the SQLite-as-broker
 analysis. Follow-up implementation Epic to be created; this entry is
 provisional until that Epic sequences the rollout (Postgres migration → worker
@@ -430,7 +430,7 @@ application to start and then fail on the first send attempt.
 - Rotating the password is a `.env` change + container restart — no migration
   or DB change required.
 
-**References:** SFBL-137, `docs/specs/email-service-spec.md` §Configuration,
+**References:** SFBL-137, `docs/specs/implemented/email-service-spec.md` §Configuration,
 `docs/email.md` §"SMTP credential resolution".
 
 ---
@@ -486,7 +486,7 @@ from the `/dependencies` probe on every request.
   simply omit the field and SES uses the account default (or none).
   Using a configuration set is recommended but not enforced.
 
-**References:** SFBL-140, `docs/specs/email-service-spec.md` §"Retry
+**References:** SFBL-140, `docs/specs/implemented/email-service-spec.md` §"Retry
 classification" and §"Backend Protocol", `backend/app/services/email/backends/ses.py`.
 
 ---

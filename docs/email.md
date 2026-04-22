@@ -1,7 +1,7 @@
 # Email
 
 Operator reference for the outbound email service. For the full design rationale
-see [`docs/specs/email-service-spec.md`](specs/email-service-spec.md).
+see [`docs/specs/implemented/email-service-spec.md`](specs/implemented/email-service-spec.md).
 
 ---
 

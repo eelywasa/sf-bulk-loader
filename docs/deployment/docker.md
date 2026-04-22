@@ -161,7 +161,7 @@ docker compose -f docker-compose.yml -f docker-compose.https.yml up --build
 HTTPS is served on port 443. Port 80 redirects to HTTPS.
 
 > **Note:** Automated certificate management (e.g. Let's Encrypt / Certbot) is a
-> planned enhancement — see [Ticket 6](../specs/distrubution-layer-spec.md).
+> planned enhancement — see [Ticket 6](../specs/implemented/distribution-layer-spec.md).
 
 ---
 
