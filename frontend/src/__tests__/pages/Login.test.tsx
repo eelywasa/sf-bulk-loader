@@ -17,10 +17,8 @@ const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
 
 const MOCK_USER: UserResponse = {
   id: '1',
-  username: 'alice',
-  email: null,
+  email: 'alice@example.com',
   display_name: null,
-  role: 'admin',
   is_active: true,
 }
 
@@ -54,9 +52,9 @@ describe('Login page', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders username and password fields', () => {
+  it('renders email and password fields', () => {
     renderLogin()
-    expect(screen.getByLabelText('Username')).toBeInTheDocument()
+    expect(screen.getByLabelText('Email')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
 
@@ -83,7 +81,7 @@ describe('Login page', () => {
 
     renderLogin()
 
-    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
     await user.type(screen.getByLabelText('Password'), 'secret')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -106,7 +104,7 @@ describe('Login page', () => {
 
     renderLogin('/login?next=%2Fplans')
 
-    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
     await user.type(screen.getByLabelText('Password'), 'pw')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -123,12 +121,12 @@ describe('Login page', () => {
 
     renderLogin()
 
-    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
     await user.type(screen.getByLabelText('Password'), 'wrongpass')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('Invalid username or password')
+      expect(screen.getByRole('alert')).toHaveTextContent('Invalid email or password')
     })
   })
 
@@ -140,7 +138,7 @@ describe('Login page', () => {
 
     renderLogin()
 
-    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
     await user.type(screen.getByLabelText('Password'), 'pw')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
@@ -160,7 +158,7 @@ describe('Login page', () => {
 
     renderLogin()
 
-    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
     await user.type(screen.getByLabelText('Password'), 'pw')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 

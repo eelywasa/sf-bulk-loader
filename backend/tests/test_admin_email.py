@@ -32,7 +32,7 @@ from app.services.email.service import get_email_service
 def _make_admin() -> User:
     return User(
         id=str(uuid.uuid4()),
-        username="admin-test",
+        email="admin-test@example.com",
         hashed_password=hash_password("Test-Admin-P4ss!"),
         is_admin=True,
         status="active",
@@ -42,7 +42,7 @@ def _make_admin() -> User:
 def _make_regular_user() -> User:
     return User(
         id=str(uuid.uuid4()),
-        username="regular-user",
+        email="regular-user@example.com",
         hashed_password=hash_password("Test-Admin-P4ss!"),
         is_admin=False,
         status="active",

@@ -11,7 +11,7 @@ export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -21,13 +21,13 @@ export default function Login() {
     setError(null)
     setLoading(true)
     try {
-      const data = await apiPost<TokenResponse>('/api/auth/login', { username, password })
+      const data = await apiPost<TokenResponse>('/api/auth/login', { email, password })
       await login(data.access_token)
       const next = searchParams.get('next') ?? '/'
       navigate(next, { replace: true })
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 401) {
-        setError('Invalid username or password')
+        setError('Invalid email or password')
       } else {
         setError('Sign in failed. Please try again.')
       }
@@ -61,16 +61,16 @@ export default function Login() {
             )}
 
             <div className="mb-3">
-              <label htmlFor="username" className={LABEL_CLASS}>
-                Username
+              <label htmlFor="email" className={LABEL_CLASS}>
+                Email
               </label>
               <input
-                id="username"
-                type="text"
-                autoComplete="username"
+                id="email"
+                type="email"
+                autoComplete="email"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className={INPUT_CLASS}
               />
             </div>

@@ -19,6 +19,7 @@ import {
   faTableColumns,
   faShieldHalved,
   faUser,
+  faUsers,
   faChevronDown,
   faChevronLeft,
   faChevronRight,
@@ -53,6 +54,7 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
   const { theme, setTheme } = useTheme()
   const { authRequired } = useAuth()
   const canSettings = usePermission('system.settings')
+  const canManageUsers = usePermission('users.manage')
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
@@ -158,6 +160,17 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
             </>
           )}
 
+          {authRequired && canManageUsers && (
+            <button
+              onClick={() => { setOpen(false); setThemeOpen(false); navigate('/admin/users') }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+              role="menuitem"
+            >
+              <FontAwesomeIcon icon={faUsers} className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Users</span>
+            </button>
+          )}
+
           {/* Theme row */}
           <div className="relative">
             <button
@@ -204,7 +217,7 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
 
 export default function AppShell() {
   const { user, logout, authRequired, permissions } = useAuth()
-  const displayName = user?.display_name ?? user?.username ?? null
+  const displayName = user?.display_name ?? user?.email ?? null
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('sidebarCollapsed') === 'true'
   )

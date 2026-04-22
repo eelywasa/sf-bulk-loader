@@ -14,6 +14,9 @@ import type {
   InputConnection,
   InputConnectionCreate,
   InputConnectionTestResponse,
+  InvitationAcceptRequest,
+  InvitationAcceptResponse,
+  InvitationInfo,
   LoginHistoryEntry,
   LoadPlan,
   LoadPlanDetail,
@@ -30,12 +33,31 @@ import type {
   NotificationSubscriptionCreate,
   NotificationSubscriptionUpdate,
   NotificationTestResponse,
+  AdminUser,
+  AdminUserListResponse,
+  InviteUserRequest,
+  InviteUserResponse,
+  UpdateUserRequest,
+  AdminResetPasswordResponse,
+  ResendInviteResponse,
+  ProfileListItem,
+  AdminStatsResponse,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 
 export const healthApi = {
   get: () => api.get<{ status: string; env: string }>('/api/health'),
+}
+
+// ─── Invitations (SFBL-202) — public, token is the credential ─────────────────
+
+export const invitationsApi = {
+  /** Validate an invitation token and return the invitee's email + profile. */
+  getInfo: (token: string) => api.get<InvitationInfo>(`/api/invitations/${token}`),
+  /** Accept an invitation by setting a password. Returns a JWT on success. */
+  accept: (token: string, body: InvitationAcceptRequest) =>
+    api.post<InvitationAcceptResponse>(`/api/invitations/${token}/accept`, body),
 }
 
 // ─── Connections ──────────────────────────────────────────────────────────────
@@ -240,6 +262,41 @@ export const notificationSubscriptionsApi = {
   delete: (id: string) => api.delete(`/api/notification-subscriptions/${id}`),
   test: (id: string) =>
     api.post<NotificationTestResponse>(`/api/notification-subscriptions/${id}/test`, {}),
+}
+
+// ─── Admin users (SFBL-201) ────────────────────────────────────────────────────
+
+export interface AdminUsersListParams {
+  status?: string
+  include_deleted?: boolean
+  page?: number
+  page_size?: number
+}
+
+export const adminUsersApi = {
+  list: (params?: AdminUsersListParams) => {
+    const qs = new URLSearchParams()
+    if (params?.status) qs.set('status', params.status)
+    if (params?.include_deleted) qs.set('include_deleted', 'true')
+    if (params?.page) qs.set('page', String(params.page))
+    if (params?.page_size) qs.set('page_size', String(params.page_size))
+    const qstr = qs.toString()
+    return api.get<AdminUserListResponse>(`/api/admin/users${qstr ? `?${qstr}` : ''}`)
+  },
+  get: (id: string) => api.get<AdminUser>(`/api/admin/users/${id}`),
+  invite: (data: InviteUserRequest) => api.post<InviteUserResponse>('/api/admin/users', data),
+  update: (id: string, data: UpdateUserRequest) =>
+    api.put<AdminUser>(`/api/admin/users/${id}`, data),
+  unlock: (id: string) => api.post<AdminUser>(`/api/admin/users/${id}/unlock`),
+  deactivate: (id: string) => api.post<AdminUser>(`/api/admin/users/${id}/deactivate`),
+  reactivate: (id: string) => api.post<AdminUser>(`/api/admin/users/${id}/reactivate`),
+  resetPassword: (id: string) =>
+    api.post<AdminResetPasswordResponse>(`/api/admin/users/${id}/reset-password`),
+  resendInvite: (id: string) =>
+    api.post<ResendInviteResponse>(`/api/admin/users/${id}/resend-invite`),
+  delete: (id: string) => api.delete(`/api/admin/users/${id}`),
+  listProfiles: () => api.get<ProfileListItem[]>('/api/admin/profiles'),
+  stats: () => api.get<AdminStatsResponse>('/api/admin/users/stats'),
 }
 
 export const dependenciesApi = {

@@ -18,6 +18,7 @@ import { faRotate, faTriangleExclamation, faCircleInfo } from '@fortawesome/free
 import { Button } from '../components/ui/Button'
 import { useToast } from '../components/ui/Toast'
 import { useAuth } from '../context/AuthContext'
+import { usePermission } from '../hooks/usePermission'
 import { getSettingsCategory, updateSettingsCategory } from '../api/endpoints'
 import type { SettingValue, SettingsPatch } from '../api/types'
 import { INPUT_CLASS, LABEL_CLASS } from '../components/ui/formStyles'
@@ -148,14 +149,15 @@ export function SettingsPageShell({
   const navigate = useNavigate()
   const toast = useToast()
   const { user } = useAuth()
+  const canManageSettings = usePermission('system.settings')
   const queryClient = useQueryClient()
 
-  // Admin gate — redirect non-admins to /
+  // Settings gate — redirect users lacking system.settings to /
   useEffect(() => {
-    if (user && user.role !== 'admin') {
+    if (user && !canManageSettings) {
       navigate('/', { replace: true })
     }
-  }, [user, navigate])
+  }, [user, canManageSettings, navigate])
 
   const {
     data: categoryData,

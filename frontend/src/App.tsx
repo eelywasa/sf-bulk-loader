@@ -3,6 +3,7 @@ import AppShell from './layout/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
+import InviteAcceptPage from './pages/InviteAcceptPage'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Connections from './pages/Connections'
@@ -20,6 +21,7 @@ import SettingsSalesforcePage from './pages/SettingsSalesforcePage'
 import SettingsPartitioningPage from './pages/SettingsPartitioningPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
 import ForbiddenPage from './pages/ForbiddenPage'
+import AdminUsersPage from './pages/AdminUsersPage'
 
 const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter : createBrowserRouter
 
@@ -27,6 +29,7 @@ const router = createRouter([
   { path: '/login', element: <Login /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/reset-password/:token', element: <ResetPassword /> },
+  { path: '/invite/accept', element: <InviteAcceptPage /> },
   { path: '/verify-email/:token', element: <VerifyEmail /> },
   // /403 is accessible even when authenticated (no ProtectedRoute wrapper)
   { path: '/403', element: <ForbiddenPage /> },
@@ -137,6 +140,14 @@ const router = createRouter([
         ),
       },
       { path: '/profile', element: <Profile /> },
+      {
+        path: '/admin/users',
+        element: (
+          <ProtectedRoute permission="users.manage">
+            <AdminUsersPage />
+          </ProtectedRoute>
+        ),
+      },
     ],
   },
   // Catch-all redirect

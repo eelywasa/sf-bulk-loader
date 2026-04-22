@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     # → now managed via /settings/security UI
     jwt_expiry_minutes: int = 60
+    # SFBL-198: ADMIN_EMAIL is the new required bootstrap var for first-boot seeding.
+    # ADMIN_USERNAME is retained only for use as display_name on the seeded admin account.
+    admin_email: str | None = None
     admin_username: str | None = None
     admin_password: str | None = None
 
@@ -116,6 +119,16 @@ class Settings(BaseSettings):
     email_change_rate_limit_per_user_hour: int = 3
     password_reset_ttl_minutes: int = 15
     email_change_ttl_minutes: int = 30
+
+    # Invitations — TTL for invitation tokens issued to new users.
+    # The absolute expires_at is computed in the application by adding this
+    # value to the current time.  SFBL-199.
+    invitation_ttl_hours: int = 24
+
+    # Base URL — used to construct absolute URLs in emails (e.g. invite accept link).
+    # Should be set to the public-facing URL of the app, e.g. https://loader.example.com
+    # Defaults to http://localhost:3000 for local development.
+    base_url: str = "http://localhost:3000"
 
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]

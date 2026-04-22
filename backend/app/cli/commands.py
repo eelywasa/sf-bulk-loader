@@ -35,13 +35,10 @@ _CLI_UA = "<cli>"
 
 
 async def _find_user_by_email(email: str) -> Optional[User]:
-    """Return a User matching *email* (searches username then email column)."""
+    """Return a User matching *email* (email is the unique login identifier post SFBL-198)."""
     async with AsyncSessionLocal() as session:
-        # username is the primary login identifier; email may also be set
         result = await session.execute(
-            select(User).where(
-                (User.username == email) | (User.email == email)
-            )
+            select(User).where(User.email == email)
         )
         return result.scalar_one_or_none()
 
@@ -73,7 +70,7 @@ async def _do_admin_recover(email: str) -> None:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(User).where(
-                (User.username == email) | (User.email == email)
+                User.email == email
             )
         )
         user: Optional[User] = result.scalar_one_or_none()
@@ -163,7 +160,7 @@ async def _do_unlock(email: str) -> None:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(User).where(
-                (User.username == email) | (User.email == email)
+                User.email == email
             )
         )
         user: Optional[User] = result.scalar_one_or_none()
@@ -214,7 +211,7 @@ async def _do_list_admins() -> None:
         return
 
     # Column widths
-    col_email = max(len("Email"), *(len(u.username or u.email or "<no-email>") for u in admins))
+    col_email = max(len("Email"), *(len(u.email or "<no-email>") for u in admins))
     col_status = max(len("Status"), *(len(u.status) for u in admins))
     col_last = len("Last Login")
     col_locked = len("Currently Locked")
@@ -232,7 +229,7 @@ async def _do_list_admins() -> None:
     print(sep)
 
     for u in admins:
-        email_display = u.username or u.email or "<no-email>"
+        email_display = u.email or "<no-email>"
 
         last_login = "never"
         # last_login_at is not yet on the User model (SFBL-194 scope), fall back gracefully

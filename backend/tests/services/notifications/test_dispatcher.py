@@ -51,7 +51,7 @@ class _StubChannel:
 
 
 async def _seed(session):
-    user = User(username=f"u-{uuid.uuid4().hex[:6]}", hashed_password="x")
+    user = User(email=f"u-{uuid.uuid4().hex[:6]}@example.com", hashed_password="x")
     conn = Connection(
         name=f"c-{uuid.uuid4().hex[:6]}",
         instance_url="https://example.my.salesforce.com",

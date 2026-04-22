@@ -26,11 +26,10 @@ class User(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    # Local auth
-    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)
+    # Local auth — email is the unique login identifier (SFBL-198: username dropped)
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    # SAML / profile
-    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Identity
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     saml_name_id: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     # User state — replaces is_active (SFBL-189)
@@ -68,15 +67,26 @@ class User(Base):
         DateTime(timezone=True), nullable=True, default=None
     )
 
-    @property
-    def role(self) -> str:
-        """Backward-compat property — derived from is_admin after 0022 drops the DB column.
-
-        Returns 'admin' when is_admin=True, 'user' otherwise. Callers that set
-        user.role="admin" directly must switch to is_admin=True; this property is
-        read-only. Retained for SFBL-195 to clean up all callsites.
-        """
-        return "admin" if self.is_admin else "user"
+    # ── User lifecycle / invitation columns (SFBL-199) ────────────────────────
+    # Who invited this user.  NULL for the bootstrap admin account (no inviter).
+    # Self-referential FK — the inviting user's row.  SET NULL on inviter delete
+    # so that orphaned invitees are not deleted along with the inviter.
+    invited_by: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+    # When the invitation was issued.  NULL for bootstrap admin.
+    invited_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    # Updated to now() on every successful authentication.  NULL until the user
+    # logs in for the first time.  Used for activity reporting and idle-session
+    # cleanup (SFBL-200 and beyond).
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     @property
     def is_active(self) -> bool:

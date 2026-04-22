@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 from app.observability.events import EmailEvent, OutcomeCode
 from app.api.admin_email import router as admin_email_router
-from app.api.admin_users import router as admin_users_router
+from app.api.admin_users import router as admin_users_router, profiles_router as admin_profiles_router
+from app.api.invitations import router as invitations_router
 from app.api.settings import router as settings_router
 from app.api.auth import router as auth_router
 from app.api.auth_reset import router as auth_reset_router
@@ -137,9 +138,12 @@ app.add_middleware(RequestIDMiddleware, settings=settings)
 if settings.auth_mode != "none":
     app.include_router(admin_email_router)
     app.include_router(admin_users_router)
+    app.include_router(admin_profiles_router)
     app.include_router(settings_router)
 app.include_router(auth_router)
 app.include_router(auth_reset_router)
+# Invitation-accept endpoints are public (token is the credential) — always registered
+app.include_router(invitations_router)
 app.include_router(me_router)
 app.include_router(profile_router)
 app.include_router(connections_router)

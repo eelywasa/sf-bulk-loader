@@ -9,6 +9,23 @@ export interface RuntimeConfig {
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 
+// ─── Invitation accept (SFBL-202) ─────────────────────────────────────────────
+
+export interface InvitationInfo {
+  email: string
+  display_name: string | null
+  profile_name: string | null
+}
+
+export interface InvitationAcceptRequest {
+  password: string
+}
+
+export interface InvitationAcceptResponse {
+  access_token: string
+  token_type: string
+}
+
 export interface LoginHistoryEntry {
   attempted_at: string  // ISO-8601 datetime string
   ip: string
@@ -27,11 +44,8 @@ export interface UserProfile {
 
 export interface UserResponse {
   id: string
-  username: string | null
-  email: string | null
+  email: string
   display_name: string | null
-  /** Deprecated — use profile.name instead. Kept for backward compatibility. */
-  role?: string
   is_active?: boolean
   is_admin?: boolean
   profile?: UserProfile
@@ -417,6 +431,72 @@ export interface AllSettings {
 
 /** Free-form key→value patch body sent to PATCH /api/settings/{category} */
 export type SettingsPatch = Record<string, string | number | boolean>
+
+// ─── Admin users (SFBL-201) ───────────────────────────────────────────────────
+
+export type AdminUserStatus = 'active' | 'invited' | 'deactivated' | 'locked' | 'deleted'
+
+export interface AdminProfileSummary {
+  id: string
+  name: string
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  display_name: string | null
+  status: AdminUserStatus
+  is_admin: boolean
+  profile: AdminProfileSummary | null
+  permissions: string[]
+  invited_by: string | null
+  invited_at: string | null
+  last_login_at: string | null
+}
+
+export interface AdminUserListResponse {
+  items: AdminUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface InviteUserRequest {
+  email: string
+  profile_id: string
+  display_name?: string | null
+}
+
+export interface InviteUserResponse {
+  user: AdminUser
+  raw_token: string
+  expires_at: string
+}
+
+export interface UpdateUserRequest {
+  profile_id?: string | null
+  display_name?: string | null
+}
+
+export interface AdminResetPasswordResponse {
+  temp_password: string
+  must_reset_password: boolean
+}
+
+export interface ResendInviteResponse {
+  raw_token: string
+  expires_at: string
+}
+
+export interface ProfileListItem {
+  id: string
+  name: string
+  description: string | null
+}
+
+export interface AdminStatsResponse {
+  active_admin_count: number
+}
 
 // ─── Dependencies health ──────────────────────────────────────────────────────
 

@@ -31,7 +31,6 @@ const MOCK_RUNTIME: RuntimeConfig = {
 
 const MOCK_USER: UserResponse = {
   id: 'u1',
-  username: 'alice',
   email: 'alice@example.com',
   display_name: 'Alice',
   profile: { name: 'operator' },

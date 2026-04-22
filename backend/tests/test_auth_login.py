@@ -34,7 +34,7 @@ def _make_user(**kwargs) -> User:
         kwargs["is_admin"] = True
     defaults = dict(
         id=str(uuid.uuid4()),
-        username="alice",
+        email="alice@example.com",
         hashed_password=hash_password("Str0ng&P4ss!"),
         status="active",
     )
@@ -79,7 +79,7 @@ def reset_rate_limit_store():
 def test_login_success_returns_token_and_persists_attempt(client):
     user = _make_user()
     _seed_user(user)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "Str0ng&P4ss!"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "Str0ng&P4ss!"})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -90,7 +90,7 @@ def test_login_success_returns_token_and_persists_attempt(client):
 
     attempts = _get_attempts()
     assert len(attempts) == 1
-    assert attempts[0].username == "alice"
+    assert attempts[0].username == "alice@example.com"
     assert attempts[0].user_id == user.id
     assert attempts[0].outcome == "ok"
 
@@ -98,7 +98,7 @@ def test_login_success_returns_token_and_persists_attempt(client):
 def test_login_must_reset_password_flag_in_response(client):
     user = _make_user(must_reset_password=True)
     _seed_user(user)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "Str0ng&P4ss!"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "Str0ng&P4ss!"})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -112,7 +112,7 @@ def test_login_must_reset_password_flag_in_response(client):
 def test_login_wrong_password_returns_401(client):
     user = _make_user()
     _seed_user(user)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "wrong!"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "wrong!"})
 
     assert resp.status_code == 401
 
@@ -120,11 +120,11 @@ def test_login_wrong_password_returns_401(client):
     assert len(attempts) == 1
     assert attempts[0].outcome == "wrong_password"
     assert attempts[0].user_id == user.id
-    assert attempts[0].username == "alice"
+    assert attempts[0].username == "alice@example.com"
 
 
 def test_login_unknown_user_returns_401(client):
-    resp = client.post("/api/auth/login", json={"username": "nobody", "password": "x"})
+    resp = client.post("/api/auth/login", json={"email": "nobody@example.com", "password": "x"})
 
     assert resp.status_code == 401
 
@@ -132,13 +132,13 @@ def test_login_unknown_user_returns_401(client):
     assert len(attempts) == 1
     assert attempts[0].outcome == "unknown_user"
     assert attempts[0].user_id is None
-    assert attempts[0].username == "nobody"
+    assert attempts[0].username == "nobody@example.com"
 
 
 def test_login_deactivated_user_returns_401(client):
     user = _make_user(status="deactivated")
     _seed_user(user)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "Str0ng&P4ss!"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "Str0ng&P4ss!"})
 
     assert resp.status_code == 401
 
@@ -151,7 +151,7 @@ def test_login_deactivated_user_returns_401(client):
 def test_login_locked_user_returns_401(client):
     user = _make_user(status="locked")
     _seed_user(user)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "Str0ng&P4ss!"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "Str0ng&P4ss!"})
 
     assert resp.status_code == 401
 
@@ -165,7 +165,7 @@ def test_login_tier1_lockout_returns_401(client):
     future = datetime.now(timezone.utc) + timedelta(minutes=30)
     user = _make_user(locked_until=future)
     _seed_user(user)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "Str0ng&P4ss!"})
+    resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "Str0ng&P4ss!"})
 
     assert resp.status_code == 401
 
@@ -191,10 +191,10 @@ def test_login_rate_limit_breach_returns_429(client):
     with patch("app.services.settings.service.settings_service", mock_svc):
         # Exhaust the limit with wrong passwords
         for _ in range(5):
-            client.post("/api/auth/login", json={"username": "alice", "password": "wrong!"})
+            client.post("/api/auth/login", json={"email": "alice@example.com", "password": "wrong!"})
 
         # 6th attempt should be rate-limited
-        resp = client.post("/api/auth/login", json={"username": "alice", "password": "wrong!"})
+        resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "wrong!"})
 
     assert resp.status_code == 429
 
@@ -220,16 +220,16 @@ def test_login_rate_limit_persists_ip_limit_attempt(client):
 
     with patch("app.services.settings.service.settings_service", mock_svc):
         # First attempt consumes the limit
-        client.post("/api/auth/login", json={"username": "alice", "password": "wrong!"})
+        client.post("/api/auth/login", json={"email": "alice@example.com", "password": "wrong!"})
         # Second attempt is rate-limited
-        resp = client.post("/api/auth/login", json={"username": "alice", "password": "x"})
+        resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "x"})
 
     assert resp.status_code == 429
 
     attempts = _get_attempts()
     ip_limit = [a for a in attempts if a.outcome == "ip_limit"]
     assert len(ip_limit) == 1
-    assert ip_limit[0].username == "alice"
+    assert ip_limit[0].username == "alice@example.com"
     assert ip_limit[0].user_id is None
 
 
@@ -238,7 +238,7 @@ def test_login_persists_ip_and_user_agent(client):
     _seed_user(user)
     resp = client.post(
         "/api/auth/login",
-        json={"username": "alice", "password": "Str0ng&P4ss!"},
+        json={"email": "alice@example.com", "password": "Str0ng&P4ss!"},
         headers={"User-Agent": "TestBrowser/1.0"},
     )
     assert resp.status_code == 200
@@ -257,7 +257,7 @@ def test_login_emits_structured_log_on_success(client, caplog):
     _seed_user(user)
 
     with caplog.at_level(logging.INFO, logger="app.api.auth"):
-        resp = client.post("/api/auth/login", json={"username": "alice", "password": "Str0ng&P4ss!"})
+        resp = client.post("/api/auth/login", json={"email": "alice@example.com", "password": "Str0ng&P4ss!"})
 
     assert resp.status_code == 200
     # At least one log record should have been emitted during the request
@@ -271,7 +271,7 @@ def test_login_metric_incremented_on_success(client):
     _seed_user(user)
 
     before = auth_login_attempts_total.labels(outcome="ok")._value.get()
-    client.post("/api/auth/login", json={"username": "alice", "password": "Str0ng&P4ss!"})
+    client.post("/api/auth/login", json={"email": "alice@example.com", "password": "Str0ng&P4ss!"})
     after = auth_login_attempts_total.labels(outcome="ok")._value.get()
 
     assert after == before + 1
@@ -284,7 +284,7 @@ def test_login_metric_incremented_on_wrong_password(client):
     _seed_user(user)
 
     before = auth_login_attempts_total.labels(outcome="wrong_password")._value.get()
-    client.post("/api/auth/login", json={"username": "alice", "password": "bad"})
+    client.post("/api/auth/login", json={"email": "alice@example.com", "password": "bad"})
     after = auth_login_attempts_total.labels(outcome="wrong_password")._value.get()
 
     assert after == before + 1

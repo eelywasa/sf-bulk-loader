@@ -62,7 +62,6 @@ def _seed_user(
 
     user = User(
         id=str(uuid.uuid4()),
-        username=f"user_{uuid.uuid4().hex[:6]}",
         email=email.lower(),
         display_name="Alice",
         hashed_password=pw,

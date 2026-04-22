@@ -30,7 +30,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _seed_user_and_plan(session) -> tuple[User, LoadPlan]:
-    user = User(username=f"u-{uuid.uuid4().hex[:6]}", hashed_password="x")
+    user = User(email=f"u-{uuid.uuid4().hex[:6]}@example.com", hashed_password="x")
     connection = Connection(
         name=f"c-{uuid.uuid4().hex[:6]}",
         instance_url="https://example.my.salesforce.com",

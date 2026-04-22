@@ -29,7 +29,7 @@ def _make_test_app() -> FastAPI:
 
     @_app.get("/protected")
     async def protected_route(admin: User = Depends(require_admin)) -> dict:
-        return {"username": admin.username}
+        return {"email": admin.email}
 
     return _app
 
@@ -37,7 +37,7 @@ def _make_test_app() -> FastAPI:
 def _admin_user() -> User:
     return User(
         id=str(uuid.uuid4()),
-        username="admin",
+        email="admin@example.com",
         status="active",
         is_admin=True,
     )
@@ -46,7 +46,7 @@ def _admin_user() -> User:
 def _regular_user() -> User:
     return User(
         id=str(uuid.uuid4()),
-        username="regular",
+        email="regular@example.com",
         status="active",
         is_admin=False,
     )
@@ -88,7 +88,7 @@ def test_require_admin_admin_user_passes():
         resp = client.get("/protected")
 
     assert resp.status_code == 200
-    assert resp.json()["username"] == "admin"
+    assert resp.json()["email"] == "admin@example.com"
 
 
 def test_require_admin_non_admin_is_admin_false_returns_403():
@@ -96,7 +96,7 @@ def test_require_admin_non_admin_is_admin_false_returns_403():
     app = _make_test_app()
     user = User(
         id=str(uuid.uuid4()),
-        username="role-admin-only",
+        email="role-admin-only@example.com",
         status="active",
         is_admin=False,
     )

@@ -56,8 +56,7 @@ def create_access_token(user: User, expiry_minutes: Optional[int] = None) -> str
     exp = int(now.timestamp()) + _expiry * 60
     payload = {
         "sub": user.id,
-        "username": user.username,
-        "role": user.role,
+        "email": user.email,
         "iat": int(now.timestamp()),
         "exp": exp,
     }
@@ -79,7 +78,7 @@ def decode_access_token(token: str) -> dict:
 # ── FastAPI dependencies ──────────────────────────────────────────────────────
 
 
-_DESKTOP_USER = User(id="desktop", username="desktop", status="active", is_admin=True)
+_DESKTOP_USER = User(id="desktop", email="desktop@localhost", status="active", is_admin=True)
 
 
 async def get_current_user(
@@ -270,9 +269,11 @@ def _validate_password_strength(password: str) -> None:
 async def seed_admin(db: AsyncSession) -> None:
     """Bootstrap the first admin user if no users exist.
 
-    Idempotent — does nothing when at least one user is already present.
-    Raises RuntimeError on first boot if the required env vars are absent or
-    if ADMIN_PASSWORD does not meet minimum complexity requirements.
+    SFBL-198: email is now the identity column. Boot behaviour:
+    - No users → seed from ADMIN_EMAIL + ADMIN_PASSWORD (ADMIN_USERNAME used as display_name).
+    - Existing admin with no email + ADMIN_EMAIL set → backfill email and proceed.
+    - Existing admin with no email + ADMIN_EMAIL unset → RuntimeError with guidance.
+    - Existing admin has email → ignore ADMIN_EMAIL (only used at first seed / backfill).
 
     Skipped entirely in desktop profile (auth_mode=none) — no managed users needed.
     """
@@ -280,15 +281,41 @@ async def seed_admin(db: AsyncSession) -> None:
         return
 
     count = await db.scalar(select(func.count()).select_from(User))
+
+    # ── Existing-install backfill (admin row exists but has no email) ──────────
     if count and count > 0:
+        # Upgrade path: pre-SFBL-198 installs where the admin row may be missing
+        # its email (migration 0023 has a pre-flight that aborts in this case
+        # to give operators a chance to run with ADMIN_EMAIL set so this branch
+        # can patch the row before the migration runs).
+        admin: User | None = await db.scalar(
+            select(User).where(User.is_admin.is_(True)).limit(1)  # type: ignore[attr-defined]
+        )
+        if admin is None or admin.email:
+            # Nothing to do — no admin, or admin already has an email.
+            return
+        configured_email = settings.admin_email
+        if not configured_email:
+            raise RuntimeError(
+                "Existing admin user has no email and ADMIN_EMAIL is unset. "
+                "Set ADMIN_EMAIL in the environment and restart so the admin "
+                "row can be backfilled before migration 0023 enforces NOT NULL."
+            )
+        admin.email = configured_email
+        await db.commit()
+        _log.warning(
+            "Backfilled admin email on startup",
+            extra={"user_id": admin.id, "email": configured_email},
+        )
         return
 
-    username = settings.admin_username
+    # ── First boot — seed the admin account ───────────────────────────────────
+    email = settings.admin_email
     password = settings.admin_password
-    if not username or not password:
+    if not email or not password:
         raise RuntimeError(
             "No users found in the database. "
-            "Set ADMIN_USERNAME and ADMIN_PASSWORD environment variables "
+            "Set ADMIN_EMAIL and ADMIN_PASSWORD environment variables "
             "to seed the initial admin account on first boot."
         )
 
@@ -310,8 +337,10 @@ async def seed_admin(db: AsyncSession) -> None:
             "before seed_admin."
         )
 
+    # ADMIN_USERNAME, if set, is used as the display_name.
     admin = User(
-        username=username,
+        email=email,
+        display_name=settings.admin_username or None,
         hashed_password=hash_password(password),
         is_admin=True,
         status="active",

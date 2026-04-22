@@ -57,6 +57,7 @@ for _pollutant in (
 _TEST_ENCRYPTION_KEY = Fernet.generate_key().decode()
 os.environ.setdefault("ENCRYPTION_KEY", _TEST_ENCRYPTION_KEY)
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-pytest-only")
+os.environ.setdefault("ADMIN_EMAIL", "test-admin@example.com")
 os.environ.setdefault("ADMIN_USERNAME", "test-admin")
 os.environ.setdefault("ADMIN_PASSWORD", "Test-Admin-P4ss!")
 
@@ -72,6 +73,7 @@ import app.services.orchestrator as _orchestrator_module  # noqa: E402
 
 # Override in-process settings so encrypt/decrypt helpers use our key
 settings.encryption_key = _TEST_ENCRYPTION_KEY
+settings.admin_email = "test-admin@example.com"
 settings.admin_username = "test-admin"
 settings.admin_password = "Test-Admin-P4ss!"
 
@@ -172,6 +174,7 @@ def clean_db():
     from app.models.app_setting import AppSetting
     from app.models.connection import Connection
     from app.models.input_connection import InputConnection
+    from app.models.invitation_token import InvitationToken
     from app.models.job import JobRecord
     from app.models.load_plan import LoadPlan
     from app.models.load_run import LoadRun
@@ -194,6 +197,7 @@ def clean_db():
                 LoadPlan,
                 Connection,
                 InputConnection,
+                InvitationToken,  # FK → user; must come before User
                 User,
             ]:
                 await session.execute(delete(model))
@@ -237,19 +241,66 @@ def auth_client():
     Use this fixture for tests that exercise protected endpoints.  The
     dependency override injects a synthetic active user so tests do not need
     to seed and log in a real account.
+
+    The mock user is given the seeded admin Profile so that require_permission()
+    grants all permissions — the is_admin=True backstop was removed in SFBL-203.
     """
     import uuid
 
+    from sqlalchemy import select as sa_select
+
+    from app.models.profile import Profile
+    from app.models.profile_permission import ProfilePermission
     from app.models.user import User
     from app.services.auth import get_current_user
 
+    # Fetch the admin profile that was seeded by setup_test_database.
+    async def _get_admin_profile():
+        async with _TestSession() as session:
+            result = await session.execute(
+                sa_select(Profile).where(Profile.name == "admin")
+            )
+            profile = result.scalar_one_or_none()
+            if profile is None:
+                return None, []
+            # Eagerly load permission keys so they are accessible outside the session.
+            perm_result = await session.execute(
+                sa_select(ProfilePermission).where(
+                    ProfilePermission.profile_id == profile.id
+                )
+            )
+            perms = perm_result.scalars().all()
+            return profile.id, [p.permission_key for p in perms]
+
+    admin_profile_id, admin_perm_keys = _run_async(_get_admin_profile())
+
+    # Build a detached Profile object with permission_keys cached so the user
+    # passes require_permission() checks without a DB round-trip.
+    from app.auth.permissions import ALL_PERMISSION_KEYS
+
+    _admin_profile = Profile(
+        id=admin_profile_id or str(uuid.uuid4()),
+        name="admin",
+        description="admin profile (test)",
+        is_system=True,
+    )
+    _admin_profile.permissions = [
+        ProfilePermission(
+            profile_id=_admin_profile.id,
+            permission_key=k,
+        )
+        for k in (admin_perm_keys or sorted(ALL_PERMISSION_KEYS))
+    ]
+
     _mock_user = User(
         id=str(uuid.uuid4()),
-        username="test-user",
+        email="test-user@example.com",
         hashed_password="x",
         is_admin=True,
         status="active",
+        profile_id=_admin_profile.id,
     )
+    _mock_user.profile = _admin_profile
 
     async def override_get_db():
         async with _TestSession() as session:

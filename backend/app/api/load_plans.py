@@ -161,6 +161,6 @@ async def start_load_run(
     current_user: User = Depends(_require_execute),
 ) -> LoadRun:
     """Create a new Load Run for a plan and enqueue it for background execution."""
-    run = await load_plan_service.create_run(db, plan_id, current_user.username)
+    run = await load_plan_service.create_run(db, plan_id, current_user.email)
     background_tasks.add_task(orchestrator.execute_run, run.id)
     return run

@@ -39,8 +39,7 @@ const ALL_PERMISSIONS = [
 
 const MOCK_USER: UserResponse = {
   id: '1',
-  username: 'alice',
-  email: null,
+  email: 'test@example.com',
   display_name: null,
   is_admin: true,
   profile: { name: 'admin' },
@@ -232,10 +231,10 @@ describe('AppShell', () => {
     })
   })
 
-  it('shows username when user is authenticated', async () => {
+  it('shows email when user is authenticated and has no display_name', async () => {
     renderAppShell('/', MOCK_USER)
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument()
+      expect(screen.getByText('test@example.com')).toBeInTheDocument()
     })
   })
 
@@ -310,7 +309,7 @@ describe('AppShell', () => {
 
     renderAppShell('/', MOCK_USER)
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument()
+      expect(screen.getByText('test@example.com')).toBeInTheDocument()
     })
 
     await act(async () => {

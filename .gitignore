@@ -50,3 +50,6 @@ runs.html
 
 # Claude Code local state
 .claude/
+
+# Guard against agent typo — .claire is not a valid path
+.claire/
