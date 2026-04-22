@@ -40,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +66,7 @@ from app.schemas.auth import UserResponse
 from app.services.auth import hash_password
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
+profiles_router = APIRouter(prefix="/api/admin/profiles", tags=["admin-users"])
 
 _log = logging.getLogger(__name__)
 
@@ -644,3 +646,25 @@ async def delete_user(
             "admin_user_id": current_user.id,
         },
     )
+
+
+# ── Profiles list (for invite form) ──────────────────────────────────────────
+
+
+class ProfileListItem(BaseModel):
+    """Minimal profile summary for the invite form dropdown."""
+
+    id: str
+    name: str
+    description: Optional[str] = None
+
+
+@profiles_router.get("", response_model=List[ProfileListItem], summary="List profiles (admin)")
+async def list_profiles(
+    current_user: _UsersManageUser,
+    db: AsyncSession = Depends(get_db),
+) -> List[ProfileListItem]:
+    """Return all profiles so the invite form can populate the profile selector."""
+    result = await db.execute(select(Profile).order_by(Profile.name))
+    profiles = result.scalars().all()
+    return [ProfileListItem(id=p.id, name=p.name, description=p.description) for p in profiles]
