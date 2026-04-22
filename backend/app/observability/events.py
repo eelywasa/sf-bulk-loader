@@ -193,6 +193,10 @@ class AuthEvent:
     TEMP_PASSWORD_ISSUED = "auth.user.temp_password_issued"
     INVITE_RESENT = "auth.user.invite_resent"
 
+    # SFBL-202: invitation accept lifecycle
+    INVITATION_EMAIL_SENT = "auth.invitation.email_sent"
+    INVITATION_ACCEPTED = "auth.invitation.accepted"
+
 
 class EmailEvent:
     """Outbound email delivery lifecycle events."""
@@ -382,3 +386,8 @@ class OutcomeCode:
     # Admin user-management outcome codes (SFBL-200)
     INVITATION_ISSUED = "invitation_issued"
     LAST_ADMIN_GUARD = "last_admin_guard"
+
+    # Invitation accept outcome codes (SFBL-202)
+    INVITATION_ACCEPTED = "invitation_accepted"
+    INVITATION_EMAIL_SENT = "invitation_email_sent"
+    INVITATION_EMAIL_SKIPPED = "invitation_email_skipped"

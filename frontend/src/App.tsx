@@ -3,6 +3,7 @@ import AppShell from './layout/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
+import InviteAcceptPage from './pages/InviteAcceptPage'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Connections from './pages/Connections'
@@ -27,6 +28,7 @@ const router = createRouter([
   { path: '/login', element: <Login /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
   { path: '/reset-password/:token', element: <ResetPassword /> },
+  { path: '/invite/accept', element: <InviteAcceptPage /> },
   { path: '/verify-email/:token', element: <VerifyEmail /> },
   // /403 is accessible even when authenticated (no ProtectedRoute wrapper)
   { path: '/403', element: <ForbiddenPage /> },

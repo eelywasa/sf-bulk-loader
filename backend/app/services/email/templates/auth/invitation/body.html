@@ -1,0 +1,9 @@
+{% extends "base/layout.html" %}
+{% block content %}
+<h2>You've been invited</h2>
+<p>Hello {{ user_display_name }},</p>
+<p>You've been invited to join <strong>Salesforce Bulk Loader</strong>. Click the button below to set your password and activate your account.</p>
+<p><a href="{{ accept_url }}">Accept invitation</a></p>
+<p>This invitation expires in <strong>{{ expires_in_hours }} hours</strong>.</p>
+<p>If you were not expecting this invitation, you can safely ignore this email.</p>
+{% endblock %}

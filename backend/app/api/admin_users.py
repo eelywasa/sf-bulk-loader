@@ -267,6 +267,12 @@ async def invite_user(
         },
     )
 
+    # Side-effect: send the invitation email if the email backend is configured.
+    # This must run AFTER commit so the user row is durable before the email goes out.
+    # Failures are caught inside send_invitation_email — they never abort this response.
+    from app.services.invitation_email import send_invitation_email  # noqa: PLC0415
+    await send_invitation_email(new_user, raw_token, ttl_hours)
+
     return InviteUserResponse(
         user=AdminUserResponse.from_user(new_user),
         raw_token=raw_token,
@@ -589,6 +595,10 @@ async def resend_invite(
             "admin_user_id": current_user.id,
         },
     )
+
+    # Side-effect: send the invitation email if the email backend is configured.
+    from app.services.invitation_email import send_invitation_email  # noqa: PLC0415
+    await send_invitation_email(user, raw_token, ttl_hours)
 
     return ResendInviteResponse(raw_token=raw_token, expires_at=expires_at.isoformat())
 
