@@ -67,6 +67,27 @@ class User(Base):
         DateTime(timezone=True), nullable=True, default=None
     )
 
+    # ── User lifecycle / invitation columns (SFBL-199) ────────────────────────
+    # Who invited this user.  NULL for the bootstrap admin account (no inviter).
+    # Self-referential FK — the inviting user's row.  SET NULL on inviter delete
+    # so that orphaned invitees are not deleted along with the inviter.
+    invited_by: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+    # When the invitation was issued.  NULL for bootstrap admin.
+    invited_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    # Updated to now() on every successful authentication.  NULL until the user
+    # logs in for the first time.  Used for activity reporting and idle-session
+    # cleanup (SFBL-200 and beyond).
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
     @property
     def is_active(self) -> bool:
         """Read-only derived property for backward compatibility.

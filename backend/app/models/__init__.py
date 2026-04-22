@@ -1,6 +1,7 @@
 from app.models.app_setting import AppSetting
 from app.models.connection import Connection
 from app.models.email_change_token import EmailChangeToken
+from app.models.invitation_token import InvitationToken
 from app.models.email_delivery import EmailDelivery
 from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
@@ -27,6 +28,7 @@ __all__ = [
     "Connection",
     "EmailChangeToken",
     "EmailDelivery",
+    "InvitationToken",
     "InputConnection",
     "LoadPlan",
     "LoadStep",

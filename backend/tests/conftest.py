@@ -174,6 +174,7 @@ def clean_db():
     from app.models.app_setting import AppSetting
     from app.models.connection import Connection
     from app.models.input_connection import InputConnection
+    from app.models.invitation_token import InvitationToken
     from app.models.job import JobRecord
     from app.models.load_plan import LoadPlan
     from app.models.load_run import LoadRun
@@ -196,6 +197,7 @@ def clean_db():
                 LoadPlan,
                 Connection,
                 InputConnection,
+                InvitationToken,  # FK → user; must come before User
                 User,
             ]:
                 await session.execute(delete(model))

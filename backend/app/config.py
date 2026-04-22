@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     password_reset_ttl_minutes: int = 15
     email_change_ttl_minutes: int = 30
 
+    # Invitations — TTL for invitation tokens issued to new users.
+    # The absolute expires_at is computed in the application by adding this
+    # value to the current time.  SFBL-199.
+    invitation_ttl_hours: int = 24
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
 
