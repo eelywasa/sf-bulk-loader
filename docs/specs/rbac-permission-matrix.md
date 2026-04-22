@@ -206,13 +206,3 @@ logger.warning(
 
 See `docs/observability.md` → "Auth events" for the full taxonomy.
 
----
-
-## is_admin backstop (Epic B→C transition)
-
-During the transition from Epic B (permission model) to Epic C (multi-user invitations),
-users with `is_admin=True` but no `profile_id` assigned retain full access. This backstop
-is implemented in `require_permission()` (`backend/app/auth/permissions.py`).
-
-**This backstop must be removed once Epic C completes the user migration** — all users
-will have a `profile_id` at that point. See SFBL-197 Jira for the follow-up tracking.

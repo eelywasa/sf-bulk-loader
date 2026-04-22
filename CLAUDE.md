@@ -85,18 +85,72 @@ If any of the above is skipped, the epic PR is not ready to open. A "docs
 refresh" follow-up story is an anti-pattern — it tends to be deprioritised
 and leaves the product in a state where the docs actively mislead users.
 
-## Documentation Structure
-User-facing documentation lives in `docs/`:
-- `docs/deployment/` — deployment guides per distribution (docker, desktop, aws)
-- `docs/usage.md` — using the app (Salesforce setup, CSV format, load plans)
-- `docs/development.md` — local dev, tests, migrations
-- `docs/observability.md` — observability baseline reference: event taxonomy, metrics, spans, DoD checklist. **Read this before implementing any ticket that touches workflow behaviour.**
-- `docs/ui-conventions.md` — frontend design token system, component usage, form styling rules. **Must be kept in sync with the code** — any change to tokens, `formStyles.ts`, or shared UI components requires a corresponding update to this file in the same task.
-- `docs/specs/` — architecture and feature specs (not user-facing)
+## Documentation Policy
 
-When implementing tickets that require documentation changes, add to or update the
-appropriate file in `docs/` rather than expanding `README.md`. The README is a
-project overview and signpost only.
+The docs are organised into three **pillars** plus a spec layer. The index at
+[`docs/README.md`](docs/README.md) is the authoritative map.
+
+### Pillars
+
+- **Architecture & design** (`docs/architecture.md` + `docs/architecture/*.md`) —
+  how the system is built. Read these before making architectural changes.
+- **Operations & developer** (`docs/deployment/*.md`, `docs/development.md`,
+  `docs/admin-recovery.md`, `docs/observability.md`, `docs/ci.md`,
+  `docs/email.md`, `docs/salesforce-jwt-setup.md`, `docs/s3-connection-setup.md`) —
+  how to run, develop, and operate the app.
+- **Usage** (`docs/usage/*.md`) — task-oriented operator handbook. Each file
+  is a single self-contained topic.
+
+### Usage authoring contract
+
+Every file under `docs/usage/` must ship with YAML frontmatter so the Phase 2
+in-app help build (SFBL-209) has a stable interface:
+
+```yaml
+---
+title: Running a load                # human-readable nav + page title
+slug: running-loads                  # URL-stable topic id; NEVER renamed
+nav_order: 50                        # integer sort key; gaps of 10
+tags: [runs, monitoring]             # optional; feeds future search + RAG
+required_permission: runs.view       # optional; must match a key in backend/app/auth/permissions.py
+summary: >-                          # 1-sentence teaser for nav / search
+  Trigger a load, watch it live, abort, and retry failed steps.
+---
+```
+
+Conventions:
+- Every usage topic opens with a **"What this covers / who should read this"**
+  section and closes with a **"Related"** cross-link block.
+- Sub-headings are short and stable — they become deep-link anchors.
+- Topics are self-contained: a reader landing via a deep link doesn't need to
+  read predecessors.
+- Keep under ~300 lines per topic.
+
+### Specs
+
+`docs/specs/` is reserved for **live** cross-team contracts (currently just
+the RBAC permission matrix). Specs that have been implemented move to
+`docs/specs/implemented/` with a banner; those files are **not** authoritative
+about current behaviour — the code and the handbook pillars are.
+
+### README scope
+
+`README.md` is a signpost only — short pitch, quick-start, and links into the
+pillars. Add detail to `docs/`, not the README. The three-pillar index in
+`docs/README.md` is where readers go next.
+
+### UI conventions (frontend)
+
+`docs/ui-conventions.md` documents the design-token system, `formStyles.ts`,
+and shared components. **Must be kept in sync with the code** — any change
+to tokens, `formStyles.ts`, or shared UI components requires a corresponding
+update to this file in the same task.
+
+### Epic DoD
+
+The *Epic Definition of Done — documentation* rules above still apply: docs
+refresh ships with the feature, not in a follow-up story. This policy section
+defines **where** updates land; the DoD defines **when**.
 
 ## Tech Stack
 - Backend: Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, httpx
