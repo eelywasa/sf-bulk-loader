@@ -1,5 +1,13 @@
 # AWS-Hosted Deployment
 
+## What this covers / who should read this
+
+The operator guide for deploying the Bulk Loader to AWS with the `aws_hosted`
+profile — CloudFront + ALB + ECS/Fargate + RDS PostgreSQL + S3. Read this if
+you are provisioning a new environment, rotating a deployment's secrets, or
+wiring up SSM/Secrets Manager. For the admin CLI used to recover locked-out
+accounts see [`docs/admin-recovery.md`](../admin-recovery.md).
+
 > **Status: Skeleton implemented (Ticket 9)**
 >
 > The CDK infrastructure stacks exist at `infrastructure/` and the architecture is fully
@@ -111,6 +119,7 @@ Injected as ECS task secrets — values never appear in plaintext in the task de
 | `/{env}/bulk-loader/encryption-key` | `ENCRYPTION_KEY` | Fernet key for stored Salesforce connection secrets |
 | `/{env}/bulk-loader/jwt-secret-key` | `JWT_SECRET_KEY` | JWT signing secret for in-app bearer tokens |
 | `/{env}/bulk-loader/database-url` | `DATABASE_URL` | Full PostgreSQL asyncpg connection string |
+| `/{env}/bulk-loader/admin-email` | `ADMIN_EMAIL` | Bootstrap admin email / login identifier (used on first boot only) |
 | `/{env}/bulk-loader/admin-password` | `ADMIN_PASSWORD` | Bootstrap admin password (used on first boot only) |
 | `/{env}/bulk-loader/rds-credentials` | (internal) | RDS master credentials — managed by RDS, used to construct DATABASE_URL |
 
@@ -122,7 +131,7 @@ Resolved by ECS at task launch and injected as plain environment variables.
 |----------------|-------------|---------------|
 | `/{env}/bulk-loader/cors-origins` | `CORS_ORIGINS` | `["https://bulk-loader.example.com"]` |
 | `/{env}/bulk-loader/log-level` | `LOG_LEVEL` | `INFO` |
-| `/{env}/bulk-loader/admin-username` | `ADMIN_USERNAME` | `admin` |
+| `/{env}/bulk-loader/frontend-base-url` | `FRONTEND_BASE_URL` | `https://bulk-loader.example.com` — used to build absolute URLs in outbound email (invitations, password resets) |
 
 ### Hardcoded in task definition
 
@@ -135,8 +144,10 @@ Resolved by ECS at task launch and injected as plain environment variables.
 ## Authentication
 
 The `aws_hosted` profile uses the same in-app login model as `self_hosted`. Users authenticate
-with a username and password; the backend issues a signed JWT. The bootstrap admin account
-(`ADMIN_USERNAME` / `ADMIN_PASSWORD`) is seeded on first boot and ignored on subsequent starts.
+with their email address and password; the backend issues a signed JWT. The bootstrap admin
+account (`ADMIN_EMAIL` / `ADMIN_PASSWORD`) is seeded on first boot and ignored on subsequent
+starts. See [`docs/architecture/auth-and-rbac.md`](../architecture/auth-and-rbac.md) for the
+identity, session, and invitation model.
 
 **SSO / OIDC** is not supported in this release. It is an explicitly planned future enhancement
 for hosted distributions.
@@ -228,7 +239,11 @@ aws secretsmanager put-secret-value \
   --secret-id /${ENV}/bulk-loader/database-url \
   --secret-string "postgresql+asyncpg://${RDS_USER}:${RDS_PASS}@${RDS_ENDPOINT}:5432/bulk_loader?ssl=require"
 
-# Set admin bootstrap password
+# Set admin bootstrap email + password
+aws secretsmanager put-secret-value \
+  --secret-id /${ENV}/bulk-loader/admin-email \
+  --secret-string "admin@example.com"
+
 aws secretsmanager put-secret-value \
   --secret-id /${ENV}/bulk-loader/admin-password \
   --secret-string "your-admin-password"
@@ -251,8 +266,8 @@ aws ssm put-parameter \
   --type String
 
 aws ssm put-parameter \
-  --name /${ENV}/bulk-loader/admin-username \
-  --value admin \
+  --name /${ENV}/bulk-loader/frontend-base-url \
+  --value "https://${CLOUDFRONT_DOMAIN}" \
   --type String
 ```
 

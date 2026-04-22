@@ -1,8 +1,14 @@
 # Observability Developer Guide
 
-This document is the practical developer reference for the observability baseline
-established in **SFBL-12**. For the full design rationale and architecture decisions
-see [`docs/specs/observability-baseline-spec.md`](specs/observability-baseline-spec.md).
+## What this covers / who should read this
+
+The authoritative reference for the Bulk Loader's observability surface — event
+taxonomy, outcome codes, metrics, spans, telemetry-sanitization rules, and the
+Definition of Done checklist that every lifecycle-touching ticket must satisfy.
+Read this **before** implementing any change to run/step/job lifecycle behaviour,
+Salesforce interaction, storage flows, retries, or terminal outcomes. For the
+full design rationale and architecture decisions see
+[`docs/specs/implemented/observability-baseline-spec.md`](specs/implemented/observability-baseline-spec.md).
 
 ---
 

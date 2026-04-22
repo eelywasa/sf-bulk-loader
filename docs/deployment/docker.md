@@ -1,8 +1,14 @@
 # Self-Hosted Docker Deployment
 
-The self-hosted Docker distribution is the primary supported deployment model. It runs
-the full application stack — nginx, FastAPI backend, and React frontend — as Docker
-Compose services.
+## What this covers / who should read this
+
+The operator guide for running the Bulk Loader as a Docker Compose stack on
+your own infrastructure — the primary supported hosted deployment model. Read
+this to bring up a new environment, enable HTTPS or PostgreSQL, or look up the
+environment-variable reference. For the admin CLI used to recover locked-out
+accounts see [`docs/admin-recovery.md`](../admin-recovery.md); for the
+architecture behind what you are deploying see
+[`docs/architecture.md`](../architecture.md).
 
 The default setup uses HTTP on port 80 and SQLite. HTTPS and PostgreSQL are optional
 overlays that can be added independently or combined.
@@ -30,8 +36,9 @@ cd sf-bulk-loader
 cp .env.example .env
 ```
 
-Open `.env` and set `ADMIN_USERNAME` and `ADMIN_PASSWORD` — these create the first
-admin account on initial startup.
+Open `.env` and set `ADMIN_EMAIL` and `ADMIN_PASSWORD` — these create the first
+admin account on initial startup. `ADMIN_EMAIL` is the login identifier (email-based
+login since SFBL-198); `ADMIN_USERNAME` is no longer accepted.
 
 ### 2. Create data directories
 
@@ -60,12 +67,14 @@ docker compose down   # stop
 
 ## Authentication
 
-The `self_hosted` profile requires in-app authentication. Every user must log in with a
-username and password before accessing the application.
+The `self_hosted` profile requires in-app authentication. Every user must log in with
+their email address and password before accessing the application.
 
-The first account is created automatically on startup using the `ADMIN_USERNAME` and
+The first account is created automatically on startup using the `ADMIN_EMAIL` and
 `ADMIN_PASSWORD` values from `.env`. After the first user exists, these bootstrap
-credentials are ignored.
+credentials are ignored. Subsequent users are created by an admin via **User
+Management** in the UI — typically by issuing an invitation link (see
+[`docs/architecture/auth-and-rbac.md`](../architecture/auth-and-rbac.md#invitation-flow)).
 
 Two endpoints are always public (no login required):
 
@@ -228,8 +237,8 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 
 | Variable | Description |
 |----------|-------------|
-| `ADMIN_USERNAME` | Bootstrap admin username — creates the first account. |
-| `ADMIN_PASSWORD` | Bootstrap admin password — used on first startup only. |
+| `ADMIN_EMAIL` | Bootstrap admin email — creates the first account (login identifier). |
+| `ADMIN_PASSWORD` | Bootstrap admin password — used on first startup only. Must pass strength policy (≥ 12 chars, mixed case, digit, special). |
 
 ### Full reference
 
@@ -242,9 +251,10 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 | `ENCRYPTION_KEY_FILE` | `/data/db/encryption.key` | Where to persist the auto-generated encryption key. |
 | `JWT_SECRET_KEY` | _(auto-generated)_ | JWT signing secret. See [Key Management](#key-management). |
 | `JWT_SECRET_KEY_FILE` | `/data/db/jwt_secret.key` | Where to persist the auto-generated JWT secret. |
-| `ADMIN_USERNAME` | _(required on first boot)_ | Bootstrap admin username. |
-| `ADMIN_PASSWORD` | _(required on first boot)_ | Bootstrap admin password. |
-| `JWT_EXPIRY_MINUTES` | `60` | Session token lifetime in minutes. |
+| `ADMIN_EMAIL` | _(required on first boot)_ | Bootstrap admin email (login identifier). |
+| `ADMIN_PASSWORD` | _(required on first boot)_ | Bootstrap admin password. Strength policy enforced. |
+| `JWT_EXPIRY_MINUTES` | `60` | Session token lifetime in minutes (DB-backed after first boot; seeded from this value). |
+| `INVITATION_TTL_HOURS` | `24` | How long an admin-issued invitation link remains valid before it must be reissued. |
 | `CORS_ORIGINS` | `["http://localhost"]` | Allowed CORS origins. Not needed for standard deployments — nginx proxies same-origin. |
 | `DATABASE_URL` | `sqlite+aiosqlite:////data/db/bulk_loader.db` | SQLAlchemy connection string. |
 | `SF_API_VERSION` | `v62.0` | Salesforce REST API version. |
@@ -262,6 +272,21 @@ All configuration is via environment variables in `.env` (loaded by Docker Compo
 | `PW_RESET_RATE_LIMIT_PER_IP_HOUR` | `10` | Maximum password-reset requests per IP address per hour. |
 | `PW_RESET_RATE_LIMIT_PER_EMAIL_HOUR` | `5` | Maximum password-reset requests per email address per hour. |
 | `EMAIL_CHANGE_RATE_LIMIT_PER_USER_HOUR` | `3` | Maximum email-change requests per authenticated user per hour. |
+
+### Email backend (optional — managed via `/settings/email` UI after first boot)
+
+Outbound email (invitations, password resets, notifications) is managed in the UI
+once the app is running; the env vars below are only consulted on first boot to
+seed the `app_setting` table. See [`docs/email.md`](../email.md) for operator
+detail on SMTP vs SES selection, delivery log inspection, and troubleshooting.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMAIL_BACKEND` | distribution default (`noop` for self-hosted) | `noop` \| `smtp` \| `ses`. |
+| `EMAIL_FROM_ADDRESS` | _(empty)_ | Envelope-from address. |
+| `EMAIL_FROM_NAME` | _(empty)_ | Display name used in outbound mail. |
+| `EMAIL_SMTP_HOST` / `..._PORT` / `..._USERNAME` / `..._PASSWORD` | _(empty)_ | SMTP connection — required when backend is `smtp`. Password is stored encrypted in the DB after first boot. |
+| `EMAIL_SES_REGION` | `us-east-1` | AWS region when backend is `ses`. Credentials resolve via the boto3 default chain. |
 
 ### Volume mounts
 
@@ -341,30 +366,8 @@ docker compose logs -f frontend   # nginx only
 
 ## Break-Glass CLI
 
-The break-glass CLI lets an operator recover admin access from the host shell when no
-admin login is available — for example, if every admin account is locked or has an
-unknown password. It runs **without** the web server and connects directly to the
-SQLite (or PostgreSQL) database.
-
-### When to use it
-
-- You cannot log in to any admin account.
-- You need to unlock an account that was auto-locked by the rate-limit policy.
-- You need to audit which admin accounts exist and their current status.
-
-### How to run
-
-Execute the CLI inside the running backend container:
-
-```bash
-# Enter the backend container
-docker compose exec backend bash
-
-# Inside the container:
-python -m app.cli --help
-```
-
-Or run a one-shot command without entering an interactive shell:
+When no admin can log in (forgotten password, locked account, missing email backend)
+the backend ships an admin-recovery CLI that runs from a shell inside the container:
 
 ```bash
 docker compose exec backend python -m app.cli admin-recover admin@example.com
@@ -372,73 +375,5 @@ docker compose exec backend python -m app.cli unlock user@example.com
 docker compose exec backend python -m app.cli list-admins
 ```
 
-### Subcommands
-
-#### `admin-recover <email>`
-
-Resets the password for an admin user and forces a password-change on next login:
-
-```bash
-python -m app.cli admin-recover admin@example.com
-```
-
-Output:
-
-```
-============================================================
-  BREAK-GLASS ADMIN RECOVERY
-============================================================
-  User:             admin@example.com
-  Temporary password: <random-token>
-
-  The user MUST change this password on first login.
-  Store it securely — it will not be shown again.
-============================================================
-```
-
-The command:
-- Generates a random 16-character temporary password.
-- Sets `must_reset_password = true` so the user is forced to change it at next login.
-- Clears `locked_until` and `failed_login_count`.
-- Transitions `status` to `active` (from `invited`, `locked`, or `deactivated`).
-- Emits a WARNING-level audit log entry (`auth.admin.recovered` / `cli_recovery`).
-- Writes a `login_attempt` row for the audit trail.
-
-Exits non-zero if:
-- No user is found for the email (exit 2).
-- The user is not an admin (exit 3).
-- The user has `status = deleted` (exit 4).
-
-#### `unlock <email>`
-
-Clears lockout fields for any user without changing their password:
-
-```bash
-python -m app.cli unlock user@example.com
-```
-
-Sets `locked_until = NULL` and `failed_login_count = 0`. If `status = locked` it
-transitions to `active`. Works on all roles. Exits 2 if the user is not found.
-
-#### `list-admins`
-
-Prints a table of all admin users with their current status:
-
-```bash
-python -m app.cli list-admins
-```
-
-Columns: email/username, status, last login, and whether the account is currently
-locked (status is `locked`, or `locked_until` is a future timestamp).
-
-### Security implications
-
-**Anyone with shell access to the backend container can recover any admin account.**
-This is intentional — it is the last resort when no other path is available.
-
-Recommendations:
-- Restrict container shell access to authorised operators only (e.g. IAM roles, SSH
-  certificate policies).
-- Review the WARNING log line and `login_attempt` row that `admin-recover` produces
-  after each recovery.
-- Rotate the temporary password immediately after handing it to the user.
+See [`docs/admin-recovery.md`](../admin-recovery.md) for the full procedure,
+exit-code reference, and security considerations.

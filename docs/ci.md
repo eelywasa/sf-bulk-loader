@@ -1,5 +1,14 @@
 # CI Reference
 
+## What this covers / who should read this
+
+The topology of the GitHub Actions workflows that gate merges to `main` and publish
+release artifacts. Read this to understand which workflow will run for a given
+change, reproduce a CI check locally, or cut a release. For how to run the same
+tests outside CI see [`docs/development.md`](development.md).
+
+---
+
 This project uses GitHub Actions with four purpose-built workflows. Each targets a specific
 distribution or quality concern and is scoped to fire only when the relevant code is likely
 to have changed.

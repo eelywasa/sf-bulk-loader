@@ -1,9 +1,12 @@
 # Salesforce JWT Bearer Flow: Setup Guide
 
-This guide walks through the one-time Salesforce admin steps required before the
-bulk loader can authenticate. The JWT Bearer flow is server-to-server — no browser
-login, no refresh tokens, no interactive consent. Everything is pre-authorized by a
-Salesforce admin.
+## What this covers / who should read this
+
+The one-time Salesforce admin steps required before the Bulk Loader can
+authenticate against an org. Read this before creating your first Salesforce
+connection in the UI. The JWT Bearer flow is server-to-server — no browser
+login, no refresh tokens, no interactive consent. Everything is pre-authorized
+by a Salesforce admin.
 
 ---
 

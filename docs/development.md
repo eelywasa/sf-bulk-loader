@@ -1,5 +1,14 @@
 # Local Development
 
+## What this covers / who should read this
+
+How to run the backend and frontend from source, execute the test suites,
+build the PyInstaller desktop binary, and enable optional observability
+features. Read this before making your first code change. For deployment-time
+concerns (Docker / AWS / Electron packaging) see the guides under
+[`docs/deployment/`](deployment/). For the multi-agent workflow used for larger
+refactors see [`PARALLEL_AGENTS.md`](../PARALLEL_AGENTS.md) at the repo root.
+
 ---
 
 ## Backend
@@ -16,7 +25,9 @@ pip install -r requirements.txt
 
 # Copy and configure environment
 cp ../.env.example .env
-# Set ENCRYPTION_KEY, JWT_SECRET_KEY, ADMIN_USERNAME, ADMIN_PASSWORD
+# Set ENCRYPTION_KEY, JWT_SECRET_KEY, ADMIN_EMAIL, ADMIN_PASSWORD
+# (ENCRYPTION_KEY and JWT_SECRET_KEY auto-generate if left blank; ADMIN_EMAIL/
+#  ADMIN_PASSWORD are required on first boot for hosted profiles.)
 
 # Apply database migrations
 alembic upgrade head
