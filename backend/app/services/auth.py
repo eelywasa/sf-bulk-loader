@@ -284,14 +284,29 @@ async def seed_admin(db: AsyncSession) -> None:
 
     # ── Existing-install backfill (admin row exists but has no email) ──────────
     if count and count > 0:
-        # Check if any non-deleted user is missing an email (post-migration guard).
-        # We only attempt the specific case: exactly one admin with no email
-        # (upgrade from pre-SFBL-198 schema after migration 0023 has been
-        # applied but email was not backfilled).
-        admin_no_email: User | None = await db.scalar(
-            select(User).where(User.is_admin.is_(True))  # type: ignore[attr-defined]
+        # Upgrade path: pre-SFBL-198 installs where the admin row may be missing
+        # its email (migration 0023 has a pre-flight that aborts in this case
+        # to give operators a chance to run with ADMIN_EMAIL set so this branch
+        # can patch the row before the migration runs).
+        admin: User | None = await db.scalar(
+            select(User).where(User.is_admin.is_(True)).limit(1)  # type: ignore[attr-defined]
         )
-        # Nothing to do if the admin already has an email, or no admin exists.
+        if admin is None or admin.email:
+            # Nothing to do — no admin, or admin already has an email.
+            return
+        configured_email = settings.admin_email
+        if not configured_email:
+            raise RuntimeError(
+                "Existing admin user has no email and ADMIN_EMAIL is unset. "
+                "Set ADMIN_EMAIL in the environment and restart so the admin "
+                "row can be backfilled before migration 0023 enforces NOT NULL."
+            )
+        admin.email = configured_email
+        await db.commit()
+        _log.warning(
+            "Backfilled admin email on startup",
+            extra={"user_id": admin.id, "email": configured_email},
+        )
         return
 
     # ── First boot — seed the admin account ───────────────────────────────────

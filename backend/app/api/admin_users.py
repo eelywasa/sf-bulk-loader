@@ -92,11 +92,16 @@ async def _get_admin_profile(db: AsyncSession) -> Profile | None:
 
 
 async def _count_active_admins(db: AsyncSession, admin_profile_id: str) -> int:
-    """Count users with the admin profile whose status is active."""
+    """Count login-capable admins — status='active' only.
+
+    Invited users cannot authenticate until they accept the invite, so counting
+    them would let the guard leave the system with zero login-capable admins
+    if the invitation is never accepted.
+    """
     result = await db.execute(
         select(func.count(User.id)).where(
             User.profile_id == admin_profile_id,
-            User.status.in_(["active", "invited"]),
+            User.status == "active",
         )
     )
     return result.scalar_one()
@@ -255,13 +260,16 @@ async def invite_user(
     inviter_in_db = await db.get(User, current_user.id)
     invited_by_id: str | None = current_user.id if inviter_in_db is not None else None
 
-    # Create pending user
+    # Create pending user. Sync is_admin from the profile so legacy checks
+    # that still read the flag (require_admin, CLI recovery paths) remain
+    # consistent with the profile assignment.
     new_user = User(
         id=str(uuid.uuid4()),
         email=body.email,
         display_name=body.display_name,
         status="invited",
         profile_id=body.profile_id,
+        is_admin=(profile.name == "admin"),
         invited_by=invited_by_id,
         invited_at=now,
     )
