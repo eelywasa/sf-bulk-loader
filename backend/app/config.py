@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     # value to the current time.  SFBL-199.
     invitation_ttl_hours: int = 24
 
+    # Base URL — used to construct absolute URLs in emails (e.g. invite accept link).
+    # Should be set to the public-facing URL of the app, e.g. https://loader.example.com
+    # Defaults to http://localhost:3000 for local development.
+    base_url: str = "http://localhost:3000"
+
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "https://localhost:3000"]
 

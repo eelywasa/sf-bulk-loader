@@ -14,6 +14,9 @@ import type {
   InputConnection,
   InputConnectionCreate,
   InputConnectionTestResponse,
+  InvitationAcceptRequest,
+  InvitationAcceptResponse,
+  InvitationInfo,
   LoginHistoryEntry,
   LoadPlan,
   LoadPlanDetail,
@@ -44,6 +47,16 @@ import type {
 
 export const healthApi = {
   get: () => api.get<{ status: string; env: string }>('/api/health'),
+}
+
+// ─── Invitations (SFBL-202) — public, token is the credential ─────────────────
+
+export const invitationsApi = {
+  /** Validate an invitation token and return the invitee's email + profile. */
+  getInfo: (token: string) => api.get<InvitationInfo>(`/api/invitations/${token}`),
+  /** Accept an invitation by setting a password. Returns a JWT on success. */
+  accept: (token: string, body: InvitationAcceptRequest) =>
+    api.post<InvitationAcceptResponse>(`/api/invitations/${token}/accept`, body),
 }
 
 // ─── Connections ──────────────────────────────────────────────────────────────

@@ -9,6 +9,23 @@ export interface RuntimeConfig {
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────
 
+// ─── Invitation accept (SFBL-202) ─────────────────────────────────────────────
+
+export interface InvitationInfo {
+  email: string
+  display_name: string | null
+  profile_name: string | null
+}
+
+export interface InvitationAcceptRequest {
+  password: string
+}
+
+export interface InvitationAcceptResponse {
+  access_token: string
+  token_type: string
+}
+
 export interface LoginHistoryEntry {
   attempted_at: string  // ISO-8601 datetime string
   ip: string
