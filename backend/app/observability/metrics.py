@@ -421,6 +421,22 @@ def record_bulk_job_poll_timeout() -> None:
     bulk_job_poll_timeout_total.inc()
 
 
+# ── Admin invitation counter (SFBL-200) ──────────────────────────────────────
+# Tracks admin-issued invitations by outcome.  Low-cardinality label set:
+# "invitation_issued" | "ok" (resend) | "failed"
+
+auth_invitations_total = Counter(
+    "sfbl_auth_invitations_total",
+    "Total admin-issued invitation attempts, by outcome.",
+    ["outcome"],
+)
+
+
+def record_auth_invitation(outcome: str) -> None:
+    """Increment the invitation counter with the given outcome label."""
+    auth_invitations_total.labels(outcome=outcome).inc()
+
+
 # ── Bulk query metric helpers (SFBL-171) ──────────────────────────────────────
 
 
