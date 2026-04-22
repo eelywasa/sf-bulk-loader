@@ -13,14 +13,7 @@ Changes
    - ``last_login_at`` TIMESTAMP nullable — stamped on every successful login.
 
 Revision ID: 0024
-Revises: 0022
-
-# COORDINATION NOTE — parallel migrations
-# SFBL-198 is adding migration 0023 on its own branch (username → email auth).
-# The orchestrator merges SFBL-198 first, then rebases this revision so that
-# down_revision points to 0023 rather than 0022.  If you are reading this after
-# the rebase, you will see down_revision = "0023" here.  The comment is left for
-# context in case git blame surfaces this pre-rebase state.
+Revises: 0023
 Create Date: 2026-04-22
 """
 
@@ -30,7 +23,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0024"
-down_revision: Union[str, None] = "0022"
+down_revision: Union[str, None] = "0023"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

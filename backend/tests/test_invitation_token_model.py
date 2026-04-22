@@ -32,7 +32,7 @@ from app.models.user import User
 def _make_user(**kwargs) -> User:
     defaults = dict(
         id=str(uuid.uuid4()),
-        username=None,
+        email=f"user-{uuid.uuid4().hex[:8]}@example.com",
         hashed_password="x",
         status="active",
     )
