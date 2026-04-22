@@ -19,6 +19,7 @@ import {
   faTableColumns,
   faShieldHalved,
   faUser,
+  faUsers,
   faChevronDown,
   faChevronLeft,
   faChevronRight,
@@ -41,6 +42,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { path: '/connections', label: 'Connections', icon: faPlug, permission: 'connections.view' },
   { path: '/plans', label: 'Load Plans', icon: faListCheck, permission: 'plans.view' },
   { path: '/runs', label: 'Runs', icon: faPlay, permission: 'runs.view' },
+  { path: '/admin/users', label: 'Users', icon: faUsers, permission: 'users.manage' },
 ]
 
 const themeOptions: { value: Theme; label: string }[] = [

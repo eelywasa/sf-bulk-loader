@@ -415,6 +415,68 @@ export interface AllSettings {
 /** Free-form key→value patch body sent to PATCH /api/settings/{category} */
 export type SettingsPatch = Record<string, string | number | boolean>
 
+// ─── Admin users (SFBL-201) ───────────────────────────────────────────────────
+
+export type AdminUserStatus = 'active' | 'invited' | 'deactivated' | 'locked' | 'deleted'
+
+export interface AdminProfileSummary {
+  id: string
+  name: string
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  display_name: string | null
+  status: AdminUserStatus
+  is_admin: boolean
+  profile: AdminProfileSummary | null
+  permissions: string[]
+  invited_by: string | null
+  invited_at: string | null
+  last_login_at: string | null
+}
+
+export interface AdminUserListResponse {
+  items: AdminUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface InviteUserRequest {
+  email: string
+  profile_id: string
+  display_name?: string | null
+}
+
+export interface InviteUserResponse {
+  user: AdminUser
+  raw_token: string
+  expires_at: string
+}
+
+export interface UpdateUserRequest {
+  profile_id?: string | null
+  display_name?: string | null
+}
+
+export interface AdminResetPasswordResponse {
+  temp_password: string
+  must_reset_password: boolean
+}
+
+export interface ResendInviteResponse {
+  raw_token: string
+  expires_at: string
+}
+
+export interface ProfileListItem {
+  id: string
+  name: string
+  description: string | null
+}
+
 // ─── Dependencies health ──────────────────────────────────────────────────────
 
 export interface DependencyStatus {

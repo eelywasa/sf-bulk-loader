@@ -20,6 +20,7 @@ import SettingsSalesforcePage from './pages/SettingsSalesforcePage'
 import SettingsPartitioningPage from './pages/SettingsPartitioningPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
 import ForbiddenPage from './pages/ForbiddenPage'
+import AdminUsersPage from './pages/AdminUsersPage'
 
 const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter : createBrowserRouter
 
@@ -137,6 +138,14 @@ const router = createRouter([
         ),
       },
       { path: '/profile', element: <Profile /> },
+      {
+        path: '/admin/users',
+        element: (
+          <ProtectedRoute permission="users.manage">
+            <AdminUsersPage />
+          </ProtectedRoute>
+        ),
+      },
     ],
   },
   // Catch-all redirect
