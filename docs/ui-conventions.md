@@ -186,6 +186,23 @@ exception with an inline comment.
 <span className="text-warning-text">{warningCount}</span>
 ```
 
+### Log, code, and SOQL blocks
+
+Use `bg-surface-code` + `text-content-code` on `<pre>` / `<code>` elements that
+render raw payloads — SOQL snippets, Salesforce API response JSON, run logs.
+These tokens intentionally resolve to the same dark values in light and dark
+mode, so code blocks have consistent contrast on any page surface.
+
+```tsx
+// ✅ theme-consistent log/code block
+<pre className="rounded-md bg-surface-code text-content-code px-3 py-2 text-xs font-mono whitespace-pre-wrap">
+  {soql}
+</pre>
+```
+
+Do not use `bg-gray-900 text-gray-100` on log/code surfaces — it bypasses the
+token layer and disappears from future palette tuning (see HANDOVER §4.3).
+
 ### Selected vs hover states
 
 Use distinct tokens so these states are visually separable:

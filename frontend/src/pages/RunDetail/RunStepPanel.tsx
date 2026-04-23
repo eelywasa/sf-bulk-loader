@@ -129,7 +129,7 @@ export function RunStepPanel({
         {isQuery && step.soql && (
           <div className="mt-3">
             <p className="text-xs font-medium text-content-muted uppercase tracking-wide mb-1">SOQL</p>
-            <pre className="rounded-md bg-gray-900 px-3 py-2 text-xs text-gray-100 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+            <pre className="rounded-md bg-surface-code text-content-code px-3 py-2 text-xs font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
               {step.soql}
             </pre>
           </div>
