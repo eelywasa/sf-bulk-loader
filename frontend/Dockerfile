@@ -3,10 +3,12 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
-COPY . .
+# Copy frontend source and the usage docs the help-content plugin needs at build time
+COPY frontend/ .
+COPY docs/usage/ /docs/usage/
 RUN npm run build
 
 # ---- Serve stage ----
