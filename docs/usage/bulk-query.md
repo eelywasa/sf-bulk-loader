@@ -75,8 +75,7 @@ matching a predicate:
 3. Click **Browse** on the delete step and pick the query step's result CSV.
 
 Two plans are currently required because run-specific output folders don't
-exist at plan-edit time. Same-run composition is tracked under
-[SFBL-166](https://matthew-jenkin.atlassian.net/browse/SFBL-166).
+exist at plan-edit time.
 
 ---
 

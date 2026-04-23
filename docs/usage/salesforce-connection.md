@@ -97,9 +97,7 @@ Without this step the JWT exchange will fail with `invalid_grant`.
    success or surface the Salesforce error.
 
 Private keys are Fernet-encrypted at rest; the plaintext never leaves the
-backend service. See
-[`docs/architecture/storage.md`](../architecture/storage.md#encryption-at-rest)
-for the encryption model.
+backend service.
 
 ---
 

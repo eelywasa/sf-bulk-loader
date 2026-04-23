@@ -18,14 +18,6 @@ can be reached via deep link. If you are setting up for the first time, read
 the topics under **Getting started** in order; after that you can jump to
 whichever feature you need.
 
-> **In-app access:** These topics are also available inside the application at
-> `/help` (click the **Help** link in the top-right of the app shell). The
-> in-app version is built from this directory at deploy time — no internet
-> connection required.
-
-These pages are also the source of the in-app `/help` screen (Phase 2,
-[SFBL-209](https://matthew-jenkin.atlassian.net/browse/SFBL-209)).
-
 ---
 
 ## Getting started
@@ -71,8 +63,7 @@ These pages are also the source of the in-app `/help` screen (Phase 2,
 
 - Every page begins with *"What this covers / who should read this"* so you can
   tell at a glance whether you are in the right place.
-- Page-level YAML frontmatter declares the topic's title, stable slug,
-  navigation order, and (where applicable) the permission key required to see
-  it. This is what the in-app `/help` route consumes.
+- Each page declares a stable slug in its frontmatter — use that slug to build
+  deep links: `#slug` or `#slug:heading-id`.
 - Each page ends with **Related** cross-links — follow those rather than
   scrolling back to this index.

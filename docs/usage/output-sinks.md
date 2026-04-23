@@ -43,7 +43,6 @@ attach an output connection.
 
 ## S3 output sink
 
-Introduced by [SFBL-115](https://matthew-jenkin.atlassian.net/browse/SFBL-115).
 Results stream directly to an S3 bucket using the same relative layout
 (`{run_id}/{step_id}/{partition}_*.csv`) under the prefix you configure.
 
@@ -62,8 +61,7 @@ Results stream directly to an S3 bucket using the same relative layout
    `PutObject` of a zero-byte marker and cleans up afterwards.
 
 AWS credentials are Fernet-encrypted at rest with the same key used for
-Salesforce private keys. See
-[`docs/architecture/storage.md`](../architecture/storage.md#encryption-at-rest).
+Salesforce private keys.
 
 ### Attaching to a plan
 

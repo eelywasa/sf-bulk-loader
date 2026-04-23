@@ -15,12 +15,7 @@ summary: >-
 
 How admins invite teammates, assign RBAC profiles, and handle the account
 lifecycle (active / disabled / locked). Hosted profiles only — desktop has
-no user accounts. Requires `users.manage`. The underlying invitation flow
-was delivered by
-[SFBL-188](https://matthew-jenkin.atlassian.net/browse/SFBL-188).
-
-For the authoritative permission matrix see
-[`docs/specs/rbac-permission-matrix.md`](../specs/rbac-permission-matrix.md).
+no user accounts. Requires `users.manage`.
 
 ---
 

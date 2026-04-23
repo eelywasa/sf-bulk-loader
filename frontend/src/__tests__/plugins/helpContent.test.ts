@@ -62,10 +62,20 @@ describe('rewriteInternalLinks', () => {
     expect(result).toContain('href="http://docs.salesforce.com"')
   })
 
-  it('leaves links to files outside docs/usage/ (with ../) unchanged', () => {
+  it('rewrites cross-pillar refs (../foo/bar.md) to absolute GitHub URLs', () => {
     const html = '<a href="../deployment/docker.md">Docker guide</a>'
     const result = rewriteInternalLinks(html, slugMap)
-    expect(result).toContain('href="../deployment/docker.md"')
+    expect(result).toContain(
+      'href="https://github.com/eelywasa/sf-bulk-loader/blob/main/docs/deployment/docker.md"',
+    )
+  })
+
+  it('preserves anchor fragments on cross-pillar refs', () => {
+    const html = '<a href="../architecture/storage.md#encryption-at-rest">Encryption</a>'
+    const result = rewriteInternalLinks(html, slugMap)
+    expect(result).toContain(
+      'href="https://github.com/eelywasa/sf-bulk-loader/blob/main/docs/architecture/storage.md#encryption-at-rest"',
+    )
   })
 
   it('leaves links to unknown .md files unchanged', () => {

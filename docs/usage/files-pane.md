@@ -15,9 +15,8 @@ summary: >-
 
 How to inspect input CSVs and job result files via the **Files** pane. The
 pane has two permission tiers — `files.view` to browse and see metadata,
-`files.view_contents` to actually read or download the bytes (introduced by
-[SFBL-206](https://matthew-jenkin.atlassian.net/browse/SFBL-206) to keep PII
-behind a separate gate).
+`files.view_contents` to actually read or download the bytes — the second
+tier exists so PII stays behind a separate gate.
 
 ---
 
@@ -33,9 +32,6 @@ The default `viewer` profile has `files.view` but **not**
 records inside them. Enforced both server-side (`require_permission`) and in
 the UI (the **Logs** tab on the job detail page and the **Download logs**
 card on the run detail page are hidden when the permission is absent).
-
-See [`docs/specs/rbac-permission-matrix.md`](../specs/rbac-permission-matrix.md)
-for the authoritative matrix.
 
 ---
 
