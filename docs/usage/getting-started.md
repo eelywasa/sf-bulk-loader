@@ -67,7 +67,7 @@ the backend fails to start with a clear error pointing at the docs.
 
 If your account is **invited** but you have not set a password yet, use the
 invitation link you received by email instead — see
-[User management](user-management.md#invitation-flow) for the mechanics.
+[User management](user-management.md#inviting-a-user) for the mechanics.
 
 ### Forgotten password or locked out?
 

@@ -309,3 +309,13 @@ as the final step of remediating each comment — not as a batch at the end.
 - Frontend dev server proxies `/api/*` and `/ws/*` to the backend (see `vite.config.ts`).
 - In Docker, nginx handles the same proxying (see `frontend/nginx.conf`).
 - Alembic migrations run automatically on container start (before uvicorn).
+
+## In-app Help Content Alignment
+
+Any edit to `docs/usage/*.md` that adds, removes, or renames a heading, changes a `required_permission` field, or modifies an internal cross-link must be verified with:
+
+```bash
+node frontend/scripts/check-help-links.mjs
+```
+
+The CI `docs-drift` job enforces this automatically, but run it locally before pushing. The in-app `/help` route is built from these files at Vite build time — stale links or invalid permissions cause a broken help experience.
