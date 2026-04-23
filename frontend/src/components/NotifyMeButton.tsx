@@ -156,12 +156,12 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
           loading={primaryDisabled}
           className="rounded-r-none"
         >
-          <FontAwesomeIcon icon={faBell} className="mr-2" />
+          <FontAwesomeIcon icon={faBell} className="mr-2" aria-hidden="true" />
           {primaryLabel}
         </Button>
         <Menu as="div" className="relative">
           <MenuButton className={menuBtnBase} aria-label="Notification options">
-            <FontAwesomeIcon icon={faCaretDown} />
+            <FontAwesomeIcon icon={faCaretDown} aria-hidden="true" />
           </MenuButton>
           <MenuItems
             anchor="bottom end"

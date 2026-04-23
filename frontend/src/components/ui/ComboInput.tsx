@@ -131,9 +131,9 @@ export function ComboInput({
           className="absolute right-2 text-content-muted hover:text-content-secondary transition-colors"
         >
           {loading ? (
-            <FontAwesomeIcon icon={faSpinner} className="animate-spin text-xs" />
+            <FontAwesomeIcon icon={faSpinner} className="animate-spin text-xs" aria-hidden="true" />
           ) : (
-            <FontAwesomeIcon icon={faChevronDown} className="text-xs" />
+            <FontAwesomeIcon icon={faChevronDown} className="text-xs" aria-hidden="true" />
           )}
         </button>
       </div>

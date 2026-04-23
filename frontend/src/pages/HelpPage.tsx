@@ -191,7 +191,7 @@ export default function HelpPage() {
             className="p-1 rounded text-content-muted hover:text-content-primary transition-colors"
             aria-label="Close navigation"
           >
-            <FontAwesomeIcon icon={faXmark} className="w-4 h-4" />
+            <FontAwesomeIcon icon={faXmark} className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
         {/* Desktop heading */}
@@ -218,7 +218,7 @@ export default function HelpPage() {
             className="flex items-center gap-2 text-sm text-content-secondary hover:text-content-primary transition-colors md:hidden"
             aria-label="Open navigation"
           >
-            <FontAwesomeIcon icon={faBars} className="w-4 h-4" />
+            <FontAwesomeIcon icon={faBars} className="w-4 h-4" aria-hidden="true" />
             <span>Topics</span>
           </button>
           <span className="hidden md:block" />
@@ -227,7 +227,7 @@ export default function HelpPage() {
             className="flex items-center gap-1.5 text-xs text-content-muted hover:text-content-primary transition-colors"
             aria-label="Close help"
           >
-            <FontAwesomeIcon icon={faArrowLeft} className="w-3 h-3" />
+            <FontAwesomeIcon icon={faArrowLeft} className="w-3 h-3" aria-hidden="true" />
             Back
           </button>
         </div>

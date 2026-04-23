@@ -12,7 +12,7 @@ export interface EmptyStateProps {
 }
 
 function DefaultIcon() {
-  return <FontAwesomeIcon icon={faFolderOpen} className="h-12 w-12 text-content-disabled" />
+  return <FontAwesomeIcon icon={faFolderOpen} className="h-12 w-12 text-content-disabled" aria-hidden="true" />
 }
 
 export function EmptyState({ title, description, action, icon, className }: EmptyStateProps) {

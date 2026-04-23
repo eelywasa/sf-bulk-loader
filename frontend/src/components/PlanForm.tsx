@@ -1,7 +1,7 @@
 import { Card, RequiredAsterisk } from './ui'
 import type { Connection, InputConnection } from '../api/types'
 import { type PlanFormData } from '../pages/planEditorUtils'
-import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from './ui/formStyles'
+import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR, CHECKBOX_CLASS } from './ui/formStyles'
 
 interface PlanFormProps {
   form: PlanFormData
@@ -114,7 +114,7 @@ export default function PlanForm({ form, formErrors, connections, outputConnecti
               type="checkbox"
               checked={form.abort_on_step_failure}
               onChange={(e) => onChange('abort_on_step_failure', e.target.checked)}
-              className="h-4 w-4 rounded border-border-strong text-blue-600 focus:ring-border-focus"
+              className={CHECKBOX_CLASS}
             />
             <label htmlFor="plan-abort" className="text-sm font-medium text-content-secondary">
               Abort run if a step fails

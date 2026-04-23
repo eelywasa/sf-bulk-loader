@@ -41,7 +41,7 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
         const isLast = i === segments.length - 1
         return (
           <span key={segPath} className="flex items-center gap-1">
-            <FontAwesomeIcon icon={faChevronRight} className="text-content-muted text-xs" />
+            <FontAwesomeIcon icon={faChevronRight} className="text-content-muted text-xs" aria-hidden="true" />
             {isLast ? (
               <span className="font-semibold text-content-primary">{seg}</span>
             ) : (
@@ -95,7 +95,7 @@ function FileList({ entries, selected, onSelect, onNavigate }: FileListProps) {
                 {entry.kind === 'directory' && (
                   <FontAwesomeIcon
                     icon={faFolder}
-                    className="text-amber-400 shrink-0"
+                    className="text-content-muted shrink-0"
                     aria-hidden="true"
                   />
                 )}

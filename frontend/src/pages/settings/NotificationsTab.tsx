@@ -155,7 +155,7 @@ export function NotificationsTab() {
           or to all plans.
         </p>
         <Button onClick={openAdd}>
-          <FontAwesomeIcon icon={faPlus} className="mr-2" />
+          <FontAwesomeIcon icon={faPlus} className="mr-2" aria-hidden="true" />
           Add subscription
         </Button>
       </div>

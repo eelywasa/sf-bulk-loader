@@ -186,6 +186,23 @@ exception with an inline comment.
 <span className="text-warning-text">{warningCount}</span>
 ```
 
+### Log, code, and SOQL blocks
+
+Use `bg-surface-code` + `text-content-code` on `<pre>` / `<code>` elements that
+render raw payloads — SOQL snippets, Salesforce API response JSON, run logs.
+These tokens intentionally resolve to the same dark values in light and dark
+mode, so code blocks have consistent contrast on any page surface.
+
+```tsx
+// ✅ theme-consistent log/code block
+<pre className="rounded-md bg-surface-code text-content-code px-3 py-2 text-xs font-mono whitespace-pre-wrap">
+  {soql}
+</pre>
+```
+
+Do not use `bg-gray-900 text-gray-100` on log/code surfaces — it bypasses the
+token layer and disappears from future palette tuning (see HANDOVER §4.3).
+
 ### Selected vs hover states
 
 Use distinct tokens so these states are visually separable:
@@ -473,7 +490,7 @@ one-off equivalents inline.
 | `Tabs` | Switching between content panels within a page | Active tab uses `border-border-focus` underline |
 | `Toast` | Transient feedback | Auto-dismiss 5 s default; error toasts manual dismiss |
 | `EmptyState` | Zero-item states in lists and tables | No duplicate CTA if page header already has one |
-| `Progress` | Percentage or step-based progress | Use `Progress`, not raw `<progress>` |
+| `Progress` | Percentage or step-based progress | Use `Progress`, not raw `<progress>`. `color` = `blue \| green \| red \| orange`; all driven by tokens (`bg-accent` / `bg-success-text` / `bg-danger` / `bg-warning-text`) |
 | `Spinner` | Indeterminate loading indicator | `size` = `xs \| sm \| md \| lg`; `border-accent`; honours `prefers-reduced-motion` |
 | `BrandMark` | App hexagon logo next to "Bulk Loader" wordmark | `size` = `sm \| md \| lg`; `bg-brand`; `aria-hidden` — always pair with a visible wordmark |
 | `RequiredAsterisk` | Required-field marker inside a `<label>` | `text-error-text` + visually hidden " (required)" for screen readers. Always pair with native `required` / `aria-required` on the input |
@@ -551,11 +568,12 @@ import { BUTTON_PRIMARY_CLASS } from '../components/ui/formStyles'
 ```
 
 Available: `BUTTON_PRIMARY_CLASS`, `BUTTON_SECONDARY_CLASS`,
-`BUTTON_GHOST_CLASS`. Each bakes in the `md` size. For dynamic sizes, use the
-`<Button>` component — `BUTTON_BASE_CLASS` and the `BUTTON_*_COLORS` variant
-strings are the composition primitives the component itself reads, and are
-exported for the same reason. No `BUTTON_DANGER_CLASS` yet — destructive
-actions should always be `<button>` elements behind a confirmation step.
+`BUTTON_GHOST_CLASS`, `BUTTON_DANGER_CLASS`. Each bakes in the `md` size. For
+dynamic sizes, use the `<Button>` component — `BUTTON_BASE_CLASS` and the
+`BUTTON_*_COLORS` variant strings are the composition primitives the component
+itself reads, and are exported for the same reason. Prefer `<button>` behind a
+confirmation step for destructive actions; `BUTTON_DANGER_CLASS` exists for
+symmetry and the rare `<Link>`-shaped destructive CTA.
 
 ### Badge variants
 
@@ -622,8 +640,15 @@ import { faGaugeHigh, faPlay } from '@fortawesome/free-solid-svg-icons'
 - Always include `flex-shrink-0` when an icon sits next to flex-grow text.
 - Pick semantically: `faPlay` for run, `faFolderOpen` for files, `faListCheck` for plans —
   not by look.
-- Decorative icons next to a text label should be `aria-hidden="true"`. Icons that carry
-  meaning on their own need an `aria-label`.
+- **Accessibility rubric** (verified across all `<FontAwesomeIcon>` sites 2026-04-23):
+  - **Decorative** (icon sits next to visible text conveying the same meaning) →
+    `aria-hidden="true"` on the icon.
+  - **Meaningful** (icon is the only signal — icon-only button, status chip without
+    text) → `aria-label="<purpose>"` on the icon *or* on the wrapping interactive
+    element. If the wrapper already has `aria-label`, add `aria-hidden="true"` on the
+    icon to suppress double-announce.
+  - Every `<FontAwesomeIcon>` should have one of these two attributes. New code that
+    omits both fails review.
 
 ### Adding a new icon
 
@@ -692,8 +717,9 @@ reducing focus on mouse users is needed.
 - Modals trap focus until closed; Esc closes.
 - Actionable `DataTable` rows activate on Enter/Space via their native `<button>` or
   `<a>` wrapper.
-- **Planned (SFBL-233):** skip link on `AppShell.tsx` so keyboard users can jump past the
-  sidebar.
+- **Skip link:** `AppShell.tsx` renders an `href="#main-content"` anchor styled
+  `sr-only focus:not-sr-only` as its first child, positioned absolutely when focused.
+  `<main>` has matching `id="main-content"` and `tabIndex={-1}` so focus lands on it.
 - **Planned:** arrow-key row navigation in `DataTable` / `CsvPreviewPanel` — not yet
   implemented; open an issue before assuming it.
 
@@ -709,8 +735,39 @@ reducing focus on mouse users is needed.
 
 ### Motion
 
-Respect `prefers-reduced-motion`. A global CSS rule collapses transitions and animations
-to effectively zero for users who opt in; new animated components must honour this too.
+Respect `prefers-reduced-motion`. A global CSS rule in `src/index.css` collapses
+`animation-duration` and `transition-duration` to `0.01ms !important`, forces
+`animation-iteration-count: 1`, and sets `scroll-behavior: auto` on `*, *::before,
+*::after` when the media query matches. New animated components must not override these
+values.
+
+### Focus-ring sweep (verified 2026-04-23)
+
+Keyboard focus verified for every interactive shared component against
+`surface-base`, `surface-raised`, and `surface-elevated` in both themes. All
+rings meet WCAG 2.2 non-text contrast (≥3:1).
+
+| Component | Ring source | Light | Dark |
+| --- | --- | --- | --- |
+| `Button` (primary / secondary / ghost) | `focus:ring-border-focus` via `BUTTON_*_COLORS` | ✅ | ✅ |
+| `Button` (danger) | `focus:ring-danger` (red-600 / red-500) | ✅ | ✅ |
+| `ComboInput`, `MaskedSecretInput`, inputs | `INPUT_CLASS` → `focus:ring-border-focus` | ✅ | ✅ |
+| `CsvPreviewPanel` filter + apply | input + `Button` primary | ✅ | ✅ |
+| `DataTable` sort headers + row links | UA ring on `<button>` / `<a>` within row | ✅ | ✅ |
+| `EmptyState` action | `Button` | ✅ | ✅ |
+| `Modal` close + action buttons | `Button` | ✅ | ✅ |
+| `Tabs` | `focus-visible:ring-2 focus-visible:ring-border-focus` | ✅ | ✅ |
+| `Toast` dismiss | UA ring on `<button>`; contrast ≥3:1 | ✅ | ✅ |
+
+Non-interactive components (`Badge`, `Card`, `Progress`, `Spinner`, `BrandMark`,
+`RequiredAsterisk`) are not focusable in their current consumers and are out of scope.
+
+### State-token contrast (re-verified 2026-04-23)
+
+After the SFBL-222 token additions, all state-`text` × state-`bg` pairs and the new
+`danger` / `surface-code` / `content-code` tokens still pass WCAG AA (≥ 4.5:1 body text,
+≥ 3:1 UI chrome) in both light and dark modes. `content-code` on `surface-code`
+(gray-100 on gray-900) is identical in both themes and passes at ~15:1.
 
 ---
 

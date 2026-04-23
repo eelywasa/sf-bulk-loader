@@ -186,7 +186,7 @@ export default function JobDetail() {
             href={`${job.sf_instance_url}/lightning/setup/AsyncApiJobStatus/page?address=%2F${job.sf_job_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-mono"
+            className="text-sm text-content-link hover:underline font-mono"
           >
             {job.sf_job_id}
           </a>
@@ -227,7 +227,7 @@ export default function JobDetail() {
       {isQuery && step?.soql && (
         <div className="col-span-full">
           <MetaField label="SOQL">
-            <pre className="mt-1 rounded-md bg-gray-900 px-3 py-2 text-xs text-gray-100 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+            <pre className="mt-1 rounded-md bg-surface-code text-content-code px-3 py-2 text-xs font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
               {step.soql}
             </pre>
           </MetaField>
@@ -248,8 +248,8 @@ export default function JobDetail() {
       formatted = job.sf_api_response
     }
     payloadContent = (
-      <div className="rounded-md bg-gray-900 overflow-auto max-h-[500px]">
-        <pre className="p-4 text-xs text-gray-100 font-mono whitespace-pre leading-relaxed">
+      <div className="rounded-md bg-surface-code overflow-auto max-h-[500px]">
+        <pre className="p-4 text-xs text-content-code font-mono whitespace-pre leading-relaxed">
           {formatted}
         </pre>
       </div>

@@ -51,7 +51,7 @@ export default function FilePicker({ source, onSelect, onClose }: FilePickerProp
             const isLast = i === segments.length - 1
             return (
               <span key={segPath} className="flex items-center gap-1">
-                <FontAwesomeIcon icon={faChevronRight} className="text-content-muted text-[10px]" />
+                <FontAwesomeIcon icon={faChevronRight} className="text-content-muted text-[10px]" aria-hidden="true" />
                 {isLast ? (
                   <span className="font-semibold text-content-primary truncate max-w-[8rem]">{seg}</span>
                 ) : (
@@ -98,7 +98,7 @@ export default function FilePicker({ source, onSelect, onClose }: FilePickerProp
             >
               <FontAwesomeIcon
                 icon={entry.kind === 'directory' ? faFolder : faFile}
-                className={entry.kind === 'directory' ? 'text-amber-400 shrink-0' : 'text-content-muted shrink-0'}
+                className="text-content-muted shrink-0"
                 aria-hidden="true"
               />
               <span className="truncate text-content-primary">{entry.name}</span>

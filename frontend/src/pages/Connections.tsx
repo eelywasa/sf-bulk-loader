@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Button, Card, Badge, Modal, DataTable, EmptyState, RequiredAsterisk, Spinner, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
-import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from '../components/ui/formStyles'
+import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR, CHECKBOX_CLASS } from '../components/ui/formStyles'
 import { connectionsApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import PermissionGate from '../components/PermissionGate'
@@ -890,7 +890,7 @@ export default function Connections() {
               type="checkbox"
               checked={form.is_sandbox}
               onChange={(e) => setField('is_sandbox', e.target.checked)}
-              className="h-4 w-4 rounded border-border-strong text-blue-600 focus:ring-border-focus"
+              className={CHECKBOX_CLASS}
             />
             <label htmlFor="conn-sandbox" className="text-sm font-medium text-content-secondary">
               Sandbox org

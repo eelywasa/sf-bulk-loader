@@ -21,7 +21,13 @@ import { useAuth } from '../context/AuthContext'
 import { usePermission } from '../hooks/usePermission'
 import { getSettingsCategory, updateSettingsCategory } from '../api/endpoints'
 import type { SettingValue, SettingsPatch } from '../api/types'
-import { INPUT_CLASS, LABEL_CLASS } from '../components/ui/formStyles'
+import {
+  INPUT_CLASS,
+  LABEL_CLASS,
+  FIELD_ERROR_OUTLINE,
+  ERROR_TEXT_CLASS,
+  ALERT_ERROR,
+} from '../components/ui/formStyles'
 import { MaskedSecretInput } from '../components/ui/MaskedSecretInput'
 import clsx from 'clsx'
 import { ApiError } from '../api/client'
@@ -54,10 +60,10 @@ function SettingField({
         </label>
         {setting.restart_required && (
           <span
-            className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-700 rounded px-1.5 py-0.5"
+            className="inline-flex items-center gap-1 text-xs font-medium bg-warning-bg border border-warning-border text-warning-text rounded px-1.5 py-0.5"
             title="Changing this setting requires a server restart to take effect"
           >
-            <FontAwesomeIcon icon={faRotate} className="w-3 h-3" />
+            <FontAwesomeIcon icon={faRotate} className="w-3 h-3" aria-hidden="true" />
             Restart required
           </span>
         )}
@@ -87,7 +93,7 @@ function SettingField({
           step="1"
           value={typeof draftValue === 'number' ? draftValue : ''}
           onChange={(e) => onChange(setting.key, e.target.valueAsNumber)}
-          className={clsx(INPUT_CLASS, fieldError && 'border-red-500 focus:ring-red-500')}
+          className={clsx(INPUT_CLASS, fieldError && FIELD_ERROR_OUTLINE)}
         />
       ) : setting.type === 'float' ? (
         <input
@@ -96,7 +102,7 @@ function SettingField({
           step="0.01"
           value={typeof draftValue === 'number' ? draftValue : ''}
           onChange={(e) => onChange(setting.key, e.target.valueAsNumber)}
-          className={clsx(INPUT_CLASS, fieldError && 'border-red-500 focus:ring-red-500')}
+          className={clsx(INPUT_CLASS, fieldError && FIELD_ERROR_OUTLINE)}
         />
       ) : (
         <input
@@ -104,7 +110,7 @@ function SettingField({
           type="text"
           value={typeof draftValue === 'string' ? draftValue : ''}
           onChange={(e) => onChange(setting.key, e.target.value)}
-          className={clsx(INPUT_CLASS, fieldError && 'border-red-500 focus:ring-red-500')}
+          className={clsx(INPUT_CLASS, fieldError && FIELD_ERROR_OUTLINE)}
         />
       )}
 
@@ -112,9 +118,7 @@ function SettingField({
         <p className="text-xs text-content-muted">{setting.description}</p>
       )}
 
-      {fieldError && (
-        <p className="text-xs text-red-600 dark:text-red-400">{fieldError}</p>
-      )}
+      {fieldError && <p className={ERROR_TEXT_CLASS}>{fieldError}</p>}
     </div>
   )
 }
@@ -282,7 +286,7 @@ export function SettingsPageShell({
   if (loadError && !(loadError instanceof ApiError && loadError.status === 403)) {
     return (
       <div className="p-6">
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-error-text">
           Failed to load settings: {loadError instanceof Error ? loadError.message : 'Unknown error'}
         </p>
       </div>
@@ -312,7 +316,7 @@ export function SettingsPageShell({
         <h1 className="text-xl font-semibold text-content-primary">{title}</h1>
         {cacheTtl > 0 && (
           <p className="mt-1 text-xs text-content-muted flex items-center gap-1.5">
-            <FontAwesomeIcon icon={faCircleInfo} className="w-3.5 h-3.5 flex-shrink-0" />
+            <FontAwesomeIcon icon={faCircleInfo} className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
             Changes take up to {cacheTtl}s to propagate across workers.
           </p>
         )}
@@ -339,8 +343,8 @@ export function SettingsPageShell({
         )}
 
         {Object.keys(fieldErrors).length > 0 && (
-          <div className="flex items-start gap-2 rounded p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400">
-            <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className={`${ALERT_ERROR} flex items-start gap-2`}>
+            <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
             <div>
               <p className="font-medium">Some settings couldn't be saved</p>
               <ul className="mt-1 list-disc list-inside space-y-0.5">
@@ -363,7 +367,7 @@ export function SettingsPageShell({
             Save
           </Button>
           {mutation.isSuccess && !isDirty && (
-            <span className="text-xs text-green-600 dark:text-green-400">Saved</span>
+            <span className="text-xs text-success-text">Saved</span>
           )}
         </div>
       </form>

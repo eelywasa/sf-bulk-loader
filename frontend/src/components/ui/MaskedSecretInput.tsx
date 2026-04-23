@@ -52,7 +52,7 @@ export function MaskedSecretInput({
         className="absolute right-2 text-content-muted hover:text-content-secondary transition-colors disabled:opacity-50"
         tabIndex={-1}
       >
-        <FontAwesomeIcon icon={visible ? faEyeSlash : faEye} className="w-4 h-4" />
+        <FontAwesomeIcon icon={visible ? faEyeSlash : faEye} className="w-4 h-4" aria-hidden="true" />
       </button>
     </div>
   )

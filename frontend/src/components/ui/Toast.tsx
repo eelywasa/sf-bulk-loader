@@ -26,6 +26,10 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
+// Raw Tailwind palette colours (text-green-500, border-l-red-500, etc.) are an
+// intentional exception here — toasts render over arbitrary page surfaces and
+// use saturated brand-accent dots as fixed state colours rather than theme
+// tokens. See HANDOVER.md §10.2.
 const toastStyles: Record<ToastType, { container: string; icon: string; faIcon: IconDefinition }> = {
   success: {
     container: 'bg-surface-elevated border border-border-base border-l-4 border-l-green-500',
@@ -76,7 +80,7 @@ function ToastContainer({
               style.container,
             )}
           >
-            <FontAwesomeIcon icon={style.faIcon} className={clsx('flex-shrink-0 w-5 h-5', style.icon)} />
+            <FontAwesomeIcon icon={style.faIcon} className={clsx('flex-shrink-0 w-5 h-5', style.icon)} aria-hidden="true" />
             <p className="flex-1 text-sm text-content-primary">{toast.message}</p>
             <button
               onClick={() => onRemove(toast.id)}
