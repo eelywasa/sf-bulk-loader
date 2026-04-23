@@ -34,6 +34,33 @@ export const OVERLAY_SHADOW_CLASS = 'shadow-xl shadow-black/10 dark:shadow-black
 export const CHECKBOX_CLASS =
   'h-4 w-4 rounded border-border-strong text-accent focus:ring-border-focus'
 
+// Button classes — use for non-`<button>` elements (e.g. `<Link>`) that need
+// button styling. For actual `<button>` elements, use the `<Button>` component
+// which composes these internally.
+// Each BUTTON_*_CLASS bakes in the md size (px-4 py-2 text-sm) — the default
+// for CTA-style links. Mix with `<Button size="sm|lg">` via the component.
+export const BUTTON_BASE_CLASS =
+  'inline-flex items-center justify-center rounded-md font-medium ' +
+  'focus:outline-none focus:ring-2 focus:ring-offset-2 ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed ' +
+  'transition-colors duration-150'
+
+// Variant colour strings — shared between `<Button>` and non-button consumers
+// (e.g. `<Link>`). Keep in sync with `Button.tsx` by importing these.
+export const BUTTON_PRIMARY_COLORS =
+  'bg-accent text-content-inverse hover:bg-accent-hover focus:ring-border-focus border border-transparent'
+export const BUTTON_SECONDARY_COLORS =
+  'bg-surface-raised text-content-primary border border-border-strong hover:bg-surface-hover focus:ring-border-focus'
+export const BUTTON_GHOST_COLORS =
+  'text-content-secondary hover:bg-surface-hover focus:ring-border-focus border border-transparent'
+
+// Ready-to-apply full classes for non-`<button>` elements that need the default
+// md button size. For dynamic sizes, use `<Button>` component.
+const BUTTON_SIZE_MD = 'px-4 py-2 text-sm'
+export const BUTTON_PRIMARY_CLASS = `${BUTTON_BASE_CLASS} ${BUTTON_SIZE_MD} ${BUTTON_PRIMARY_COLORS}`
+export const BUTTON_SECONDARY_CLASS = `${BUTTON_BASE_CLASS} ${BUTTON_SIZE_MD} ${BUTTON_SECONDARY_COLORS}`
+export const BUTTON_GHOST_CLASS = `${BUTTON_BASE_CLASS} ${BUTTON_SIZE_MD} ${BUTTON_GHOST_COLORS}`
+
 // Alert/banner blocks — use for inline error/success/warning/info panels
 const ALERT_BASE = 'rounded-md border px-4 py-3 text-sm'
 export const ALERT_ERROR   = `${ALERT_BASE} bg-error-bg border-error-border text-error-text`

@@ -537,6 +537,26 @@ For imperative checks outside of JSX, use `usePermission(key)` (returns `boolean
 | `ghost` | Low-emphasis actions, icon-adjacent labels |
 | `danger` | Destructive actions (delete, abort) — always pair with a confirmation step |
 
+### Button styling for non-`<button>` elements
+
+Some CTAs must render as `<a>` or React Router `<Link>` (e.g. navigation back
+to the dashboard, or links in empty states). Wrapping a `<Link>` in
+`<Button>` yields invalid nested-interactive markup, so instead apply the
+shared class constants from `formStyles.ts`:
+
+```tsx
+import { BUTTON_PRIMARY_CLASS } from '../components/ui/formStyles'
+
+<Link to="/" className={BUTTON_PRIMARY_CLASS}>Back to dashboard</Link>
+```
+
+Available: `BUTTON_PRIMARY_CLASS`, `BUTTON_SECONDARY_CLASS`,
+`BUTTON_GHOST_CLASS`. Each bakes in the `md` size. For dynamic sizes, use the
+`<Button>` component — `BUTTON_BASE_CLASS` and the `BUTTON_*_COLORS` variant
+strings are the composition primitives the component itself reads, and are
+exported for the same reason. No `BUTTON_DANGER_CLASS` yet — destructive
+actions should always be `<button>` elements behind a confirmation step.
+
 ### Badge variants
 
 Badges map to the state token system. Use the semantically correct variant rather than
