@@ -16,7 +16,7 @@ import { faCircleInfo } from '@fortawesome/free-solid-svg-icons'
 import { SettingsPageShell } from './SettingsPageShell'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
-import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, ALERT_ERROR, ALERT_SUCCESS, ALERT_WARNING } from '../components/ui/formStyles'
+import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, ALERT_ERROR, ALERT_SUCCESS, ALERT_WARNING, ALERT_INFO } from '../components/ui/formStyles'
 import { dependenciesApi, postEmailTest, EmailRenderFailureError } from '../api/endpoints'
 import type { EmailTestTemplate, EmailTestResponse, SettingValue } from '../api/types'
 import { ApiError } from '../api/client'
@@ -244,7 +244,7 @@ export default function SettingsEmailPage() {
   }, [categoryData])
 
   const preamble = emailBackend === 'noop' ? (
-    <div className="mb-6 flex items-start gap-2 rounded-md p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-sm text-blue-700 dark:text-blue-300">
+    <div className={`${ALERT_INFO} mb-6 flex items-start gap-2`}>
       <FontAwesomeIcon icon={faCircleInfo} className="w-4 h-4 flex-shrink-0 mt-0.5" />
       <p>
         Email is disabled. Set <span className="font-mono font-semibold">email_backend</span> to{' '}
