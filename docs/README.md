@@ -45,6 +45,8 @@ Task-oriented topic pages for day-to-day use. Each page carries YAML
 frontmatter (`title`, `slug`, `nav_order`, `required_permission`, `summary`)
 and stands alone — deep links are safe.
 
+These topics are available both here and **in the running application** at `/help` (the Help link in the top-right of the app shell). The in-app version is built from this directory at deploy time — no internet connection needed.
+
 Start at [`usage/index.md`](usage/index.md), which lists topics in nav order:
 
 - Getting started, Salesforce connection, CSV format

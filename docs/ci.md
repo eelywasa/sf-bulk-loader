@@ -56,6 +56,18 @@ Validates the React/TypeScript frontend compiles cleanly.
 - Node 20, npm cache keyed on `frontend/package-lock.json`
 - Steps: `npm ci` → `npm run typecheck` (tsc --noEmit) → `npm run build`
 
+#### `docs-drift`
+
+Validates the in-app help content for consistency. Runs when `docs/usage/**`, `backend/app/auth/permissions.py`, or the check script itself changes.
+
+The script `frontend/scripts/check-help-links.mjs` checks:
+- Every `required_permission` frontmatter value in `docs/usage/*.md` exists in `ALL_PERMISSION_KEYS` (`backend/app/auth/permissions.py`)
+- Internal relative markdown links (`./file.md`) point to files that exist
+- Heading anchors in links (`./file.md#heading`) resolve against the actual headings in the target file
+- Every file has required frontmatter fields (`slug`, `title`)
+
+To run locally: `node frontend/scripts/check-help-links.mjs` (from repo root).
+
 #### `config-validate`
 
 Verifies that the three distribution profiles enforce their constraints at import time.

@@ -18,6 +18,11 @@ can be reached via deep link. If you are setting up for the first time, read
 the topics under **Getting started** in order; after that you can jump to
 whichever feature you need.
 
+> **In-app access:** These topics are also available inside the application at
+> `/help` (click the **Help** link in the top-right of the app shell). The
+> in-app version is built from this directory at deploy time — no internet
+> connection required.
+
 These pages are also the source of the in-app `/help` screen (Phase 2,
 [SFBL-209](https://matthew-jenkin.atlassian.net/browse/SFBL-209)).
 
