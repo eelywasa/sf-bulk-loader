@@ -5,7 +5,7 @@ import { faFolder, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { filesApi, inputConnectionsApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import type { InputConnection, InputDirectoryEntry } from '../api/types'
-import { Card, CsvPreviewPanel, EmptyState } from '../components/ui'
+import { Card, CsvPreviewPanel, EmptyState, Spinner } from '../components/ui'
 import { ALERT_ERROR, LABEL_CLASS, SELECT_CLASS } from '../components/ui/formStyles'
 import { usePermission } from '../hooks/usePermission'
 
@@ -206,11 +206,8 @@ export default function FilesPage() {
 
   if (filesLoading) {
     return (
-      <div
-        className="p-6 flex items-center justify-center min-h-[200px]"
-        aria-label="Loading"
-      >
-        <div className="h-8 w-8 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
+      <div className="p-6 flex items-center justify-center min-h-[200px]">
+        <Spinner size="lg" />
       </div>
     )
   }

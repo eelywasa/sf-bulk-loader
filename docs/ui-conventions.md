@@ -474,6 +474,7 @@ one-off equivalents inline.
 | `Toast` | Transient feedback | Auto-dismiss 5 s default; error toasts manual dismiss |
 | `EmptyState` | Zero-item states in lists and tables | No duplicate CTA if page header already has one |
 | `Progress` | Percentage or step-based progress | Use `Progress`, not raw `<progress>` |
+| `Spinner` | Indeterminate loading indicator | `size` = `xs \| sm \| md \| lg`; `border-accent`; honours `prefers-reduced-motion` |
 | `CsvPreviewPanel` | All CSV file preview contexts | Virtualized, mono cells, cell-level state overlays |
 | `ComboInput` | Text input with autocomplete suggestions | — |
 | `PermissionGate` | Conditionally render UI based on RBAC | Never for route protection — that's `ProtectedRoute` |
@@ -626,7 +627,10 @@ header button is always visible and is sufficient.
 ### Loading states
 
 Show a loading indicator within the content area rather than replacing the whole page.
-Prefer skeleton placeholders or a spinner inside the relevant section.
+Prefer skeleton placeholders or a `<Spinner />` (from `components/ui`) inside the
+relevant section. Do **not** roll a hand-crafted `border-blue-… animate-spin` span —
+`<Spinner>` is the one canonical spinner: `border-accent`, `motion-safe:animate-spin`,
+`role="status"` with a visually hidden "Loading…" label.
 
 ### Error states
 

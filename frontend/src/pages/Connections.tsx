@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Button, Card, Badge, Modal, DataTable, EmptyState, type Column } from '../components/ui'
+import { Button, Card, Badge, Modal, DataTable, EmptyState, Spinner, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
 import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from '../components/ui/formStyles'
 import { connectionsApi, inputConnectionsApi } from '../api/endpoints'
@@ -635,10 +635,7 @@ export default function Connections() {
         {/* SF content area */}
         {isLoading ? (
           <div className="flex justify-center py-16">
-            <span
-              aria-label="Loading"
-              className="h-7 w-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"
-            />
+            <Spinner size="md" />
           </div>
         ) : loadError ? (
           <Card>
@@ -721,10 +718,7 @@ export default function Connections() {
         {/* Input content area */}
         {inputLoading ? (
           <div className="flex justify-center py-16">
-            <span
-              aria-label="Loading input connections"
-              className="h-7 w-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"
-            />
+            <Spinner size="md" aria-label="Loading input connections" />
           </div>
         ) : inputLoadError ? (
           <Card>

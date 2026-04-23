@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { EmptyState } from './EmptyState'
+import { Spinner } from './Spinner'
 import type { FilterRule, CsvFetchParams, CsvPageResult } from '../../api/types'
 
 export interface CsvPreviewPanelProps {
@@ -157,11 +158,8 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
       {/* Table area */}
       <div className="overflow-x-auto relative">
         {isFetching && (
-          <div
-            className="absolute inset-0 flex items-center justify-center bg-surface-raised/60 z-10"
-            aria-label="Loading"
-          >
-            <span className="inline-block h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center bg-surface-raised/60 z-10">
+            <Spinner size="sm" />
           </div>
         )}
         {rows.length === 0 && !isFetching ? (

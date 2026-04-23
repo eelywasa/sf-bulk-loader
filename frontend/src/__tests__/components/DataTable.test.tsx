@@ -49,10 +49,8 @@ describe('DataTable', () => {
   })
 
   it('shows loading spinner when loading=true', () => {
-    const { container } = render(
-      <DataTable columns={columns} data={[]} keyExtractor={(r) => r.id} loading />,
-    )
-    expect(container.querySelector('.animate-spin')).toBeInTheDocument()
+    render(<DataTable columns={columns} data={[]} keyExtractor={(r) => r.id} loading />)
+    expect(screen.getByRole('status', { name: /loading/i })).toBeInTheDocument()
     // Data should not be shown
     expect(screen.queryByText('No data available.')).not.toBeInTheDocument()
   })

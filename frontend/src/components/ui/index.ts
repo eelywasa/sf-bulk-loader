@@ -10,6 +10,9 @@ export type { BadgeProps, BadgeVariant } from './Badge'
 export { Progress } from './Progress'
 export type { ProgressProps, ProgressColor } from './Progress'
 
+export { Spinner } from './Spinner'
+export type { SpinnerProps, SpinnerSize } from './Spinner'
+
 export { DataTable } from './DataTable'
 export type { DataTableProps, Column } from './DataTable'
 

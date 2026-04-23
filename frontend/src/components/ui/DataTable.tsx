@@ -1,5 +1,6 @@
 import React from 'react'
 import clsx from 'clsx'
+import { Spinner } from './Spinner'
 
 export interface Column<T> {
   key: string
@@ -51,7 +52,7 @@ export function DataTable<T>({
           {loading ? (
             <tr>
               <td colSpan={columns.length} className="px-6 py-10 text-center">
-                <span className="inline-block h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <Spinner size="sm" />
               </td>
             </tr>
           ) : data.length === 0 ? (
