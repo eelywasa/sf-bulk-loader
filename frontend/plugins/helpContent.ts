@@ -8,8 +8,10 @@ import remarkRehype from 'remark-rehype'
 import rehypeSlug from 'rehype-slug'
 import rehypeStringify from 'rehype-stringify'
 import type { HelpTopic, HelpHeading, HelpContentIndex } from '../src/types/help'
+import { rewriteInternalLinks } from '../src/utils/rewriteHelpLinks'
 
 export type { HelpTopic, HelpHeading, HelpContentIndex }
+export { rewriteInternalLinks }
 
 const VIRTUAL_ID = 'virtual:help-content'
 const RESOLVED_ID = '\0virtual:help-content'
@@ -43,8 +45,20 @@ async function buildContentIndex(docsDir: string): Promise<HelpContentIndex> {
     .filter((f) => f.endsWith('.md'))
     .map((f) => resolve(docsDir, f))
 
+  // First pass: build basename → slug map
+  const slugMap = new Map<string, string>()
+  for (const filePath of files) {
+    const raw = readFileSync(filePath, 'utf-8')
+    const { data } = matter(raw)
+    if (data.slug) {
+      const basename = filePath.split('/').pop()!
+      slugMap.set(basename, String(data.slug))
+    }
+  }
+
   const topics: HelpTopic[] = []
 
+  // Second pass: render markdown → HTML and rewrite internal links
   for (const filePath of files) {
     const raw = readFileSync(filePath, 'utf-8')
     const { data, content } = matter(raw)
@@ -52,7 +66,8 @@ async function buildContentIndex(docsDir: string): Promise<HelpContentIndex> {
     if (!data.slug || !data.title) continue
 
     const vfile = await processor.process(content)
-    const html = String(vfile)
+    const rawHtml = String(vfile)
+    const html = rewriteInternalLinks(rawHtml, slugMap)
 
     topics.push({
       slug: String(data.slug),

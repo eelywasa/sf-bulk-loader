@@ -2,6 +2,7 @@
 title: Account recovery
 slug: account-recovery
 nav_order: 120
+required_permission: users.manage
 tags: [password, recovery, profile]
 summary: >-
   Update your profile, change your password, and recover from a locked or

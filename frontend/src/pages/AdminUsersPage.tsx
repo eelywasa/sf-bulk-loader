@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
@@ -44,14 +45,12 @@ function SoleAdminBanner({ onDismiss }: SoleAdminBannerProps) {
       <div className="flex-1">
         <strong>Only one admin configured.</strong>{' '}
         Promote a second user to the admin profile to avoid being locked out.{' '}
-        <a
-          href="/docs/admin-recovery.md"
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          to="/help#account-recovery"
           className="underline hover:no-underline"
         >
           Admin recovery guide
-        </a>
+        </Link>
       </div>
       <button
         type="button"
