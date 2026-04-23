@@ -59,38 +59,6 @@ function NavItem({
   )
 }
 
-// ─── Nav list ─────────────────────────────────────────────────────────────────
-
-function NavList({
-  topics,
-  activeSlug,
-  onSelect,
-}: {
-  topics: HelpTopic[]
-  activeSlug: string
-  onSelect: (slug: string) => void
-}) {
-  // Exclude landing page from nav
-  const navTopics = topics.filter((t) => t.slug !== LANDING_SLUG)
-
-  return (
-    <>
-      <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-content-muted">
-        Help
-      </p>
-      {navTopics.map((topic) => (
-        <TopicGate key={topic.slug} topic={topic}>
-          <NavItem
-            topic={topic}
-            isActive={topic.slug === activeSlug}
-            onSelect={() => onSelect(topic.slug)}
-          />
-        </TopicGate>
-      ))}
-    </>
-  )
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function HelpPage() {
@@ -207,9 +175,7 @@ export default function HelpPage() {
         <p className="hidden md:block px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-content-muted">
           Help
         </p>
-        {allTopics
-          .filter((t) => t.slug !== LANDING_SLUG)
-          .map((topic) => (
+        {allTopics.map((topic) => (
             <TopicGate key={topic.slug} topic={topic}>
               <NavItem
                 topic={topic}

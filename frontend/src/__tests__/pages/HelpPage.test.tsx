@@ -128,14 +128,12 @@ describe('HelpPage', () => {
 
   // ── Nav rendering ─────────────────────────────────────────────────────────
 
-  it('renders nav topics from the content index (excluding usage-index)', async () => {
+  it('renders nav topics from the content index', async () => {
     renderHelpPage()
-    // "Getting started" should appear in the nav
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Getting started' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Using the Bulk Loader' })).toBeInTheDocument()
     })
-    // "Using the Bulk Loader" (usage-index) should NOT appear in the nav
-    expect(screen.queryByRole('button', { name: 'Using the Bulk Loader' })).not.toBeInTheDocument()
   })
 
   it('shows usage-index content as the default landing page', async () => {
