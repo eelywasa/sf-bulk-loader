@@ -648,17 +648,22 @@ reducing focus on mouse users is needed.
 
 - All `<button>`, `<a>`, and form controls reachable by Tab.
 - Modals trap focus until closed; Esc closes.
-- `DataTable` and `CsvPreviewPanel` rows: arrow keys navigate, Enter selects if the row
-  is actionable.
-- Skip link present on the app shell (`AppShell.tsx`) so keyboard users can jump past the
+- Actionable `DataTable` rows activate on Enter/Space via their native `<button>` or
+  `<a>` wrapper.
+- **Planned (SFBL-233):** skip link on `AppShell.tsx` so keyboard users can jump past the
   sidebar.
+- **Planned:** arrow-key row navigation in `DataTable` / `CsvPreviewPanel` — not yet
+  implemented; open an issue before assuming it.
 
 ### Screen readers
 
 - Icons that carry meaning get `aria-label`. Icons next to a text label get
   `aria-hidden="true"`.
 - Loading states announce via `aria-live="polite"`.
-- Error alerts use `role="alert"` (polite, not assertive) unless truly critical.
+- **`role="alert"` is an assertive live region** — use it only for critical, time-sensitive
+  messages that must interrupt the user (e.g. destructive-action confirmations, fatal
+  errors). For non-critical feedback prefer `aria-live="polite"` on the container, or
+  `role="status"` for brief status updates.
 
 ### Motion
 
