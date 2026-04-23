@@ -129,6 +129,29 @@ export default function HelpPage() {
     })
   }, [activeTopic])
 
+  // Route internal link clicks through React Router so they work in both
+  // browser and hash router modes. Raw `/help#...` hrefs break hash mode
+  // because the browser treats `/help` as a real path.
+  useEffect(() => {
+    const root = contentRef.current
+    if (!root) return
+    function onClick(e: MouseEvent) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const anchor = (e.target as HTMLElement | null)?.closest?.('a')
+      if (!anchor) return
+      const href = anchor.getAttribute('href') ?? ''
+      let hash: string
+      if (href.startsWith('/help#')) hash = href.slice(5)
+      else if (href === '/help') hash = ''
+      else if (href.startsWith('#')) hash = href
+      else return
+      e.preventDefault()
+      navigate({ pathname: '/help', hash }, { replace: false })
+    }
+    root.addEventListener('click', onClick)
+    return () => root.removeEventListener('click', onClick)
+  }, [navigate, activeTopic])
+
   if (!activeTopic) {
     return (
       <div className="flex items-center justify-center h-full text-content-muted text-sm">
