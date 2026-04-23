@@ -734,6 +734,27 @@ Respect `prefers-reduced-motion`. A global CSS rule in `src/index.css` collapses
 *::after` when the media query matches. New animated components must not override these
 values.
 
+### Focus-ring sweep (verified 2026-04-23)
+
+Keyboard focus verified for every interactive shared component against
+`surface-base`, `surface-raised`, and `surface-elevated` in both themes. All
+rings meet WCAG 2.2 non-text contrast (≥3:1).
+
+| Component | Ring source | Light | Dark |
+| --- | --- | --- | --- |
+| `Button` (primary / secondary / ghost) | `focus:ring-border-focus` via `BUTTON_*_COLORS` | ✅ | ✅ |
+| `Button` (danger) | `focus:ring-danger` (red-600 / red-500) | ✅ | ✅ |
+| `ComboInput`, `MaskedSecretInput`, inputs | `INPUT_CLASS` → `focus:ring-border-focus` | ✅ | ✅ |
+| `CsvPreviewPanel` filter + apply | input + `Button` primary | ✅ | ✅ |
+| `DataTable` sort headers + row links | UA ring on `<button>` / `<a>` within row | ✅ | ✅ |
+| `EmptyState` action | `Button` | ✅ | ✅ |
+| `Modal` close + action buttons | `Button` | ✅ | ✅ |
+| `Tabs` | `focus-visible:ring-2 focus-visible:ring-border-focus` | ✅ | ✅ |
+| `Toast` dismiss | UA ring on `<button>`; contrast ≥3:1 | ✅ | ✅ |
+
+Non-interactive components (`Badge`, `Card`, `Progress`, `Spinner`, `BrandMark`,
+`RequiredAsterisk`) are not focusable in their current consumers and are out of scope.
+
 ### State-token contrast (re-verified 2026-04-23)
 
 After the SFBL-222 token additions, all state-`text` × state-`bg` pairs and the new
