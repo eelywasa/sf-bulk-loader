@@ -1,5 +1,11 @@
 import React from 'react'
 import clsx from 'clsx'
+import {
+  BUTTON_BASE_CLASS,
+  BUTTON_PRIMARY_COLORS,
+  BUTTON_SECONDARY_COLORS,
+  BUTTON_GHOST_COLORS,
+} from './formStyles'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost'
 export type ButtonSize = 'sm' | 'md' | 'lg'
@@ -12,14 +18,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary:
-    'bg-accent text-content-inverse hover:bg-accent-hover focus:ring-border-focus border border-transparent',
-  secondary:
-    'bg-surface-raised text-content-primary border border-border-strong hover:bg-surface-hover focus:ring-border-focus',
+  primary: BUTTON_PRIMARY_COLORS,
+  secondary: BUTTON_SECONDARY_COLORS,
   danger:
     'bg-red-600 text-content-inverse hover:bg-red-700 focus:ring-red-500 border border-transparent',
-  ghost:
-    'text-content-secondary hover:bg-surface-hover focus:ring-border-focus border border-transparent',
+  ghost: BUTTON_GHOST_COLORS,
 }
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -41,10 +44,7 @@ export function Button({
     <button
       disabled={disabled || loading}
       className={clsx(
-        'inline-flex items-center justify-center rounded-md font-medium',
-        'focus:outline-none focus:ring-2 focus:ring-offset-2',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
-        'transition-colors duration-150',
+        BUTTON_BASE_CLASS,
         variantClasses[variant],
         sizeClasses[size],
         className,

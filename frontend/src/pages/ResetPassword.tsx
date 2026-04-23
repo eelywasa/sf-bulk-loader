@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faHexagonNodes } from '@fortawesome/free-solid-svg-icons'
 import { ApiError } from '../api/client'
 import { confirmPasswordReset } from '../api/endpoints'
 import { LABEL_CLASS, INPUT_CLASS, ALERT_ERROR, ALERT_SUCCESS } from '../components/ui/formStyles'
+import { BrandMark } from '../components/ui'
 
 type PageState = 'form' | 'success'
 
@@ -72,9 +71,7 @@ export default function ResetPassword() {
       <div className="w-full max-w-md px-4">
         <div className="bg-surface-raised rounded-lg shadow-sm border border-border-base p-8">
           <div className="flex items-center gap-2 mb-6">
-            <div className="w-7 h-7 rounded bg-blue-600 flex items-center justify-center flex-shrink-0">
-              <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
-            </div>
+            <BrandMark size="md" />
             <span className="text-base font-semibold text-content-primary">
               Bulk Loader
             </span>

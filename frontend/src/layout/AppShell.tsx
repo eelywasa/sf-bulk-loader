@@ -4,10 +4,11 @@ import clsx from 'clsx'
 import { type Theme, useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { usePermission } from '../hooks/usePermission'
+import { BrandMark } from '../components/ui'
+import { OVERLAY_SHADOW_CLASS } from '../components/ui/formStyles'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
-  faHexagonNodes,
   faGaugeHigh,
   faPlug,
   faListCheck,
@@ -106,7 +107,8 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
       {/* Settings popover — floats above when expanded, flies right when collapsed */}
       {open && (
         <div className={clsx(
-          'absolute bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 overflow-visible min-w-[160px]',
+          'absolute bg-surface-elevated border border-border-base rounded-md z-50 overflow-visible min-w-[160px]',
+          OVERLAY_SHADOW_CLASS,
           collapsed
             ? 'bottom-0 left-full ml-2'
             : 'bottom-full left-3 right-3 mb-1'
@@ -189,7 +191,10 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
 
             {/* Theme submenu — floats to the right of the popover */}
             {themeOpen && (
-              <div className="absolute bottom-0 left-full ml-1 bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 min-w-[120px]">
+              <div className={clsx(
+                'absolute bottom-0 left-full ml-1 bg-surface-elevated border border-border-base rounded-md z-50 min-w-[120px]',
+                OVERLAY_SHADOW_CLASS,
+              )}>
                 {themeOptions.map(opt => (
                   <button
                     key={opt.value}
@@ -248,8 +253,8 @@ export default function AppShell() {
             className="px-3 py-4 border-b border-border-base flex items-center justify-center text-content-muted hover:text-content-primary transition-colors"
             aria-label="Expand sidebar"
           >
-            <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center group-hover/sidebar:hidden">
-              <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
+            <div className="group-hover/sidebar:hidden">
+              <BrandMark size="sm" />
             </div>
             <div className="w-6 h-6 hidden group-hover/sidebar:flex items-center justify-center">
               <FontAwesomeIcon icon={faChevronRight} className="w-4 h-4" />
@@ -258,9 +263,7 @@ export default function AppShell() {
         ) : (
           <div className="px-3 py-4 border-b border-border-base flex items-center justify-between min-w-0">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center flex-shrink-0">
-                <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
-              </div>
+              <BrandMark size="sm" />
               <span className="text-sm font-semibold text-content-primary leading-tight truncate">
                 Bulk Loader
               </span>

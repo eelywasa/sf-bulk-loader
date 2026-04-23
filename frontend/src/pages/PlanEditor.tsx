@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { Button, Modal } from '../components/ui'
+import { Button, Modal, Spinner } from '../components/ui'
 import { ALERT_ERROR } from '../components/ui/formStyles'
 import PlanForm from '../components/PlanForm'
 import StepList from '../components/StepList'
@@ -110,10 +110,7 @@ export default function PlanEditor() {
       {/* ── Loading state (edit mode only) ──────────────────────────────────── */}
       {!isNew && planLoading && (
         <div className="flex justify-center py-16">
-          <span
-            aria-label="Loading"
-            className="h-7 w-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"
-          />
+          <Spinner size="md" />
         </div>
       )}
 

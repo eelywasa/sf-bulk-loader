@@ -14,6 +14,8 @@
     "build:desktop": "cross-env VITE_API_URL=http://127.0.0.1:8000 VITE_ROUTER=hash vite build --base ./"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
     "@fortawesome/react-fontawesome": "^3.2.0",

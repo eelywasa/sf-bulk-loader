@@ -15,6 +15,7 @@ import {
   Badge,
   Modal,
   DataTable,
+  RequiredAsterisk,
   type Column,
 } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
@@ -265,7 +266,7 @@ function InviteModal({ open, profiles, onClose, onSuccess }: InviteModalProps) {
         {error && <div className={ALERT_ERROR}>{error}</div>}
         <div>
           <label htmlFor="invite-email" className={LABEL_CLASS}>
-            Email <span className="text-error-text">*</span>
+            Email <RequiredAsterisk />
           </label>
           <input
             id="invite-email"
@@ -292,7 +293,7 @@ function InviteModal({ open, profiles, onClose, onSuccess }: InviteModalProps) {
         </div>
         <div>
           <label htmlFor="invite-profile" className={LABEL_CLASS}>
-            Profile <span className="text-error-text">*</span>
+            Profile <RequiredAsterisk />
           </label>
           <select
             id="invite-profile"

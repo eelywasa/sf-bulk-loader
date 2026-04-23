@@ -1,4 +1,4 @@
-import { Button, Modal, Badge } from './ui'
+import { Button, Modal, Badge, Spinner } from './ui'
 import type { LoadStep } from '../api/types'
 import { operationVariant, type PreviewEntry } from '../pages/planEditorUtils'
 
@@ -42,10 +42,7 @@ export default function PreflightPreviewModal({
                 <span className="text-xs text-content-muted">Not fetched</span>
               ) : preview.status === 'loading' ? (
                 <div className="flex items-center gap-2">
-                  <span
-                    aria-label="Loading preview"
-                    className="h-4 w-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"
-                  />
+                  <Spinner size="xs" aria-label="Loading preview" />
                   <span className="text-xs text-content-muted">Loading…</span>
                 </div>
               ) : preview.status === 'error' ? (

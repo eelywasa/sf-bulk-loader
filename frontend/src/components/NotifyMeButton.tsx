@@ -20,6 +20,7 @@ import { faBell, faCaretDown } from '@fortawesome/free-solid-svg-icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Button } from './ui/Button'
+import { OVERLAY_SHADOW_CLASS } from './ui/formStyles'
 import { useToast } from './ui/Toast'
 import { useAuth } from '../context/AuthContext'
 import { notificationSubscriptionsApi } from '../api/endpoints'
@@ -164,7 +165,10 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
           </MenuButton>
           <MenuItems
             anchor="bottom end"
-            className="z-50 mt-1 w-48 rounded-md border border-border-base bg-surface-elevated shadow-lg focus:outline-none"
+            className={clsx(
+              'z-50 mt-1 w-48 rounded-md border border-border-base bg-surface-elevated focus:outline-none',
+              OVERLAY_SHADOW_CLASS,
+            )}
           >
             {isOn ? (
               <Fragment>

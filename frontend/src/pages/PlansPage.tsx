@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, DataTable, EmptyState, Modal, type Column } from '../components/ui'
+import { Button, DataTable, EmptyState, Modal, Spinner, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
 import { ALERT_ERROR } from '../components/ui/formStyles'
 import { plansApi, connectionsApi } from '../api/endpoints'
@@ -172,10 +172,7 @@ export default function PlansPage() {
       {/* Content */}
       {isLoading ? (
         <div className="flex justify-center py-16">
-          <span
-            aria-label="Loading"
-            className="h-7 w-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"
-          />
+          <Spinner size="md" />
         </div>
       ) : loadError ? (
         <div className={ALERT_ERROR}>

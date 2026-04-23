@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faHexagonNodes } from '@fortawesome/free-solid-svg-icons'
 import { useAuth } from '../context/AuthContext'
 import { ApiError, apiPost } from '../api/client'
 import type { TokenResponse } from '../api/types'
 import { LABEL_CLASS, INPUT_CLASS, ALERT_ERROR } from '../components/ui/formStyles'
+import { BrandMark } from '../components/ui'
 
 export default function Login() {
   const { login } = useAuth()
@@ -41,9 +40,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="bg-surface-raised rounded-lg shadow-sm border border-border-base p-8">
           <div className="flex items-center gap-2 mb-6">
-            <div className="w-7 h-7 rounded bg-blue-600 flex items-center justify-center flex-shrink-0">
-              <FontAwesomeIcon icon={faHexagonNodes} className="w-4 h-4 text-white" />
-            </div>
+            <BrandMark size="md" />
             <span className="text-base font-semibold text-content-primary">
               Bulk Loader
             </span>

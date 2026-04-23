@@ -1,4 +1,4 @@
-import { Card } from './ui'
+import { Card, RequiredAsterisk } from './ui'
 import type { Connection, InputConnection } from '../api/types'
 import { type PlanFormData } from '../pages/planEditorUtils'
 import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from './ui/formStyles'
@@ -27,7 +27,7 @@ export default function PlanForm({ form, formErrors, connections, outputConnecti
           {/* Name */}
           <div className="sm:col-span-2">
             <label htmlFor="plan-name" className={LABEL_CLASS}>
-              Name <span className="text-red-500">*</span>
+              Name <RequiredAsterisk />
             </label>
             <input
               id="plan-name"
@@ -58,7 +58,7 @@ export default function PlanForm({ form, formErrors, connections, outputConnecti
           {/* Connection */}
           <div className="sm:col-span-2">
             <label htmlFor="plan-connection" className={LABEL_CLASS}>
-              Connection <span className="text-red-500">*</span>
+              Connection <RequiredAsterisk />
             </label>
             <select
               id="plan-connection"

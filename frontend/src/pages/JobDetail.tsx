@@ -5,7 +5,7 @@ import { jobsApi, runsApi, plansApi } from '../api/endpoints'
 import { ApiError, apiFetchBlob } from '../api/client'
 import type { CsvFetchParams, JobStatus } from '../api/types'
 import { isQueryOperation, operationLabel } from '../api/types'
-import { Badge, Button, Card, CsvPreviewPanel, Tabs } from '../components/ui'
+import { Badge, Button, Card, CsvPreviewPanel, Spinner, Tabs } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
 import { ALERT_ERROR } from '../components/ui/formStyles'
 import { usePermission } from '../hooks/usePermission'
@@ -155,8 +155,8 @@ export default function JobDetail() {
 
   if (isLoading) {
     return (
-      <div className="p-6 flex items-center justify-center min-h-[200px]" aria-label="Loading">
-        <div className="h-8 w-8 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
+      <div className="p-6 flex items-center justify-center min-h-[200px]">
+        <Spinner size="lg" />
       </div>
     )
   }

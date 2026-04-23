@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import clsx from 'clsx'
-import { Button, Modal, ComboInput } from './ui'
+import { Button, Modal, ComboInput, RequiredAsterisk } from './ui'
 import FilePicker from './FilePicker'
 import type { InputConnection, LoadStep, StepPreviewQueryPlan } from '../api/types'
 import { OPERATIONS, isQueryOp, type StepFormData } from '../pages/planEditorUtils'
@@ -158,7 +158,7 @@ export default function StepEditorModal({
         {/* Salesforce object */}
         <div>
           <label htmlFor="step-object" className={LABEL_CLASS}>
-            Salesforce Object <span className="text-red-500">*</span>
+            Salesforce Object <RequiredAsterisk />
           </label>
           <ComboInput
             id="step-object"
@@ -185,7 +185,7 @@ export default function StepEditorModal({
         {/* Operation */}
         <div>
           <label htmlFor="step-operation" className={LABEL_CLASS}>
-            Operation <span className="text-red-500">*</span>
+            Operation <RequiredAsterisk />
           </label>
           <select
             id="step-operation"
@@ -205,7 +205,7 @@ export default function StepEditorModal({
           /* ── Query mode: SOQL textarea + Validate action ─────────────────── */
           <div>
             <label htmlFor="step-soql" className={LABEL_CLASS}>
-              SOQL Query <span className="text-red-500">*</span>
+              SOQL Query <RequiredAsterisk />
             </label>
             <textarea
               id="step-soql"
@@ -292,7 +292,7 @@ export default function StepEditorModal({
 
             <div>
               <label htmlFor="step-pattern" className={LABEL_CLASS}>
-                CSV File Pattern <span className="text-red-500">*</span>
+                CSV File Pattern <RequiredAsterisk />
               </label>
               <div className="flex gap-2">
                 <input
@@ -326,7 +326,7 @@ export default function StepEditorModal({
             {stepForm.operation === 'upsert' && (
               <div>
                 <label htmlFor="step-ext-id" className={LABEL_CLASS}>
-                  External ID Field <span className="text-red-500">*</span>
+                  External ID Field <RequiredAsterisk />
                 </label>
                 <ComboInput
                   id="step-ext-id"
