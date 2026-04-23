@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faBars, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faBars, faXmark, faArrowLeft } from '@fortawesome/free-solid-svg-icons'
 import helpContent from 'virtual:help-content'
 import { usePermission, usePermissions } from '../hooks/usePermission'
 import { useAuthOptional } from '../context/AuthContext'
@@ -219,15 +219,24 @@ export default function HelpPage() {
 
       {/* Content pane */}
       <div className="flex-1 overflow-y-auto min-w-0">
-        {/* Mobile hamburger button */}
-        <div className="md:hidden px-4 pt-4 pb-2">
+        {/* Toolbar: mobile hamburger + close button */}
+        <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-border-base">
           <button
             onClick={() => setMobileNavOpen(true)}
-            className="flex items-center gap-2 text-sm text-content-secondary hover:text-content-primary transition-colors"
+            className="flex items-center gap-2 text-sm text-content-secondary hover:text-content-primary transition-colors md:hidden"
             aria-label="Open navigation"
           >
             <FontAwesomeIcon icon={faBars} className="w-4 h-4" />
             <span>Topics</span>
+          </button>
+          <span className="hidden md:block" />
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-1.5 text-xs text-content-muted hover:text-content-primary transition-colors"
+            aria-label="Close help"
+          >
+            <FontAwesomeIcon icon={faArrowLeft} className="w-3 h-3" />
+            Back
           </button>
         </div>
 
