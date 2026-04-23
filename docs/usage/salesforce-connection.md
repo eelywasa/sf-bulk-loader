@@ -18,7 +18,7 @@ Bearer flow. Read this before authoring your first load plan. Requires the
 `connections.manage` permission in the Bulk Loader and System Administrator
 access (or equivalent) in the Salesforce org you are connecting to. For the
 full walkthrough with screenshots see
-[`docs/salesforce-jwt-setup.md`](../salesforce-jwt-setup.md).
+[Salesforce JWT setup](salesforce-jwt-setup.md).
 
 ---
 
@@ -131,4 +131,4 @@ you pasted the value from the correct Connected App.
 - [Authoring load plans](load-plans.md) (next step)
 - [CSV format](csv-format.md)
 - Architecture: [Salesforce auth flow](../architecture/run-execution.md#salesforce-auth)
-- [Full Salesforce JWT setup walkthrough](../salesforce-jwt-setup.md)
+- [Full Salesforce JWT setup walkthrough](salesforce-jwt-setup.md)

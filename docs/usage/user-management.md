@@ -58,7 +58,7 @@ dashboard. No password is ever chosen by the admin.
 
 Admins toggle **Disable** / **Enable** and **Unlock** from the Users page.
 Unlocking is also available via the `admin-unlock` CLI — see
-[admin recovery](../admin-recovery.md).
+[admin recovery](admin-recovery.md).
 
 ---
 
@@ -100,5 +100,5 @@ audit trail intact.
 
 - [Getting started](getting-started.md) — bootstrap admin + first login
 - [Account recovery](account-recovery.md) — forgotten passwords, lockouts
-- [Admin recovery](../admin-recovery.md) — break-glass CLI tools
+- [Admin recovery](admin-recovery.md) — break-glass CLI tools
 - Spec: [RBAC permission matrix](../specs/rbac-permission-matrix.md)

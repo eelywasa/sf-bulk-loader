@@ -35,7 +35,7 @@ Example: a 50 000-row CSV with partition size 10 000 yields 5 partitions and the
 
 For hosted profiles, a `LoadStep` may set `input_connection_id` to an `InputConnection` of type `s3`. The same glob + partitioning pipeline applies, but files are streamed directly from the bucket. Credentials live on the `InputConnection` row (encrypted).
 
-See [`docs/s3-connection-setup.md`](../s3-connection-setup.md) for operator configuration.
+See [`docs/usage/s3-connection-setup.md`](../usage/s3-connection-setup.md) for operator configuration.
 
 ---
 

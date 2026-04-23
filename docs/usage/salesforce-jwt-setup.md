@@ -1,3 +1,14 @@
+---
+title: Salesforce JWT setup (Connected App walkthrough)
+slug: salesforce-jwt-setup
+nav_order: 25
+tags: [salesforce, connections, setup]
+required_permission: connections.manage
+summary: >-
+  One-time Salesforce admin steps — RSA key pair, Connected App, and
+  pre-authorized running user — before you can create a Salesforce connection.
+---
+
 # Salesforce JWT Bearer Flow: Setup Guide
 
 ## What this covers / who should read this
@@ -177,3 +188,11 @@ openssl req -new -x509 -key private_new.pem -out certificate_new.crt -days 365
 3. Delete the old key files from disk.
 
 > Consider setting a calendar reminder for ~30 days before expiry.
+
+---
+
+## Related
+
+- [Setting up a Salesforce connection](salesforce-connection.md) — the in-app
+  steps that consume the output of this walkthrough
+- [CSV format](csv-format.md)

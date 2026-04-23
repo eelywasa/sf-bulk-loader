@@ -95,9 +95,8 @@ The docs are organised into three **pillars** plus a spec layer. The index at
 - **Architecture & design** (`docs/architecture.md` + `docs/architecture/*.md`) —
   how the system is built. Read these before making architectural changes.
 - **Operations & developer** (`docs/deployment/*.md`, `docs/development.md`,
-  `docs/admin-recovery.md`, `docs/observability.md`, `docs/ci.md`,
-  `docs/email.md`, `docs/salesforce-jwt-setup.md`, `docs/s3-connection-setup.md`) —
-  how to run, develop, and operate the app.
+  `docs/observability.md`, `docs/ci.md`, `docs/email.md`) — how to run,
+  develop, and operate the app.
 - **Usage** (`docs/usage/*.md`) — task-oriented operator handbook. Each file
   is a single self-contained topic.
 

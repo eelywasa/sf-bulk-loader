@@ -46,7 +46,7 @@ function SoleAdminBanner({ onDismiss }: SoleAdminBannerProps) {
         <strong>Only one admin configured.</strong>{' '}
         Promote a second user to the admin profile to avoid being locked out.{' '}
         <Link
-          to="/help#account-recovery"
+          to="/help#admin-recovery"
           className="underline hover:no-underline"
         >
           Admin recovery guide

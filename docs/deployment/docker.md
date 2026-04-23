@@ -6,7 +6,7 @@ The operator guide for running the Bulk Loader as a Docker Compose stack on
 your own infrastructure — the primary supported hosted deployment model. Read
 this to bring up a new environment, enable HTTPS or PostgreSQL, or look up the
 environment-variable reference. For the admin CLI used to recover locked-out
-accounts see [`docs/admin-recovery.md`](../admin-recovery.md); for the
+accounts see [`docs/usage/admin-recovery.md`](../usage/admin-recovery.md); for the
 architecture behind what you are deploying see
 [`docs/architecture.md`](../architecture.md).
 
@@ -375,5 +375,5 @@ docker compose exec backend python -m app.cli unlock user@example.com
 docker compose exec backend python -m app.cli list-admins
 ```
 
-See [`docs/admin-recovery.md`](../admin-recovery.md) for the full procedure,
+See [`docs/usage/admin-recovery.md`](../usage/admin-recovery.md) for the full procedure,
 exit-code reference, and security considerations.

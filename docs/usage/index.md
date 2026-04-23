@@ -26,6 +26,7 @@ whichever feature you need.
 |---|---|
 | 10 | [Getting started](getting-started.md) — first run, distribution profiles, the bootstrap admin |
 | 20 | [Setting up a Salesforce connection](salesforce-connection.md) — Connected App + JWT |
+| 25 | [Salesforce JWT setup](salesforce-jwt-setup.md) — one-time Connected App walkthrough |
 | 30 | [CSV format](csv-format.md) — encoding, headers, relationship notation |
 | 40 | [Authoring load plans](load-plans.md) — steps, operations, partition size, error threshold |
 | 50 | [Running a load](running-loads.md) — trigger, monitor, abort, retry |
@@ -37,6 +38,7 @@ whichever feature you need.
 | 60 | [The Files pane](files-pane.md) — inputs, outputs, previews, downloads |
 | 70 | [Bulk queries](bulk-query.md) — SOQL, validation, chaining into DML |
 | 80 | [Output sinks](output-sinks.md) — local vs S3 |
+| 85 | [S3 connection setup](s3-connection-setup.md) — AWS IAM, bucket, policy walkthrough |
 
 ## Staying informed
 
@@ -50,6 +52,7 @@ whichever feature you need.
 |---|---|
 | 100 | [User management](user-management.md) — invitations, profiles, lifecycle |
 | 110 | [Settings reference](settings.md) — email, Salesforce, security, partitioning |
+| 115 | [Admin recovery](admin-recovery.md) — break-glass CLI for locked-out admins |
 
 ## Account
 

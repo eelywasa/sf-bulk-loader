@@ -52,7 +52,7 @@ Results stream directly to an S3 bucket using the same relative layout
 2. Fill in:
    - **Name** — free-text label.
    - **Direction** — **Output** (the same connection form handles input
-     and output — see [S3 connection setup](../s3-connection-setup.md) for
+     and output — see [S3 connection setup](s3-connection-setup.md) for
      the full walkthrough).
    - **Bucket**, **Prefix**, **Region**.
    - **Access key ID** + **Secret access key** — credentials with
@@ -98,7 +98,7 @@ layout will line up.
 
 ## Related
 
-- [S3 connection setup walkthrough](../s3-connection-setup.md)
+- [S3 connection setup walkthrough](s3-connection-setup.md)
 - [The Files pane](files-pane.md) — browsing results regardless of sink
 - [Authoring load plans](load-plans.md)
 - Architecture: [Storage & output sinks](../architecture/storage.md#output-sinks)

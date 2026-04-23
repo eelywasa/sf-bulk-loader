@@ -87,4 +87,4 @@ credentials work before someone relies on a run-completion notification.
 - [User management](user-management.md)
 - [Notifications](notifications.md)
 - Deployment: [Docker env vars](../deployment/docker.md)
-- [Admin recovery](../admin-recovery.md)
+- [Admin recovery](admin-recovery.md)

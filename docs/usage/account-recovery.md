@@ -19,7 +19,7 @@ been locked out. Available in hosted profiles (`self_hosted`, `aws_hosted`);
 the desktop profile has no user accounts.
 
 If you're an admin trying to recover the *system* (zero admins remaining,
-app won't start), see [admin recovery](../admin-recovery.md) instead.
+app won't start), see [admin recovery](admin-recovery.md) instead.
 
 ---
 
@@ -85,7 +85,7 @@ Repeated failed logins lock the account. You have two paths back in:
 
 1. **Wait** — the lock auto-clears after a configured timeout.
 2. **Ask an admin** to unlock you from the Users page, or via the
-   `admin-unlock` CLI (see [admin recovery](../admin-recovery.md)).
+   `admin-unlock` CLI (see [admin recovery](admin-recovery.md)).
 
 ---
 
@@ -100,5 +100,5 @@ exist to prevent abuse of the reset flow.
 ## Related
 
 - [User management](user-management.md) — admin side of the same flows
-- [Admin recovery](../admin-recovery.md) — break-glass CLI tools
+- [Admin recovery](admin-recovery.md) — break-glass CLI tools
 - [Getting started](getting-started.md)
