@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { type Theme, useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
@@ -25,6 +25,7 @@ import {
   faChevronRight,
   faCheck,
   faRightFromBracket,
+  faCircleQuestion,
 } from '@fortawesome/free-solid-svg-icons'
 
 interface NavItem {
@@ -308,6 +309,14 @@ export default function AppShell() {
         <header className="bg-surface-raised border-b border-border-base px-6 py-3 flex items-center justify-between flex-shrink-0">
           <div />
           <div className="flex items-center gap-4">
+            <Link
+              to="/help"
+              className="flex items-center gap-1.5 text-xs text-content-muted hover:text-content-primary transition-colors"
+              aria-label="Help"
+            >
+              <FontAwesomeIcon icon={faCircleQuestion} className="w-3.5 h-3.5" />
+              Help
+            </Link>
             {displayName && (
               <span className="text-xs text-content-muted">{displayName}</span>
             )}
