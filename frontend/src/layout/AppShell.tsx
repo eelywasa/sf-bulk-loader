@@ -5,6 +5,7 @@ import { type Theme, useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import { usePermission } from '../hooks/usePermission'
 import { BrandMark } from '../components/ui'
+import { OVERLAY_SHADOW_CLASS } from '../components/ui/formStyles'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
@@ -106,7 +107,8 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
       {/* Settings popover — floats above when expanded, flies right when collapsed */}
       {open && (
         <div className={clsx(
-          'absolute bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 overflow-visible min-w-[160px]',
+          'absolute bg-surface-elevated border border-border-base rounded-md z-50 overflow-visible min-w-[160px]',
+          OVERLAY_SHADOW_CLASS,
           collapsed
             ? 'bottom-0 left-full ml-2'
             : 'bottom-full left-3 right-3 mb-1'
@@ -189,7 +191,10 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
 
             {/* Theme submenu — floats to the right of the popover */}
             {themeOpen && (
-              <div className="absolute bottom-0 left-full ml-1 bg-surface-elevated border border-border-base rounded-md shadow-lg z-50 min-w-[120px]">
+              <div className={clsx(
+                'absolute bottom-0 left-full ml-1 bg-surface-elevated border border-border-base rounded-md z-50 min-w-[120px]',
+                OVERLAY_SHADOW_CLASS,
+              )}>
                 {themeOptions.map(opt => (
                   <button
                     key={opt.value}

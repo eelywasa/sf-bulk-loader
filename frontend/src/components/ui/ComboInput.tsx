@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useId } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronDown, faSpinner } from '@fortawesome/free-solid-svg-icons'
 import clsx from 'clsx'
+import { OVERLAY_SHADOW_CLASS } from './formStyles'
 
 export interface ComboInputProps {
   id?: string
@@ -141,7 +142,10 @@ export function ComboInput({
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-50 mt-1 w-full rounded-md border border-border-base bg-surface-elevated shadow-lg max-h-48 overflow-y-auto text-sm"
+          className={clsx(
+            'absolute z-50 mt-1 w-full rounded-md border border-border-base bg-surface-elevated max-h-48 overflow-y-auto text-sm',
+            OVERLAY_SHADOW_CLASS,
+          )}
         >
           {loading ? (
             <li className="px-3 py-2 text-content-muted italic">
