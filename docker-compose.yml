@@ -24,7 +24,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       x-bake:
         provenance: false
         sbom: false

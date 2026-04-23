@@ -30,12 +30,9 @@ How to run, develop, and operate the app.
 | [deployment/desktop.md](deployment/desktop.md) | Desktop (Electron) deployment |
 | [deployment/aws.md](deployment/aws.md) | AWS-hosted deployment |
 | [development.md](development.md) | Local development, tests, migrations |
-| [admin-recovery.md](admin-recovery.md) | Break-glass CLI for locked-out admins |
 | [observability.md](observability.md) | Event taxonomy, metrics, spans, DoD checklist |
 | [ci.md](ci.md) | CI workflow topology |
 | [email.md](email.md) | Outbound email backend, SMTP credentials, delivery log |
-| [salesforce-jwt-setup.md](salesforce-jwt-setup.md) | Deep-dive walkthrough: Salesforce Connected App + JWT |
-| [s3-connection-setup.md](s3-connection-setup.md) | S3 input/output connection walkthrough |
 
 ---
 
@@ -45,13 +42,15 @@ Task-oriented topic pages for day-to-day use. Each page carries YAML
 frontmatter (`title`, `slug`, `nav_order`, `required_permission`, `summary`)
 and stands alone — deep links are safe.
 
+These topics are available both here and **in the running application** at `/help` (the Help link in the top-right of the app shell). The in-app version is built from this directory at deploy time — no internet connection needed.
+
 Start at [`usage/index.md`](usage/index.md), which lists topics in nav order:
 
-- Getting started, Salesforce connection, CSV format
+- Getting started, Salesforce connection (+ JWT setup walkthrough), CSV format
 - Authoring load plans, running loads, files pane
-- Bulk queries, output sinks
+- Bulk queries, output sinks (+ S3 connection setup walkthrough)
 - Notifications
-- User management, settings
+- User management, settings, admin recovery (break-glass CLI)
 - Account recovery
 
 ---

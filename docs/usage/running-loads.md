@@ -97,8 +97,7 @@ The retry is tracked as its own step execution within the existing run. The
 original error rows remain in the original partitions' error CSVs — the retry
 only writes new files for its attempt.
 
-Requires `runs.execute`. See
-[`backend/app/api/load_runs.py`](../../backend/app/api/load_runs.py).
+Requires `runs.execute`.
 
 ---
 

@@ -15,8 +15,7 @@ summary: >-
 How to get pinged when a run reaches a terminal state, so you don't have to
 camp on the Runs page. Available in **hosted profiles** only (`self_hosted`,
 `aws_hosted`) — the desktop profile has no user identity to attach
-subscriptions to. Introduced by
-[SFBL-117](https://matthew-jenkin.atlassian.net/browse/SFBL-117).
+subscriptions to.
 
 Anyone who can see a plan can subscribe themselves to notifications for it.
 Managing other users' subscriptions is not currently exposed.

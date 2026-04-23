@@ -1,3 +1,14 @@
+---
+title: S3 connection setup
+slug: s3-connection-setup
+nav_order: 85
+tags: [s3, connections, aws, setup]
+required_permission: connections.manage
+summary: >-
+  AWS-side IAM user, policy, and bucket setup plus the in-app steps for
+  creating an S3-backed input or output connection.
+---
+
 # S3 Connection Setup Guide
 
 ## What this covers / who should read this
@@ -417,3 +428,10 @@ When editing an existing connection, the credential fields (Access Key ID, Secre
 - Use a dedicated IAM user per environment (dev/staging/prod) so credentials can be rotated or revoked independently
 - Scope the IAM policy to the specific bucket and prefix your load plans actually need — avoid `s3:*` or wildcard resources
 - For output connections, `s3:DeleteObject` is required in addition to `s3:PutObject`. The application uses it to clean up the write-test probe during connection testing; it does not delete result files after writing them
+
+---
+
+## Related
+
+- [Output sinks](output-sinks.md) — picking between local and S3 output
+- [Authoring load plans](load-plans.md) — attaching a connection to a plan

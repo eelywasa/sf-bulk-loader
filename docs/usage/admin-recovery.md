@@ -1,3 +1,14 @@
+---
+title: Admin recovery
+slug: admin-recovery
+nav_order: 115
+tags: [admin, security, cli]
+required_permission: users.manage
+summary: >-
+  Break-glass CLI for recovering admin access when no admin can log in through
+  the UI — forgotten password, lockouts, missing email backend, fresh DB.
+---
+
 # Admin recovery — regaining access when locked out
 
 ## What this covers / who should read this
@@ -8,9 +19,6 @@ missing / unreachable email backend, or a fresh database where the bootstrap
 admin has already been consumed. Read this before escalating to "restore from
 backup" — in almost every case the break-glass CLI shipped with the backend is
 the right tool.
-
-For the design of the identity + RBAC model these commands operate on, see
-[`docs/architecture/auth-and-rbac.md`](architecture/auth-and-rbac.md).
 
 ---
 
@@ -30,8 +38,8 @@ same database and environment as the running server, so `DATABASE_URL` and
 
 ## Identity model in one paragraph
 
-Since SFBL-198, users are identified by **email** (`User.email`), not
-`username`. Authorization is profile-based: every user has a `profile_id`
+Users are identified by **email** (`User.email`). Authorization is
+profile-based: every user has a `profile_id`
 pointing at one of `admin`, `operator`, or `viewer`. There is no
 `is_admin` column — "being an admin" means *the user's profile is the admin
 profile*. The CLI works against this model directly.
@@ -119,10 +127,6 @@ Once a user exists, these values are ignored on subsequent boots. If the
 env vars are missing on an empty DB the backend fails startup fast with
 guidance pointing here.
 
-> **Legacy.** `ADMIN_USERNAME` was the pre-SFBL-198 identity field and is no
-> longer accepted. Any deployment config still setting it should be updated
-> to `ADMIN_EMAIL`.
-
 In `auth_mode=none` (desktop profile) `seed_admin()` is skipped entirely —
 the desktop app has no login surface, so no admin exists.
 
@@ -142,8 +146,8 @@ Recommended setup:
 
 With two admins, if one is locked out the other can reset their password
 through the UI without needing shell access. The "last active admin cannot
-be disabled, deactivated, or demoted" safeguard (SFBL-188) prevents the
-operational admin from accidentally locking the whole org out.
+be disabled, deactivated, or demoted" safeguard prevents the operational
+admin from accidentally locking the whole org out.
 
 ---
 
@@ -160,3 +164,11 @@ Practical controls:
 - Review the WARNING log line and `login_attempt` row that `admin-recover`
   produces after each recovery — they are the audit trail.
 - Rotate the temporary password immediately after handing it to the user.
+
+---
+
+## Related
+
+- [User management](user-management.md) — day-to-day admin flows
+- [Account recovery](account-recovery.md) — end-user password reset
+- [Getting started](getting-started.md) — bootstrap admin on first run

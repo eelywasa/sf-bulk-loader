@@ -158,7 +158,7 @@ The admin receives a **temp password** in the API response (visible **once**, ne
 ## Admin bootstrap & break-glass
 
 - `seed_admin()` runs in the FastAPI lifespan hook on every boot. If no users exist, it creates the admin; on an existing DB it is a no-op.
-- For password recovery without email (locked out, no SMTP), a CLI recovery command is available — see [`docs/admin-recovery.md`](../admin-recovery.md) for the operator procedure.
+- For password recovery without email (locked out, no SMTP), a CLI recovery command is available — see [`docs/usage/admin-recovery.md`](../usage/admin-recovery.md) for the operator procedure.
 - The last admin cannot be disabled, deactivated, or demoted (SFBL-188 safeguards).
 
 ---

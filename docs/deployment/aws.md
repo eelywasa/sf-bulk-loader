@@ -6,7 +6,7 @@ The operator guide for deploying the Bulk Loader to AWS with the `aws_hosted`
 profile — CloudFront + ALB + ECS/Fargate + RDS PostgreSQL + S3. Read this if
 you are provisioning a new environment, rotating a deployment's secrets, or
 wiring up SSM/Secrets Manager. For the admin CLI used to recover locked-out
-accounts see [`docs/admin-recovery.md`](../admin-recovery.md).
+accounts see [`docs/usage/admin-recovery.md`](../usage/admin-recovery.md).
 
 > **Status: Skeleton implemented (Ticket 9)**
 >

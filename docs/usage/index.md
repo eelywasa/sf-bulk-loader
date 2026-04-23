@@ -18,9 +18,6 @@ can be reached via deep link. If you are setting up for the first time, read
 the topics under **Getting started** in order; after that you can jump to
 whichever feature you need.
 
-These pages are also the source of the in-app `/help` screen (Phase 2,
-[SFBL-209](https://matthew-jenkin.atlassian.net/browse/SFBL-209)).
-
 ---
 
 ## Getting started
@@ -29,6 +26,7 @@ These pages are also the source of the in-app `/help` screen (Phase 2,
 |---|---|
 | 10 | [Getting started](getting-started.md) — first run, distribution profiles, the bootstrap admin |
 | 20 | [Setting up a Salesforce connection](salesforce-connection.md) — Connected App + JWT |
+| 25 | [Salesforce JWT setup](salesforce-jwt-setup.md) — one-time Connected App walkthrough |
 | 30 | [CSV format](csv-format.md) — encoding, headers, relationship notation |
 | 40 | [Authoring load plans](load-plans.md) — steps, operations, partition size, error threshold |
 | 50 | [Running a load](running-loads.md) — trigger, monitor, abort, retry |
@@ -40,6 +38,7 @@ These pages are also the source of the in-app `/help` screen (Phase 2,
 | 60 | [The Files pane](files-pane.md) — inputs, outputs, previews, downloads |
 | 70 | [Bulk queries](bulk-query.md) — SOQL, validation, chaining into DML |
 | 80 | [Output sinks](output-sinks.md) — local vs S3 |
+| 85 | [S3 connection setup](s3-connection-setup.md) — AWS IAM, bucket, policy walkthrough |
 
 ## Staying informed
 
@@ -53,6 +52,7 @@ These pages are also the source of the in-app `/help` screen (Phase 2,
 |---|---|
 | 100 | [User management](user-management.md) — invitations, profiles, lifecycle |
 | 110 | [Settings reference](settings.md) — email, Salesforce, security, partitioning |
+| 115 | [Admin recovery](admin-recovery.md) — break-glass CLI for locked-out admins |
 
 ## Account
 
@@ -66,8 +66,7 @@ These pages are also the source of the in-app `/help` screen (Phase 2,
 
 - Every page begins with *"What this covers / who should read this"* so you can
   tell at a glance whether you are in the right place.
-- Page-level YAML frontmatter declares the topic's title, stable slug,
-  navigation order, and (where applicable) the permission key required to see
-  it. This is what the in-app `/help` route consumes.
+- Each page declares a stable slug in its frontmatter — use that slug to build
+  deep links: `#slug` or `#slug:heading-id`.
 - Each page ends with **Related** cross-links — follow those rather than
   scrolling back to this index.
