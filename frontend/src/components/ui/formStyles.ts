@@ -53,6 +53,8 @@ export const BUTTON_SECONDARY_COLORS =
   'bg-surface-raised text-content-primary border border-border-strong hover:bg-surface-hover focus:ring-border-focus'
 export const BUTTON_GHOST_COLORS =
   'text-content-secondary hover:bg-surface-hover focus:ring-border-focus border border-transparent'
+export const BUTTON_DANGER_COLORS =
+  'bg-danger text-content-inverse hover:bg-danger-hover focus:ring-danger border border-transparent'
 
 // Ready-to-apply full classes for non-`<button>` elements that need the default
 // md button size. For dynamic sizes, use `<Button>` component.
@@ -60,6 +62,7 @@ const BUTTON_SIZE_MD = 'px-4 py-2 text-sm'
 export const BUTTON_PRIMARY_CLASS = `${BUTTON_BASE_CLASS} ${BUTTON_SIZE_MD} ${BUTTON_PRIMARY_COLORS}`
 export const BUTTON_SECONDARY_CLASS = `${BUTTON_BASE_CLASS} ${BUTTON_SIZE_MD} ${BUTTON_SECONDARY_COLORS}`
 export const BUTTON_GHOST_CLASS = `${BUTTON_BASE_CLASS} ${BUTTON_SIZE_MD} ${BUTTON_GHOST_COLORS}`
+export const BUTTON_DANGER_CLASS = `${BUTTON_BASE_CLASS} ${BUTTON_SIZE_MD} ${BUTTON_DANGER_COLORS}`
 
 // Alert/banner blocks — use for inline error/success/warning/info panels
 const ALERT_BASE = 'rounded-md border px-4 py-3 text-sm'

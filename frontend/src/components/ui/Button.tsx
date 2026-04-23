@@ -5,6 +5,7 @@ import {
   BUTTON_PRIMARY_COLORS,
   BUTTON_SECONDARY_COLORS,
   BUTTON_GHOST_COLORS,
+  BUTTON_DANGER_COLORS,
 } from './formStyles'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost'
@@ -20,8 +21,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 const variantClasses: Record<ButtonVariant, string> = {
   primary: BUTTON_PRIMARY_COLORS,
   secondary: BUTTON_SECONDARY_COLORS,
-  danger:
-    'bg-red-600 text-content-inverse hover:bg-red-700 focus:ring-red-500 border border-transparent',
+  danger: BUTTON_DANGER_COLORS,
   ghost: BUTTON_GHOST_COLORS,
 }
 

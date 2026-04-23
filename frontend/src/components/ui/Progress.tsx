@@ -13,10 +13,10 @@ export interface ProgressProps {
 }
 
 const colorClasses: Record<ProgressColor, string> = {
-  blue: 'bg-blue-600',
-  green: 'bg-green-500',
-  red: 'bg-red-500',
-  orange: 'bg-orange-500',
+  blue: 'bg-accent',
+  green: 'bg-success-text',
+  red: 'bg-danger',
+  orange: 'bg-warning-text',
 }
 
 const sizeClasses = {

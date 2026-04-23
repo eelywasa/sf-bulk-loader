@@ -473,7 +473,7 @@ one-off equivalents inline.
 | `Tabs` | Switching between content panels within a page | Active tab uses `border-border-focus` underline |
 | `Toast` | Transient feedback | Auto-dismiss 5 s default; error toasts manual dismiss |
 | `EmptyState` | Zero-item states in lists and tables | No duplicate CTA if page header already has one |
-| `Progress` | Percentage or step-based progress | Use `Progress`, not raw `<progress>` |
+| `Progress` | Percentage or step-based progress | Use `Progress`, not raw `<progress>`. `color` = `blue \| green \| red \| orange`; all driven by tokens (`bg-accent` / `bg-success-text` / `bg-danger` / `bg-warning-text`) |
 | `Spinner` | Indeterminate loading indicator | `size` = `xs \| sm \| md \| lg`; `border-accent`; honours `prefers-reduced-motion` |
 | `BrandMark` | App hexagon logo next to "Bulk Loader" wordmark | `size` = `sm \| md \| lg`; `bg-brand`; `aria-hidden` — always pair with a visible wordmark |
 | `RequiredAsterisk` | Required-field marker inside a `<label>` | `text-error-text` + visually hidden " (required)" for screen readers. Always pair with native `required` / `aria-required` on the input |
@@ -551,11 +551,12 @@ import { BUTTON_PRIMARY_CLASS } from '../components/ui/formStyles'
 ```
 
 Available: `BUTTON_PRIMARY_CLASS`, `BUTTON_SECONDARY_CLASS`,
-`BUTTON_GHOST_CLASS`. Each bakes in the `md` size. For dynamic sizes, use the
-`<Button>` component — `BUTTON_BASE_CLASS` and the `BUTTON_*_COLORS` variant
-strings are the composition primitives the component itself reads, and are
-exported for the same reason. No `BUTTON_DANGER_CLASS` yet — destructive
-actions should always be `<button>` elements behind a confirmation step.
+`BUTTON_GHOST_CLASS`, `BUTTON_DANGER_CLASS`. Each bakes in the `md` size. For
+dynamic sizes, use the `<Button>` component — `BUTTON_BASE_CLASS` and the
+`BUTTON_*_COLORS` variant strings are the composition primitives the component
+itself reads, and are exported for the same reason. Prefer `<button>` behind a
+confirmation step for destructive actions; `BUTTON_DANGER_CLASS` exists for
+symmetry and the rare `<Link>`-shaped destructive CTA.
 
 ### Badge variants
 

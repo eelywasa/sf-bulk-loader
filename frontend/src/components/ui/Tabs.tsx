@@ -34,7 +34,7 @@ export function Tabs({ tabs, className, defaultIndex = 0, onChange }: TabsProps)
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
                 'transition-colors duration-150',
                 selected
-                  ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
+                  ? 'text-accent border-b-2 border-accent -mb-px'
                   : 'text-content-muted hover:text-content-secondary hover:border-b-2 hover:border-border-strong -mb-px',
                 tab.disabled && 'opacity-50 cursor-not-allowed',
               )

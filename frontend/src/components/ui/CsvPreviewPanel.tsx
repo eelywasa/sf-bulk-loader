@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { Spinner } from './Spinner'
 import type { FilterRule, CsvFetchParams, CsvPageResult } from '../../api/types'
@@ -129,13 +130,14 @@ export function CsvPreviewPanel({ queryKey, fetchPage, filename }: CsvPreviewPan
             + Add Filter
           </button>
           {draftFilters.length > 0 && (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={applyFilters}
               disabled={!canApply}
-              className="text-sm px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
             >
               Apply
-            </button>
+            </Button>
           )}
           {activeFilters.length > 0 && (
             <button

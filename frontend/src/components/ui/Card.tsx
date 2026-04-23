@@ -14,7 +14,7 @@ export function Card({ title, subtitle, actions, children, className, padding = 
   const hasHeader = title || actions
 
   return (
-    <div className={clsx('bg-surface-raised rounded-lg border border-border-base shadow-sm', className)}>
+    <div className={clsx('bg-surface-raised rounded-lg border border-border-base', className)}>
       {hasHeader && (
         <div className="flex items-start justify-between px-6 py-4 border-b border-border-base">
           <div>
