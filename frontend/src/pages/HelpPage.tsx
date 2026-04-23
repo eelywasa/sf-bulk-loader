@@ -96,6 +96,7 @@ function NavList({
 export default function HelpPage() {
   const { hash } = useLocation()
   const navigate = useNavigate()
+  const scrollPaneRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const permissions = usePermissions()
   const auth = useAuthOptional()
@@ -130,12 +131,14 @@ export default function HelpPage() {
     }
   }, [activeTopic, permissions, navigate, isBootstrapping])
 
-  // Scroll to anchor after content renders
+  // Reset scroll position on topic change; then scroll to anchor if present
   useEffect(() => {
     const { anchor } = parseHash(hash)
-    if (!anchor || !contentRef.current) return
-    const el = contentRef.current.querySelector(`#${CSS.escape(anchor)}`)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (anchor && contentRef.current) {
+      const el = contentRef.current.querySelector(`#${CSS.escape(anchor)}`)
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+    }
+    if (scrollPaneRef.current) scrollPaneRef.current.scrollTop = 0
   }, [hash, activeSlug])
 
   // Sync slug from hash changes (e.g. browser back/forward)
@@ -218,7 +221,7 @@ export default function HelpPage() {
       </nav>
 
       {/* Content pane */}
-      <div className="flex-1 overflow-y-auto min-w-0">
+      <div ref={scrollPaneRef} className="flex-1 overflow-y-auto min-w-0">
         {/* Toolbar: mobile hamburger + close button */}
         <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-border-base">
           <button
