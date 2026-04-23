@@ -44,10 +44,16 @@ describe('rewriteInternalLinks', () => {
     expect(result).toContain('href="/help#user-management:invite-a-user"')
   })
 
-  it('leaves anchor-only links unchanged', () => {
+  it('leaves anchor-only links unchanged when no currentSlug is given', () => {
     const html = '<a href="#same-page-section">Section</a>'
     const result = rewriteInternalLinks(html, slugMap)
     expect(result).toContain('href="#same-page-section"')
+  })
+
+  it('qualifies anchor-only links with currentSlug so they match the URL scheme', () => {
+    const html = '<a href="#aws-cli-setup">AWS CLI setup</a>'
+    const result = rewriteInternalLinks(html, slugMap, 's3-connection-setup')
+    expect(result).toContain('href="#s3-connection-setup:aws-cli-setup"')
   })
 
   it('leaves external http links unchanged', () => {

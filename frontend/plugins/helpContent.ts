@@ -69,7 +69,7 @@ async function buildContentIndex(docsDir: string): Promise<HelpContentIndex> {
 
     const vfile = await processor.process(content)
     const rawHtml = String(vfile)
-    const html = rewriteInternalLinks(rawHtml, slugMap)
+    const html = rewriteInternalLinks(rawHtml, slugMap, String(data.slug))
 
     topics.push({
       slug: String(data.slug),
