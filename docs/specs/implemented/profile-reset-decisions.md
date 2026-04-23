@@ -1,3 +1,7 @@
+> **Archived — SFBL-210 (2026-04-22).** This document captured the design at delivery. For current behaviour see the pillar docs under `docs/` or the relevant Jira epic. No further edits — historical reference only.
+
+---
+
 # Profile & Password Reset — Architecture Decisions (SFBL-119)
 
 This document records key design decisions made across the SFBL-119 child tickets

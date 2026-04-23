@@ -1,21 +1,42 @@
-# Admin Recovery — Regaining Access When Locked Out
+# Admin recovery — regaining access when locked out
 
-If every admin account becomes inaccessible (forgotten password, all admins
-deleted, etc.) you can recover access using the **break-glass CLI** that is
-bundled with the backend process.
+## What this covers / who should read this
+
+The operator procedure for regaining admin access to the Bulk Loader when no
+admin can log in through the UI — forgotten password, locked-out account,
+missing / unreachable email backend, or a fresh database where the bootstrap
+admin has already been consumed. Read this before escalating to "restore from
+backup" — in almost every case the break-glass CLI shipped with the backend is
+the right tool.
+
+For the design of the identity + RBAC model these commands operate on, see
+[`docs/architecture/auth-and-rbac.md`](architecture/auth-and-rbac.md).
+
+---
 
 ## Prerequisites
 
-You need shell access to the host or container running the backend.
+You need shell access to the process that runs the backend. The CLI reads the
+same database and environment as the running server, so `DATABASE_URL` and
+`ENCRYPTION_KEY` must resolve the same way they do for the live app.
 
-- **Docker / Docker Compose:** `docker exec -it <container> bash`
-- **Desktop (Electron):** open a terminal on the host machine — the binary
-  includes the CLI.
-- **AWS hosted:** SSH into the EC2 instance or use ECS Exec.
+| Deployment | How to reach the CLI |
+|---|---|
+| Docker / Docker Compose | `docker compose exec backend bash`, or one-shot `docker compose exec backend python -m app.cli <subcommand>` |
+| Desktop (Electron, packaged) | The packaged binary exposes the same subcommands — run `sf_bulk_loader --help` from the OS terminal |
+| AWS (ECS / Fargate) | `aws ecs execute-command` into a running task, then `python -m app.cli <subcommand>` |
 
-The CLI reads the same database and environment variables as the running server.
-Set `DATABASE_URL` and `ENCRYPTION_KEY` in your environment if they are not
-already available in the shell.
+---
+
+## Identity model in one paragraph
+
+Since SFBL-198, users are identified by **email** (`User.email`), not
+`username`. Authorization is profile-based: every user has a `profile_id`
+pointing at one of `admin`, `operator`, or `viewer`. There is no
+`is_admin` column — "being an admin" means *the user's profile is the admin
+profile*. The CLI works against this model directly.
+
+---
 
 ## Step 1 — List existing admin accounts
 
@@ -23,68 +44,119 @@ already available in the shell.
 python -m app.cli list-admins
 ```
 
-This prints a table of all users with `is_admin=True`, their status, and
-whether they are currently locked.
+Prints every user whose profile is `admin`, along with their status and
+whether they are currently locked (either `status = locked` or
+`locked_until` is a future timestamp).
+
+Use this before any recovery step so you know which email addresses are
+candidates.
+
+---
 
 ## Step 2 — Recover a known admin account
 
-If you know the email address of an admin user (even one that is locked or has
-forgotten their password):
+If you know the email address of an admin user — even one that is locked or
+whose password is forgotten:
 
 ```bash
 python -m app.cli admin-recover admin@example.com
 ```
 
-This command:
-1. Resets the user's password to a randomly-generated temporary password.
-2. Sets `must_reset_password=True` — the user must change it on first login.
-3. Unlocks the account and sets status to `active`.
-4. Prints the temporary password **once** to stdout — store it securely.
+The command:
+
+1. Generates a random temporary password and prints it **once** to stdout.
+2. Sets `must_reset_password = true` so the user is forced to change it on
+   first login.
+3. Clears `locked_until` and `failed_login_count`.
+4. Transitions `status` to `active` (from `invited`, `locked`, or
+   `deactivated`).
+5. Stamps `password_changed_at` so any stale JWTs the user might still hold
+   are invalidated.
+6. Emits a WARNING-level audit log entry (`event_name=auth.admin.recovered`,
+   `outcome_code=cli_recovery`) and writes a `login_attempt` row for the
+   audit trail.
 
 Exit codes:
 
 | Code | Meaning |
-|------|---------|
-| 0    | Success |
-| 2    | No user found for the given email |
-| 3    | User is not an admin (`is_admin=False`) |
-| 4    | User has been deleted (soft-delete) — create a new account instead |
+|---|---|
+| 0 | Success |
+| 2 | No user found for the given email |
+| 3 | User is not in the `admin` profile |
+| 4 | User has `status = deleted` (soft-deleted — create a new account instead) |
+
+Store the printed password securely and hand it to the user through a
+trusted channel. It is not retrievable after the command exits.
+
+---
 
 ## Step 3 — Clear a lockout without resetting the password
 
-If an admin account is locked but the password is known:
+If an admin account is locked (or a non-admin user is locked under the
+progressive lockout policy) but the password is still known:
 
 ```bash
-python -m app.cli unlock admin@example.com
+python -m app.cli unlock user@example.com
 ```
 
-This clears `locked_until`, resets `failed_login_count` to 0, and transitions
-the status back to `active` if it was `locked`.
+Sets `locked_until = NULL`, resets `failed_login_count = 0`, and transitions
+`status` from `locked` back to `active` if applicable. Works on users of any
+profile, not just admins. Exits with 2 if the user is not found.
 
-## Best practice — keep at least two admin accounts
+---
 
-The application shows a warning banner on the **User Management** page when
-there is only one active admin. Dismiss the banner by promoting a second user
-to the `admin` profile.
+## Step 4 — Bootstrap on a fresh database
+
+On a brand-new database with no users, the backend's lifespan hook calls
+`seed_admin()`, which creates the first admin from the environment:
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_EMAIL` | Login identifier for the seeded admin (required) |
+| `ADMIN_PASSWORD` | Initial password (required; must pass strength policy — ≥ 12 chars, mixed case, digit, special) |
+
+Once a user exists, these values are ignored on subsequent boots. If the
+env vars are missing on an empty DB the backend fails startup fast with
+guidance pointing here.
+
+> **Legacy.** `ADMIN_USERNAME` was the pre-SFBL-198 identity field and is no
+> longer accepted. Any deployment config still setting it should be updated
+> to `ADMIN_EMAIL`.
+
+In `auth_mode=none` (desktop profile) `seed_admin()` is skipped entirely —
+the desktop app has no login surface, so no admin exists.
+
+---
+
+## Keep at least two active admins
+
+The `/admin/users` page shows a warning banner when there is only one active
+admin. Promote a second user to the admin profile to dismiss it.
 
 Recommended setup:
-1. Bootstrap admin (set via `ADMIN_EMAIL` env var) — break-glass account, not
-   used for day-to-day work.
-2. At least one operational admin account tied to a real person's email.
 
-Having two admins means that if one account is locked or inaccessible, the
-other can reset it through the UI without needing CLI access.
+1. **Bootstrap admin** (seeded from `ADMIN_EMAIL`) — break-glass, not used
+   day-to-day.
+2. **At least one operational admin** tied to a real person's email — used
+   for actual administration.
 
-## Running the CLI in Docker
+With two admins, if one is locked out the other can reset their password
+through the UI without needing shell access. The "last active admin cannot
+be disabled, deactivated, or demoted" safeguard (SFBL-188) prevents the
+operational admin from accidentally locking the whole org out.
 
-```bash
-# One-shot command (does not require an interactive shell)
-docker exec <container-name> python -m app.cli admin-recover admin@example.com
+---
 
-# Interactive shell
-docker exec -it <container-name> bash
-python -m app.cli list-admins
-```
+## Security implications
 
-Replace `<container-name>` with the actual container name (e.g. `sfbl-backend`).
-Run `docker ps` if you are unsure.
+**Anyone with shell access to the backend process can recover any admin
+account.** This is intentional — it is the last resort when no other path is
+available.
+
+Practical controls:
+
+- Restrict shell access to the backend process to authorised operators
+  only (IAM, SSH certificates, `aws ecs execute-command` IAM policy, etc.).
+- Review the WARNING log line and `login_attempt` row that `admin-recover`
+  produces after each recovery — they are the audit trail.
+- Rotate the temporary password immediately after handing it to the user.

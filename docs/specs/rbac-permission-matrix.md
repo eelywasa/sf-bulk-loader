@@ -14,7 +14,7 @@ Three system profiles are seeded on startup: `admin`, `operator`, `viewer`.
 A fourth virtual profile `desktop` is used in desktop mode (`auth_mode=none`) and
 holds all permission keys — no enforcement cost in that mode.
 
-For the full design rationale see `docs/specs/multi-user-rbac.md` §5.
+For the full design rationale see `docs/specs/implemented/multi-user-rbac.md` §5 (archived).
 
 > **Note:** The `docs/specs/rbac-permission-matrix.yml` file is the single source of
 > truth for profile permission assignments. The table below and the backend test suite
@@ -206,13 +206,3 @@ logger.warning(
 
 See `docs/observability.md` → "Auth events" for the full taxonomy.
 
----
-
-## is_admin backstop (Epic B→C transition)
-
-During the transition from Epic B (permission model) to Epic C (multi-user invitations),
-users with `is_admin=True` but no `profile_id` assigned retain full access. This backstop
-is implemented in `require_permission()` (`backend/app/auth/permissions.py`).
-
-**This backstop must be removed once Epic C completes the user migration** — all users
-will have a `profile_id` at that point. See SFBL-197 Jira for the follow-up tracking.

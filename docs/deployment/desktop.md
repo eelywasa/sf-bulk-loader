@@ -1,5 +1,12 @@
 # Desktop Deployment
 
+## What this covers / who should read this
+
+The operator / developer guide for the Electron-packaged desktop distribution of
+the Bulk Loader. Read this to run the Electron shell from source, understand the
+single-user no-login model (`auth_mode=none`), or locate runtime data on disk.
+For hosted deployments (`self_hosted` / `aws_hosted`) see the sibling guides.
+
 > **Status: Implemented (Tickets 7–8)**
 
 ---
@@ -28,8 +35,9 @@ single-user local tool, not an accidental bypass. The `auth_mode=none` setting c
 backend to return a synthetic user for all requests, and the frontend skips the login screen
 entirely.
 
-There is no user database seeded on desktop startup. The `ADMIN_USERNAME` and
-`ADMIN_PASSWORD` bootstrap credentials are ignored.
+There is no user database seeded on desktop startup. The `ADMIN_EMAIL` and
+`ADMIN_PASSWORD` bootstrap credentials are ignored — `seed_admin()` is skipped
+entirely when `auth_mode=none`.
 
 ## Transport
 

@@ -6,7 +6,7 @@ Columns are designed to support:
   - Delivery log privacy (to_hash / to_domain by default; to_addr opt-in)
   - Idempotent sends (idempotency_key, unique when present)
 
-See docs/specs/email-service-spec.md § Data model for the authoritative
+See docs/specs/implemented/email-service-spec.md § Data model for the authoritative
 column definitions.
 """
 

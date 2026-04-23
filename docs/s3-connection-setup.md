@@ -1,6 +1,11 @@
 # S3 Connection Setup Guide
 
-This guide covers everything needed to configure an S3 bucket for use with the Salesforce Bulk Loader, including the required AWS-side setup and how to create the connection in the UI.
+## What this covers / who should read this
+
+Everything needed to configure an S3 bucket for use with the Bulk Loader —
+the AWS-side IAM user / policy / bucket setup, and the steps for creating the
+connection in the UI. Read this before creating an S3-backed input or output
+connection.
 
 Connections can be configured for three purposes, controlled by the **Direction** field:
 
