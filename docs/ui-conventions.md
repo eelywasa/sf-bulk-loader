@@ -9,6 +9,30 @@ interface consistent across light and dark mode.
 > must include a corresponding update to the relevant section here as part of the same
 > task. Do not defer documentation updates to a later ticket.
 
+**Design canvas:** the long-form design reference (artboards, component frames, both themes
+side-by-side) lives in the Bulk Loader UI Kit at
+<https://claude.ai/design/p/a65bd36c-39dc-49fa-bf9c-dde83235133b>. The canvas is a
+review aid, not a source of truth — tokens, `formStyles.ts`, and this doc are canonical.
+
+---
+
+## Design principles
+
+The system optimises for five things, in priority order. When two conflict, the earlier wins.
+
+1. **Precision over personality.** Bulk Loader is a tool for Salesforce admins moving
+   millions of records. The visual language is flat, dense, and legible — not playful.
+2. **Token-driven theming.** Every colour that differs between light and dark is a semantic
+   token. Components never contain `dark:` variants for ordinary theming. See below.
+3. **Elevation through surface step, not shadow.** Dark mode in particular expresses depth
+   by stepping from `surface-base` → `surface-raised` → `surface-elevated`. Shadows are
+   reserved for true overlays.
+4. **Semantic component names.** `DataTable`, `CsvPreviewPanel`, `Badge`, `EmptyState` — not
+   `BlueBox`, `StripedRows`. Pick a component by meaning, not by look.
+5. **A small vocabulary, used consistently.** One primary button per section. One empty-state
+   pattern. One error-alert style. Novel visual treatments need an RFC, not a local
+   `className`.
+
 ---
 
 ## Theming architecture
@@ -27,6 +51,19 @@ tailwind.config.ts  →  maps CSS vars → Tailwind utilities (bg-surface-raised
 Tailwind's `darkMode: 'class'` strategy is used. `ThemeContext.tsx` adds or removes the
 `dark` class from `<html>` and persists the choice to `localStorage`.
 
+### Three layers, in order of precedence
+
+1. **Primitives** — raw Tailwind palette (`gray.900`, `blue.500`). **Do not use directly in
+   components.**
+2. **Semantic tokens** — `surface-raised`, `content-primary`, `border-base`. **This is what
+   component code reads.**
+3. **Component constants** — `INPUT_CLASS`, `LABEL_CLASS`, `ALERT_ERROR` from
+   `formStyles.ts`. **This is what pages read for form and feedback patterns.**
+
+Writing `bg-gray-900` in a component breaks layer separation. Writing
+`bg-[var(--color-surface-raised)]` is legal but wasteful — use the `bg-surface-raised`
+Tailwind utility instead.
+
 ---
 
 ## Token quick reference
@@ -40,9 +77,14 @@ Tailwind's `darkMode: 'class'` strategy is used. `ThemeContext.tsx` adds or remo
 | `bg-surface-elevated` | white | gray-800 | Modals, dropdown panels |
 | `bg-surface-overlay` | white | gray-800 | Toasts, popovers |
 | `bg-surface-sunken` | gray-100 | gray-900 | Input fields, `<thead>`, code blocks |
+| `bg-surface-banded` † | slate-50 | `#0b1220` | Row banding in wide data tables (CSV preview) |
 | `bg-surface-hover` | gray-50 | gray-800 | Row/item hover state |
 | `bg-surface-active` | gray-100 | gray-700 | Pressed/activated state |
 | `bg-surface-selected` | blue-50 | blue-950 | Persistently selected rows/items |
+
+† `surface-banded` is new; the token itself lands in **SFBL-222**. It sits between `base`
+and `raised` to give wide tables a subtle scanning cue without competing with error/warning
+cell backgrounds.
 
 ### Content tokens — text and icons
 
@@ -155,6 +197,140 @@ const OVERLAY_SHADOW = 'shadow-xl shadow-black/10 dark:shadow-black/40'
 ```
 
 Do not add `shadow-md` or `shadow-lg` to cards, panels, or table rows.
+
+### Legitimate `dark:` exceptions
+
+Tokens resolve dark-mode values automatically, so `dark:` variants are reserved for cases
+tokens cannot express. Across the codebase the total should stay under ten. Legitimate
+cases:
+
+- Overlay shadow tuning — already captured in `OVERLAY_SHADOW_CLASS`.
+- Browser autofill colour override.
+- Third-party component patches.
+
+Document each exception with an inline comment. Anything outside those three is a missing
+token — escalate per "Adding to the system".
+
+---
+
+## Dark-mode review checklist
+
+Walk this list in **both** themes before merging any new component or major visual change.
+
+- [ ] All colours come from tokens. No raw hex, no `dark:` classes (except the documented
+  exceptions above).
+- [ ] Elevation works without shadow (surface step + border). Overlays use
+  `OVERLAY_SHADOW_CLASS`.
+- [ ] Focus ring visible on every surface the component can sit on (`surface-base`,
+  `surface-raised`, `surface-elevated`).
+- [ ] Selected state uses `surface-selected` + `content-selected`. Contrast ≥ 3:1 vs.
+  adjacent rows in both themes.
+- [ ] Cell-level state colours (`bg-error-bg`, `bg-warning-bg`) remain visually dominant
+  against any row banding or hover state.
+- [ ] Icons use `text-content-muted` or `text-content-primary`, never a raw colour class.
+- [ ] Skeleton loaders use `surface-sunken`.
+- [ ] Brand marks, avatars, inline images legible on both `surface-base` and
+  `surface-raised`.
+
+---
+
+## Typography
+
+### Families
+
+```css
+--font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+             Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji",
+             "Segoe UI Emoji";
+--font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+             Consolas, "Liberation Mono", "Courier New", monospace;
+```
+
+IBM Plex Sans and Mono are pair-designed — cap-height and x-height align in mixed strings
+like `Plan name · abc123…`, which matters in run detail and CSV preview. Plex Mono has a
+dotted zero (not slashed), important when `0` appears next to hex UUIDs. The system stack
+is the fallback so first paint is never blank.
+
+**Self-host:** fonts load from `@fontsource/ibm-plex-sans` and `@fontsource/ibm-plex-mono`
+(added in **SFBL-222**) — not Google Fonts. License: SIL OFL.
+
+**Weights used:** Sans 400 / 500 / 600 / 700. Mono 400 / 500.
+
+### Scale
+
+Tailwind default scale (rem-based). Do not introduce new sizes without an RFC.
+
+| Token | px | Use for |
+|---|---|---|
+| `text-xs` | 12 | Badges, helper text, metadata |
+| `text-sm` | 14 | Body, inputs, table cells |
+| `text-base` | 16 | Default body, card titles |
+| `text-lg` | 18 | Section headings within a page |
+| `text-xl` | 20 | Page section headers |
+| `text-2xl` | 24 | Page titles |
+| `text-3xl` | 30 | Hero/marketing only (rare) |
+
+**Floor:** never below `text-xs` (12 px). CSV preview cells use `text-xs` mono; that's the
+minimum.
+
+### Weight usage
+
+- **400** — body, default table cells
+- **500** — labels, badge text, nav items
+- **600** — headings, card titles, button labels
+- **700** — page titles only
+
+Italic is used only for empty-cell markers (`(empty)` in CSV preview) — never for emphasis.
+
+### Mono surfaces
+
+Use `font-mono` on:
+
+- CSV preview cells (all, including headers)
+- Run IDs, trace IDs, timestamps shown as identifiers (not as prose)
+- SOQL inputs and output blocks
+- File names, paths, column names referred to inline (`<code>`)
+
+Don't use mono for UI labels or prose — it's data, not chrome.
+
+---
+
+## Spacing, radii, shadows
+
+### Spacing
+
+Tailwind default 4 px scale (`p-1` = 4 px, `p-2` = 8 px, …). Rhythm inside components:
+
+- **Dense tables** — `px-3 py-1` cells, `px-4 py-2` headers
+- **Cards** — `p-4` default, `p-6` for feature cards
+- **Page padding** — `p-6` default
+- **Form field gap** — `gap-1.5` between label and input, `gap-4` between fields
+
+### Radii
+
+```css
+--radius-sm:   4px;    /* badges, small chips */
+--radius-md:   6px;    /* inputs, buttons, cards */
+--radius-lg:   8px;    /* modals, large panels */
+--radius-full: 9999px; /* avatars, progress tracks, pill badges */
+```
+
+(The `--radius-*` CSS custom properties themselves land in **SFBL-222**.) Tailwind exposes
+these as `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-full`. Do not use
+`rounded-xl` / `rounded-2xl` — reserved for brand/marketing, which doesn't exist yet.
+
+### Shadows
+
+```css
+--shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.05);          /* rare; pinned toolbars */
+--shadow-overlay: 0 20px 25px -5px rgb(0 0 0 / 0.10),     /* modals, dropdowns, toasts */
+                  0 8px 10px -6px rgb(0 0 0 / 0.10);
+```
+
+(Formalised as CSS custom properties in **SFBL-222**.) Access the overlay shadow via
+`OVERLAY_SHADOW_CLASS` from `formStyles.ts` so dark-mode tuning stays consistent. Cards,
+panels, and table rows use **no shadow** — rely on `border-border-base` sitting on the
+parent surface step.
 
 ---
 
@@ -271,20 +447,31 @@ checked-state fill colour, so it adapts to both themes without `dark:` variants.
 Components live in `src/components/ui/`. Use them consistently rather than building
 one-off equivalents inline.
 
-| Component | When to use |
-|---|---|
-| `Card` | Any bordered panel grouping related content |
-| `Button` | All interactive buttons; use the appropriate variant |
-| `Badge` | Status labels, tags, and counts |
-| `DataTable` | Any tabular data with columns and rows |
-| `Modal` | Dialogs requiring user action before continuing |
-| `Tabs` | Switching between content panels within a page |
-| `Toast` | Transient feedback messages |
-| `EmptyState` | Zero-item states in lists and tables |
-| `Progress` | Percentage or step-based progress indicators |
-| `CsvPreviewPanel` | All CSV file preview contexts |
-| `ComboInput` | Text input with autocomplete suggestions |
-| `PermissionGate` | Conditionally render UI based on RBAC permissions |
+| Component | When to use | Notes |
+|---|---|---|
+| `Card` | Any bordered panel grouping related content | `border border-border-base`, no shadow |
+| `Button` | All interactive buttons | Variants: `primary`, `secondary`, `ghost`, `danger`. One primary per section |
+| `Badge` | Status labels, counts, tags | Variants map 1:1 to state tokens |
+| `DataTable` | Server-curated rows (runs, plans, users) | Small N, known columns. **Not for CSV previews.** See "DataTable vs CsvPreviewPanel" below |
+| `Modal` | Dialogs requiring user action | Uses `surface-elevated` + `OVERLAY_SHADOW_CLASS` |
+| `Tabs` | Switching between content panels within a page | Active tab uses `border-border-focus` underline |
+| `Toast` | Transient feedback | Auto-dismiss 5 s default; error toasts manual dismiss |
+| `EmptyState` | Zero-item states in lists and tables | No duplicate CTA if page header already has one |
+| `Progress` | Percentage or step-based progress | Use `Progress`, not raw `<progress>` |
+| `CsvPreviewPanel` | All CSV file preview contexts | Virtualized, mono cells, cell-level state overlays |
+| `ComboInput` | Text input with autocomplete suggestions | — |
+| `PermissionGate` | Conditionally render UI based on RBAC | Never for route protection — that's `ProtectedRoute` |
+
+### Before building new
+
+Ask, in order:
+
+1. Does an existing component do this? Use it. Extend props before forking.
+2. Is this a 1–2 screen pattern? Inline it with tokens; don't create a component.
+3. Is this a ≥3 screen pattern? Propose in an RFC; add to `src/components/ui/`.
+
+**Never** create a new shared component in a `pages/` folder. Shared = `components/ui/`.
+Page-specific composition = `pages/*/components/`.
 
 ### PermissionGate
 
@@ -347,6 +534,71 @@ choosing one because of its colour:
 
 ---
 
+## DataTable vs CsvPreviewPanel
+
+These solve different problems. Mixing them is the most common mistake in PRs.
+
+| Concern | `DataTable` | `CsvPreviewPanel` |
+|---|---|---|
+| **Data source** | Server-curated rows | Raw CSV parse |
+| **Row count** | 10–100 | Up to millions — virtualized |
+| **Column count** | 4–8, fixed schema | 10–200, unknown headers |
+| **Column widths** | Flex to fill | Fixed (`min-w-[160px]`), horizontal scroll |
+| **Cell content** | Formatted — badges, links, icons | Raw strings, mono |
+| **Row click** | → detail page | Meaningless (no "detail" of a CSV row) |
+| **Column click** | Sort | Map to Salesforce field |
+| **Empty cells** | Usually impossible | Common — render `—` or `(empty)` |
+| **Error display** | Alert above table | Cell-level background (state tokens) |
+| **Font** | Sans | Mono |
+| **Sticky header** | Yes | Yes (+ sticky row-number column) |
+| **Row banding** | No | Yes — `surface-banded` on odd rows |
+
+If a new feature wants "a table that previews data" — it's a `CsvPreviewPanel`, not a
+`DataTable`. If it wants "a list of structured records with actions" — `DataTable`.
+
+---
+
+## Icon system
+
+**Font Awesome (solid)** via `@fortawesome/react-fontawesome` and
+`@fortawesome/free-solid-svg-icons`.
+
+### Usage
+
+```tsx
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faGaugeHigh, faPlay } from '@fortawesome/free-solid-svg-icons'
+
+<FontAwesomeIcon icon={faGaugeHigh} className="w-4 h-4 flex-shrink-0" />
+```
+
+### Rules
+
+- Colour via `text-content-*` tokens, never raw colour classes. Exception: state icons in
+  `Toast` use `text-red-500` / `text-green-500` etc. as stated brand-accent dots, not theme
+  colours.
+- Size via explicit `w-/h-` utilities: `w-3 h-3` (12 px inline),
+  `w-3.5 h-3.5` (14 px UI controls), `w-4 h-4` (16 px nav/buttons),
+  `w-5 h-5` (20 px toasts), `w-12 h-12` (48 px empty states).
+- Always include `flex-shrink-0` when an icon sits next to flex-grow text.
+- Pick semantically: `faPlay` for run, `faFolderOpen` for files, `faListCheck` for plans —
+  not by look.
+- Decorative icons next to a text label should be `aria-hidden="true"`. Icons that carry
+  meaning on their own need an `aria-label`.
+
+### Adding a new icon
+
+Import from `@fortawesome/free-solid-svg-icons` directly — no barrel/registry needed.
+Tree-shaking handles unused.
+
+### Don't mix icon libraries
+
+The repo uses Font Awesome only. Do not introduce Lucide, Heroicons, Tabler, or one-off
+inline `<svg>`. If the free-solid set is missing something, first choice is
+`@fortawesome/free-regular-svg-icons` (not `pro`). Raise an RFC if pro is truly needed.
+
+---
+
 ## State and feedback patterns
 
 ### Empty states
@@ -370,6 +622,53 @@ red-background patterns. For API errors surfaced in a table or list context, an
 
 Use `FIELD_ERROR_OUTLINE` on the field and `ERROR_TEXT_CLASS` on the message element
 below it. Keep validation messages short and specific.
+
+---
+
+## Accessibility baseline
+
+Target: **WCAG 2.2 AA**. Not negotiable — new components that fail this get rejected.
+
+### Contrast
+
+- **Body text on default surfaces:** ≥ 4.5:1.
+- **Large text (`text-lg` bold or `text-xl`+):** ≥ 3:1.
+- **UI chrome (borders, icons in context):** ≥ 3:1.
+- **`content-primary` on `surface-raised`** and **`surface-banded`** — both pass with
+  margin in light (≥ 14:1) and dark (≥ 12:1). Verified.
+- **State `-text` tokens on their `-bg` tokens** — all pass. If adding a new state, verify.
+
+### Focus
+
+Every interactive element must show a visible focus ring. `border-border-focus`
+(blue-500 / blue-400) is the default. Never remove focus styles — use `focus-visible:` if
+reducing focus on mouse users is needed.
+
+### Keyboard
+
+- All `<button>`, `<a>`, and form controls reachable by Tab.
+- Modals trap focus until closed; Esc closes.
+- Actionable `DataTable` rows activate on Enter/Space via their native `<button>` or
+  `<a>` wrapper.
+- **Planned (SFBL-233):** skip link on `AppShell.tsx` so keyboard users can jump past the
+  sidebar.
+- **Planned:** arrow-key row navigation in `DataTable` / `CsvPreviewPanel` — not yet
+  implemented; open an issue before assuming it.
+
+### Screen readers
+
+- Icons that carry meaning get `aria-label`. Icons next to a text label get
+  `aria-hidden="true"`.
+- Loading states announce via `aria-live="polite"`.
+- **`role="alert"` is an assertive live region** — use it only for critical, time-sensitive
+  messages that must interrupt the user (e.g. destructive-action confirmations, fatal
+  errors). For non-critical feedback prefer `aria-live="polite"` on the container, or
+  `role="status"` for brief status updates.
+
+### Motion
+
+Respect `prefers-reduced-motion`. A global CSS rule collapses transitions and animations
+to effectively zero for users who opt in; new animated components must honour this too.
 
 ---
 
@@ -455,3 +754,31 @@ The `docs-drift` CI job enforces this on every PR.
 | `shadow-md` on cards or panels | Heavy in dark mode; elevation via surface steps only | Remove shadow; rely on `border-border-base` |
 | Custom red/green alert panels | Duplicates state token system | Use `ALERT_ERROR` / `ALERT_SUCCESS` |
 | Hardcoded hex or RGB colours | Bypasses both token and Tailwind systems | Add a token or use the nearest Tailwind palette class |
+
+---
+
+## Proposing changes
+
+1. **Small** (a token, a prop, a doc clarification) — direct PR with before/after reasoning.
+2. **Medium** (new component, token group, convention) — RFC issue first: rationale,
+   alternatives considered, impact on existing components. Discussion, then PR.
+3. **Large** (font family, shadow scale overhaul, theming strategy) — RFC issue plus a
+   design review in the UI Kit with at least two alternatives as artboards. No
+   implementation PR until the design decision is approved.
+
+**When in doubt, smaller.** Two focused PRs land faster than one sprawling PR.
+
+---
+
+## Appendix — known theming gaps
+
+Theming questions without system-wide answers yet. Documented so each new component doesn't
+invent its own rule.
+
+| Gap | Notes |
+|---|---|
+| Image / chart dimming in dark mode | No system-wide rule. Most surfaces avoid it. Propose `filter: brightness(.85)` and open an issue before shipping. |
+| Syntax-highlight palette in dark | CSV preview and SOQL inputs use `content-*` + state tokens only. A dedicated `--code-*` set (landing in **SFBL-222** as `surface-code` / `content-code`) covers log/code blocks; richer highlighting is a future RFC. |
+| Opt-out-of-dark surfaces | Login, brand moments. Not used today. If needed, scope with an explicit `[data-theme="light"]` / `html.light` container, not negated utilities. |
+| Forced-colors mode | Untested. Add `CanvasText` / `Canvas` fallbacks if a customer requests. |
+| Chart and data-viz palette | Not yet defined. Any new chart must propose a palette as part of its RFC. |

@@ -58,6 +58,30 @@ stays green, but do not open the PR until the final ticket of the epic is
 implemented. The PR description lists all child tickets with a brief note per
 ticket.
 
+### Exception: drift-cleanup epics ship as 2–3 wave PRs
+
+The rule above assumes an epic delivers one coherent user-facing feature. When
+an epic is instead **drift cleanup across independent surfaces** (e.g. a design
+system alignment pass, a blanket dependency upgrade, a naming refactor), one
+bundled PR becomes a sprawling diff that's hard to review surgically and slow
+to revert. But per-ticket PRs also aren't right — 10+ CI runs and Codex review
+passes become the dominant cost.
+
+The middle ground: split the epic into **2–3 wave PRs grouped by theme**,
+sequenced by dependency. A typical split:
+
+1. **Foundation PR** — docs, specs, or contract changes that unblock the rest.
+2. **Primitives PR** — new tokens, shared components, or constants plus the
+   small migrations each naturally owns.
+3. **Migrations PR** — the fan-out that consumes the primitives across pages,
+   plus any a11y/polish sweeps.
+
+Decide the split at epic-planning time and record it in the epic's Jira
+description. Each wave PR still follows the epic DoD on documentation. Use
+this exception only when the epic genuinely has no single coherent feature
+binding its stories together; if merging half the stories would leave the
+product inconsistent, stick with one bundled PR.
+
 ### Epic Definition of Done — documentation
 
 Before opening the epic PR, audit `docs/` and `README.md` for staleness
