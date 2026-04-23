@@ -95,7 +95,7 @@ function FileList({ entries, selected, onSelect, onNavigate }: FileListProps) {
                 {entry.kind === 'directory' && (
                   <FontAwesomeIcon
                     icon={faFolder}
-                    className="text-amber-400 shrink-0"
+                    className="text-content-muted shrink-0"
                     aria-hidden="true"
                   />
                 )}

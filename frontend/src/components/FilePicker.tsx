@@ -98,7 +98,7 @@ export default function FilePicker({ source, onSelect, onClose }: FilePickerProp
             >
               <FontAwesomeIcon
                 icon={entry.kind === 'directory' ? faFolder : faFile}
-                className={entry.kind === 'directory' ? 'text-amber-400 shrink-0' : 'text-content-muted shrink-0'}
+                className="text-content-muted shrink-0"
                 aria-hidden="true"
               />
               <span className="truncate text-content-primary">{entry.name}</span>
