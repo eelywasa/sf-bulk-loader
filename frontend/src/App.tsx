@@ -22,6 +22,7 @@ import SettingsPartitioningPage from './pages/SettingsPartitioningPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
 import ForbiddenPage from './pages/ForbiddenPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import HelpPage from './pages/HelpPage'
 
 const createRouter = import.meta.env.VITE_ROUTER === 'hash' ? createHashRouter : createBrowserRouter
 
@@ -139,6 +140,7 @@ const router = createRouter([
           </ProtectedRoute>
         ),
       },
+      { path: '/help', element: <HelpPage /> },
       { path: '/profile', element: <Profile /> },
       {
         path: '/admin/users',
