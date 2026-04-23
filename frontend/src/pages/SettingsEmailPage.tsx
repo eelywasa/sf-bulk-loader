@@ -245,7 +245,7 @@ export default function SettingsEmailPage() {
 
   const preamble = emailBackend === 'noop' ? (
     <div className={`${ALERT_INFO} mb-6 flex items-start gap-2`}>
-      <FontAwesomeIcon icon={faCircleInfo} className="w-4 h-4 flex-shrink-0 mt-0.5" />
+      <FontAwesomeIcon icon={faCircleInfo} className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
       <p>
         Email is disabled. Set <span className="font-mono font-semibold">email_backend</span> to{' '}
         <span className="font-mono">smtp</span> or <span className="font-mono">ses</span> to configure delivery.

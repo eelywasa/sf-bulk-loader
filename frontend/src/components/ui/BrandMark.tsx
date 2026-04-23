@@ -31,7 +31,7 @@ export function BrandMark({ size = 'md', className }: BrandMarkProps) {
         className,
       )}
     >
-      <FontAwesomeIcon icon={faHexagonNodes} className={clsx('text-white', ICON_CLASSES[size])} />
+      <FontAwesomeIcon icon={faHexagonNodes} className={clsx('text-white', ICON_CLASSES[size])} aria-hidden="true" />
     </div>
   )
 }

@@ -80,7 +80,7 @@ function ToastContainer({
               style.container,
             )}
           >
-            <FontAwesomeIcon icon={style.faIcon} className={clsx('flex-shrink-0 w-5 h-5', style.icon)} />
+            <FontAwesomeIcon icon={style.faIcon} className={clsx('flex-shrink-0 w-5 h-5', style.icon)} aria-hidden="true" />
             <p className="flex-1 text-sm text-content-primary">{toast.message}</p>
             <button
               onClick={() => onRemove(toast.id)}

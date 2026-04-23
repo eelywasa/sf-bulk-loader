@@ -63,7 +63,7 @@ function SettingField({
             className="inline-flex items-center gap-1 text-xs font-medium bg-warning-bg border border-warning-border text-warning-text rounded px-1.5 py-0.5"
             title="Changing this setting requires a server restart to take effect"
           >
-            <FontAwesomeIcon icon={faRotate} className="w-3 h-3" />
+            <FontAwesomeIcon icon={faRotate} className="w-3 h-3" aria-hidden="true" />
             Restart required
           </span>
         )}
@@ -316,7 +316,7 @@ export function SettingsPageShell({
         <h1 className="text-xl font-semibold text-content-primary">{title}</h1>
         {cacheTtl > 0 && (
           <p className="mt-1 text-xs text-content-muted flex items-center gap-1.5">
-            <FontAwesomeIcon icon={faCircleInfo} className="w-3.5 h-3.5 flex-shrink-0" />
+            <FontAwesomeIcon icon={faCircleInfo} className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
             Changes take up to {cacheTtl}s to propagate across workers.
           </p>
         )}
@@ -344,7 +344,7 @@ export function SettingsPageShell({
 
         {Object.keys(fieldErrors).length > 0 && (
           <div className={`${ALERT_ERROR} flex items-start gap-2`}>
-            <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
             <div>
               <p className="font-medium">Some settings couldn't be saved</p>
               <ul className="mt-1 list-disc list-inside space-y-0.5">

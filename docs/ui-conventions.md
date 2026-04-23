@@ -640,8 +640,15 @@ import { faGaugeHigh, faPlay } from '@fortawesome/free-solid-svg-icons'
 - Always include `flex-shrink-0` when an icon sits next to flex-grow text.
 - Pick semantically: `faPlay` for run, `faFolderOpen` for files, `faListCheck` for plans —
   not by look.
-- Decorative icons next to a text label should be `aria-hidden="true"`. Icons that carry
-  meaning on their own need an `aria-label`.
+- **Accessibility rubric** (verified across all `<FontAwesomeIcon>` sites 2026-04-23):
+  - **Decorative** (icon sits next to visible text conveying the same meaning) →
+    `aria-hidden="true"` on the icon.
+  - **Meaningful** (icon is the only signal — icon-only button, status chip without
+    text) → `aria-label="<purpose>"` on the icon *or* on the wrapping interactive
+    element. If the wrapper already has `aria-label`, add `aria-hidden="true"` on the
+    icon to suppress double-announce.
+  - Every `<FontAwesomeIcon>` should have one of these two attributes. New code that
+    omits both fails review.
 
 ### Adding a new icon
 
