@@ -13,6 +13,9 @@ export type { ProgressProps, ProgressColor } from './Progress'
 export { Spinner } from './Spinner'
 export type { SpinnerProps, SpinnerSize } from './Spinner'
 
+export { BrandMark } from './BrandMark'
+export type { BrandMarkProps, BrandMarkSize } from './BrandMark'
+
 export { DataTable } from './DataTable'
 export type { DataTableProps, Column } from './DataTable'
 
