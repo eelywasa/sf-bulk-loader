@@ -476,6 +476,7 @@ one-off equivalents inline.
 | `Progress` | Percentage or step-based progress | Use `Progress`, not raw `<progress>` |
 | `Spinner` | Indeterminate loading indicator | `size` = `xs \| sm \| md \| lg`; `border-accent`; honours `prefers-reduced-motion` |
 | `BrandMark` | App hexagon logo next to "Bulk Loader" wordmark | `size` = `sm \| md \| lg`; `bg-brand`; `aria-hidden` — always pair with a visible wordmark |
+| `RequiredAsterisk` | Required-field marker inside a `<label>` | `text-error-text` + visually hidden " (required)" for screen readers. Always pair with native `required` / `aria-required` on the input |
 | `CsvPreviewPanel` | All CSV file preview contexts | Virtualized, mono cells, cell-level state overlays |
 | `ComboInput` | Text input with autocomplete suggestions | — |
 | `PermissionGate` | Conditionally render UI based on RBAC | Never for route protection — that's `ProtectedRoute` |

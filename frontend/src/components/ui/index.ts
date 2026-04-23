@@ -16,6 +16,8 @@ export type { SpinnerProps, SpinnerSize } from './Spinner'
 export { BrandMark } from './BrandMark'
 export type { BrandMarkProps, BrandMarkSize } from './BrandMark'
 
+export { RequiredAsterisk } from './RequiredAsterisk'
+
 export { DataTable } from './DataTable'
 export type { DataTableProps, Column } from './DataTable'
 

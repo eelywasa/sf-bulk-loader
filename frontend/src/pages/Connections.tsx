@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Button, Card, Badge, Modal, DataTable, EmptyState, Spinner, type Column } from '../components/ui'
+import { Button, Card, Badge, Modal, DataTable, EmptyState, RequiredAsterisk, Spinner, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
 import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR } from '../components/ui/formStyles'
 import { connectionsApi, inputConnectionsApi } from '../api/endpoints'
@@ -779,7 +779,7 @@ export default function Connections() {
           {/* Name */}
           <div>
             <label htmlFor="conn-name" className={LABEL_CLASS}>
-              Name <span className="text-red-500">*</span>
+              Name <RequiredAsterisk />
             </label>
             <input
               id="conn-name"
@@ -795,7 +795,7 @@ export default function Connections() {
           {/* Username */}
           <div>
             <label htmlFor="conn-username" className={LABEL_CLASS}>
-              Username <span className="text-red-500">*</span>
+              Username <RequiredAsterisk />
             </label>
             <input
               id="conn-username"
@@ -811,7 +811,7 @@ export default function Connections() {
           {/* Login URL */}
           <div>
             <label htmlFor="conn-login-url" className={LABEL_CLASS}>
-              Login URL <span className="text-red-500">*</span>
+              Login URL <RequiredAsterisk />
             </label>
             <select
               id="conn-login-url"
@@ -833,7 +833,7 @@ export default function Connections() {
           {/* Instance URL */}
           <div>
             <label htmlFor="conn-instance-url" className={LABEL_CLASS}>
-              Instance URL <span className="text-red-500">*</span>
+              Instance URL <RequiredAsterisk />
             </label>
             <input
               id="conn-instance-url"
@@ -849,7 +849,7 @@ export default function Connections() {
           {/* Consumer Key */}
           <div>
             <label htmlFor="conn-client-id" className={LABEL_CLASS}>
-              Consumer Key (Client ID) <span className="text-red-500">*</span>
+              Consumer Key (Client ID) <RequiredAsterisk />
             </label>
             <input
               id="conn-client-id"
@@ -866,7 +866,7 @@ export default function Connections() {
           <div>
             <label htmlFor="conn-private-key" className={LABEL_CLASS}>
               Private Key (PEM)
-              {!editingConn && <span className="text-red-500"> *</span>}
+              {!editingConn && <RequiredAsterisk />}
             </label>
             <textarea
               id="conn-private-key"
@@ -967,7 +967,7 @@ export default function Connections() {
 
           <div>
             <label htmlFor="ic-name" className={LABEL_CLASS}>
-              Name <span className="text-red-500">*</span>
+              Name <RequiredAsterisk />
             </label>
             <input
               id="ic-name"
@@ -998,7 +998,7 @@ export default function Connections() {
 
           <div>
             <label htmlFor="ic-bucket" className={LABEL_CLASS}>
-              Bucket <span className="text-red-500">*</span>
+              Bucket <RequiredAsterisk />
             </label>
             <input
               id="ic-bucket"
@@ -1043,7 +1043,7 @@ export default function Connections() {
           <div>
             <label htmlFor="ic-access-key-id" className={LABEL_CLASS}>
               Access Key ID
-              {!editingInputConn && <span className="text-red-500"> *</span>}
+              {!editingInputConn && <RequiredAsterisk />}
             </label>
             <input
               id="ic-access-key-id"
@@ -1059,7 +1059,7 @@ export default function Connections() {
           <div>
             <label htmlFor="ic-secret-access-key" className={LABEL_CLASS}>
               Secret Access Key
-              {!editingInputConn && <span className="text-red-500"> *</span>}
+              {!editingInputConn && <RequiredAsterisk />}
             </label>
             <input
               id="ic-secret-access-key"
