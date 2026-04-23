@@ -78,13 +78,19 @@ Tailwind utility instead.
 | `bg-surface-overlay` | white | gray-800 | Toasts, popovers |
 | `bg-surface-sunken` | gray-100 | gray-900 | Input fields, `<thead>`, code blocks |
 | `bg-surface-banded` † | slate-50 | `#0b1220` | Row banding in wide data tables (CSV preview) |
+| `bg-surface-code` ‡ | gray-900 | gray-900 | Log output, code blocks, SOQL panels |
 | `bg-surface-hover` | gray-50 | gray-800 | Row/item hover state |
 | `bg-surface-active` | gray-100 | gray-700 | Pressed/activated state |
 | `bg-surface-selected` | blue-50 | blue-950 | Persistently selected rows/items |
+| `bg-scrim` ‡ | `rgb(0 0 0 / 0.4)` | `rgb(0 0 0 / 0.6)` | Modal/dialog backdrops |
 
-† `surface-banded` is new; the token itself lands in **SFBL-222**. It sits between `base`
-and `raised` to give wide tables a subtle scanning cue without competing with error/warning
-cell backgrounds.
+† `surface-banded` sits between `base` and `raised` to give wide tables a subtle scanning
+cue without competing with error/warning cell backgrounds. Adopted by `CsvPreviewPanel`
+row banding (see SFBL-226 / SFBL-229 for consumer migrations).
+
+‡ `surface-code` / `content-code` / `scrim` intentionally resolve to the **same value in
+both themes** — code blocks read best on a dark background in any theme, and a scrim's job
+is to dim the page beneath a modal. Scrim is opacity-on-black, not a token alias.
 
 ### Content tokens — text and icons
 
@@ -98,6 +104,7 @@ cell backgrounds.
 | `text-content-inverse` | white | gray-900 | Text on solid-colour fills (e.g. primary button) |
 | `text-content-link` | blue-600 | blue-400 | Anchor and navigation links |
 | `text-content-selected` | blue-700 | blue-300 | Text/icons inside selected items |
+| `text-content-code` ‡ | gray-100 | gray-100 | Text inside `surface-code` log/code blocks |
 
 ### Border tokens
 
@@ -117,6 +124,16 @@ Also valid as divide and ring utilities: `divide-border-base`, `ring-border-focu
 | `bg-accent` / `text-accent` | blue-600 | blue-400 | Primary action and accent colour |
 | `bg-accent-hover` | blue-700 | blue-300 | Hover state for accent elements |
 | `bg-accent-soft` | blue-50 | blue-950 | Soft accent backgrounds |
+
+### Danger tokens
+
+Distinct from `error-*` (which is for validation messaging). Use `danger` for destructive
+actions — delete, abort, permanent removal — and always pair with a confirmation step.
+
+| Utility class | Light | Dark | Use for |
+|---|---|---|---|
+| `bg-danger` / `text-danger` | red-600 | red-500 | Destructive-action buttons and icons |
+| `bg-danger-hover` | red-700 | red-400 | Hover state for destructive elements |
 
 ### State tokens — error / success / warning / info
 
@@ -252,7 +269,7 @@ dotted zero (not slashed), important when `0` appears next to hex UUIDs. The sys
 is the fallback so first paint is never blank.
 
 **Self-host:** fonts load from `@fontsource/ibm-plex-sans` and `@fontsource/ibm-plex-mono`
-(added in **SFBL-222**) — not Google Fonts. License: SIL OFL.
+(imported from `src/main.tsx`) — not Google Fonts. License: SIL OFL.
 
 **Weights used:** Sans 400 / 500 / 600 / 700. Mono 400 / 500.
 
@@ -315,9 +332,8 @@ Tailwind default 4 px scale (`p-1` = 4 px, `p-2` = 8 px, …). Rhythm inside com
 --radius-full: 9999px; /* avatars, progress tracks, pill badges */
 ```
 
-(The `--radius-*` CSS custom properties themselves land in **SFBL-222**.) Tailwind exposes
-these as `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-full`. Do not use
-`rounded-xl` / `rounded-2xl` — reserved for brand/marketing, which doesn't exist yet.
+Tailwind exposes these as `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-full`. Do not
+use `rounded-xl` / `rounded-2xl` — reserved for brand/marketing, which doesn't exist yet.
 
 ### Shadows
 
@@ -327,8 +343,8 @@ these as `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-full`. Do not use
                   0 8px 10px -6px rgb(0 0 0 / 0.10);
 ```
 
-(Formalised as CSS custom properties in **SFBL-222**.) Access the overlay shadow via
-`OVERLAY_SHADOW_CLASS` from `formStyles.ts` so dark-mode tuning stays consistent. Cards,
+Access the overlay shadow via `OVERLAY_SHADOW_CLASS` from `formStyles.ts` so dark-mode
+tuning stays consistent. Cards,
 panels, and table rows use **no shadow** — rely on `border-border-base` sitting on the
 parent surface step.
 
@@ -778,7 +794,7 @@ invent its own rule.
 | Gap | Notes |
 |---|---|
 | Image / chart dimming in dark mode | No system-wide rule. Most surfaces avoid it. Propose `filter: brightness(.85)` and open an issue before shipping. |
-| Syntax-highlight palette in dark | CSV preview and SOQL inputs use `content-*` + state tokens only. A dedicated `--code-*` set (landing in **SFBL-222** as `surface-code` / `content-code`) covers log/code blocks; richer highlighting is a future RFC. |
+| Syntax-highlight palette in dark | CSV preview and SOQL inputs use `content-*` + state tokens only. `surface-code` / `content-code` cover log/code blocks (always-dark in both themes); richer syntax highlighting is a future RFC. |
 | Opt-out-of-dark surfaces | Login, brand moments. Not used today. If needed, scope with an explicit `[data-theme="light"]` / `html.light` container, not negated utilities. |
 | Forced-colors mode | Untested. Add `CanvasText` / `Canvas` fallbacks if a customer requests. |
 | Chart and data-viz palette | Not yet defined. Any new chart must propose a palette as part of its RFC. |

@@ -20,6 +20,8 @@ export default {
           elevated: 'var(--color-surface-elevated)',
           overlay:  'var(--color-surface-overlay)',
           sunken:   'var(--color-surface-sunken)',
+          banded:   'var(--color-surface-banded)',
+          code:     'var(--color-surface-code)',
           hover:    'var(--color-surface-hover)',
           active:   'var(--color-surface-active)',
           selected: 'var(--color-surface-selected)',
@@ -33,6 +35,7 @@ export default {
           inverse:     'var(--color-content-inverse)',
           link:        'var(--color-content-link)',
           selected:    'var(--color-content-selected)',
+          code:        'var(--color-content-code)',
         },
         border: {
           subtle: 'var(--color-border-subtle)',
@@ -45,6 +48,11 @@ export default {
           hover:   'var(--color-accent-hover)',
           soft:    'var(--color-accent-soft)',
         },
+        danger: {
+          DEFAULT: 'var(--color-danger)',
+          hover:   'var(--color-danger-hover)',
+        },
+        scrim: 'var(--color-scrim)',
         error: {
           bg:     'var(--color-error-bg)',
           border: 'var(--color-error-border)',
@@ -65,6 +73,20 @@ export default {
           border: 'var(--color-info-border)',
           text:   'var(--color-info-text)',
         },
+      },
+      fontFamily: {
+        sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)'],
+      },
+      borderRadius: {
+        sm:   'var(--radius-sm)',
+        md:   'var(--radius-md)',
+        lg:   'var(--radius-lg)',
+        full: 'var(--radius-full)',
+      },
+      boxShadow: {
+        sm:      'var(--shadow-sm)',
+        overlay: 'var(--shadow-overlay)',
       },
     },
   },
