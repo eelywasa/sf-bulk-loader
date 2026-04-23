@@ -241,6 +241,14 @@ export default function AppShell() {
 
   return (
     <div className="flex h-dvh overflow-hidden bg-surface-base">
+      {/* Skip-link — visible only when focused, for keyboard users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-3 focus:py-2 focus:rounded-md focus:bg-surface-elevated focus:text-content-primary focus:border focus:border-border-focus focus:shadow-lg focus:outline-none"
+      >
+        Skip to main content
+      </a>
+
       {/* Sidebar */}
       <aside className={clsx(
         'group/sidebar bg-surface-raised border-r border-border-base flex flex-col flex-shrink-0 transition-all duration-200',
@@ -337,7 +345,7 @@ export default function AppShell() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto min-w-0">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto min-w-0">
           <Outlet />
         </main>
       </div>

@@ -710,8 +710,9 @@ reducing focus on mouse users is needed.
 - Modals trap focus until closed; Esc closes.
 - Actionable `DataTable` rows activate on Enter/Space via their native `<button>` or
   `<a>` wrapper.
-- **Planned (SFBL-233):** skip link on `AppShell.tsx` so keyboard users can jump past the
-  sidebar.
+- **Skip link:** `AppShell.tsx` renders an `href="#main-content"` anchor styled
+  `sr-only focus:not-sr-only` as its first child, positioned absolutely when focused.
+  `<main>` has matching `id="main-content"` and `tabIndex={-1}` so focus lands on it.
 - **Planned:** arrow-key row navigation in `DataTable` / `CsvPreviewPanel` — not yet
   implemented; open an issue before assuming it.
 
@@ -727,8 +728,18 @@ reducing focus on mouse users is needed.
 
 ### Motion
 
-Respect `prefers-reduced-motion`. A global CSS rule collapses transitions and animations
-to effectively zero for users who opt in; new animated components must honour this too.
+Respect `prefers-reduced-motion`. A global CSS rule in `src/index.css` collapses
+`animation-duration` and `transition-duration` to `0.01ms !important`, forces
+`animation-iteration-count: 1`, and sets `scroll-behavior: auto` on `*, *::before,
+*::after` when the media query matches. New animated components must not override these
+values.
+
+### State-token contrast (re-verified 2026-04-23)
+
+After the SFBL-222 token additions, all state-`text` × state-`bg` pairs and the new
+`danger` / `surface-code` / `content-code` tokens still pass WCAG AA (≥ 4.5:1 body text,
+≥ 3:1 UI chrome) in both light and dark modes. `content-code` on `surface-code`
+(gray-100 on gray-900) is identical in both themes and passes at ~15:1.
 
 ---
 
