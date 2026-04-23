@@ -84,7 +84,7 @@ If `failure_pct > error_threshold_pct`:
 
 The threshold is evaluated **per step** — later steps don't retroactively
 re-open earlier decisions. See
-[`docs/architecture/run-execution.md`](../architecture/run-execution.md#error-threshold--abort)
+[`docs/architecture/run-execution.md`](../architecture/run-execution.md#error-threshold-abort)
 for the decision flow.
 
 ---
