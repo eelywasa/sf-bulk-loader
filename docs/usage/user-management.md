@@ -62,6 +62,24 @@ Unlocking is also available via the `admin-unlock` CLI — see
 
 ---
 
+## Resetting a user's 2FA
+
+If a teammate has lost their authenticator app and all backup codes, an
+admin can clear their 2FA factor:
+
+1. **Users → row ⋯ menu → Reset 2FA**.
+2. Confirm in the modal — the target user's TOTP secret and backup codes
+   are removed, and their existing sessions are invalidated.
+3. On their next sign-in they authenticate with password and (if
+   `require_2fa` is on) are forced into the enrolment wizard for a fresh
+   factor.
+
+The row action is gated on `admin.users.reset_2fa` — assign it alongside
+`users.manage` for admins who run user-support duties. See
+[Two-factor authentication](two-factor-auth.md) for the user-side flow.
+
+---
+
 ## Changing a user's profile
 
 Edit the row on the Users page and pick a new profile. The change takes
@@ -100,5 +118,6 @@ audit trail intact.
 
 - [Getting started](getting-started.md) — bootstrap admin + first login
 - [Account recovery](account-recovery.md) — forgotten passwords, lockouts
+- [Two-factor authentication](two-factor-auth.md) — enrol, sign in, rotate codes
 - [Admin recovery](admin-recovery.md) — break-glass CLI tools
 - Spec: [RBAC permission matrix](../specs/rbac-permission-matrix.md)

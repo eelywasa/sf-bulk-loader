@@ -1,4 +1,4 @@
-import { api, apiFetch } from './client'
+import { api, apiFetch, apiPost } from './client'
 import type {
   AllSettings,
   CategorySettings,
@@ -42,6 +42,15 @@ import type {
   ResendInviteResponse,
   ProfileListItem,
   AdminStatsResponse,
+  MfaEnrollStartResponse,
+  MfaEnrollConfirmResponse,
+  MfaBackupCodesResponse,
+  LoginResponse,
+  Login2faVerifyRequest,
+  Login2faEnrollStartResponse,
+  Login2faEnrollAndVerifyRequest,
+  Login2faEnrollAndVerifyResponse,
+  AdminReset2faResponse,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -294,6 +303,9 @@ export const adminUsersApi = {
     api.post<AdminResetPasswordResponse>(`/api/admin/users/${id}/reset-password`),
   resendInvite: (id: string) =>
     api.post<ResendInviteResponse>(`/api/admin/users/${id}/resend-invite`),
+  /** SFBL-249 / SFBL-251: admin row action — clear a user's 2FA factor. */
+  reset2fa: (id: string) =>
+    api.post<AdminReset2faResponse>(`/api/admin/users/${id}/reset-2fa`, {}),
   delete: (id: string) => api.delete(`/api/admin/users/${id}`),
   listProfiles: () => api.get<ProfileListItem[]>('/api/admin/profiles'),
   stats: () => api.get<AdminStatsResponse>('/api/admin/users/stats'),
@@ -467,6 +479,87 @@ export const meApi = {
 
   getLoginHistory: (limit = 10): Promise<LoginHistoryEntry[]> =>
     api.get<LoginHistoryEntry[]>(`/api/me/login-history?limit=${limit}`),
+}
+
+// ─── SFBL-248 / SFBL-251: two-phase login (pre-auth mfa_token bearer) ───────
+
+/**
+ * Fetch helper that sends a specific bearer instead of the stored session
+ * token. Used for the three `/api/auth/login/2fa*` endpoints, which are gated
+ * by the short-lived `mfa_token` minted by phase-1 login — a token the caller
+ * never persists to localStorage.
+ */
+async function apiPostWithBearer<T>(
+  path: string,
+  bearer: string,
+  body: unknown,
+): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearer}`,
+    },
+  })
+}
+
+export const loginMfaApi = {
+  /**
+   * Phase-1 login. Returns either a full `TokenResponse` (no MFA configured)
+   * or an `MfaRequiredResponse` with a short-lived `mfa_token` the caller
+   * then posts back to `/login/2fa` or `/login/2fa/enroll-and-verify`.
+   */
+  login: (body: { email: string; password: string }) =>
+    apiPost<LoginResponse>('/api/auth/login', body),
+
+  /** POST /api/auth/login/2fa — verify TOTP or backup code. */
+  verify: (mfaToken: string, body: Login2faVerifyRequest) =>
+    apiPostWithBearer<TokenResponse>('/api/auth/login/2fa', mfaToken, body),
+
+  /** POST /api/auth/login/2fa/enroll/start — forced-enrol QR mint. */
+  enrollStart: (mfaToken: string) =>
+    apiPostWithBearer<Login2faEnrollStartResponse>(
+      '/api/auth/login/2fa/enroll/start',
+      mfaToken,
+      {},
+    ),
+
+  /** POST /api/auth/login/2fa/enroll-and-verify — forced-enrol confirm. */
+  enrollAndVerify: (mfaToken: string, body: Login2faEnrollAndVerifyRequest) =>
+    apiPostWithBearer<Login2faEnrollAndVerifyResponse>(
+      '/api/auth/login/2fa/enroll-and-verify',
+      mfaToken,
+      body,
+    ),
+}
+
+// ─── SFBL-250: self-service 2FA enrolment + management ──────────────────────
+
+export const mfaApi = {
+  /** Begin TOTP enrolment — returns the secret, otpauth URI, and QR SVG. */
+  enrollStart: (): Promise<MfaEnrollStartResponse> =>
+    api.post<MfaEnrollStartResponse>('/api/auth/2fa/enroll/start', {}),
+
+  /**
+   * Confirm the first TOTP code and persist the factor. Returns a fresh
+   * access token (caller MUST replace the stored token) and the one-shot
+   * backup-code set.
+   */
+  enrollConfirm: (body: { secret_base32: string; code: string }): Promise<MfaEnrollConfirmResponse> =>
+    api.post<MfaEnrollConfirmResponse>('/api/auth/2fa/enroll/confirm', body),
+
+  /** Rotate the backup-code set — requires a valid current TOTP code. */
+  regenerateBackupCodes: (body: { code: string }): Promise<MfaBackupCodesResponse> =>
+    api.post<MfaBackupCodesResponse>('/api/auth/2fa/backup-codes/regenerate', body),
+
+  /**
+   * Disable the user's own 2FA factor. Requires password + current TOTP
+   * code. Returns 403 `tenant_enforced` when the tenant-wide `require_2fa`
+   * setting is on.
+   */
+  disable: (body: { password: string; code: string }): Promise<void> =>
+    api.post<void>('/api/auth/2fa/disable', body),
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────

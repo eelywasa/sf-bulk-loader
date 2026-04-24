@@ -30,7 +30,7 @@ def _seed_user(session_maker, user: User) -> None:
             s.add(user)
             await s.commit()
 
-    asyncio.get_event_loop().run_until_complete(_do())
+    asyncio.run(_do())
 
 
 def _seed_plan(session_maker, plan_id: str) -> None:
@@ -63,7 +63,7 @@ def _seed_plan(session_maker, plan_id: str) -> None:
             )
             await s.commit()
 
-    asyncio.get_event_loop().run_until_complete(_do())
+    asyncio.run(_do())
 
 
 @pytest.fixture
@@ -203,7 +203,7 @@ def test_list_filters_by_current_user(sub_client):
             ))
             await s.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed_other())
+    asyncio.run(_seed_other())
 
     resp = client.get("/api/notification-subscriptions")
     assert resp.status_code == 200
@@ -234,7 +234,7 @@ def test_get_cross_user_returns_403(sub_client):
             ))
             await s.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed())
+    asyncio.run(_seed())
 
     resp = client.get(f"/api/notification-subscriptions/{other_sub_id}")
     assert resp.status_code == 403
@@ -327,7 +327,7 @@ def test_test_endpoint_uses_real_dispatcher(sub_client, monkeypatch):
             assert rows[0].is_test is True
             assert rows[0].run_id is None
 
-    asyncio.get_event_loop().run_until_complete(_check())
+    asyncio.run(_check())
 
 
 # ── Desktop profile guard ────────────────────────────────────────────────────

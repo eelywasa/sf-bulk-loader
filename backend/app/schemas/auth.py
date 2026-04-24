@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -6,6 +7,23 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class MfaStatus(BaseModel):
+    """2FA enrolment status for the current user (SFBL-246 / SFBL-244).
+
+    Returned as the ``mfa`` sub-object on ``/api/auth/me``. When the user has
+    no ``user_totp`` row, ``enrolled`` is false, ``enrolled_at`` is null, and
+    ``backup_codes_remaining`` is 0.
+    """
+
+    enrolled: bool
+    enrolled_at: Optional[datetime] = None
+    backup_codes_remaining: int = 0
+    # SFBL-251: tenant-wide `require_2fa` setting (spec §2.7 / D8). When true the
+    # user cannot self-disable their own factor; the UI also uses this to decide
+    # whether to show forced-enrol messaging. Always present — no longer optional.
+    tenant_required: bool = False
 
 
 class TokenResponse(BaseModel):
@@ -17,6 +35,24 @@ class TokenResponse(BaseModel):
     # frontend can authenticate the password-change API, but clients MUST redirect
     # to the reset flow before granting normal access.  Frontend wiring: SFBL-202.
     must_reset_password: bool = False
+    # SFBL-248: explicit false on the full-token branch of the login response
+    # union — lets the frontend discriminate without peeking at keys.
+    mfa_required: bool = False
+
+
+class MfaRequiredResponse(BaseModel):
+    """Phase-1 response when login requires a second factor (SFBL-248).
+
+    The caller exchanges ``mfa_token`` for a full ``TokenResponse`` via
+    ``POST /api/auth/login/2fa`` (when already enrolled) or
+    ``POST /api/auth/login/2fa/enroll-and-verify`` (when ``must_enroll``
+    is true).
+    """
+
+    mfa_required: bool = True
+    mfa_token: str
+    mfa_methods: List[str]
+    must_enroll: bool
 
 
 class ProfileSummary(BaseModel):
@@ -39,6 +75,14 @@ class UserResponse(BaseModel):
     # permissions is a sorted list of permission keys held by the user.
     profile: Optional[ProfileSummary] = None
     permissions: List[str] = []
+    # SFBL-246: 2FA status. Defaults to "not enrolled" so the field is always
+    # present in the response even before the enrolment API lands.
+    mfa: MfaStatus = MfaStatus(
+        enrolled=False,
+        enrolled_at=None,
+        backup_codes_remaining=0,
+        tenant_required=False,
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

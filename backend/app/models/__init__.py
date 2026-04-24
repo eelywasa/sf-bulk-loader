@@ -22,6 +22,8 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.profile import Profile
 from app.models.profile_permission import ProfilePermission
 from app.models.user import User
+from app.models.user_backup_code import UserBackupCode
+from app.models.user_totp import UserTotp
 
 __all__ = [
     "AppSetting",
@@ -44,4 +46,6 @@ __all__ = [
     "Profile",
     "ProfilePermission",
     "User",
+    "UserBackupCode",
+    "UserTotp",
 ]

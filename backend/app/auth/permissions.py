@@ -39,6 +39,7 @@ FILES_VIEW_CONTENTS = "files.view_contents"
 
 # Admin permissions
 USERS_MANAGE = "users.manage"
+USERS_RESET_2FA = "admin.users.reset_2fa"
 SYSTEM_SETTINGS = "system.settings"
 
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(
@@ -54,6 +55,7 @@ ALL_PERMISSION_KEYS: frozenset[str] = frozenset(
         FILES_VIEW,
         FILES_VIEW_CONTENTS,
         USERS_MANAGE,
+        USERS_RESET_2FA,
         SYSTEM_SETTINGS,
     }
 )

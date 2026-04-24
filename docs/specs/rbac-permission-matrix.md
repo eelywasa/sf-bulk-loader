@@ -38,6 +38,7 @@ For the full design rationale see `docs/specs/implemented/multi-user-rbac.md` §
 | `files.view` | ✓ | ✓ | ✓ | Browse files list and metadata |
 | `files.view_contents` | ✓ | ✓ | ✗ | Preview / download raw file contents |
 | `users.manage` | ✓ | ✗ | ✗ | Full user management (invite, edit, deactivate) |
+| `admin.users.reset_2fa` | ✓ | ✗ | ✗ | Clear another user's 2FA factor + backup codes (SFBL-249) |
 | `system.settings` | ✓ | ✗ | ✗ | View / change system settings |
 
 ### Notes
@@ -142,6 +143,7 @@ For the full design rationale see `docs/specs/implemented/multi-user-rbac.md` §
 | `POST` | `/api/admin/users/{id}/deactivate` | `users.manage` | Deactivate (Epic C) |
 | `POST` | `/api/admin/users/{id}/reactivate` | `users.manage` | Reactivate (Epic C) |
 | `DELETE` | `/api/admin/users/{id}` | `users.manage` | Soft-delete (Epic C) |
+| `POST` | `/api/admin/users/{id}/reset-2fa` | `admin.users.reset_2fa` | Clear target user's 2FA (SFBL-249) |
 
 ### Authenticated-only (no permission key — any authenticated user)
 

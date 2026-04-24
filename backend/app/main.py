@@ -23,6 +23,8 @@ from app.api.admin_users import router as admin_users_router, profiles_router as
 from app.api.invitations import router as invitations_router
 from app.api.settings import router as settings_router
 from app.api.auth import router as auth_router
+from app.api.auth_2fa import router as auth_2fa_router
+from app.api.auth_login_2fa import router as auth_login_2fa_router
 from app.api.auth_reset import router as auth_reset_router
 from app.api.me import router as me_router
 from app.api.profile import router as profile_router
@@ -70,6 +72,14 @@ async def lifespan(app: FastAPI):
     # Startup: seed initial admin user if database is empty
     async with AsyncSessionLocal() as session:
         await seed_admin(session)
+
+    # Startup: prime the 2FA tenant-required gauge from the current setting so
+    # the metric reflects reality even before the first admin toggle.
+    try:
+        from app.observability.metrics import set_mfa_tenant_required
+        set_mfa_tenant_required(bool(await _svc.get("require_2fa")))
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to prime require_2fa gauge at startup")
 
     # Startup: initialise email service singleton (reads email_backend from DB)
     await init_email_service_async(AsyncSessionLocal)
@@ -141,6 +151,9 @@ if settings.auth_mode != "none":
     app.include_router(admin_profiles_router)
     app.include_router(settings_router)
 app.include_router(auth_router)
+if settings.auth_mode != "none":
+    app.include_router(auth_2fa_router)
+    app.include_router(auth_login_2fa_router)
 app.include_router(auth_reset_router)
 # Invitation-accept endpoints are public (token is the credential) — always registered
 app.include_router(invitations_router)

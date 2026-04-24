@@ -63,6 +63,28 @@ def create_access_token(user: User, expiry_minutes: Optional[int] = None) -> str
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
+def create_mfa_token(
+    user_id: str, *, must_enroll: bool, ttl_minutes: int = 5
+) -> str:
+    """Create a short-TTL pre-auth token that only unlocks the ``/login/2fa*`` routes.
+
+    The token carries ``mfa_pending=true`` so ``get_current_user`` rejects it
+    (see SFBL-247). Only :func:`get_mfa_pending_user` accepts it, and only
+    when both ``mfa_pending`` and the expected ``must_enroll`` flag match.
+    """
+    now = datetime.now(tz=timezone.utc)
+    exp = int(now.timestamp()) + ttl_minutes * 60
+    payload = {
+        "sub": user_id,
+        "mfa_pending": True,
+        "must_enroll": bool(must_enroll),
+        "purpose": "mfa_challenge",
+        "iat": int(now.timestamp()),
+        "exp": exp,
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
 def decode_access_token(token: str) -> dict:
     """Decode and validate a JWT. Raises HTTP 401 on any failure."""
     try:
@@ -100,6 +122,15 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # SFBL-247/248: reject tokens carrying the ``mfa_pending`` step-up marker
+    # from general-purpose endpoints. Only the ``/api/auth/2fa/*`` enrol and
+    # challenge routes accept these (via ``get_mfa_pending_user``).
+    if payload.get("mfa_pending") is True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Two-factor authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
     user = await db.get(User, user_id)
@@ -178,6 +209,90 @@ async def get_current_user(
                 )
 
     return user
+
+
+async def get_mfa_pending_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[User, bool]:
+    """Dependency used exclusively by ``/api/auth/login/2fa*`` routes.
+
+    Returns ``(user, must_enroll)``. Rejects any bearer token that isn't
+    a valid ``mfa_pending`` token or whose user is not permitted to log in
+    (inactive / locked). Per spec §4.2, this is the only dependency that
+    accepts ``mfa_pending=true`` tokens.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "mfa_token_invalid",
+                "message": "MFA challenge token is required.",
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "mfa_token_invalid",
+                "message": "MFA challenge token is invalid or expired.",
+            },
+        ) from exc
+
+    if payload.get("mfa_pending") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "mfa_token_invalid",
+                "message": "MFA challenge token is invalid.",
+            },
+        )
+
+    user_id: Optional[str] = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "mfa_token_invalid",
+                "message": "MFA challenge token is invalid.",
+            },
+        )
+
+    user = await db.get(User, user_id)
+    if user is None or user.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "mfa_token_invalid",
+                "message": "MFA challenge token is invalid.",
+            },
+        )
+
+    # Mirror the tier-1 lockout gate in ``get_current_user`` — without this,
+    # a user locked by ``handle_failed_attempt`` after receiving a valid
+    # ``mfa_token`` could still complete login and bypass the lockout window.
+    if user.locked_until is not None:
+        lu = user.locked_until
+        if lu.tzinfo is None:
+            lu = lu.replace(tzinfo=timezone.utc)
+        if lu > datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "code": "account_locked",
+                    "message": "Account temporarily locked — please try again later.",
+                    "locked_until": lu.isoformat(),
+                },
+            )
+
+    return user, bool(payload.get("must_enroll", False))
 
 
 async def require_admin(current_user: User = Depends(get_current_user)) -> User:

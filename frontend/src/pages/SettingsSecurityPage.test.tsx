@@ -165,4 +165,72 @@ describe('SettingsSecurityPage', () => {
     expect(screen.getByLabelText('login_rate_limit_attempts')).toBeInTheDocument()
     expect(screen.getByLabelText('login_tier1_threshold')).toBeInTheDocument()
   })
+
+  it('renders require_2fa toggle and the forced-enrol warning banner (SFBL-251)', async () => {
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME)
+      .mockResolvedValueOnce(MOCK_USER)
+    vi.mocked(endpoints.getSettingsCategory).mockResolvedValue({
+      data: {
+        category: 'security',
+        settings: [
+          ...MOCK_SECURITY_CATEGORY.settings,
+          {
+            key: 'require_2fa',
+            value: false,
+            type: 'bool',
+            is_secret: false,
+            description: 'Require 2FA for all users in this tenant.',
+            restart_required: false,
+            updated_at: null,
+          },
+        ],
+      },
+      cacheTtl: 60,
+    })
+    vi.spyOn(endpoints, 'updateSettingsCategory').mockResolvedValue({
+      data: {
+        category: 'security',
+        settings: [
+          {
+            key: 'require_2fa',
+            value: true,
+            type: 'bool',
+            is_secret: false,
+            description: 'Require 2FA for all users in this tenant.',
+            restart_required: false,
+            updated_at: null,
+          },
+        ],
+      },
+      cacheTtl: 60,
+    })
+
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('require_2fa')).toBeInTheDocument()
+    })
+
+    // Warning banner rendered.
+    expect(screen.getByTestId('require-2fa-warning')).toBeInTheDocument()
+    expect(
+      screen.getByText(/existing sessions remain signed in/i),
+    ).toBeInTheDocument()
+
+    // Toggle flips and triggers the settings PATCH.
+    const toggle = screen.getByLabelText('require_2fa') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(endpoints.updateSettingsCategory).toHaveBeenCalledWith('security', {
+        require_2fa: true,
+      })
+    })
+  })
 })

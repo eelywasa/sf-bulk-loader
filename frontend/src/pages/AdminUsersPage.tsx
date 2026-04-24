@@ -29,6 +29,7 @@ import {
 } from '../components/ui/formStyles'
 import { adminUsersApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
+import { usePermission } from '../hooks/usePermission'
 import type { AdminUser, ProfileListItem } from '../api/types'
 
 // ─── Sole-admin warning banner ────────────────────────────────────────────────
@@ -482,15 +483,17 @@ type ActionType =
   | 'reactivate'
   | 'unlock'
   | 'reset-password'
+  | 'reset-2fa'
   | 'resend-invite'
   | 'delete'
 
 interface ActionsMenuProps {
   user: AdminUser
   onAction: (action: ActionType, user: AdminUser) => void
+  canReset2fa: boolean
 }
 
-function ActionsMenu({ user, onAction }: ActionsMenuProps) {
+function ActionsMenu({ user, onAction, canReset2fa }: ActionsMenuProps) {
   const actions: {
     label: string
     action: ActionType
@@ -520,6 +523,17 @@ function ActionsMenu({ user, onAction }: ActionsMenuProps) {
       label: 'Reset Password',
       action: 'reset-password',
       show: user.status !== 'deleted' && user.status !== 'invited',
+      variant: 'secondary',
+    },
+    {
+      label: 'Reset 2FA',
+      action: 'reset-2fa',
+      // SFBL-251: only show when the caller holds `admin.users.reset_2fa`.
+      // Hidden on invited/deleted rows — they have no factor to clear.
+      show:
+        canReset2fa &&
+        user.status !== 'deleted' &&
+        user.status !== 'invited',
       variant: 'secondary',
     },
     {
@@ -567,6 +581,7 @@ type StatusFilter = (typeof STATUS_FILTERS)[number]
 export default function AdminUsersPage() {
   const queryClient = useQueryClient()
   const toast = useToast()
+  const canReset2fa = usePermission('admin.users.reset_2fa')
 
   // Sole-admin banner dismiss (session-only via localStorage)
   const [bannerDismissed, setBannerDismissed] = useState<boolean>(
@@ -626,6 +641,8 @@ export default function AdminUsersPage() {
           return adminUsersApi.unlock(user.id)
         case 'reset-password':
           return adminUsersApi.resetPassword(user.id)
+        case 'reset-2fa':
+          return adminUsersApi.reset2fa(user.id)
         case 'resend-invite':
           return adminUsersApi.resendInvite(user.id)
         case 'delete':
@@ -646,6 +663,20 @@ export default function AdminUsersPage() {
           token: (data as { raw_token: string }).raw_token,
           email: user.email,
         })
+      } else if (action === 'reset-2fa' && data && 'user_id' in data) {
+        // SFBL-251: surface whether the user had a factor and how many
+        // backup codes were cleared so the admin has closure.
+        const r = data as {
+          had_factor: boolean
+          backup_codes_cleared: number
+        }
+        if (r.had_factor) {
+          toast.success(
+            `2FA reset — cleared factor and ${r.backup_codes_cleared} backup code${r.backup_codes_cleared === 1 ? '' : 's'}.`,
+          )
+        } else {
+          toast.success('2FA reset — user had no factor configured.')
+        }
       } else {
         const labels: Record<string, string> = {
           deactivate: 'User deactivated',
@@ -708,6 +739,12 @@ export default function AdminUsersPage() {
       confirmLabel: 'Reset Password',
       variant: 'danger',
     }),
+    'reset-2fa': (u) => ({
+      title: 'Reset 2FA',
+      message: `Reset 2FA for ${u.email}? They will be required to re-enrol on next login and all their existing sessions will be signed out.`,
+      confirmLabel: 'Reset 2FA',
+      variant: 'danger',
+    }),
     'resend-invite': (u) => ({
       title: 'Resend Invitation',
       message: `Issue a new invitation token for ${u.email}?`,
@@ -766,7 +803,9 @@ export default function AdminUsersPage() {
     {
       key: 'actions',
       header: '',
-      render: (u) => <ActionsMenu user={u} onAction={handleAction} />,
+      render: (u) => (
+        <ActionsMenu user={u} onAction={handleAction} canReset2fa={canReset2fa} />
+      ),
       className: 'text-right',
       headerClassName: 'text-right',
     },

@@ -437,6 +437,68 @@ def record_auth_invitation(outcome: str) -> None:
     auth_invitations_total.labels(outcome=outcome).inc()
 
 
+# ── 2FA metrics (SFBL-244 / SFBL-252) ─────────────────────────────────────────
+#
+# Cardinality ceilings:
+#   auth_mfa_verify_total{outcome, method} — outcome ∈ {ok, wrong_mfa,
+#     mfa_user_limit, mfa_token_invalid, mfa_backup_codes_exhausted} × method
+#     ∈ {totp, backup_code} ⇒ ≤ 10 series.
+#   auth_mfa_enroll_total{outcome} — outcome ∈ {ok, invalid_code, invalid_secret,
+#     already_enrolled, started} ⇒ ≤ 5 series.
+#   auth_mfa_backup_codes_remaining_on_consume — one histogram, no labels
+#     (a per-user gauge would be unbounded cardinality).
+#   auth_mfa_tenant_required — single gauge tracking the current tenant setting.
+
+auth_mfa_verify_total = Counter(
+    "sfbl_auth_mfa_verify_total",
+    "Total 2FA verification attempts at /api/auth/login/2fa, by outcome and method.",
+    ["outcome", "method"],
+)
+
+auth_mfa_enroll_total = Counter(
+    "sfbl_auth_mfa_enroll_total",
+    "Total 2FA enrolment outcomes (start + confirm success/failure).",
+    ["outcome"],
+)
+
+auth_mfa_backup_codes_remaining_on_consume = Histogram(
+    "sfbl_auth_mfa_backup_codes_remaining_on_consume",
+    "Number of backup codes remaining immediately after a code is consumed.",
+    buckets=(0, 1, 2, 3, 5, 7, 10),
+)
+
+auth_mfa_tenant_required = Gauge(
+    "sfbl_auth_mfa_tenant_required",
+    "Current value of the tenant-wide require_2fa setting (0 = off, 1 = on).",
+)
+
+
+def record_mfa_verify(outcome: str, method: str) -> None:
+    """Increment the 2FA verify counter.
+
+    ``outcome`` should be drawn from :class:`OutcomeCode` (typically
+    ``MFA_OK``, ``WRONG_MFA``, ``MFA_USER_LIMIT``, ``MFA_TOKEN_INVALID``,
+    or ``MFA_BACKUP_CODES_EXHAUSTED``). ``method`` is ``"totp"`` or
+    ``"backup_code"``.
+    """
+    auth_mfa_verify_total.labels(outcome=outcome, method=method).inc()
+
+
+def record_mfa_enroll(outcome: str) -> None:
+    """Increment the 2FA enroll counter."""
+    auth_mfa_enroll_total.labels(outcome=outcome).inc()
+
+
+def observe_mfa_backup_codes_remaining(remaining: int) -> None:
+    """Record the number of backup codes left after a consume."""
+    auth_mfa_backup_codes_remaining_on_consume.observe(remaining)
+
+
+def set_mfa_tenant_required(enabled: bool) -> None:
+    """Set the tenant-wide require_2fa gauge (0 or 1)."""
+    auth_mfa_tenant_required.set(1 if enabled else 0)
+
+
 # ── Bulk query metric helpers (SFBL-171) ──────────────────────────────────────
 
 

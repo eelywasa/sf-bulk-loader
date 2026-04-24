@@ -131,6 +131,10 @@ hiddenimports = [
 
     # bcrypt (password hashing)
     'bcrypt',
+
+    # pyotp + segno (2FA TOTP verification + QR rendering — SFBL-244)
+    'pyotp',
+    'segno',
 ]
 
 # Collect all uvicorn submodules — its protocol loading is dynamic

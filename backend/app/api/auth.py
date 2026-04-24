@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -13,8 +13,23 @@ from app.models.login_attempt import LoginAttempt
 from app.models.user import User
 from app.observability.events import AuthEvent, OutcomeCode
 from app.observability.metrics import record_auth_login_attempt
-from app.schemas.auth import AuthConfigResponse, LoginRequest, ProfileSummary, TokenResponse, UserResponse
-from app.services.auth import create_access_token, get_current_user, verify_password
+from app.models.user_backup_code import UserBackupCode
+from app.models.user_totp import UserTotp
+from app.schemas.auth import (
+    AuthConfigResponse,
+    LoginRequest,
+    MfaRequiredResponse,
+    MfaStatus,
+    ProfileSummary,
+    TokenResponse,
+    UserResponse,
+)
+from app.services.auth import (
+    create_access_token,
+    create_mfa_token,
+    get_current_user,
+    verify_password,
+)
 from app.services.auth_lockout import handle_failed_attempt, handle_successful_login
 from app.services.rate_limit import check_and_record
 
@@ -71,12 +86,65 @@ async def _persist_login_attempt(
         )
 
 
-@router.post("/login", response_model=TokenResponse)
+async def _login_success_phase2(
+    db: AsyncSession,
+    user: User,
+    *,
+    ip: str,
+    ua: str | None,
+    email: str,
+) -> TokenResponse:
+    """Apply all "login succeeded" side effects and mint a full-access JWT.
+
+    Shared between ``POST /api/auth/login`` (when MFA is not in play) and the
+    ``/api/auth/login/2fa`` family (SFBL-248). Resets lockout counters, writes
+    a success ``login_attempt`` row, emits ``auth.login.succeeded``, honours
+    ``must_reset_password``, and commits the transaction.
+    """
+    must_reset = user.must_reset_password
+    outcome_code = OutcomeCode.MUST_RESET_PASSWORD if must_reset else OutcomeCode.OK
+    _log.info(
+        "Login succeeded (must reset password)" if must_reset else "Login succeeded",
+        extra={
+            "event_name": AuthEvent.LOGIN_SUCCEEDED,
+            "outcome_code": outcome_code,
+            "ip": ip,
+            "email": email,
+            "user_id": user.id,
+        },
+    )
+    await handle_successful_login(db, user)
+    user.last_login_at = datetime.now(timezone.utc)
+    record_auth_login_attempt(outcome_code)
+    await _persist_login_attempt(
+        db,
+        email=email,
+        ip=ip,
+        user_agent=ua,
+        outcome=outcome_code,
+        user_id=user.id,
+    )
+    await db.commit()
+
+    from app.services.settings.service import settings_service as _svc
+    _jwt_expiry: int = (
+        await _svc.get("jwt_expiry_minutes") if _svc is not None
+        else settings.jwt_expiry_minutes
+    )
+    return TokenResponse(
+        access_token=create_access_token(user, expiry_minutes=_jwt_expiry),
+        expires_in=_jwt_expiry * 60,
+        must_reset_password=must_reset,
+        mfa_required=False,
+    )
+
+
+@router.post("/login", response_model=None)
 async def login(
     body: LoginRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> TokenResponse | MfaRequiredResponse:
     """Authenticate with email + password and return a JWT.
 
     SFBL-198: login identifier is now email (was username). Old {username, password}
@@ -287,72 +355,95 @@ async def login(
             detail="Invalid credentials",
         )
 
-    # ── Successful authentication ─────────────────────────────────────────────
-    must_reset = user.must_reset_password
+    # ── Password OK — decide phase-1 vs phase-2 (SFBL-248) ────────────────────
+    # Branch precedence (spec §2.2):
+    #   (a) user_totp row exists → phase-1, must_enroll=false
+    #   (b) no row + tenant require_2fa on → phase-1, must_enroll=true
+    #   (c) otherwise → full phase-2 side effects
+    totp_row = (
+        await db.execute(select(UserTotp).where(UserTotp.user_id == user.id))
+    ).scalar_one_or_none()
 
-    if must_reset:
-        outcome_code = OutcomeCode.MUST_RESET_PASSWORD
+    require_2fa_on = False
+    if totp_row is None:
+        from app.services.settings.service import settings_service as _svc
+        require_2fa_on = bool(
+            await _svc.get("require_2fa") if _svc is not None
+            else getattr(settings, "require_2fa", False)
+        )
+
+    if totp_row is not None or require_2fa_on:
+        must_enroll = totp_row is None
+        mfa_methods = ["enroll"] if must_enroll else ["totp", "backup_code"]
         _log.info(
-            "Login succeeded (must reset password)",
+            "MFA challenge issued",
             extra={
-                "event_name": AuthEvent.LOGIN_SUCCEEDED,
-                "outcome_code": outcome_code,
+                "event_name": AuthEvent.LOGIN_MFA_CHALLENGE_ISSUED,
+                "outcome_code": OutcomeCode.MFA_CHALLENGE_ISSUED,
                 "ip": ip,
                 "email": email,
                 "user_id": user.id,
+                "must_enroll": must_enroll,
             },
         )
-    else:
-        outcome_code = OutcomeCode.OK
-        _log.info(
-            "Login succeeded",
-            extra={
-                "event_name": AuthEvent.LOGIN_SUCCEEDED,
-                "outcome_code": outcome_code,
-                "ip": ip,
-                "email": email,
-                "user_id": user.id,
-            },
+        record_auth_login_attempt(OutcomeCode.MFA_CHALLENGE_ISSUED)
+        await _persist_login_attempt(
+            db,
+            email=email,
+            ip=ip,
+            user_agent=ua,
+            outcome=OutcomeCode.MFA_CHALLENGE_ISSUED,
+            user_id=user.id,
+        )
+        await db.commit()
+        return MfaRequiredResponse(
+            mfa_required=True,
+            mfa_token=create_mfa_token(user.id, must_enroll=must_enroll),
+            mfa_methods=mfa_methods,
+            must_enroll=must_enroll,
         )
 
-    # SFBL-191: reset lockout counters on successful authentication
-    await handle_successful_login(db, user)
-
-    record_auth_login_attempt(outcome_code)
-    await _persist_login_attempt(
-        db,
-        email=email,
-        ip=ip,
-        user_agent=ua,
-        outcome=outcome_code,
-        user_id=user.id,
-    )
-    await db.commit()
-
-    # Read JWT expiry from DB-backed settings (SFBL-156).
-    from app.services.settings.service import settings_service as _svc
-    _jwt_expiry: int = (
-        await _svc.get("jwt_expiry_minutes") if _svc is not None
-        else settings.jwt_expiry_minutes
-    )
-    return TokenResponse(
-        access_token=create_access_token(user, expiry_minutes=_jwt_expiry),
-        expires_in=_jwt_expiry * 60,
-        must_reset_password=must_reset,
-    )
+    # ── Phase-2 success (no MFA configured) ───────────────────────────────────
+    return await _login_success_phase2(db, user, ip=ip, ua=ua, email=email)
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
+async def me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
     """Return the authenticated user's profile including RBAC permissions.
 
     Contract with SFBL-196 (frontend):
     - ``profile.name``: "admin" | "operator" | "viewer" | "desktop"
     - ``permissions``: sorted list of permission keys held by the user.
       In desktop mode (auth_mode=none) returns all keys and profile.name="desktop".
+
+    SFBL-246: also returns an ``mfa`` sub-object describing the user's 2FA
+    enrolment state. Desktop mode always reports not-enrolled (2FA does not
+    apply when ``auth_mode=none`` — spec §0 D2).
     """
     from app.config import settings as _settings
     from app.auth.permissions import ALL_PERMISSION_KEYS
+
+    # SFBL-251: surface the tenant-wide `require_2fa` setting so the UI can
+    # render the forced-enrol / cannot-self-disable affordances.
+    tenant_required = False
+    if _settings.auth_mode != "none":
+        try:
+            from app.services.settings.service import settings_service as _svc  # noqa: PLC0415
+
+            if _svc is not None:
+                tenant_required = bool(await _svc.get("require_2fa"))
+        except Exception:  # pragma: no cover - defensive
+            tenant_required = bool(getattr(_settings, "require_2fa", False))
+
+    no_mfa = MfaStatus(
+        enrolled=False,
+        enrolled_at=None,
+        backup_codes_remaining=0,
+        tenant_required=tenant_required,
+    )
 
     # Build the base response from the ORM user, excluding the ORM profile
     # relationship (which is a Profile model, not ProfileSummary).
@@ -364,13 +455,15 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
         is_active=current_user.is_active,
         profile=None,
         permissions=[],
+        mfa=no_mfa,
     )
 
     if _settings.auth_mode == "none":
-        # Desktop mode — virtual desktop user; no DB profile
+        # Desktop mode — virtual desktop user; no DB profile; 2FA not applicable.
         return base.model_copy(update={
             "profile": ProfileSummary(name="desktop"),
             "permissions": sorted(ALL_PERMISSION_KEYS),
+            "mfa": no_mfa,
         })
 
     # Hosted mode — derive from the profile relationship (loaded via selectin)
@@ -381,9 +474,37 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
         profile_summary = None
         permission_list = []
 
+    # 2FA status lookup. Row existence ⇒ enrolled (per spec §0 D11).
+    totp_row = (
+        await db.execute(
+            select(UserTotp).where(UserTotp.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+
+    if totp_row is None:
+        mfa_status = no_mfa
+    else:
+        unconsumed = (
+            await db.execute(
+                select(func.count())
+                .select_from(UserBackupCode)
+                .where(
+                    UserBackupCode.user_id == current_user.id,
+                    UserBackupCode.consumed_at.is_(None),
+                )
+            )
+        ).scalar_one()
+        mfa_status = MfaStatus(
+            enrolled=True,
+            enrolled_at=totp_row.enrolled_at,
+            backup_codes_remaining=int(unconsumed),
+            tenant_required=tenant_required,
+        )
+
     return base.model_copy(update={
         "profile": profile_summary,
         "permissions": permission_list,
+        "mfa": mfa_status,
     })
 
 

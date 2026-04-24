@@ -690,6 +690,16 @@ red-background patterns. For API errors surfaced in a table or list context, an
 Use `FIELD_ERROR_OUTLINE` on the field and `ERROR_TEXT_CLASS` on the message element
 below it. Keep validation messages short and specific.
 
+### One-shot secrets (2FA backup codes)
+
+Backup-code sets returned by `/api/auth/2fa/enroll/confirm` and
+`/api/auth/2fa/backup-codes/regenerate` are displayed **once** and never re-fetched.
+The pattern is a `Modal` with a monospace grid of codes, a *Copy* action, a
+*Download .txt* action, and an explicit *"I've saved these codes"* acknowledgement
+button that is required before dismiss. Do not place backup codes inline on a
+page or in a toast — they must live inside a blocking modal so a user cannot
+accidentally navigate away without saving them.
+
 ---
 
 ## Accessibility baseline

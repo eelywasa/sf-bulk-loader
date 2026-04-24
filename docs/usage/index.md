@@ -58,6 +58,7 @@ whichever feature you need.
 
 | Order | Topic |
 |---|---|
+| 115 | [Two-factor authentication](two-factor-auth.md) — enrol, sign in, rotate backup codes |
 | 120 | [Account recovery](account-recovery.md) — forgotten password, locked out |
 
 ---

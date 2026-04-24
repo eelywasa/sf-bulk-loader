@@ -4,6 +4,8 @@
 # in the PyInstaller scan environment, which would cause it to be bundled.
 fastapi>=0.111.0
 bcrypt>=4.0.0
+pyotp>=2.9,<3
+segno>=1.6,<2
 uvicorn[standard]>=0.29.0
 sqlalchemy>=2.0.30
 greenlet>=3.0.0

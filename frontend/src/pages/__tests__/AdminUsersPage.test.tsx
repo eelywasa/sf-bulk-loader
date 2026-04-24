@@ -103,6 +103,7 @@ vi.mock('../../api/endpoints', async (importOriginal) => {
       resendInvite: vi.fn(),
       delete: vi.fn(),
       get: vi.fn(),
+      reset2fa: vi.fn(),
     },
   }
 })
@@ -282,6 +283,63 @@ describe('AdminUsersPage', () => {
     await waitFor(() => {
       expect(adminUsersApi.delete).toHaveBeenCalledWith('u1')
     })
+  })
+
+  it('SFBL-251: Reset 2FA action confirms then calls endpoint', async () => {
+    vi.mocked(adminUsersApi.reset2fa).mockResolvedValue({
+      user_id: 'u1',
+      had_factor: true,
+      backup_codes_cleared: 10,
+    })
+    // Override bootstrap to grant admin.users.reset_2fa
+    vi.mocked(client.apiFetch).mockReset()
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME)
+      .mockResolvedValueOnce({
+        ...MOCK_ME,
+        permissions: ['users.manage', 'system.settings', 'admin.users.reset_2fa'],
+      })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('alice@example.com')).toBeInTheDocument()
+    })
+
+    // Reset 2FA button is visible
+    const reset2faBtns = screen.getAllByRole('button', { name: 'Reset 2FA' })
+    await user.click(reset2faBtns[0])
+
+    // Confirm dialog
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+    expect(
+      screen.getByText(/Reset 2FA for alice@example.com\?/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/required to re-enrol on next login/i),
+    ).toBeInTheDocument()
+
+    // Confirm button (footer)
+    const confirmBtns = screen.getAllByRole('button', { name: 'Reset 2FA' })
+    await user.click(confirmBtns[confirmBtns.length - 1])
+
+    await waitFor(() => {
+      expect(adminUsersApi.reset2fa).toHaveBeenCalledWith('u1')
+    })
+  })
+
+  it('SFBL-251: hides Reset 2FA action when caller lacks admin.users.reset_2fa', async () => {
+    // MOCK_ME (default) does NOT have admin.users.reset_2fa
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('alice@example.com')).toBeInTheDocument()
+    })
+
+    expect(screen.queryAllByRole('button', { name: 'Reset 2FA' })).toHaveLength(0)
   })
 
   it('surfaces 409 error in the confirm dialog', async () => {

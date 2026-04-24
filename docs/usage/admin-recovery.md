@@ -80,9 +80,12 @@ The command:
    `deactivated`).
 5. Stamps `password_changed_at` so any stale JWTs the user might still hold
    are invalidated.
-6. Emits a WARNING-level audit log entry (`event_name=auth.admin.recovered`,
+6. **Clears the user's 2FA factor + backup codes** (default). Pass
+   `--keep-2fa` to preserve them — see *2FA reset behaviour* below.
+7. Emits a WARNING-level audit log entry (`event_name=auth.admin.recovered`,
    `outcome_code=cli_recovery`) and writes a `login_attempt` row for the
-   audit trail.
+   audit trail. When 2FA is cleared, an additional `mfa.admin_reset` event
+   is emitted.
 
 Exit codes:
 
@@ -95,6 +98,27 @@ Exit codes:
 
 Store the printed password securely and hand it to the user through a
 trusted channel. It is not retrievable after the command exits.
+
+### 2FA reset behaviour
+
+By default `admin-recover` also clears the user's TOTP factor and all
+backup codes. This matches the typical break-glass scenario — the admin has
+lost access *and* their authenticator. On next sign-in the user will be
+forced to enrol a fresh factor (if the tenant requires 2FA) or can choose
+whether to re-enrol from **Profile → Security**.
+
+If you're only resetting the password and want to preserve the existing
+authenticator — for example, the user remembers their TOTP codes but forgot
+their password — pass `--keep-2fa`:
+
+```bash
+python -m app.cli admin-recover admin@example.com --keep-2fa
+```
+
+With `--keep-2fa`, TOTP secret and backup codes are untouched and the user
+will be challenged for a code on next sign-in as normal.
+
+See [Two-factor authentication](two-factor-auth.md) for the user-side flow.
 
 ---
 
@@ -171,4 +195,5 @@ Practical controls:
 
 - [User management](user-management.md) — day-to-day admin flows
 - [Account recovery](account-recovery.md) — end-user password reset
+- [Two-factor authentication](two-factor-auth.md) — enrol, sign in, recovery paths
 - [Getting started](getting-started.md) — bootstrap admin on first run

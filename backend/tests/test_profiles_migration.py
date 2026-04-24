@@ -78,7 +78,25 @@ def test_three_profiles_seeded(migrated_engine):
 
 
 def test_admin_profile_has_all_keys(migrated_engine):
-    from app.auth.permissions import ALL_PERMISSION_KEYS
+    # This fixture stops at migration 0022 — which seeds the original 12-key
+    # admin set from migration 0021. Later migrations (e.g. 0026 for SFBL-249)
+    # add further keys to the admin profile but aren't exercised here, so
+    # assert against the 0021 seed shape rather than the live
+    # ``ALL_PERMISSION_KEYS`` vocabulary.
+    _MIG_0021_ADMIN_KEYS = {
+        "connections.view",
+        "connections.view_credentials",
+        "connections.manage",
+        "plans.view",
+        "plans.manage",
+        "runs.view",
+        "runs.execute",
+        "runs.abort",
+        "files.view",
+        "files.view_contents",
+        "users.manage",
+        "system.settings",
+    }
 
     with migrated_engine.connect() as conn:
         rows = conn.execute(
@@ -88,7 +106,7 @@ def test_admin_profile_has_all_keys(migrated_engine):
             )
         ).fetchall()
     admin_keys = {r[0] for r in rows}
-    assert admin_keys == ALL_PERMISSION_KEYS
+    assert admin_keys == _MIG_0021_ADMIN_KEYS
 
 
 def test_viewer_profile_cannot_execute_runs(migrated_engine):

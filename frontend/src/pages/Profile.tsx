@@ -11,16 +11,20 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { Modal } from '../components/ui/Modal'
 import {
   LABEL_CLASS,
   INPUT_CLASS,
   ALERT_ERROR,
   ALERT_SUCCESS,
   ALERT_WARNING,
+  ALERT_INFO,
 } from '../components/ui/formStyles'
-import { meApi } from '../api/endpoints'
+import { meApi, mfaApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import type { LoginHistoryEntry } from '../api/types'
+import MfaEnrollWizard from './MfaEnrollWizard'
+import MfaBackupCodesModal from './MfaBackupCodesModal'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -331,6 +335,273 @@ function PasswordCard() {
   )
 }
 
+// ─── Card: Security (2FA) ────────────────────────────────────────────────────
+
+function DisableMfaModal({ open, onClose, onDisabled }: { open: boolean; onClose: () => void; onDisabled: () => void }) {
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    try {
+      await mfaApi.disable({ password, code: code.trim() })
+      onDisabled()
+    } catch (err) {
+      setError(extractMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Disable two-factor authentication"
+      description="Confirm your password and a current 6-digit code to remove 2FA from your account."
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            form="mfa-disable-form"
+            variant="danger"
+            loading={submitting}
+            disabled={submitting || password.length === 0 || code.trim().length < 6}
+          >
+            Disable 2FA
+          </Button>
+        </>
+      }
+    >
+      <form id="mfa-disable-form" onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className={LABEL_CLASS} htmlFor="disable-password">Current password</label>
+          <input
+            id="disable-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => { setPassword(e.target.value); setError(null) }}
+            className={INPUT_CLASS}
+          />
+        </div>
+        <div>
+          <label className={LABEL_CLASS} htmlFor="disable-code">Authenticator code</label>
+          <input
+            id="disable-code"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={code}
+            onChange={(e) => { setCode(e.target.value.replace(/\D/g, '')); setError(null) }}
+            className={INPUT_CLASS + ' font-mono tracking-widest'}
+            placeholder="123456"
+          />
+        </div>
+        {error && (
+          <div className={ALERT_ERROR} role="alert">{error}</div>
+        )}
+      </form>
+    </Modal>
+  )
+}
+
+function RegenerateBackupCodesModal({ open, onClose, onRegenerated }: { open: boolean; onClose: () => void; onRegenerated: (codes: string[]) => void }) {
+  const [code, setCode] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await mfaApi.regenerateBackupCodes({ code: code.trim() })
+      onRegenerated(res.backup_codes)
+    } catch (err) {
+      setError(extractMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Regenerate backup codes"
+      description="Enter a current 6-digit code to replace your backup-code set. Any existing backup codes will be invalidated."
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            form="mfa-regen-form"
+            variant="primary"
+            loading={submitting}
+            disabled={submitting || code.trim().length < 6}
+          >
+            Regenerate
+          </Button>
+        </>
+      }
+    >
+      <form id="mfa-regen-form" onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className={LABEL_CLASS} htmlFor="regen-code">Authenticator code</label>
+          <input
+            id="regen-code"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={code}
+            onChange={(e) => { setCode(e.target.value.replace(/\D/g, '')); setError(null) }}
+            className={INPUT_CLASS + ' font-mono tracking-widest'}
+            placeholder="123456"
+            autoFocus
+          />
+        </div>
+        {error && (
+          <div className={ALERT_ERROR} role="alert">{error}</div>
+        )}
+      </form>
+    </Modal>
+  )
+}
+
+function SecurityCard() {
+  const { user, login } = useAuth()
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [disableOpen, setDisableOpen] = useState(false)
+  const [regenOpen, setRegenOpen] = useState(false)
+  const [regenCodes, setRegenCodes] = useState<string[] | null>(null)
+  const [alert, setAlert] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+
+  const mfa = user?.mfa
+  const enrolled = Boolean(mfa?.enrolled)
+  const tenantRequired = Boolean(mfa?.tenant_required)
+
+  async function refreshMe() {
+    const { getStoredToken } = await import('../api/client')
+    const tok = getStoredToken()
+    if (tok) await login(tok)
+  }
+
+  return (
+    <section
+      className="bg-surface-raised border border-border-base rounded-lg p-6 space-y-4"
+      data-testid="security-card"
+    >
+      <h2 className="text-sm font-semibold text-content-primary">Security</h2>
+
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <div className="text-sm text-content-primary">
+            Two-factor authentication:{' '}
+            {enrolled ? (
+              <Badge variant="success" dot>On</Badge>
+            ) : (
+              <Badge variant="neutral">Off</Badge>
+            )}
+          </div>
+          {enrolled && mfa && (
+            <p className="text-xs text-content-muted" data-testid="backup-codes-remaining">
+              {mfa.backup_codes_remaining} backup {mfa.backup_codes_remaining === 1 ? 'code' : 'codes'} remaining
+            </p>
+          )}
+          {!enrolled && (
+            <p className="text-xs text-content-muted">
+              Add a 6-digit code from an authenticator app at sign-in.
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          {!enrolled && (
+            <Button variant="primary" onClick={() => setWizardOpen(true)} data-testid="mfa-setup">
+              Set up
+            </Button>
+          )}
+          {enrolled && (
+            <>
+              <Button variant="secondary" onClick={() => setRegenOpen(true)} data-testid="mfa-regen">
+                Regenerate backup codes
+              </Button>
+              {!tenantRequired && (
+                <Button variant="danger" onClick={() => setDisableOpen(true)} data-testid="mfa-disable">
+                  Disable 2FA
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {enrolled && mfa && mfa.backup_codes_remaining <= 2 && (
+        <div className={ALERT_INFO}>
+          You&rsquo;re running low on backup codes. Regenerate a new set before you lose your authenticator.
+        </div>
+      )}
+
+      {alert && (
+        <div className={alert.kind === 'success' ? ALERT_SUCCESS : ALERT_ERROR} role="alert">
+          {alert.message}
+        </div>
+      )}
+
+      <MfaEnrollWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onEnrolled={() => {
+          setAlert({ kind: 'success', message: 'Two-factor authentication is now on.' })
+          // token was refreshed inside the wizard; user object already updated
+        }}
+      />
+
+      <DisableMfaModal
+        open={disableOpen}
+        onClose={() => setDisableOpen(false)}
+        onDisabled={async () => {
+          setDisableOpen(false)
+          await refreshMe()
+          setAlert({ kind: 'success', message: 'Two-factor authentication disabled.' })
+        }}
+      />
+
+      <RegenerateBackupCodesModal
+        open={regenOpen}
+        onClose={() => setRegenOpen(false)}
+        onRegenerated={async (codes) => {
+          setRegenOpen(false)
+          setRegenCodes(codes)
+          await refreshMe()
+        }}
+      />
+
+      {regenCodes && (
+        <MfaBackupCodesModal
+          codes={regenCodes}
+          onClose={() => {
+            setRegenCodes(null)
+            setAlert({ kind: 'success', message: 'Backup codes regenerated.' })
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
 // ─── Helpers: date formatting ────────────────────────────────────────────────
 
 /**
@@ -464,6 +735,7 @@ export default function Profile() {
         <DisplayNameCard />
         <EmailCard />
         <PasswordCard />
+        <SecurityCard />
         <LoginHistoryCard />
       </div>
     </div>

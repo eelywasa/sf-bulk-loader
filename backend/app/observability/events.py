@@ -197,6 +197,57 @@ class AuthEvent:
     INVITATION_EMAIL_SENT = "auth.invitation.email_sent"
     INVITATION_ACCEPTED = "auth.invitation.accepted"
 
+    # SFBL-244 / SFBL-248: 2FA login lifecycle (phase-1 MFA challenge, forced
+    # enrolment redirect). The rest of the MFA event surface lives on the
+    # dedicated :class:`MfaEvent` namespace below.
+    LOGIN_MFA_CHALLENGE_ISSUED = "auth.login.mfa_challenge_issued"
+    LOGIN_MFA_ENROLL_STARTED = "auth.login.mfa_enroll_started"
+
+
+class MfaEvent:
+    """2FA lifecycle events (SFBL-244).
+
+    Covers self-service enrolment, backup-code consumption, admin reset,
+    and the tenant ``require_2fa`` toggle. The phase-1 login-flow events
+    (``auth.login.mfa_challenge_issued`` etc.) stay on :class:`AuthEvent`
+    so existing dashboards filtering on ``auth.*`` pick them up.
+    """
+
+    #: User successfully confirmed their first TOTP code and a user_totp row
+    #: plus backup codes were persisted.
+    ENROLL_SUCCESS = "mfa.enroll.success"
+
+    #: Verification failed during the confirm step (wrong code / bad secret).
+    ENROLL_FAILED = "mfa.enroll.failed"
+
+    #: The self-service ``/enroll/start`` endpoint generated a fresh secret.
+    ENROLL_STARTED = "mfa.enroll.started"
+
+    #: Backup codes rotated via self-service regenerate.
+    BACKUP_CODES_REGENERATED = "mfa.backup_codes.regenerated"
+
+    #: User consumed their last backup code.
+    BACKUP_CODES_EXHAUSTED = "mfa.backup_codes.exhausted"
+
+    #: User disabled their own factor (allowed only when ``require_2fa`` is off).
+    FACTOR_DISABLED = "mfa.factor.disabled"
+
+    #: Tenant-wide ``require_2fa`` setting toggled.
+    TENANT_TOGGLE_CHANGED = "mfa.tenant_toggle.changed"
+
+    #: Admin reset of another user's factor.
+    ADMIN_RESET = "mfa.admin_reset"
+
+    # ── SFBL-248: login lifecycle ──────────────────────────────────────────
+    #: Successful TOTP verification at ``/login/2fa``.
+    LOGIN_TOTP_SUCCESS = "mfa.login.totp.success"
+    #: Failed TOTP verification at ``/login/2fa``.
+    LOGIN_TOTP_FAILURE = "mfa.login.totp.failure"
+    #: A backup code was redeemed to complete login.
+    LOGIN_BACKUP_CODE_USED = "mfa.login.backup_code.used"
+    #: ``mfa_token`` could not be validated (expired / forged / wrong purpose).
+    LOGIN_TOKEN_INVALID = "mfa.login.token_invalid"
+
 
 class EmailEvent:
     """Outbound email delivery lifecycle events."""
@@ -391,3 +442,19 @@ class OutcomeCode:
     INVITATION_ACCEPTED = "invitation_accepted"
     INVITATION_EMAIL_SENT = "invitation_email_sent"
     INVITATION_EMAIL_SKIPPED = "invitation_email_skipped"
+
+    # 2FA outcome codes (SFBL-244)
+    ALREADY_ENROLLED = "already_enrolled"
+    INVALID_CODE = "invalid_code"
+    INVALID_SECRET = "invalid_secret"
+    TENANT_ENFORCED = "tenant_enforced"
+    MFA_CHALLENGE_ISSUED = "mfa_challenge_issued"
+    WRONG_MFA = "wrong_mfa"
+    BACKUP_CODE_USED = "backup_code_used"
+    ADMIN_RESET_2FA = "admin_reset_2fa"
+
+    # SFBL-248: two-phase login outcome codes
+    MFA_TOKEN_INVALID = "mfa_token_invalid"
+    MFA_USER_LIMIT = "mfa_user_limit"
+    MFA_OK = "mfa_ok"
+    MFA_BACKUP_CODES_EXHAUSTED = "mfa_backup_codes_exhausted"
