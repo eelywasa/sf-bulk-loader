@@ -273,9 +273,41 @@ Electron `.zip` to a GitHub Release. No manual steps required.
 | What you're working on | Workflows that will run |
 |---|---|
 | Any branch (feature, fix, etc.) | `ci-shared.yml` only |
-| PR targeting `main` | `ci-shared.yml` + `ci-docker.yml` + `ci-electron.yml` + `ci-aws-skeleton.yml` |
-| Push to `main` | All four non-release workflows |
+| PR targeting `main` | `ci-shared.yml` + path-filtered `ci-docker.yml` / `ci-electron.yml` / `ci-aws-skeleton.yml` |
+| Push to `main` | Same as PR — `ci-shared.yml` plus path-filtered workflows |
 | Semantic version tag | `release.yml` only |
+
+### Path filtering
+
+`ci-docker.yml`, `ci-electron.yml`, and `ci-aws-skeleton.yml` each run a `dorny/paths-filter@v3`
+`changes` job and gate their expensive work on the relevant output — symmetric on push and PR.
+
+| Workflow | Watched paths |
+|---|---|
+| `ci-docker.yml` | `backend/**`, `frontend/**`, `docs/usage/**`, `docker-compose*.yml`, `**/Dockerfile`, itself |
+| `ci-electron.yml` | `electron/**`, `frontend/**`, `backend/**`, `docs/usage/**`, itself |
+| `ci-aws-skeleton.yml` | `infrastructure/**`, itself |
+
+`docs/usage/**` is watched by the Docker and Electron workflows because the Vite `helpContent`
+plugin bakes those files into the frontend bundle at build time (same path appears in
+`frontend/Dockerfile`).
+
+### Docker CI layer caching
+
+`ci-docker.yml` pre-builds the backend and frontend images with
+`docker/build-push-action@v6` using `cache-from: type=gha` / `cache-to: type=gha,mode=max`,
+then runs the compose stack via the `docker-compose.ci.yml` overlay (which swaps
+`build:` for `image:` on both services). The shared `docker-compose.yml` stays free of
+CI-specific directives. The workflow sets `permissions: actions: write` so cache writes
+succeed on push events; fork PRs get a read-only token and will still read from cache but
+silently skip writes.
+
+### PyInstaller binary caching
+
+`ci-electron.yml` caches `backend/dist/sf_bulk_loader/` per runner OS, keyed on
+`hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**')`.
+On a cache hit the PyInstaller build step is skipped. Any backend source, migration, or
+spec change invalidates the cache.
 
 ### Required GitHub secrets
 
