@@ -426,7 +426,24 @@ async def me(
     from app.config import settings as _settings
     from app.auth.permissions import ALL_PERMISSION_KEYS
 
-    no_mfa = MfaStatus(enrolled=False, enrolled_at=None, backup_codes_remaining=0)
+    # SFBL-251: surface the tenant-wide `require_2fa` setting so the UI can
+    # render the forced-enrol / cannot-self-disable affordances.
+    tenant_required = False
+    if _settings.auth_mode != "none":
+        try:
+            from app.services.settings.service import settings_service as _svc  # noqa: PLC0415
+
+            if _svc is not None:
+                tenant_required = bool(await _svc.get("require_2fa"))
+        except Exception:  # pragma: no cover - defensive
+            tenant_required = bool(getattr(_settings, "require_2fa", False))
+
+    no_mfa = MfaStatus(
+        enrolled=False,
+        enrolled_at=None,
+        backup_codes_remaining=0,
+        tenant_required=tenant_required,
+    )
 
     # Build the base response from the ORM user, excluding the ORM profile
     # relationship (which is a Profile model, not ProfileSummary).
@@ -481,6 +498,7 @@ async def me(
             enrolled=True,
             enrolled_at=totp_row.enrolled_at,
             backup_codes_remaining=int(unconsumed),
+            tenant_required=tenant_required,
         )
 
     return base.model_copy(update={

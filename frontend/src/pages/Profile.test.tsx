@@ -289,7 +289,12 @@ describe('Profile page — SecurityCard', () => {
 
   it('renders "Off" + Set up button when user is not enrolled', async () => {
     localStorage.setItem('auth_token', 'test-token')
-    const user = withMfa({ enrolled: false, enrolled_at: null, backup_codes_remaining: 0 })
+    const user = withMfa({
+      enrolled: false,
+      enrolled_at: null,
+      backup_codes_remaining: 0,
+      tenant_required: false,
+    })
     vi.mocked(client.apiFetch)
       .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
       .mockResolvedValueOnce(user)

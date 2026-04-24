@@ -161,6 +161,7 @@ def test_me_mfa_not_enrolled_when_no_totp_row(client):
         "enrolled": False,
         "enrolled_at": None,
         "backup_codes_remaining": 0,
+        "tenant_required": False,
     }
 
 
@@ -262,4 +263,61 @@ def test_me_desktop_mode(client):
         "enrolled": False,
         "enrolled_at": None,
         "backup_codes_remaining": 0,
+        "tenant_required": False,
     }
+
+
+def test_me_mfa_tenant_required_true_when_setting_on(client):
+    """SFBL-251: mfa.tenant_required reflects the require_2fa setting."""
+    profile = _make_profile("viewer", RUNS_VIEW)
+    user = _user_with_profile(profile, email="tr-on@example.com")
+
+    async def _override():
+        return user
+
+    class _FakeSvc:
+        async def get(self, key):
+            if key == "require_2fa":
+                return True
+            return None
+
+    app.dependency_overrides[get_current_user] = _override
+    try:
+        with patch("app.config.settings") as mock_settings, patch(
+            "app.services.settings.service.settings_service", new=_FakeSvc()
+        ):
+            mock_settings.auth_mode = "jwt"
+            resp = client.get("/api/auth/me")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["mfa"]["tenant_required"] is True
+
+
+def test_me_mfa_tenant_required_false_when_setting_off(client):
+    """SFBL-251: mfa.tenant_required is False when require_2fa is off."""
+    profile = _make_profile("viewer", RUNS_VIEW)
+    user = _user_with_profile(profile, email="tr-off@example.com")
+
+    async def _override():
+        return user
+
+    class _FakeSvc:
+        async def get(self, key):
+            return False if key == "require_2fa" else None
+
+    app.dependency_overrides[get_current_user] = _override
+    try:
+        with patch("app.config.settings") as mock_settings, patch(
+            "app.services.settings.service.settings_service", new=_FakeSvc()
+        ):
+            mock_settings.auth_mode = "jwt"
+            resp = client.get("/api/auth/me")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["mfa"]["tenant_required"] is False

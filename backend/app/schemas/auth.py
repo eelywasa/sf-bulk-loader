@@ -20,6 +20,10 @@ class MfaStatus(BaseModel):
     enrolled: bool
     enrolled_at: Optional[datetime] = None
     backup_codes_remaining: int = 0
+    # SFBL-251: tenant-wide `require_2fa` setting (spec §2.7 / D8). When true the
+    # user cannot self-disable their own factor; the UI also uses this to decide
+    # whether to show forced-enrol messaging. Always present — no longer optional.
+    tenant_required: bool = False
 
 
 class TokenResponse(BaseModel):
@@ -73,7 +77,12 @@ class UserResponse(BaseModel):
     permissions: List[str] = []
     # SFBL-246: 2FA status. Defaults to "not enrolled" so the field is always
     # present in the response even before the enrolment API lands.
-    mfa: MfaStatus = MfaStatus(enrolled=False, enrolled_at=None, backup_codes_remaining=0)
+    mfa: MfaStatus = MfaStatus(
+        enrolled=False,
+        enrolled_at=None,
+        backup_codes_remaining=0,
+        tenant_required=False,
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

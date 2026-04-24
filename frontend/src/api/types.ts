@@ -36,6 +36,65 @@ export interface TokenResponse {
   access_token: string
   token_type: string
   expires_in: number
+  /** SFBL-190: set when the user must change their password before continuing. */
+  must_reset_password?: boolean
+  /** SFBL-248: explicit false on the full-token branch of the login union. */
+  mfa_required?: false
+}
+
+/**
+ * SFBL-248 / SFBL-251: phase-1 login response when the user must complete a
+ * second factor (either verify or forced-enrol).
+ */
+export interface MfaRequiredResponse {
+  mfa_required: true
+  mfa_token: string
+  mfa_methods: string[]
+  must_enroll: boolean
+}
+
+/** Discriminated union returned by `POST /api/auth/login`. */
+export type LoginResponse = TokenResponse | MfaRequiredResponse
+
+/** Type guard for the MFA-required branch of the login response. */
+export function isMfaRequired(resp: LoginResponse): resp is MfaRequiredResponse {
+  return (resp as MfaRequiredResponse).mfa_required === true
+}
+
+// ─── 2FA login challenge / forced enrol (SFBL-251) ───────────────────────────
+
+export interface Login2faVerifyRequest {
+  method: 'totp' | 'backup_code'
+  code: string
+}
+
+/** Shape of `POST /api/auth/login/2fa/enroll/start`. */
+export interface Login2faEnrollStartResponse {
+  secret_base32: string
+  otpauth_uri: string
+  qr_svg: string
+}
+
+export interface Login2faEnrollAndVerifyRequest {
+  secret_base32: string
+  code: string
+}
+
+/** Full access token plus one-shot backup codes from the forced-enrol path. */
+export interface Login2faEnrollAndVerifyResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  must_reset_password?: boolean
+  mfa_required?: false
+  backup_codes: string[]
+}
+
+/** Admin row-action response from `POST /api/admin/users/{id}/reset-2fa`. */
+export interface AdminReset2faResponse {
+  user_id: string
+  had_factor: boolean
+  backup_codes_cleared: number
 }
 
 export interface UserProfile {
@@ -53,12 +112,10 @@ export interface MfaStatus {
   backup_codes_remaining: number
   /**
    * True when the tenant-wide `require_2fa` setting is on, meaning the user
-   * cannot self-disable (spec D8). Optional for forward-compat — if the
-   * backend does not yet expose this field, the UI falls back to letting
-   * the user attempt disable and surfacing the 403 `tenant_enforced`
-   * response.
+   * cannot self-disable (spec D8). Flipped from optional to required in
+   * SFBL-251 — the backend always emits the field now.
    */
-  tenant_required?: boolean
+  tenant_required: boolean
 }
 
 // ─── 2FA self-service (SFBL-250) ──────────────────────────────────────────────
