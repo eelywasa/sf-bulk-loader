@@ -227,7 +227,7 @@ class TestPasswordResetRequest:
             for _ in range(limit):
                 await check_and_record(ip_rl_key, limit=limit, window_seconds=3600)
 
-        asyncio.get_event_loop().run_until_complete(_fill())
+        asyncio.run(_fill())
 
         resp = client.post(
             "/api/auth/password-reset/request", json={"email": "iplimited@example.com"}
@@ -251,7 +251,7 @@ class TestPasswordResetRequest:
             for _ in range(limit):
                 await check_and_record(email_key, limit=limit, window_seconds=3600)
 
-        asyncio.get_event_loop().run_until_complete(_fill())
+        asyncio.run(_fill())
 
         resp = client.post(
             "/api/auth/password-reset/request",

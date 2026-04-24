@@ -76,7 +76,7 @@ def test_schedule_account_locked_email_sends_for_user_with_email():
             # Let the task execute
             await asyncio.sleep(0)
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
     mock_svc.send_template.assert_awaited_once()
     call_args = mock_svc.send_template.call_args
@@ -109,7 +109,7 @@ def test_schedule_account_locked_email_failure_does_not_propagate():
             await asyncio.sleep(0)
 
     # Should complete without raising
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
 
 def test_tier2_trigger_a_calls_schedule_email():
@@ -155,7 +155,7 @@ def test_tier2_trigger_a_calls_schedule_email():
 
                 await handle_failed_attempt(session, db_user, ip="1.2.3.4")
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
     assert schedule_calls, "Expected _schedule_account_locked_email to be called on tier-2 lock"
 
 
@@ -197,4 +197,4 @@ def test_tier2_lockout_email_not_sent_without_email_address():
             await handle_failed_attempt(session, db_user, ip="1.2.3.5")
             assert db_user.status == "locked", "Account must still be locked"
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
