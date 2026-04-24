@@ -59,7 +59,15 @@ jobs:
           pip install -r requirements-desktop.txt pyinstaller
         working-directory: backend
 
+      - name: Cache PyInstaller binary
+        id: pyinstaller-cache
+        uses: actions/cache@v4
+        with:
+          path: backend/dist/sf_bulk_loader
+          key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**') }}
+
       - name: Build PyInstaller binary
+        if: steps.pyinstaller-cache.outputs.cache-hit != 'true'
         run: pyinstaller sf_bulk_loader.spec --clean --noconfirm
         working-directory: backend
 
@@ -133,7 +141,15 @@ jobs:
           pip install -r requirements-desktop.txt pyinstaller
         working-directory: backend
 
+      - name: Cache PyInstaller binary
+        id: pyinstaller-cache
+        uses: actions/cache@v4
+        with:
+          path: backend/dist/sf_bulk_loader
+          key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**') }}
+
       - name: Build PyInstaller binary
+        if: steps.pyinstaller-cache.outputs.cache-hit != 'true'
         run: pyinstaller sf_bulk_loader.spec --clean --noconfirm
         working-directory: backend
 
