@@ -6,36 +6,87 @@ on:
   pull_request:
     branches: [main]
 
+# Steps are identical for all platforms; the two jobs below differ only in
+# which runners they target and when they run. Linux runs on every push/PR;
+# macOS and Windows only run on push to main (expensive runners).
+
 jobs:
-  build-and-smoke:
+  build-and-smoke-linux:
+    name: Electron Build & Smoke Test (linux-x64)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            electron/package-lock.json
+            frontend/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-desktop.txt
+
+      - name: Install backend dependencies + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-desktop.txt pyinstaller
+        working-directory: backend
+
+      - name: Build PyInstaller binary
+        run: pyinstaller sf_bulk_loader.spec --clean --noconfirm
+        working-directory: backend
+
+      - name: Build frontend (desktop mode)
+        run: npm ci && npm run build:desktop
+        working-directory: frontend
+
+      - name: Install Electron dependencies
+        run: npm ci
+        working-directory: electron
+
+      - name: Package unpacked desktop app
+        run: npm run dist -- --linux dir
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Smoke packaged app
+        run: xvfb-run -a node scripts/smoke-packaged.js linux
+        working-directory: electron
+
+      - name: Upload unpacked artifact on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sf-bulk-loader-linux-x64-${{ github.sha }}
+          path: electron/dist/linux-unpacked/**
+          retention-days: 1
+
+  build-and-smoke-native:
     name: Electron Build & Smoke Test (${{ matrix.artifact_suffix }})
+    # macOS and Windows are expensive runners — only run on push to main.
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
-            platform: linux
-            artifact_suffix: linux-x64
-            dir_args: --linux dir
-            artifact_path: electron/dist/linux-unpacked/**
-          # macOS and Windows are expensive runners — build them on push to main
-          # (pre-release verification) but not on every PR.
           - os: macos-15
             platform: mac
             artifact_suffix: mac-arm64
             dir_args: --mac dir
             artifact_path: electron/dist/mac-arm64/**/*.app
-            main_only: true
           - os: windows-2025
             platform: win
             artifact_suffix: windows-x64
             dir_args: --win dir
             artifact_path: electron/dist/win-unpacked/**
-            main_only: true
-
-    # Skip macOS/Windows legs on PRs; Linux always runs.
-    if: ${{ !matrix.main_only || github.event_name == 'push' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -78,14 +129,8 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Smoke packaged app (macOS/Windows)
-        if: matrix.platform != 'linux'
+      - name: Smoke packaged app
         run: node scripts/smoke-packaged.js ${{ matrix.platform }}
-        working-directory: electron
-
-      - name: Smoke packaged app (Linux)
-        if: matrix.platform == 'linux'
-        run: xvfb-run -a node scripts/smoke-packaged.js linux
         working-directory: electron
 
       - name: Upload unpacked artifact on failure
