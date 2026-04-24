@@ -7,8 +7,30 @@ on:
     branches: [main]
 
 jobs:
+  # Detect which parts of the codebase changed so CDK synth can skip
+  # itself when infrastructure is untouched.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            infra:
+              - 'infrastructure/**'
+              - '.github/workflows/ci-aws-skeleton.yml'
+
   cdk-synth:
     name: CDK Synth
+    needs: changes
+    # Always run on push to main; on PRs only when infrastructure files changed.
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
 
     steps:
