@@ -6,13 +6,43 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
+  # Detect which parts of the codebase changed so smoke tests can skip
+  # themselves when their source tree is untouched.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'docs/usage/**'
+              - 'docker-compose*.yml'
+              - '**/Dockerfile'
+              - '.github/workflows/ci-docker.yml'
+
   smoke-sqlite:
     name: Docker Smoke Test (SQLite)
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Create data directories
         # data/db and data/output are mounted as writable volumes into the container
@@ -31,8 +61,29 @@ jobs:
           echo 'ADMIN_EMAIL=ci-admin@example.com' >> .env
           echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
-      - name: Build and start (SQLite mode)
-        run: docker compose up -d --build --wait --timeout 120
+      - name: Build backend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          load: true
+          tags: sfbl-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: sfbl-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start (SQLite mode)
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --timeout 120
 
       - name: Verify backend health
         run: |
@@ -52,18 +103,23 @@ jobs:
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose logs
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
 
       - name: Tear down
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   smoke-postgres:
     name: Docker Smoke Test (PostgreSQL)
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Create data directories
         run: |
@@ -76,8 +132,29 @@ jobs:
           echo 'ADMIN_EMAIL=ci-admin@example.com' >> .env
           echo 'ADMIN_PASSWORD=CIpassword1!' >> .env
 
-      - name: Build and start (PostgreSQL mode)
-        run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build --wait --timeout 120
+      - name: Build backend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          load: true
+          tags: sfbl-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: sfbl-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start (PostgreSQL mode)
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.postgres.yml up -d --wait --timeout 120
 
       - name: Verify backend health
         run: |
@@ -97,8 +174,8 @@ jobs:
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml logs
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.postgres.yml logs
 
       - name: Tear down
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.postgres.yml down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.postgres.yml down -v

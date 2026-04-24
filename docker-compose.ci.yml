@@ -1,0 +1,18 @@
+# CI-only compose overlay — do NOT use for local development or deployment.
+#
+# Images are pre-built by docker/build-push-action in ci-docker.yml using
+# BuildKit GHA layer caching, then referenced here via image: instead of
+# build: so compose does not rebuild them during `up`.
+#
+# Usage (from ci-docker.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.postgres.yml up -d --wait
+
+services:
+  backend:
+    image: sfbl-backend:ci
+    build: !reset null
+
+  frontend:
+    image: sfbl-frontend:ci
+    build: !reset null
