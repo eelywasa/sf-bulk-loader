@@ -42,6 +42,17 @@ export interface UserProfile {
   name: 'admin' | 'operator' | 'viewer' | 'desktop' | string
 }
 
+/**
+ * 2FA enrolment status for the current user (SFBL-246 / SFBL-244). Always
+ * present on the /me response; `enrolled_at` is null and
+ * `backup_codes_remaining` is 0 when the user has no factor configured.
+ */
+export interface MfaStatus {
+  enrolled: boolean
+  enrolled_at: string | null
+  backup_codes_remaining: number
+}
+
 export interface UserResponse {
   id: string
   email: string
@@ -51,6 +62,8 @@ export interface UserResponse {
   profile?: UserProfile
   /** Sorted list of permission keys granted to this user. */
   permissions?: string[]
+  /** 2FA status (SFBL-246). Optional for forward-compat with older backends. */
+  mfa?: MfaStatus
 }
 
 // ─── Status enums ─────────────────────────────────────────────────────────────

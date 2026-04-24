@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -13,7 +13,16 @@ from app.models.login_attempt import LoginAttempt
 from app.models.user import User
 from app.observability.events import AuthEvent, OutcomeCode
 from app.observability.metrics import record_auth_login_attempt
-from app.schemas.auth import AuthConfigResponse, LoginRequest, ProfileSummary, TokenResponse, UserResponse
+from app.models.user_backup_code import UserBackupCode
+from app.models.user_totp import UserTotp
+from app.schemas.auth import (
+    AuthConfigResponse,
+    LoginRequest,
+    MfaStatus,
+    ProfileSummary,
+    TokenResponse,
+    UserResponse,
+)
 from app.services.auth import create_access_token, get_current_user, verify_password
 from app.services.auth_lockout import handle_failed_attempt, handle_successful_login
 from app.services.rate_limit import check_and_record
@@ -343,16 +352,25 @@ async def login(
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
+async def me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
     """Return the authenticated user's profile including RBAC permissions.
 
     Contract with SFBL-196 (frontend):
     - ``profile.name``: "admin" | "operator" | "viewer" | "desktop"
     - ``permissions``: sorted list of permission keys held by the user.
       In desktop mode (auth_mode=none) returns all keys and profile.name="desktop".
+
+    SFBL-246: also returns an ``mfa`` sub-object describing the user's 2FA
+    enrolment state. Desktop mode always reports not-enrolled (2FA does not
+    apply when ``auth_mode=none`` — spec §0 D2).
     """
     from app.config import settings as _settings
     from app.auth.permissions import ALL_PERMISSION_KEYS
+
+    no_mfa = MfaStatus(enrolled=False, enrolled_at=None, backup_codes_remaining=0)
 
     # Build the base response from the ORM user, excluding the ORM profile
     # relationship (which is a Profile model, not ProfileSummary).
@@ -364,13 +382,15 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
         is_active=current_user.is_active,
         profile=None,
         permissions=[],
+        mfa=no_mfa,
     )
 
     if _settings.auth_mode == "none":
-        # Desktop mode — virtual desktop user; no DB profile
+        # Desktop mode — virtual desktop user; no DB profile; 2FA not applicable.
         return base.model_copy(update={
             "profile": ProfileSummary(name="desktop"),
             "permissions": sorted(ALL_PERMISSION_KEYS),
+            "mfa": no_mfa,
         })
 
     # Hosted mode — derive from the profile relationship (loaded via selectin)
@@ -381,9 +401,36 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
         profile_summary = None
         permission_list = []
 
+    # 2FA status lookup. Row existence ⇒ enrolled (per spec §0 D11).
+    totp_row = (
+        await db.execute(
+            select(UserTotp).where(UserTotp.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+
+    if totp_row is None:
+        mfa_status = no_mfa
+    else:
+        unconsumed = (
+            await db.execute(
+                select(func.count())
+                .select_from(UserBackupCode)
+                .where(
+                    UserBackupCode.user_id == current_user.id,
+                    UserBackupCode.consumed_at.is_(None),
+                )
+            )
+        ).scalar_one()
+        mfa_status = MfaStatus(
+            enrolled=True,
+            enrolled_at=totp_row.enrolled_at,
+            backup_codes_remaining=int(unconsumed),
+        )
+
     return base.model_copy(update={
         "profile": profile_summary,
         "permissions": permission_list,
+        "mfa": mfa_status,
     })
 
 

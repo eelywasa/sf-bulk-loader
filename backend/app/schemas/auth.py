@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -6,6 +7,19 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class MfaStatus(BaseModel):
+    """2FA enrolment status for the current user (SFBL-246 / SFBL-244).
+
+    Returned as the ``mfa`` sub-object on ``/api/auth/me``. When the user has
+    no ``user_totp`` row, ``enrolled`` is false, ``enrolled_at`` is null, and
+    ``backup_codes_remaining`` is 0.
+    """
+
+    enrolled: bool
+    enrolled_at: Optional[datetime] = None
+    backup_codes_remaining: int = 0
 
 
 class TokenResponse(BaseModel):
@@ -39,6 +53,9 @@ class UserResponse(BaseModel):
     # permissions is a sorted list of permission keys held by the user.
     profile: Optional[ProfileSummary] = None
     permissions: List[str] = []
+    # SFBL-246: 2FA status. Defaults to "not enrolled" so the field is always
+    # present in the response even before the enrolment API lands.
+    mfa: MfaStatus = MfaStatus(enrolled=False, enrolled_at=None, backup_codes_remaining=0)
 
     model_config = ConfigDict(from_attributes=True)
 

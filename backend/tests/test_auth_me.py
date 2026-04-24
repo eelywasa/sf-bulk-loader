@@ -139,6 +139,104 @@ def test_me_no_profile(client):
     assert body["permissions"] == []
 
 
+def test_me_mfa_not_enrolled_when_no_totp_row(client):
+    """User without a user_totp row → mfa.enrolled=false, backup_codes_remaining=0."""
+    profile = _make_profile("viewer", RUNS_VIEW)
+    user = _user_with_profile(profile, email="no-mfa@example.com")
+
+    async def _override():
+        return user
+
+    app.dependency_overrides[get_current_user] = _override
+    try:
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.auth_mode = "jwt"
+            resp = client.get("/api/auth/me")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["mfa"] == {
+        "enrolled": False,
+        "enrolled_at": None,
+        "backup_codes_remaining": 0,
+    }
+
+
+def test_me_mfa_enrolled_reports_backup_code_count(client):
+    """User with a user_totp row and 7 unconsumed backup codes → mfa reflects that."""
+    from datetime import datetime, timezone
+
+    from app.models.user import User as UserModel
+    from app.models.user_backup_code import UserBackupCode
+    from app.models.user_totp import UserTotp
+    from tests.conftest import _TestSession, _run_async
+
+    user_id = str(uuid.uuid4())
+    email = f"mfa-{uuid.uuid4().hex[:8]}@example.com"
+    enrolled_at = datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc)
+
+    async def _seed() -> None:
+        async with _TestSession() as session:
+            persisted = UserModel(
+                id=user_id,
+                email=email,
+                status="active",
+                is_admin=False,
+            )
+            session.add(persisted)
+            await session.flush()
+            session.add(
+                UserTotp(
+                    user_id=user_id,
+                    secret_encrypted="ciphertext",
+                    enrolled_at=enrolled_at,
+                )
+            )
+            # 10 codes: 3 consumed, 7 still valid.
+            for idx in range(10):
+                session.add(
+                    UserBackupCode(
+                        user_id=user_id,
+                        code_hash=f"hash-{idx:02d}",
+                        consumed_at=(
+                            datetime(2026, 4, 24, 13, 0, 0, tzinfo=timezone.utc)
+                            if idx < 3
+                            else None
+                        ),
+                    )
+                )
+            await session.commit()
+
+    _run_async(_seed())
+
+    # Build a detached in-memory User matching the persisted row so the /me
+    # handler doesn't have to load relationships; the DB lookups for UserTotp
+    # and UserBackupCode run against the seeded data via the real session.
+    synthetic_user = UserModel(
+        id=user_id, email=email, status="active", is_admin=False
+    )
+    synthetic_user.profile = None
+
+    async def _override():
+        return synthetic_user
+
+    app.dependency_overrides[get_current_user] = _override
+    try:
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.auth_mode = "jwt"
+            resp = client.get("/api/auth/me")
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["mfa"]["enrolled"] is True
+    assert body["mfa"]["enrolled_at"].startswith("2026-04-24T12:00:00")
+    assert body["mfa"]["backup_codes_remaining"] == 7
+
+
 def test_me_desktop_mode(client):
     """Desktop mode (auth_mode=none) → profile.name=desktop, all keys sorted."""
     user = User(id="desktop", email="desktop@localhost", status="active", is_admin=True)
@@ -159,3 +257,9 @@ def test_me_desktop_mode(client):
     body = resp.json()
     assert body["profile"]["name"] == "desktop"
     assert body["permissions"] == sorted(ALL_PERMISSION_KEYS)
+    # Desktop mode reports not-enrolled; 2FA does not apply (spec §0 D2).
+    assert body["mfa"] == {
+        "enrolled": False,
+        "enrolled_at": None,
+        "backup_codes_remaining": 0,
+    }
