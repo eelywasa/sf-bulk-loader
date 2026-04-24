@@ -158,7 +158,7 @@ export default function LoginMfaEnroll({
               {step === 'scan' && (
                 <div className="space-y-4">
                   <div
-                    className="flex justify-center bg-surface-base p-4 rounded-md border border-border-base"
+                    className="flex justify-center bg-white p-4 rounded-md border border-border-base"
                     aria-label="TOTP QR code"
                     data-testid="mfa-qr"
                     dangerouslySetInnerHTML={{ __html: startData.qr_svg }}
