@@ -18,9 +18,16 @@ module.exports = {
     hardenedRuntime: true,
     entitlements: "entitlements.mac.plist",
     entitlementsInherit: "entitlements.mac.plist",
-    // Notarize only when secrets are present (release CI). Credentials are
-    // read from APPLE_ID and APPLE_APP_SPECIFIC_PASSWORD env vars by electron-builder.
-    notarize: process.env.APPLE_TEAM_ID ? { teamId: process.env.APPLE_TEAM_ID } : false,
+    // Notarize only when secrets are present (release CI).
+    // electron-builder v26 requires the full credential object — it does not
+    // auto-read APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD from the environment.
+    notarize: process.env.APPLE_TEAM_ID
+      ? {
+          teamId: process.env.APPLE_TEAM_ID,
+          appleId: process.env.APPLE_ID,
+          appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
+        }
+      : false,
   },
   win: {
     icon: "build/icon.ico",
