@@ -131,18 +131,17 @@ jobs:
         working-directory: electron
 
       - name: Build release artifact
-        # CSC_IDENTITY_AUTO_DISCOVERY=false suppresses keychain signing lookup in CI.
-        #
-        # Future signing (requires Apple Developer account — add as GitHub Actions secrets):
-        #   CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-        #   CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-        #   APPLE_ID: ${{ secrets.APPLE_ID }}
-        #   APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run dist -- ${{ matrix.release_args }}
         working-directory: electron
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # macOS: sign with Developer ID Application cert from GitHub secrets.
+          # Non-mac legs leave CSC_LINK unset so electron-builder skips signing naturally.
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          # Notarization (mac only — notarize.js is a no-op when APPLE_ID is unset)
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Attach artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
