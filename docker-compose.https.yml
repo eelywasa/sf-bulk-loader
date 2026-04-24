@@ -7,6 +7,9 @@
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.https.yml up --build
 #
+# The nginx HTTPS config is baked into the frontend image — this overlay
+# only needs to set NGINX_HTTPS=true, mount the certs, and expose port 443.
+#
 # Local dev (no browser warnings) — recommended:
 #   brew install mkcert && mkcert -install
 #   mkdir -p certs && mkcert -key-file certs/key.pem -cert-file certs/cert.pem localhost 127.0.0.1 ::1
@@ -21,6 +24,7 @@ services:
   frontend:
     ports:
       - "${HTTPS_PORT:-443}:443"
+    environment:
+      NGINX_HTTPS: "true"
     volumes:
       - ./certs:/etc/nginx/certs:ro
-      - ./frontend/nginx.https.conf:/etc/nginx/conf.d/app.conf:ro

@@ -1,0 +1,32 @@
+# Pre-built image override for docker-compose.yml
+#
+# Replaces the local `build:` directives with pre-built images from GHCR,
+# so operators can deploy without cloning the repository. Everything else
+# (volumes, env, networking, healthchecks) is inherited from the base
+# docker-compose.yml.
+#
+# Pin a specific release with SFBL_VERSION (recommended for production):
+#   SFBL_VERSION=v0.7.1 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up
+#
+# Or track the latest release:
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up
+#
+# Stacks cleanly with the postgres and https overlays:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.ghcr.yml \
+#     -f docker-compose.postgres.yml \
+#     -f docker-compose.https.yml \
+#     up
+#
+# For private GHCR repos, run `docker login ghcr.io` first with a PAT that
+# has `read:packages`.
+
+services:
+  backend:
+    image: ghcr.io/eelywasa/sf-bulk-loader-backend:${SFBL_VERSION:-latest}
+    build: !reset null
+
+  frontend:
+    image: ghcr.io/eelywasa/sf-bulk-loader-frontend:${SFBL_VERSION:-latest}
+    build: !reset null
