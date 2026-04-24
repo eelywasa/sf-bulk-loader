@@ -7,8 +7,31 @@ on:
     branches: [main]
 
 jobs:
+  # Detect which parts of the codebase changed so smoke tests can skip
+  # themselves when their source tree is untouched.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'docs/usage/**'
+              - 'docker-compose*.yml'
+              - '**/Dockerfile'
+              - '.github/workflows/ci-docker.yml'
+
   smoke-sqlite:
     name: Docker Smoke Test (SQLite)
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -60,6 +83,8 @@ jobs:
 
   smoke-postgres:
     name: Docker Smoke Test (PostgreSQL)
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
 
     steps:
