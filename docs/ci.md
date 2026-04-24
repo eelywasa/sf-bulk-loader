@@ -181,6 +181,10 @@ Builds and pushes both Docker images to GitHub Container Registry (GHCR):
 Authentication uses `GITHUB_TOKEN` (automatically available — no secrets to configure).
 Images appear under the repository's **Packages** tab on GitHub.
 
+Operators can deploy directly from these pre-built images without cloning the
+repository — see [Pre-built images](deployment/docker.md#pre-built-images-ghcr)
+in the Docker deployment guide.
+
 ### Job: `electron-release` (matrix: 3 platforms)
 
 Builds a platform-native, self-contained Electron package on each runner:

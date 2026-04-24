@@ -17,10 +17,17 @@ FROM nginx:1.27-alpine
 # Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
 
-COPY frontend/nginx.conf /etc/nginx/conf.d/app.conf
+# Bake both HTTP and HTTPS configs into the image as templates. The entrypoint
+# selects the active one at container start based on NGINX_HTTPS.
+COPY frontend/nginx.conf       /etc/nginx/templates/http.conf
+COPY frontend/nginx.https.conf /etc/nginx/templates/https.conf
+
+COPY frontend/docker-entrypoint.sh /docker-entrypoint-sfbl.sh
+RUN chmod +x /docker-entrypoint-sfbl.sh
+
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 EXPOSE 443
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint-sfbl.sh"]

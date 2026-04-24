@@ -65,6 +65,109 @@ docker compose down   # stop
 
 ---
 
+## Pre-built images (GHCR)
+
+Every tagged release (`v*.*.*`) publishes pre-built images to GitHub Container
+Registry, so operators can deploy without cloning this repository:
+
+| Image | Tags |
+|---|---|
+| `ghcr.io/eelywasa/sf-bulk-loader-backend` | `<version>`, `latest` |
+| `ghcr.io/eelywasa/sf-bulk-loader-frontend` | `<version>`, `latest` |
+
+### What you need on the host
+
+Only the compose files and runtime state — no source tree:
+
+```
+my-bulkloader/
+├── .env                        # copied from .env.example
+├── docker-compose.yml
+├── docker-compose.ghcr.yml
+├── docker-compose.https.yml    # optional
+├── docker-compose.postgres.yml # optional
+├── certs/                      # optional, for HTTPS
+└── data/{input,output,db}/
+```
+
+Download the compose files from a tagged release (replace `v0.7.1` with the
+release you want to pin):
+
+```bash
+mkdir -p my-bulkloader && cd my-bulkloader
+REL=https://raw.githubusercontent.com/eelywasa/sf-bulk-loader/v0.7.1
+curl -fsSLO $REL/docker-compose.yml
+curl -fsSLO $REL/docker-compose.ghcr.yml
+curl -fsSLO $REL/docker-compose.https.yml      # optional
+curl -fsSLO $REL/docker-compose.postgres.yml   # optional
+curl -fsSL  $REL/.env.example -o .env
+mkdir -p data/input data/output data/db
+```
+
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` as in the Quick Start.
+
+### Pin a version
+
+`SFBL_VERSION` is the only variable the GHCR overlay cares about. It defaults
+to `latest`, which is fine for evaluation but **pin a tagged version for any
+real deployment** so re-creating the container doesn't silently upgrade you.
+
+Note the value is the version **without** the leading `v` — GHCR tags are
+published as `0.7.1`, not `v0.7.1` (the release workflow strips the prefix):
+
+```bash
+export SFBL_VERSION=0.7.1
+```
+
+### Authentication
+
+The project's GHCR packages are public, so `docker pull` needs no credentials.
+If a deployment mirrors the images into a private registry, authenticate with
+a PAT that has `read:packages` before the first pull:
+
+```bash
+echo $GHCR_PAT | docker login ghcr.io -u <github-username> --password-stdin
+```
+
+### Compose combinations
+
+The GHCR overlay stacks with every other overlay. Typical combinations:
+
+```bash
+# HTTP + SQLite (minimal)
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+
+# HTTPS + SQLite
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml \
+               -f docker-compose.https.yml up -d
+
+# HTTP + PostgreSQL
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml \
+               -f docker-compose.postgres.yml up -d
+
+# HTTPS + PostgreSQL (full production stack, zero repo content)
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml \
+               -f docker-compose.https.yml \
+               -f docker-compose.postgres.yml up -d
+```
+
+The HTTPS overlay no longer bind-mounts anything from the repo — the nginx
+HTTPS config is baked into the frontend image and selected at runtime via the
+`NGINX_HTTPS` env var that the overlay sets for you.
+
+### Upgrading
+
+```bash
+export SFBL_VERSION=0.8.0
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+Alembic migrations run automatically on backend start. Back up `data/db/` (or
+your Postgres volume) before a minor-version upgrade.
+
+---
+
 ## Authentication
 
 The `self_hosted` profile requires in-app authentication. Every user must log in with
