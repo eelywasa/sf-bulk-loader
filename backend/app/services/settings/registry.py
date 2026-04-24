@@ -169,6 +169,19 @@ _register(
         description="Email-change token validity period in minutes.",
         env_var="EMAIL_CHANGE_TTL_MINUTES",
     ),
+    SettingMeta(
+        key="require_2fa",
+        category="security",
+        type="bool",
+        default=False,
+        description=(
+            "When true, all users on hosted profiles must have TOTP 2FA "
+            "configured. Users without a factor are forced into enrolment at "
+            "next login. Desktop profile (auth_mode=none) is exempt. DB value "
+            "overrides the REQUIRE_2FA env default once set."
+        ),
+        env_var="REQUIRE_2FA",
+    ),
 )
 
 # ---------------------------------------------------------------------------
