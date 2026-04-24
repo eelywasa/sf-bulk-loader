@@ -4,7 +4,7 @@
  * package.json doesn't support env var interpolation.
  */
 module.exports = {
-  appId: "com.example.sf-bulk-loader",
+  appId: "org.jenkin.sf-bulk-loader",
   productName: "Salesforce Bulk Loader",
   files: ["main.js", "preload.js"],
   extraResources: [
