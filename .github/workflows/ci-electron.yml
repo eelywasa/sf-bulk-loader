@@ -11,8 +11,29 @@ on:
 # macOS and Windows only run on push to main (expensive runners).
 
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      electron: ${{ steps.filter.outputs.electron }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            electron:
+              - 'electron/**'
+              - 'frontend/**'
+              - 'backend/**'
+              - 'backend/requirements-desktop.txt'
+              - 'docs/usage/**'
+              - '.github/workflows/ci-electron.yml'
+
   build-and-smoke-linux:
     name: Electron Build & Smoke Test (linux-x64)
+    needs: changes
+    if: needs.changes.outputs.electron == 'true'
     runs-on: ubuntu-24.04
 
     steps:
@@ -70,8 +91,9 @@ jobs:
 
   build-and-smoke-native:
     name: Electron Build & Smoke Test (${{ matrix.artifact_suffix }})
+    needs: changes
     # macOS and Windows are expensive runners — only run on push to main.
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.changes.outputs.electron == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
