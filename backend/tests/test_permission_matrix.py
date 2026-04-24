@@ -48,6 +48,7 @@ _ADMIN_PERMISSIONS = frozenset([
     "files.view",
     "files.view_contents",
     "users.manage",
+    "admin.users.reset_2fa",
     "system.settings",
 ])
 

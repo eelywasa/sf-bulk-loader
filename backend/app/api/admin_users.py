@@ -41,17 +41,19 @@ from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.permissions import USERS_MANAGE, require_permission
+from app.auth.permissions import USERS_MANAGE, USERS_RESET_2FA, require_permission
 from app.config import settings
 from app.database import get_db
 from app.models.invitation_token import InvitationToken
 from app.models.login_attempt import LoginAttempt
 from app.models.profile import Profile
 from app.models.user import User
-from app.observability.events import AuthEvent, OutcomeCode
+from app.models.user_backup_code import UserBackupCode
+from app.models.user_totp import UserTotp
+from app.observability.events import AuthEvent, MfaEvent, OutcomeCode
 from app.observability.metrics import record_account_unlocked, record_auth_invitation
 from app.schemas.admin_users import (
     AdminResetPasswordResponse,
@@ -73,6 +75,7 @@ _log = logging.getLogger(__name__)
 # ── Shared dependency ─────────────────────────────────────────────────────────
 
 _UsersManageUser = Annotated[User, Depends(require_permission(USERS_MANAGE))]
+_UsersReset2faUser = Annotated[User, Depends(require_permission(USERS_RESET_2FA))]
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -690,6 +693,100 @@ async def delete_user(
             "user_id": user.id,
             "admin_user_id": current_user.id,
         },
+    )
+
+
+# ── Reset 2FA (admin) ────────────────────────────────────────────────────────
+
+
+class AdminReset2faResponse(BaseModel):
+    """Response body for POST /api/admin/users/{user_id}/reset-2fa."""
+
+    user_id: str
+    had_factor: bool
+    backup_codes_cleared: int
+
+
+@router.post(
+    "/{user_id}/reset-2fa",
+    response_model=AdminReset2faResponse,
+    summary="Clear target user's 2FA factor + backup codes (admin)",
+)
+async def admin_reset_2fa(
+    user_id: str,
+    current_user: _UsersReset2faUser,
+    db: AsyncSession = Depends(get_db),
+) -> AdminReset2faResponse:
+    """Clear a user's TOTP factor + all backup codes (SFBL-249).
+
+    - Deletes the row in ``user_totp`` and every row in ``user_backup_code``
+      for the target user.
+    - Bumps ``password_changed_at`` so any existing JWTs issued to the target
+      are invalidated — on next login they must re-authenticate (and will be
+      asked to re-enrol 2FA if ``require_2fa`` is on).
+    - Writes a ``login_attempt`` audit row with ``outcome=admin_reset_2fa``.
+    - Emits ``mfa.admin_reset`` with actor + target user IDs.
+
+    Idempotent: clearing a user who is not enrolled still succeeds (returns
+    ``had_factor=False``) — this matters for support workflows where the
+    admin is uncertain of current enrolment state.
+    """
+    target = await _get_user_or_404(user_id, db)
+
+    totp_row = (
+        await db.execute(select(UserTotp).where(UserTotp.user_id == target.id))
+    ).scalar_one_or_none()
+    had_factor = totp_row is not None
+
+    backup_count_result = await db.execute(
+        select(func.count()).select_from(UserBackupCode).where(
+            UserBackupCode.user_id == target.id
+        )
+    )
+    backup_codes_cleared = int(backup_count_result.scalar_one() or 0)
+
+    if had_factor:
+        await db.execute(
+            sa_delete(UserTotp).where(UserTotp.user_id == target.id)
+        )
+    if backup_codes_cleared:
+        await db.execute(
+            sa_delete(UserBackupCode).where(UserBackupCode.user_id == target.id)
+        )
+
+    now = datetime.now(timezone.utc)
+    target.password_changed_at = now
+
+    db.add(
+        LoginAttempt(
+            id=str(uuid.uuid4()),
+            user_id=target.id,
+            username=target.email,
+            ip="admin",
+            user_agent=None,
+            outcome=OutcomeCode.ADMIN_RESET_2FA,
+            attempted_at=now,
+        )
+    )
+
+    await db.commit()
+
+    _log.info(
+        "2FA factor reset by admin",
+        extra={
+            "event_name": MfaEvent.ADMIN_RESET,
+            "outcome_code": OutcomeCode.OK,
+            "user_id": target.id,
+            "admin_user_id": current_user.id,
+            "had_factor": had_factor,
+            "backup_codes_cleared": backup_codes_cleared,
+        },
+    )
+
+    return AdminReset2faResponse(
+        user_id=target.id,
+        had_factor=had_factor,
+        backup_codes_cleared=backup_codes_cleared,
     )
 
 

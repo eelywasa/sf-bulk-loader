@@ -18,12 +18,14 @@ import sys
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select
 
 from app.database import AsyncSessionLocal
 from app.models.login_attempt import LoginAttempt
 from app.models.user import User
-from app.observability.events import AuthEvent, OutcomeCode
+from app.models.user_backup_code import UserBackupCode
+from app.models.user_totp import UserTotp
+from app.observability.events import AuthEvent, MfaEvent, OutcomeCode
 from app.services.auth import hash_password
 
 _log = logging.getLogger(__name__)
@@ -65,8 +67,14 @@ async def _save_login_attempt(
 # ── Subcommand: admin-recover ─────────────────────────────────────────────────
 
 
-async def _do_admin_recover(email: str) -> None:
-    """Core async implementation of admin-recover."""
+async def _do_admin_recover(email: str, *, reset_2fa: bool = True) -> None:
+    """Core async implementation of admin-recover.
+
+    When *reset_2fa* is True (the default), any TOTP factor + backup codes
+    belonging to the recovered admin are cleared so the admin can log in
+    with just the new temporary password.  This is the break-glass path
+    for a lost authenticator; pass ``--keep-2fa`` to preserve it.
+    """
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(User).where(
@@ -106,6 +114,28 @@ async def _do_admin_recover(email: str) -> None:
         # Transition to active from any recoverable status
         user.status = "active"
 
+        had_factor = False
+        backup_codes_cleared = 0
+        if reset_2fa:
+            totp_row = (
+                await session.execute(
+                    select(UserTotp).where(UserTotp.user_id == user.id)
+                )
+            ).scalar_one_or_none()
+            had_factor = totp_row is not None
+            backup_count_result = await session.execute(
+                select(UserBackupCode).where(UserBackupCode.user_id == user.id)
+            )
+            backup_codes_cleared = len(backup_count_result.scalars().all())
+            if had_factor:
+                await session.execute(
+                    sa_delete(UserTotp).where(UserTotp.user_id == user.id)
+                )
+            if backup_codes_cleared:
+                await session.execute(
+                    sa_delete(UserBackupCode).where(UserBackupCode.user_id == user.id)
+                )
+
         session.add(user)
         await session.commit()
 
@@ -119,6 +149,18 @@ async def _do_admin_recover(email: str) -> None:
             "username": email,
         },
     )
+    if reset_2fa and (had_factor or backup_codes_cleared):
+        _log.warning(
+            "2FA factor cleared via break-glass CLI",
+            extra={
+                "event_name": MfaEvent.ADMIN_RESET,
+                "outcome_code": OutcomeCode.CLI_RECOVERY,
+                "user_id": user.id,
+                "username": email,
+                "had_factor": had_factor,
+                "backup_codes_cleared": backup_codes_cleared,
+            },
+        )
 
     # Persist LoginAttempt row
     await _save_login_attempt(
@@ -141,15 +183,19 @@ async def _do_admin_recover(email: str) -> None:
     print()
 
 
-def cmd_admin_recover(email: str) -> None:
+def cmd_admin_recover(email: str, *, reset_2fa: bool = True) -> None:
     """Reset an admin user password and unblock the account.
+
+    By default also clears the admin's TOTP factor + backup codes
+    (``reset_2fa=True``) — the common case when an authenticator is lost.
+    Pass ``reset_2fa=False`` (CLI ``--keep-2fa``) to preserve the factor.
 
     Exits non-zero if:
     - no user is found for the given email (exit 2)
     - the user is not an admin (exit 3)
     - the user has status='deleted' (exit 4)
     """
-    asyncio.run(_do_admin_recover(email))
+    asyncio.run(_do_admin_recover(email, reset_2fa=reset_2fa))
 
 
 # ── Subcommand: unlock ────────────────────────────────────────────────────────

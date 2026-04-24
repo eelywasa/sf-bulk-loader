@@ -32,6 +32,7 @@ from app.auth.permissions import (
     FILES_VIEW,
     FILES_VIEW_CONTENTS,
     USERS_MANAGE,
+    USERS_RESET_2FA,
     SYSTEM_SETTINGS,
     ALL_PERMISSION_KEYS,
 )
@@ -53,6 +54,7 @@ _SPEC_KEYS = {
     "files.view",
     "files.view_contents",
     "users.manage",
+    "admin.users.reset_2fa",
     "system.settings",
 }
 
@@ -87,6 +89,7 @@ def test_all_permission_keys_is_frozenset():
         ("files.view", FILES_VIEW),
         ("files.view_contents", FILES_VIEW_CONTENTS),
         ("users.manage", USERS_MANAGE),
+        ("admin.users.reset_2fa", USERS_RESET_2FA),
         ("system.settings", SYSTEM_SETTINGS),
     ],
 )

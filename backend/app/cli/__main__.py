@@ -21,9 +21,14 @@ def main() -> None:
     # admin-recover
     p_recover = sub.add_parser(
         "admin-recover",
-        help="Reset an admin user password and unblock the account.",
+        help="Reset an admin user password and unblock the account (also clears 2FA by default).",
     )
     p_recover.add_argument("email", help="Email address of the admin user to recover.")
+    p_recover.add_argument(
+        "--keep-2fa",
+        action="store_true",
+        help="Preserve the admin's TOTP factor and backup codes (by default they are cleared).",
+    )
 
     # unlock
     p_unlock = sub.add_parser(
@@ -41,7 +46,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "admin-recover":
-        cmd_admin_recover(args.email)
+        cmd_admin_recover(args.email, reset_2fa=not args.keep_2fa)
     elif args.command == "unlock":
         cmd_unlock(args.email)
     elif args.command == "list-admins":
