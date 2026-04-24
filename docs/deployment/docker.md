@@ -110,10 +110,13 @@ Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` as in the Quick Start.
 
 `SFBL_VERSION` is the only variable the GHCR overlay cares about. It defaults
 to `latest`, which is fine for evaluation but **pin a tagged version for any
-real deployment** so re-creating the container doesn't silently upgrade you:
+real deployment** so re-creating the container doesn't silently upgrade you.
+
+Note the value is the version **without** the leading `v` — GHCR tags are
+published as `0.7.1`, not `v0.7.1` (the release workflow strips the prefix):
 
 ```bash
-export SFBL_VERSION=v0.7.1
+export SFBL_VERSION=0.7.1
 ```
 
 ### Authentication
@@ -155,7 +158,7 @@ HTTPS config is baked into the frontend image and selected at runtime via the
 ### Upgrading
 
 ```bash
-export SFBL_VERSION=v0.8.0
+export SFBL_VERSION=0.8.0
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
