@@ -23,6 +23,7 @@ from app.api.admin_users import router as admin_users_router, profiles_router as
 from app.api.invitations import router as invitations_router
 from app.api.settings import router as settings_router
 from app.api.auth import router as auth_router
+from app.api.auth_2fa import router as auth_2fa_router
 from app.api.auth_reset import router as auth_reset_router
 from app.api.me import router as me_router
 from app.api.profile import router as profile_router
@@ -141,6 +142,8 @@ if settings.auth_mode != "none":
     app.include_router(admin_profiles_router)
     app.include_router(settings_router)
 app.include_router(auth_router)
+if settings.auth_mode != "none":
+    app.include_router(auth_2fa_router)
 app.include_router(auth_reset_router)
 # Invitation-accept endpoints are public (token is the credential) — always registered
 app.include_router(invitations_router)

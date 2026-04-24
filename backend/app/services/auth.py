@@ -102,6 +102,15 @@ async def get_current_user(
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # SFBL-247/248: reject tokens carrying the ``mfa_pending`` step-up marker
+    # from general-purpose endpoints. Only the ``/api/auth/2fa/*`` enrol and
+    # challenge routes accept these (via ``get_mfa_pending_user``).
+    if payload.get("mfa_pending") is True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Two-factor authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(

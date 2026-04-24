@@ -183,6 +183,8 @@ def clean_db():
     from app.models.notification_delivery import NotificationDelivery
     from app.models.notification_subscription import NotificationSubscription
     from app.models.user import User
+    from app.models.user_backup_code import UserBackupCode
+    from app.models.user_totp import UserTotp
 
     async def _clean():
         async with _TestSession() as session:
@@ -198,6 +200,8 @@ def clean_db():
                 Connection,
                 InputConnection,
                 InvitationToken,  # FK → user; must come before User
+                UserBackupCode,   # FK → user
+                UserTotp,         # FK → user
                 User,
             ]:
                 await session.execute(delete(model))
