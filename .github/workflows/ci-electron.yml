@@ -35,9 +35,7 @@ jobs:
             main_only: true
 
     # Skip macOS/Windows legs on PRs; Linux always runs.
-    if: >-
-      !matrix.main_only ||
-      github.event_name == 'push'
+    if: ${{ !matrix.main_only || github.event_name == 'push' }}
 
     steps:
       - uses: actions/checkout@v4
