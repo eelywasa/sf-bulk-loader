@@ -42,6 +42,9 @@ import type {
   ResendInviteResponse,
   ProfileListItem,
   AdminStatsResponse,
+  MfaEnrollStartResponse,
+  MfaEnrollConfirmResponse,
+  MfaBackupCodesResponse,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -467,6 +470,34 @@ export const meApi = {
 
   getLoginHistory: (limit = 10): Promise<LoginHistoryEntry[]> =>
     api.get<LoginHistoryEntry[]>(`/api/me/login-history?limit=${limit}`),
+}
+
+// ─── SFBL-250: self-service 2FA enrolment + management ──────────────────────
+
+export const mfaApi = {
+  /** Begin TOTP enrolment — returns the secret, otpauth URI, and QR SVG. */
+  enrollStart: (): Promise<MfaEnrollStartResponse> =>
+    api.post<MfaEnrollStartResponse>('/api/auth/2fa/enroll/start', {}),
+
+  /**
+   * Confirm the first TOTP code and persist the factor. Returns a fresh
+   * access token (caller MUST replace the stored token) and the one-shot
+   * backup-code set.
+   */
+  enrollConfirm: (body: { secret_base32: string; code: string }): Promise<MfaEnrollConfirmResponse> =>
+    api.post<MfaEnrollConfirmResponse>('/api/auth/2fa/enroll/confirm', body),
+
+  /** Rotate the backup-code set — requires a valid current TOTP code. */
+  regenerateBackupCodes: (body: { code: string }): Promise<MfaBackupCodesResponse> =>
+    api.post<MfaBackupCodesResponse>('/api/auth/2fa/backup-codes/regenerate', body),
+
+  /**
+   * Disable the user's own 2FA factor. Requires password + current TOTP
+   * code. Returns 403 `tenant_enforced` when the tenant-wide `require_2fa`
+   * setting is on.
+   */
+  disable: (body: { password: string; code: string }): Promise<void> =>
+    api.post<void>('/api/auth/2fa/disable', body),
 }
 
 // ─── Files ────────────────────────────────────────────────────────────────────

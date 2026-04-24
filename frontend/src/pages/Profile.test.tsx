@@ -13,7 +13,7 @@ import { ToastProvider } from '../components/ui/Toast'
 import * as client from '../api/client'
 import * as endpoints from '../api/endpoints'
 import Profile from './Profile'
-import type { RuntimeConfig, UserResponse, TokenResponse, LoginHistoryEntry } from '../api/types'
+import type { RuntimeConfig, UserResponse, TokenResponse, LoginHistoryEntry, MfaStatus } from '../api/types'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -266,6 +266,88 @@ describe('Profile page', () => {
     await waitFor(() => {
       expect(screen.getByText(/Too many requests/)).toBeInTheDocument()
     })
+  })
+})
+
+// ─── SecurityCard tests (SFBL-250) ────────────────────────────────────────────
+
+describe('Profile page — SecurityCard', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.spyOn(client, 'apiFetch')
+    vi.spyOn(endpoints.meApi, 'getLoginHistory').mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  function withMfa(mfa: MfaStatus): UserResponse {
+    return { ...MOCK_USER, mfa }
+  }
+
+  it('renders "Off" + Set up button when user is not enrolled', async () => {
+    localStorage.setItem('auth_token', 'test-token')
+    const user = withMfa({ enrolled: false, enrolled_at: null, backup_codes_remaining: 0 })
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(user)
+
+    renderProfile()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('security-card')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Off')).toBeInTheDocument()
+    expect(screen.getByTestId('mfa-setup')).toBeInTheDocument()
+    expect(screen.queryByTestId('mfa-regen')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('mfa-disable')).not.toBeInTheDocument()
+  })
+
+  it('renders "On", remaining count, regenerate + disable when enrolled and tenant does not require', async () => {
+    localStorage.setItem('auth_token', 'test-token')
+    const user = withMfa({
+      enrolled: true,
+      enrolled_at: '2026-04-01T10:00:00Z',
+      backup_codes_remaining: 7,
+      tenant_required: false,
+    })
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(user)
+
+    renderProfile()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('security-card')).toBeInTheDocument()
+    })
+    expect(screen.getByText('On')).toBeInTheDocument()
+    expect(screen.getByTestId('backup-codes-remaining')).toHaveTextContent('7 backup codes remaining')
+    expect(screen.getByTestId('mfa-regen')).toBeInTheDocument()
+    expect(screen.getByTestId('mfa-disable')).toBeInTheDocument()
+    expect(screen.queryByTestId('mfa-setup')).not.toBeInTheDocument()
+  })
+
+  it('hides Disable when tenant_required is true', async () => {
+    localStorage.setItem('auth_token', 'test-token')
+    const user = withMfa({
+      enrolled: true,
+      enrolled_at: '2026-04-01T10:00:00Z',
+      backup_codes_remaining: 7,
+      tenant_required: true,
+    })
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(user)
+
+    renderProfile()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('security-card')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('mfa-regen')).toBeInTheDocument()
+    expect(screen.queryByTestId('mfa-disable')).not.toBeInTheDocument()
   })
 })
 

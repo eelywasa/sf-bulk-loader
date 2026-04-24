@@ -51,6 +51,47 @@ export interface MfaStatus {
   enrolled: boolean
   enrolled_at: string | null
   backup_codes_remaining: number
+  /**
+   * True when the tenant-wide `require_2fa` setting is on, meaning the user
+   * cannot self-disable (spec D8). Optional for forward-compat — if the
+   * backend does not yet expose this field, the UI falls back to letting
+   * the user attempt disable and surfacing the 403 `tenant_enforced`
+   * response.
+   */
+  tenant_required?: boolean
+}
+
+// ─── 2FA self-service (SFBL-250) ──────────────────────────────────────────────
+
+export interface MfaEnrollStartResponse {
+  secret_base32: string
+  otpauth_uri: string
+  qr_svg: string
+}
+
+export interface MfaEnrollConfirmRequest {
+  secret_base32: string
+  code: string
+}
+
+export interface MfaEnrollConfirmResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  backup_codes: string[]
+}
+
+export interface MfaBackupCodesResponse {
+  backup_codes: string[]
+}
+
+export interface MfaRegenerateRequest {
+  code: string
+}
+
+export interface MfaDisableRequest {
+  password: string
+  code: string
 }
 
 export interface UserResponse {
