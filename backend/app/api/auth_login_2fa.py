@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -322,8 +322,30 @@ async def login_2fa(
             method="backup_code",
         )
 
-    matched.consumed_at = datetime.now(timezone.utc)
-    matched.consumed_ip = ip
+    # Atomic conditional write — guarantees one-time-use under concurrent
+    # requests. If another request consumed the same code between our SELECT
+    # and UPDATE, rowcount is 0 and we reject as wrong_mfa.
+    consume_result = await db.execute(
+        update(UserBackupCode)
+        .where(
+            UserBackupCode.id == matched.id,
+            UserBackupCode.consumed_at.is_(None),
+        )
+        .values(
+            consumed_at=datetime.now(timezone.utc),
+            consumed_ip=ip,
+        )
+    )
+    if consume_result.rowcount == 0:
+        await _reject_mfa_code(
+            db,
+            user,
+            ip=ip,
+            ua=ua,
+            email=email,
+            outcome=OutcomeCode.WRONG_MFA,
+            method="backup_code",
+        )
     await db.flush()
 
     remaining = len(rows) - 1
@@ -440,7 +462,9 @@ async def login_2fa_enroll_and_verify(
             },
         )
 
-    now = datetime.now(timezone.utc)
+    # Truncate microseconds so ``password_changed_at`` aligns with the
+    # integer-second ``iat`` claim on the access token issued below.
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     db.add(
         UserTotp(
             user_id=user.id,

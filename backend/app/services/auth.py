@@ -275,6 +275,23 @@ async def get_mfa_pending_user(
             },
         )
 
+    # Mirror the tier-1 lockout gate in ``get_current_user`` — without this,
+    # a user locked by ``handle_failed_attempt`` after receiving a valid
+    # ``mfa_token`` could still complete login and bypass the lockout window.
+    if user.locked_until is not None:
+        lu = user.locked_until
+        if lu.tzinfo is None:
+            lu = lu.replace(tzinfo=timezone.utc)
+        if lu > datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "code": "account_locked",
+                    "message": "Account temporarily locked — please try again later.",
+                    "locked_until": lu.isoformat(),
+                },
+            )
+
     return user, bool(payload.get("must_enroll", False))
 
 

@@ -252,7 +252,10 @@ async def enroll_confirm(
         )
 
     # Atomic: insert user_totp + backup codes + bump password_changed_at.
-    now = datetime.now(timezone.utc)
+    # Truncate microseconds so the watermark is integer-second aligned with
+    # the JWT ``iat`` claim — otherwise a token issued in the same second
+    # as enrolment can look stale to ``get_current_user`` on the next call.
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     db.add(
         UserTotp(
             user_id=current_user.id,
