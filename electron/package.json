@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "build:frontend": "cd ../frontend && npm run build:desktop",
-    "dist": "electron-builder"
+    "dist": "electron-builder --config electron-builder.config.js"
   },
   "devDependencies": {
     "electron": "^41.0.3",
