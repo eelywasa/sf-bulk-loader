@@ -29,7 +29,7 @@ documented there.
 | **Salesforce** | Default API version (`SF_API_VERSION`), polling intervals for Bulk API jobs. |
 | **Partitioning** | Default CSV partition size (per-step override still available on load plans). |
 | **Notifications** | Your own notification subscriptions (all users), plus SMTP connectivity test for admins. |
-| **Security** | Session lifetime, password policy hints (the policy itself is enforced in code). |
+| **Security** | Session lifetime, password policy hints, tenant-wide **Require 2FA** toggle. |
 
 Not every setting is editable at runtime — some (encryption key, distribution
 profile) are env-var only and shown here as read-only for reference.
@@ -73,6 +73,30 @@ Per-step overrides on load plans always win over the global default.
 
 ---
 
+## Require 2FA for all users
+
+**Settings → Security → Require 2FA** enforces two-factor authentication
+across the tenant. When enabled:
+
+- Users who already have a TOTP factor carry on as normal.
+- Users **without** a factor are routed to a forced-enrolment wizard the
+  next time they sign in — they cannot reach the app until they complete
+  it. The short-lived MFA token issued at login is only valid for the
+  enrolment endpoints.
+- Users can no longer self-disable their factor (**Profile → Security →
+  Disable** is hidden). They must ask an admin to use **Users → ⋯ →
+  Reset 2FA**, or use the break-glass CLI, to clear a factor.
+- Existing sessions remain valid — enforcement applies on the next
+  interactive sign-in, not to tokens already in flight.
+
+Turning the toggle **off** is non-disruptive: enrolled users keep their
+factor, and self-service Disable becomes available again.
+
+See [Two-factor authentication](two-factor-auth.md) for the user-side
+flow and [User management](user-management.md) for the admin row action.
+
+---
+
 ## Testing SMTP
 
 **Settings → Notifications → Test email backend** sends a synthetic email
@@ -85,6 +109,7 @@ credentials work before someone relies on a run-completion notification.
 ## Related
 
 - [User management](user-management.md)
+- [Two-factor authentication](two-factor-auth.md) — user-side 2FA flow
 - [Notifications](notifications.md)
 - Deployment: [Docker env vars](../deployment/docker.md)
 - [Admin recovery](admin-recovery.md)

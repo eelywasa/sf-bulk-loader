@@ -126,6 +126,7 @@ See the per-profile deployment guides: [`docs/deployment/docker.md`](deployment/
 - **Desktop** (`auth_mode=none`): no login; a virtual user holds all permissions.
 - **Hosted** (`auth_mode=local`): email + password login; short-lived JWT sessions; users belong to one of the `admin`, `operator`, or `viewer` **profiles**.
 - Permission enforcement is profile-based using **permission keys** (e.g. `connections.manage`, `runs.execute`, `files.view_contents`). Backend routes declare requirements with `Depends(require_permission(<key>))`; the frontend mirrors with `ProtectedRoute` (route-level) and `PermissionGate` / `usePermission` (in-page).
+- **Two-factor auth (SFBL-244)** — optional TOTP + bcrypt-hashed backup codes, stored on `user_totp`. Login is two-phase for 2FA-enrolled users: password success returns a short-lived `mfa_token`, and the client redeems it at `/api/auth/login/2fa` for a full session. Tenant setting `require_2fa` drives a forced-enrol wizard for users without a factor. Admins can reset another user's factor (permission key `admin.users.reset_2fa`); the break-glass CLI `admin-recover` clears 2FA by default (`--keep-2fa` preserves it). See [`docs/usage/two-factor-auth.md`](usage/two-factor-auth.md).
 
 See [`docs/architecture/auth-and-rbac.md`](architecture/auth-and-rbac.md) for the full flow and [`docs/specs/rbac-permission-matrix.md`](specs/rbac-permission-matrix.md) for the authoritative matrix (drift-tested by [`backend/tests/test_permission_matrix.py`](../backend/tests/test_permission_matrix.py)).
 

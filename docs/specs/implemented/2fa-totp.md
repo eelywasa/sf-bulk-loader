@@ -1,7 +1,11 @@
+> **Archived — SFBL-244 (2026-04-24).** This document captured the design at delivery. For current behaviour see [`docs/usage/two-factor-auth.md`](../../usage/two-factor-auth.md) and the auth sections of [`docs/architecture.md`](../../architecture.md) and [`docs/observability.md`](../../observability.md). No further edits — historical reference only.
+
+---
+
 # TOTP 2FA — Implementation Spec
 
-Status: proposed
-Epic: SFBL-2FA (title TBD)
+Status: implemented (SFBL-244)
+Epic: SFBL-244
 Author: spec only — no code in this document
 Related: `docs/specs/rbac-permission-matrix.md`, existing lockout work (SFBL-191), settings service (SFBL-153)
 

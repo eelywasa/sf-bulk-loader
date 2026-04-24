@@ -5,7 +5,7 @@ the user has TOTP 2FA configured; per spec §0 D11, no row is written until
 the user successfully confirms their first code during enrolment. The shared
 TOTP secret is Fernet-encrypted at rest using the existing ``ENCRYPTION_KEY``.
 
-See ``docs/specs/2fa-totp.md`` §3.1 for the authoritative schema.
+See ``docs/specs/implemented/2fa-totp.md`` §3.1 for the authoritative schema.
 """
 
 from __future__ import annotations

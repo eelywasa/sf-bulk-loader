@@ -190,6 +190,59 @@ Auth metrics (one `outcome` label per counter):
 - `sfbl_auth_email_change_requests_total{outcome}`
 - `sfbl_auth_email_change_confirms_total{outcome}`
 
+### 2FA events (SFBL-244)
+
+Emitted by `app.api.auth_2fa`, `app.api.auth_login_2fa`, `app.api.admin_users`,
+and `app.api.settings`. Import from `app.observability.events.MfaEvent`.
+Phase-1 login events (`auth.login.mfa_challenge_issued`,
+`auth.login.mfa_enroll_started`) stay on `AuthEvent` so existing `auth.*`
+dashboards pick them up.
+
+| Constant | Value | Description |
+|---|---|---|
+| `MfaEvent.ENROLL_STARTED` | `mfa.enroll.started` | `/enroll/start` generated a fresh secret |
+| `MfaEvent.ENROLL_SUCCESS` | `mfa.enroll.success` | First TOTP confirmed; `user_totp` + backup codes persisted |
+| `MfaEvent.ENROLL_FAILED` | `mfa.enroll.failed` | Enrol confirm rejected (wrong code / bad secret) |
+| `MfaEvent.BACKUP_CODES_REGENERATED` | `mfa.backup_codes.regenerated` | Self-service rotation of backup codes |
+| `MfaEvent.BACKUP_CODES_EXHAUSTED` | `mfa.backup_codes.exhausted` | User consumed their last backup code |
+| `MfaEvent.FACTOR_DISABLED` | `mfa.factor.disabled` | User disabled their own factor (only when tenant `require_2fa` is off) |
+| `MfaEvent.ADMIN_RESET` | `mfa.admin_reset` | Admin cleared another user's factor (UI or `admin-recover` CLI default) |
+| `MfaEvent.TENANT_TOGGLE_CHANGED` | `mfa.tenant_toggle.changed` | `require_2fa` setting flipped |
+| `MfaEvent.LOGIN_TOTP_SUCCESS` | `mfa.login.totp.success` | `/login/2fa` accepted a TOTP code |
+| `MfaEvent.LOGIN_TOTP_FAILURE` | `mfa.login.totp.failure` | `/login/2fa` rejected a TOTP code |
+| `MfaEvent.LOGIN_BACKUP_CODE_USED` | `mfa.login.backup_code.used` | Backup code redeemed at `/login/2fa` |
+| `MfaEvent.LOGIN_TOKEN_INVALID` | `mfa.login.token_invalid` | `mfa_token` expired / forged / wrong purpose |
+
+2FA outcome codes (subset of `OutcomeCode`):
+
+| OutcomeCode | Used in |
+|---|---|
+| `already_enrolled` | enroll start/confirm, forced-enrol |
+| `invalid_code` | enroll confirm, forced-enrol |
+| `invalid_secret` | enroll confirm, forced-enrol |
+| `tenant_enforced` | self-service disable rejection |
+| `mfa_challenge_issued` | login phase-1 |
+| `wrong_mfa` | `/login/2fa` TOTP or backup-code rejection |
+| `backup_code_used` | `/login/2fa` backup-code success |
+| `mfa_ok` | `/login/2fa` TOTP success |
+| `mfa_token_invalid` | `/login/2fa` with expired / forged `mfa_token` |
+| `mfa_user_limit` | per-user 2FA verify rate-limit trip |
+| `mfa_backup_codes_exhausted` | backup-code consume that emptied the set |
+| `admin_reset_2fa` | admin or CLI reset of another user's factor |
+
+2FA metrics:
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `sfbl_auth_mfa_verify_total` | Counter | `outcome`, `method` | `/login/2fa` verification attempts; `method` ∈ {`totp`, `backup_code`, `none`} |
+| `sfbl_auth_mfa_enroll_total` | Counter | `outcome` | Enrol start + confirm outcomes (self-service and forced) |
+| `sfbl_auth_mfa_backup_codes_remaining_on_consume` | Histogram | — | Backup codes left immediately after a code is consumed (buckets: 0,1,2,3,5,7,10) |
+| `sfbl_auth_mfa_tenant_required` | Gauge | — | Current value of tenant-wide `require_2fa` (0 = off, 1 = on); primed at startup, updated on settings PATCH |
+
+Helpers: `record_mfa_verify`, `record_mfa_enroll`,
+`observe_mfa_backup_codes_remaining`, `set_mfa_tenant_required` in
+`app/observability/metrics.py`.
+
 **Bulk query metrics (SFBL-171):**
 
 | Metric | Type | Labels | Description |

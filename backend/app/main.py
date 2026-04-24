@@ -73,6 +73,14 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as session:
         await seed_admin(session)
 
+    # Startup: prime the 2FA tenant-required gauge from the current setting so
+    # the metric reflects reality even before the first admin toggle.
+    try:
+        from app.observability.metrics import set_mfa_tenant_required
+        set_mfa_tenant_required(bool(await _svc.get("require_2fa")))
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to prime require_2fa gauge at startup")
+
     # Startup: initialise email service singleton (reads email_backend from DB)
     await init_email_service_async(AsyncSessionLocal)
 

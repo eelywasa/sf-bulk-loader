@@ -1,7 +1,7 @@
 """Add admin.users.reset_2fa permission to the admin profile (SFBL-249).
 
 Admins need the ability to clear another user's TOTP factor + backup codes when
-the authenticator is lost. Per D8 of docs/specs/2fa-totp.md, when require_2fa is
+the authenticator is lost. Per D8 of docs/specs/implemented/2fa-totp.md, when require_2fa is
 tenant-enforced users cannot self-disable, so admin reset is the only in-product
 recovery path (the CLI break-glass covers the case where no admin can log in).
 

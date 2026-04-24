@@ -6,7 +6,7 @@ set is deleted and a new set inserted in a single transaction. Each code is
 stored only as a bcrypt hash; the plaintext is shown to the user once and
 never persisted.
 
-See ``docs/specs/2fa-totp.md`` §3.2.
+See ``docs/specs/implemented/2fa-totp.md`` §3.2.
 """
 
 from __future__ import annotations

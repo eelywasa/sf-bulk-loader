@@ -79,6 +79,25 @@ Reset links expire after a short window and can be used only once.
 
 ---
 
+## Lost your two-factor authenticator
+
+If you have enrolled 2FA and no longer have access to the authenticator app:
+
+1. **Use a backup code** on the sign-in 2FA page — click *Use a backup code
+   instead*. Each code works once. Afterwards, regenerate your factor from
+   **Profile → Security** (disable and re-enable against the new device).
+2. **Ask an admin to reset your factor** — **Users → ⋯ → Reset 2FA**. On
+   your next sign-in you'll be forced to enrol a fresh authenticator.
+3. If neither is possible, an operator with shell access can use the
+   break-glass CLI (`python -m app.cli admin-recover <email>`) — see
+   [Admin recovery](admin-recovery.md). By default it clears 2FA;
+   `--keep-2fa` preserves it.
+
+Full enrolment / sign-in flow is documented in
+[Two-factor authentication](two-factor-auth.md).
+
+---
+
 ## Locked out (too many failed logins)
 
 Repeated failed logins lock the account. You have two paths back in:
@@ -100,5 +119,6 @@ exist to prevent abuse of the reset flow.
 ## Related
 
 - [User management](user-management.md) — admin side of the same flows
+- [Two-factor authentication](two-factor-auth.md) — enrol, sign in, rotate codes
 - [Admin recovery](admin-recovery.md) — break-glass CLI tools
 - [Getting started](getting-started.md)

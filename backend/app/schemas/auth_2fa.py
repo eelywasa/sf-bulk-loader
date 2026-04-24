@@ -1,6 +1,6 @@
 """Pydantic schemas for the 2FA enrolment + management API (SFBL-247).
 
-See ``docs/specs/2fa-totp.md`` §2 for the wire contract. The enrolment flow
+See ``docs/specs/implemented/2fa-totp.md`` §2 for the wire contract. The enrolment flow
 is stateless (D11): the server returns the secret on ``/enroll/start`` and
 only persists it when the caller confirms a working code via
 ``/enroll/confirm``.

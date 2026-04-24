@@ -7,7 +7,7 @@ fire all phase-2 side effects (``handle_successful_login`` + success
 ``login_attempt`` row + ``auth.login.succeeded`` event + ``must_reset_password``
 handling) via the shared ``_login_success_phase2`` helper in ``api/auth.py``.
 
-Wire contract: ``docs/specs/2fa-totp.md`` §2.2 / §2.3 / §2.4.
+Wire contract: ``docs/specs/implemented/2fa-totp.md`` §2.2 / §2.3 / §2.4.
 """
 
 from __future__ import annotations
@@ -26,6 +26,11 @@ from app.models.user import User
 from app.models.user_backup_code import UserBackupCode
 from app.models.user_totp import UserTotp
 from app.observability.events import AuthEvent, MfaEvent, OutcomeCode
+from app.observability.metrics import (
+    observe_mfa_backup_codes_remaining,
+    record_mfa_enroll,
+    record_mfa_verify,
+)
 from app.schemas.auth import TokenResponse
 from app.schemas.auth_2fa import (
     Login2FAEnrollAndVerifyRequest,
@@ -132,6 +137,7 @@ async def _enforce_user_rate_limit(
         key, _USER_RATE_LIMIT_ATTEMPTS, _USER_RATE_LIMIT_WINDOW_SECONDS
     )
     if not allowed:
+        record_mfa_verify(OutcomeCode.MFA_USER_LIMIT, "totp")
         _log.warning(
             "2FA verify rate-limited",
             extra={
@@ -159,10 +165,12 @@ async def _reject_mfa_code(
     ua: str | None,
     email: str,
     outcome: str,
+    method: str = "totp",
 ) -> None:
     """Record a failed 2FA verification + advance lockout counters, then 401."""
     from app.api.auth import _persist_login_attempt  # local import avoids cycle
 
+    record_mfa_verify(outcome, method)
     _log.warning(
         "2FA verification failed",
         extra={
@@ -254,6 +262,7 @@ async def login_2fa(
         enrolment.last_used_at = datetime.now(timezone.utc)
         await db.flush()
 
+        record_mfa_verify(OutcomeCode.MFA_OK, "totp")
         _log.info(
             "2FA TOTP login succeeded",
             extra={
@@ -272,7 +281,13 @@ async def login_2fa(
     normalized = body.code.replace("-", "").upper().strip()
     if not normalized:
         await _reject_mfa_code(
-            db, user, ip=ip, ua=ua, email=email, outcome=OutcomeCode.WRONG_MFA
+            db,
+            user,
+            ip=ip,
+            ua=ua,
+            email=email,
+            outcome=OutcomeCode.WRONG_MFA,
+            method="backup_code",
         )
 
     # Fetch ALL unconsumed codes and iterate the full set to avoid timing leaks.
@@ -298,7 +313,13 @@ async def login_2fa(
 
     if matched is None:
         await _reject_mfa_code(
-            db, user, ip=ip, ua=ua, email=email, outcome=OutcomeCode.WRONG_MFA
+            db,
+            user,
+            ip=ip,
+            ua=ua,
+            email=email,
+            outcome=OutcomeCode.WRONG_MFA,
+            method="backup_code",
         )
 
     matched.consumed_at = datetime.now(timezone.utc)
@@ -306,6 +327,8 @@ async def login_2fa(
     await db.flush()
 
     remaining = len(rows) - 1
+    observe_mfa_backup_codes_remaining(remaining)
+    record_mfa_verify(OutcomeCode.BACKUP_CODE_USED, "backup_code")
     if remaining == 0:
         _log.warning(
             "Backup codes exhausted",
@@ -347,6 +370,7 @@ async def login_2fa_enroll_start(
     )
     qr_svg = render_qr_svg(otpauth_uri)
 
+    record_mfa_enroll(OutcomeCode.OK)
     _log.info(
         "Forced 2FA enrolment started",
         extra={
@@ -385,6 +409,7 @@ async def login_2fa_enroll_and_verify(
         await db.execute(select(UserTotp).where(UserTotp.user_id == user.id))
     ).scalar_one_or_none()
     if existing is not None:
+        record_mfa_enroll(OutcomeCode.ALREADY_ENROLLED)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -396,6 +421,7 @@ async def login_2fa_enroll_and_verify(
     try:
         result = verify_code(secret_base32=body.secret_base32, code=body.code)
     except TotpError as exc:
+        record_mfa_enroll(OutcomeCode.INVALID_SECRET)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -405,6 +431,7 @@ async def login_2fa_enroll_and_verify(
         ) from exc
 
     if not result.ok:
+        record_mfa_enroll(OutcomeCode.INVALID_CODE)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -430,6 +457,7 @@ async def login_2fa_enroll_and_verify(
         persisted.password_changed_at = now
     await db.flush()
 
+    record_mfa_enroll(OutcomeCode.OK)
     _log.info(
         "Forced 2FA enrolment confirmed",
         extra={

@@ -4,7 +4,7 @@ Routes ship under ``/api/auth/2fa`` and require a regular authenticated JWT
 (``get_current_user``). The forced-enrolment path via step-up ``mfa_pending``
 tokens is added in SFBL-248.
 
-Wire contract: ``docs/specs/2fa-totp.md`` §2.3, §2.5, §2.6.
+Wire contract: ``docs/specs/implemented/2fa-totp.md`` §2.3, §2.5, §2.6.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from app.models.user import User
 from app.models.user_backup_code import UserBackupCode
 from app.models.user_totp import UserTotp
 from app.observability.events import AuthEvent, MfaEvent, OutcomeCode
+from app.observability.metrics import record_mfa_enroll
 from app.schemas.auth_2fa import (
     BackupCodesResponse,
     DisableRequest,
@@ -142,6 +143,7 @@ async def enroll_start(
 
     existing = await _get_enrolment(db, current_user.id)
     if existing is not None:
+        record_mfa_enroll(OutcomeCode.ALREADY_ENROLLED)
         _log.info(
             "2FA enroll start rejected: already enrolled",
             extra={
@@ -166,6 +168,7 @@ async def enroll_start(
     )
     qr_svg = render_qr_svg(otpauth_uri)
 
+    record_mfa_enroll(OutcomeCode.OK)
     _log.info(
         "2FA enrolment started",
         extra={
@@ -201,6 +204,7 @@ async def enroll_confirm(
         )
 
     if await _get_enrolment(db, current_user.id) is not None:
+        record_mfa_enroll(OutcomeCode.ALREADY_ENROLLED)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -212,6 +216,7 @@ async def enroll_confirm(
     try:
         result = verify_code(secret_base32=body.secret_base32, code=body.code)
     except TotpError as exc:
+        record_mfa_enroll(OutcomeCode.INVALID_SECRET)
         _log.warning(
             "2FA enroll confirm rejected: invalid secret",
             extra={
@@ -229,6 +234,7 @@ async def enroll_confirm(
         ) from exc
 
     if not result.ok:
+        record_mfa_enroll(OutcomeCode.INVALID_CODE)
         _log.warning(
             "2FA enroll confirm rejected: wrong code",
             extra={
@@ -264,6 +270,7 @@ async def enroll_confirm(
         persisted.password_changed_at = now
     await db.commit()
 
+    record_mfa_enroll(OutcomeCode.OK)
     _log.info(
         "2FA enrolment confirmed",
         extra={

@@ -34,6 +34,8 @@ from app.models.app_setting import AppSetting
 from app.models.user import User
 from app.schemas.settings import AllSettings, CategorySettings, PatchRequest, SettingValue
 from app.auth.permissions import require_permission, SYSTEM_SETTINGS
+from app.observability.events import MfaEvent, OutcomeCode
+from app.observability.metrics import set_mfa_tenant_required
 from app.services.settings.registry import SETTINGS_REGISTRY
 import app.services.settings.service as _settings_svc_module
 
@@ -236,7 +238,30 @@ async def patch_category_settings(
 
     # -- Write pass -----------------------------------------------------------
     for key, value in coerced.items():
+        prior: Any = None
+        if key == "require_2fa":
+            try:
+                prior = await _settings_svc_module.settings_service.get(key)  # type: ignore[union-attr]
+            except Exception:  # pragma: no cover - defensive
+                prior = None
         await _settings_svc_module.settings_service.set(key, value)  # type: ignore[union-attr]
+
+        # 2FA tenant toggle side-effects (SFBL-252): update the Prometheus
+        # gauge and emit the canonical mfa.tenant_toggle.changed event so
+        # dashboards and audit trails pick the change up.
+        if key == "require_2fa":
+            enabled = bool(value)
+            set_mfa_tenant_required(enabled)
+            if bool(prior) != enabled:
+                _log.info(
+                    "require_2fa tenant toggle changed",
+                    extra={
+                        "event_name": MfaEvent.TENANT_TOGGLE_CHANGED,
+                        "outcome_code": OutcomeCode.OK,
+                        "require_2fa": enabled,
+                        "prior_value": bool(prior),
+                    },
+                )
 
     response.headers[_CACHE_TTL_HEADER] = _CACHE_TTL_VALUE
     return await _build_category_settings(category, db)
