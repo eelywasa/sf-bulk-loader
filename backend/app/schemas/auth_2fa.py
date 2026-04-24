@@ -56,3 +56,33 @@ class BackupCodesResponse(BaseModel):
 class DisableRequest(BaseModel):
     password: str
     code: str = Field(..., min_length=6, max_length=10)
+
+
+# ─── SFBL-248: two-phase login ────────────────────────────────────────────
+
+
+class Login2FARequest(BaseModel):
+    """Phase-2 login request when the user already has a factor enrolled."""
+
+    code: str = Field(..., min_length=6, max_length=12)
+    method: str = Field("totp", pattern="^(totp|backup_code)$")
+
+
+class Login2FAEnrollStartResponse(EnrollStartResponse):
+    """Same payload shape as self-service start — subclassed for clarity."""
+
+
+class Login2FAEnrollAndVerifyRequest(BaseModel):
+    secret_base32: str = Field(..., min_length=16, max_length=64)
+    code: str = Field(..., min_length=6, max_length=10)
+
+
+class Login2FAEnrollAndVerifyResponse(BaseModel):
+    """Full access token + shown-once backup codes for forced enrolment."""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    must_reset_password: bool = False
+    mfa_required: bool = False
+    backup_codes: List[str]

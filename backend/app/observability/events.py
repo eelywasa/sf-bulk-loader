@@ -238,6 +238,16 @@ class MfaEvent:
     #: Admin reset of another user's factor.
     ADMIN_RESET = "mfa.admin_reset"
 
+    # ── SFBL-248: login lifecycle ──────────────────────────────────────────
+    #: Successful TOTP verification at ``/login/2fa``.
+    LOGIN_TOTP_SUCCESS = "mfa.login.totp.success"
+    #: Failed TOTP verification at ``/login/2fa``.
+    LOGIN_TOTP_FAILURE = "mfa.login.totp.failure"
+    #: A backup code was redeemed to complete login.
+    LOGIN_BACKUP_CODE_USED = "mfa.login.backup_code.used"
+    #: ``mfa_token`` could not be validated (expired / forged / wrong purpose).
+    LOGIN_TOKEN_INVALID = "mfa.login.token_invalid"
+
 
 class EmailEvent:
     """Outbound email delivery lifecycle events."""
@@ -442,3 +452,9 @@ class OutcomeCode:
     WRONG_MFA = "wrong_mfa"
     BACKUP_CODE_USED = "backup_code_used"
     ADMIN_RESET_2FA = "admin_reset_2fa"
+
+    # SFBL-248: two-phase login outcome codes
+    MFA_TOKEN_INVALID = "mfa_token_invalid"
+    MFA_USER_LIMIT = "mfa_user_limit"
+    MFA_OK = "mfa_ok"
+    MFA_BACKUP_CODES_EXHAUSTED = "mfa_backup_codes_exhausted"

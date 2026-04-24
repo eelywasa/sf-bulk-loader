@@ -31,6 +31,24 @@ class TokenResponse(BaseModel):
     # frontend can authenticate the password-change API, but clients MUST redirect
     # to the reset flow before granting normal access.  Frontend wiring: SFBL-202.
     must_reset_password: bool = False
+    # SFBL-248: explicit false on the full-token branch of the login response
+    # union — lets the frontend discriminate without peeking at keys.
+    mfa_required: bool = False
+
+
+class MfaRequiredResponse(BaseModel):
+    """Phase-1 response when login requires a second factor (SFBL-248).
+
+    The caller exchanges ``mfa_token`` for a full ``TokenResponse`` via
+    ``POST /api/auth/login/2fa`` (when already enrolled) or
+    ``POST /api/auth/login/2fa/enroll-and-verify`` (when ``must_enroll``
+    is true).
+    """
+
+    mfa_required: bool = True
+    mfa_token: str
+    mfa_methods: List[str]
+    must_enroll: bool
 
 
 class ProfileSummary(BaseModel):
