@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -48,18 +47,15 @@ async def _seed_user_and_plan(session) -> tuple[User, LoadPlan]:
 
 
 @pytest.fixture
-def db_session():
+async def db_session():
     """Yield a fresh AsyncSession bound to the test engine."""
     from tests.conftest import _TestSession
 
-    async def _acquire():
-        return _TestSession()
-
-    session = asyncio.get_event_loop().run_until_complete(_acquire())
+    session = _TestSession()
     try:
         yield session
     finally:
-        asyncio.get_event_loop().run_until_complete(session.close())
+        await session.close()
 
 
 async def test_create_subscription_with_plan(db_session):
