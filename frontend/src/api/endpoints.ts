@@ -102,6 +102,7 @@ export interface LoadPlanCreate {
   abort_on_step_failure?: boolean
   error_threshold_pct?: number
   max_parallel_jobs?: number
+  consecutive_failure_threshold?: number | null
   output_connection_id?: string | null
 }
 

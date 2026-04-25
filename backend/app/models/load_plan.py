@@ -29,6 +29,7 @@ class LoadPlan(Base):
     abort_on_step_failure: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     error_threshold_pct: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
     max_parallel_jobs: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    consecutive_failure_threshold: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=func.now(), onupdate=func.now()

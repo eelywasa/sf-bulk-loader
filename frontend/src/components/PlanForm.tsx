@@ -121,6 +121,25 @@ export default function PlanForm({ form, formErrors, connections, outputConnecti
             </label>
           </div>
 
+          {/* Consecutive failure threshold */}
+          <div>
+            <label htmlFor="plan-cb-threshold" className={LABEL_CLASS}>
+              Abort after N consecutive partition failures
+            </label>
+            <input
+              id="plan-cb-threshold"
+              type="number"
+              min="1"
+              value={form.consecutive_failure_threshold}
+              onChange={(e) => onChange('consecutive_failure_threshold', e.target.value)}
+              placeholder="Disabled"
+              className={INPUT_CLASS}
+            />
+            <p className="mt-1.5 text-xs text-content-muted">
+              Stops the run when this many partition-level failures occur in a row. Leave blank to disable.
+            </p>
+          </div>
+
           {/* Output Destination */}
           <div className="sm:col-span-2">
             <label htmlFor="plan-output-connection" className={LABEL_CLASS}>

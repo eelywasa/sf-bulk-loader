@@ -115,6 +115,9 @@ export function usePlanEditorState(id: string | undefined) {
         abort_on_step_failure: plan.abort_on_step_failure,
         error_threshold_pct: String(plan.error_threshold_pct),
         max_parallel_jobs: String(plan.max_parallel_jobs),
+        consecutive_failure_threshold: plan.consecutive_failure_threshold != null
+          ? String(plan.consecutive_failure_threshold)
+          : '',
         output_connection_id: plan.output_connection_id ?? '',
       })
     }
@@ -212,6 +215,9 @@ export function usePlanEditorState(id: string | undefined) {
       abort_on_step_failure: form.abort_on_step_failure,
       error_threshold_pct: Number(form.error_threshold_pct),
       max_parallel_jobs: Number(form.max_parallel_jobs),
+      consecutive_failure_threshold: form.consecutive_failure_threshold !== ''
+        ? Number(form.consecutive_failure_threshold)
+        : null,
       output_connection_id: form.output_connection_id || null,
     }
     if (isNew) {

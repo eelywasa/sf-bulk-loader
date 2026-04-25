@@ -124,6 +124,14 @@ export function RunSummaryCard({
       </div>
 
       {(() => {
+        // Circuit breaker abort banner (aborted runs only).
+        if (run.status === 'aborted' && run.error_summary?.circuit_breaker) {
+          return (
+            <p className="text-xs text-warning-text bg-warning-bg rounded px-3 py-1.5">
+              {run.error_summary.circuit_breaker}
+            </p>
+          )
+        }
         // Render a terminal-failure banner whenever error_summary carries a
         // reason (auth_error, storage_error, or any other known key).
         // For failed runs with an error_summary but no recognized reason field,

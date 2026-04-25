@@ -24,6 +24,7 @@ from app.observability.events import JobEvent, OutcomeCode, SalesforceEvent
 from app.observability import tracing
 from app.services.output_storage import OutputStorage
 from app.services.result_persistence import download_and_persist_results
+from app.services.run_context import run_context_ctx_var, update_circuit_breaker
 from app.services.run_event_publisher import publish_job_status_change
 from app.observability.metrics import record_bulk_job_poll_timeout
 from app.services.salesforce_bulk import (
@@ -111,6 +112,13 @@ async def _process_partition_body(
                 await db.commit()
                 return 0, 0
 
+            # SFBL-121: skip if circuit breaker already tripped this run.
+            _ctx = run_context_ctx_var.get()
+            if _ctx is not None and _ctx.circuit_breaker_tripped:
+                job_rec.status = JobStatus.aborted
+                await db.commit()
+                return 0, 0
+
             # ── Create SF job ─────────────────────────────────────────────────
             job_rec.status = JobStatus.uploading
             job_rec.started_at = datetime.now(timezone.utc)
@@ -145,6 +153,7 @@ async def _process_partition_body(
                     job_id=job_record_id,
                     status=JobStatus.failed.value,
                 )
+                await update_circuit_breaker(success=False)
                 return 0, 0
 
             job_rec.sf_job_id = sf_job_id
@@ -188,6 +197,7 @@ async def _process_partition_body(
                     sf_job_id=sf_job_id,
                     status=JobStatus.failed.value,
                 )
+                await update_circuit_breaker(success=False)
                 return 0, 0
 
             job_rec.status = JobStatus.upload_complete
@@ -334,6 +344,7 @@ async def _process_partition_body(
                     sf_job_id=sf_job_id,
                     status=JobStatus.failed.value,
                 )
+                await update_circuit_breaker(success=False)
                 return 0, 0
 
             # ── Download results ──────────────────────────────────────────────
@@ -392,4 +403,14 @@ async def _process_partition_body(
                        "run_id": run_id, "step_id": str(step.id),
                        "job_record_id": job_record_id, "sf_job_id": sf_job_id},
             )
+            # SFBL-121: update circuit-breaker counter.
+            # Only SF-level job failure (terminal_state="Failed") counts.
+            # "Aborted" is an external/user abort, not a Salesforce failure.
+            # Row-level record failures inside a JobComplete partition are
+            # covered by error_threshold_pct and are excluded here.
+            if terminal_state == "JobComplete":
+                await update_circuit_breaker(success=True)
+            elif terminal_state == "Failed":
+                await update_circuit_breaker(success=False)
+            # Aborted: do not touch the counter.
             return records_processed - records_failed, records_failed

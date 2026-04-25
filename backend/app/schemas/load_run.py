@@ -28,6 +28,7 @@ class RunErrorSummary(BaseModel):
 
     auth_error: Optional[str] = None
     storage_error: Optional[str] = None
+    circuit_breaker: Optional[str] = None
     preflight_warnings: Optional[List[PreflightWarning]] = None
 
     model_config = ConfigDict(extra="ignore")

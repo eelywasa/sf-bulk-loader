@@ -65,6 +65,11 @@ runs_completed_total = Counter(
     labelnames=["final_status"],
 )
 
+runs_aborted_by_circuit_breaker_total = Counter(
+    "sfbl_runs_aborted_by_circuit_breaker_total",
+    "Total number of runs aborted because consecutive partition failures reached the plan threshold (SFBL-121).",
+)
+
 run_duration_seconds = Histogram(
     "sfbl_run_duration_seconds",
     "Duration of a load run from start to terminal state, in seconds.",
@@ -549,6 +554,11 @@ def record_bulk_query_job_failed(object_name: str, operation: str) -> None:
 def record_run_completed(final_status: str, duration_seconds: float) -> None:
     runs_completed_total.labels(final_status=final_status).inc()
     run_duration_seconds.labels(final_status=final_status).observe(duration_seconds)
+
+
+def record_circuit_breaker_tripped() -> None:
+    """Increment the circuit-breaker abort counter (SFBL-121)."""
+    runs_aborted_by_circuit_breaker_total.inc()
 
 
 def record_step_completed(
