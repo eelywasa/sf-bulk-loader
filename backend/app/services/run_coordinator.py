@@ -35,6 +35,7 @@ from app.services.output_storage import (
 from app.services.partition_executor import process_partition as _default_process
 from app.services.result_persistence import count_csv_rows
 from app.services.notifications import fire_terminal_notifications
+from app.services.run_context import RunContext, run_context_ctx_var
 from app.services.run_event_publisher import (
     publish_run_aborted,
     publish_run_completed,
@@ -125,6 +126,13 @@ async def execute_retry_run(
             return
 
         plan: LoadPlan = run.load_plan
+
+        # SFBL-259: bind the run-scoped in-memory context for retry runs too,
+        # so any helper that adopts ``get_run_context()`` works for both
+        # entry points.
+        run_context_ctx_var.set(
+            RunContext(run_id=run_id, plan_id=str(plan.id), started_at=datetime.now(timezone.utc))
+        )
 
         # Bind workflow context for this background task.
         run_id_ctx_var.set(run_id)
@@ -326,6 +334,14 @@ async def _execute_run(
 
     plan: LoadPlan = run.load_plan
     steps: list[LoadStep] = sorted(plan.load_steps, key=lambda s: s.sequence)
+
+    # SFBL-259: bind the run-scoped in-memory context for the lifetime of this
+    # async task. Partition tasks spawned via ``asyncio.gather`` inherit it so
+    # follow-up tickets (SFBL-121 etc.) can attach run-scoped counters/flags
+    # without threading them through function signatures.
+    run_context_ctx_var.set(
+        RunContext(run_id=run_id, plan_id=str(plan.id), started_at=datetime.now(timezone.utc))
+    )
 
     # Bind workflow context for this background task (task-scoped, no reset needed).
     run_id_ctx_var.set(run_id)
