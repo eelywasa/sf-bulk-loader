@@ -166,9 +166,19 @@ function startBackend(dataDir) {
     app.quit()
   })
 
-  backendProcess.on('exit', (code) => {
-    console.log(`[backend] process exited with code ${code}`)
+  backendProcess.on('exit', (code, signal) => {
+    console.log(`[backend] process exited with code ${code} signal ${signal}`)
     backendProcess = null
+    // If the backend exits before the window is created (e.g. port already in
+    // use), quit immediately so the app doesn't silently connect to a stale
+    // or unrelated process on the same port.
+    if (code !== 0 && code !== null) {
+      dialog.showErrorBox(
+        'Backend failed to start',
+        `The backend process exited with code ${code}. Another process may already be using port ${BACKEND_PORT}.`
+      )
+      app.quit()
+    }
   })
 }
 

@@ -66,6 +66,13 @@ hiddenimports = [
     'starlette.staticfiles',
     'starlette.websockets',
 
+    # anyio — loaded dynamically by fastapi/starlette; missed by static analysis
+    'anyio',
+    'anyio._backends._asyncio',
+    'anyio._backends._trio',
+    'anyio.abc',
+    'anyio.streams.memory',
+
     # Uvicorn — protocol loading is string-based and missed by static analysis
     'uvicorn',
     'uvicorn.logging',
