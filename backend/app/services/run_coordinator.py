@@ -53,6 +53,7 @@ from app.observability.context import (
 from app.observability.error_monitoring import capture_exception
 from app.observability.events import OutcomeCode, RunEvent, StepEvent
 from app.observability.metrics import (
+    record_circuit_breaker_tripped,
     record_run_completed,
     record_run_preflight_failure,
     record_run_started,
@@ -350,7 +351,12 @@ async def _execute_run(
     # awaits ``_execute_run`` could observe a stale ``RunContext`` after the
     # run has ended, violating the documented ``get_run_context()`` contract.
     _run_context_token = run_context_ctx_var.set(
-        RunContext(run_id=run_id, plan_id=str(plan.id), started_at=datetime.now(timezone.utc))
+        RunContext(
+            run_id=run_id,
+            plan_id=str(plan.id),
+            started_at=datetime.now(timezone.utc),
+            circuit_breaker_threshold=plan.consecutive_failure_threshold or None,
+        )
     )
 
     # Bind workflow context for this background task (task-scoped, no reset needed).
@@ -841,6 +847,45 @@ async def _execute_run_body(
                     await publish_run_aborted(run_id, reason="step_failure_threshold")
                     fire_terminal_notifications(run_id, RunStatus.aborted)
                     return
+
+            # SFBL-121: check circuit breaker after every step.
+            _run_ctx = run_context_ctx_var.get()
+            if _run_ctx is not None and _run_ctx.circuit_breaker_tripped:
+                logger.error(
+                    "Run %s: circuit breaker tripped after step %s "
+                    "(%d consecutive partition failures >= threshold %d) — aborting",
+                    run_id,
+                    step.id,
+                    _run_ctx.consecutive_failures,
+                    _run_ctx.circuit_breaker_threshold,
+                    extra={
+                        "event_name": RunEvent.CIRCUIT_BREAKER_TRIPPED,
+                        "outcome_code": OutcomeCode.CIRCUIT_BREAKER_TRIPPED,
+                        "run_id": run_id,
+                        "step_id": str(step.id),
+                        "consecutive_failures": _run_ctx.consecutive_failures,
+                        "threshold": _run_ctx.circuit_breaker_threshold,
+                    },
+                )
+                await _abort_remaining_jobs(run_id, db, bulk_client)
+                run.status = RunStatus.aborted
+                run.completed_at = datetime.now(timezone.utc)
+                run.total_records = run_total_records
+                run.total_success = run_total_success
+                run.total_errors = run_total_errors
+                _merge_run_error_summary(
+                    run,
+                    {"circuit_breaker": (
+                        f"Aborted: {_run_ctx.consecutive_failures} consecutive partition "
+                        f"failures reached the threshold of {_run_ctx.circuit_breaker_threshold}."
+                    )},
+                )
+                await db.commit()
+                record_run_completed(RunStatus.aborted.value, time.perf_counter() - _run_start)
+                record_circuit_breaker_tripped()
+                await publish_run_aborted(run_id, reason="circuit_breaker")
+                fire_terminal_notifications(run_id, RunStatus.aborted)
+                return
 
     # ── Finalise run ──────────────────────────────────────────────────────────
     final_status = (

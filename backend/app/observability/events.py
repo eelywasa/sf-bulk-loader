@@ -54,6 +54,8 @@ class RunEvent:
     PREFLIGHT_STARTED = "run.preflight.started"
     PREFLIGHT_COMPLETED = "run.preflight.completed"
     PREFLIGHT_FAILED = "run.preflight.failed"
+    #: SFBL-121: consecutive partition failures reached the plan threshold.
+    CIRCUIT_BREAKER_TRIPPED = "run.circuit_breaker.tripped"
 
 
 class StepEvent:
@@ -458,3 +460,6 @@ class OutcomeCode:
     MFA_USER_LIMIT = "mfa_user_limit"
     MFA_OK = "mfa_ok"
     MFA_BACKUP_CODES_EXHAUSTED = "mfa_backup_codes_exhausted"
+
+    # SFBL-121: circuit breaker
+    CIRCUIT_BREAKER_TRIPPED = "circuit_breaker_tripped"

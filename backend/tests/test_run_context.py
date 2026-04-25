@@ -1,4 +1,4 @@
-"""Tests for the run-scoped RunContext + ContextVar helper (SFBL-259)."""
+"""Tests for the run-scoped RunContext + ContextVar helper (SFBL-259, SFBL-121)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from app.services.run_context import (
     RunContext,
     get_run_context,
     run_context_ctx_var,
+    update_circuit_breaker,
 )
 
 
@@ -113,3 +114,99 @@ async def test_run_context_lock_is_reentrant_safe_under_gather():
 
     await asyncio.gather(*(_increment() for _ in range(50)))
     assert counter["value"] == 50
+
+
+# ── SFBL-121: circuit-breaker field defaults and update_circuit_breaker ───────
+
+
+def test_run_context_circuit_breaker_defaults():
+    ctx = RunContext(run_id="r", plan_id="p", started_at=datetime.now(timezone.utc))
+    assert ctx.circuit_breaker_threshold is None
+    assert ctx.consecutive_failures == 0
+    assert ctx.circuit_breaker_tripped is False
+
+
+@pytest.mark.asyncio
+async def test_update_circuit_breaker_increments_on_failure():
+    ctx = RunContext(
+        run_id="r", plan_id="p", started_at=datetime.now(timezone.utc),
+        circuit_breaker_threshold=3,
+    )
+    run_context_ctx_var.set(ctx)
+
+    await update_circuit_breaker(success=False)
+    assert ctx.consecutive_failures == 1
+    assert ctx.circuit_breaker_tripped is False
+
+    await update_circuit_breaker(success=False)
+    assert ctx.consecutive_failures == 2
+    assert ctx.circuit_breaker_tripped is False
+
+
+@pytest.mark.asyncio
+async def test_update_circuit_breaker_trips_at_threshold():
+    ctx = RunContext(
+        run_id="r", plan_id="p", started_at=datetime.now(timezone.utc),
+        circuit_breaker_threshold=3,
+    )
+    run_context_ctx_var.set(ctx)
+
+    for _ in range(3):
+        await update_circuit_breaker(success=False)
+
+    assert ctx.consecutive_failures == 3
+    assert ctx.circuit_breaker_tripped is True
+
+
+@pytest.mark.asyncio
+async def test_update_circuit_breaker_resets_on_success():
+    ctx = RunContext(
+        run_id="r", plan_id="p", started_at=datetime.now(timezone.utc),
+        circuit_breaker_threshold=3,
+    )
+    run_context_ctx_var.set(ctx)
+
+    await update_circuit_breaker(success=False)
+    await update_circuit_breaker(success=False)
+    assert ctx.consecutive_failures == 2
+
+    await update_circuit_breaker(success=True)
+    assert ctx.consecutive_failures == 0
+    assert ctx.circuit_breaker_tripped is False
+
+
+@pytest.mark.asyncio
+async def test_update_circuit_breaker_noop_when_threshold_none():
+    ctx = RunContext(
+        run_id="r", plan_id="p", started_at=datetime.now(timezone.utc),
+        circuit_breaker_threshold=None,
+    )
+    run_context_ctx_var.set(ctx)
+
+    for _ in range(100):
+        await update_circuit_breaker(success=False)
+
+    assert ctx.consecutive_failures == 0
+    assert ctx.circuit_breaker_tripped is False
+
+
+@pytest.mark.asyncio
+async def test_update_circuit_breaker_noop_when_no_context():
+    # Calling outside a run should not raise.
+    await update_circuit_breaker(success=False)
+
+
+@pytest.mark.asyncio
+async def test_update_circuit_breaker_serialises_under_concurrent_tasks():
+    """Concurrent failures from N partition tasks all increment the counter safely."""
+    threshold = 20
+    ctx = RunContext(
+        run_id="r", plan_id="p", started_at=datetime.now(timezone.utc),
+        circuit_breaker_threshold=threshold,
+    )
+    run_context_ctx_var.set(ctx)
+
+    await asyncio.gather(*(update_circuit_breaker(success=False) for _ in range(threshold)))
+
+    assert ctx.consecutive_failures == threshold
+    assert ctx.circuit_breaker_tripped is True

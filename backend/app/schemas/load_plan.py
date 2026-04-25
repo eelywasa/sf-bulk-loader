@@ -13,6 +13,7 @@ class LoadPlanBase(BaseModel):
     abort_on_step_failure: bool = True
     error_threshold_pct: float = 10.0
     max_parallel_jobs: int = 5
+    consecutive_failure_threshold: Optional[int] = 5
     output_connection_id: Optional[str] = None
 
 
@@ -27,6 +28,7 @@ class LoadPlanUpdate(BaseModel):
     abort_on_step_failure: Optional[bool] = None
     error_threshold_pct: Optional[float] = None
     max_parallel_jobs: Optional[int] = None
+    consecutive_failure_threshold: Optional[int] = None
     output_connection_id: Optional[str] = None
 
 

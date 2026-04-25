@@ -296,6 +296,7 @@ export interface LoadPlan {
   abort_on_step_failure: boolean
   error_threshold_pct: number
   max_parallel_jobs: number
+  consecutive_failure_threshold?: number | null
   output_connection_id: string | null
   created_at: string
   updated_at: string
@@ -316,6 +317,7 @@ export interface PreflightWarning {
 export interface RunErrorSummary {
   auth_error?: string | null
   storage_error?: string | null
+  circuit_breaker?: string | null
   preflight_warnings?: PreflightWarning[] | null
 }
 

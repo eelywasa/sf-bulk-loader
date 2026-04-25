@@ -1549,3 +1549,129 @@ async def test_unsupported_output_provider_transitions_run_to_failed(
 
     await db.refresh(run)
     assert run.status == RunStatus.failed
+
+
+# ── SFBL-121: circuit-breaker integration tests ───────────────────────────────
+
+
+async def _make_plan_with_cb(
+    db: AsyncSession,
+    connection: Connection,
+    *,
+    threshold: int | None = 3,
+) -> LoadPlan:
+    plan = LoadPlan(
+        id=str(uuid.uuid4()),
+        connection_id=connection.id,
+        name="CB Plan",
+        abort_on_step_failure=False,
+        error_threshold_pct=100.0,  # high so only CB triggers the abort
+        max_parallel_jobs=5,
+        consecutive_failure_threshold=threshold,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_aborts_run_after_threshold(tmp_path):
+    """SF-level job failures hit threshold → run aborted with circuit_breaker reason.
+
+    Uses _SessionFactory (separate sessions per partition) to avoid shared-session
+    concurrency issues when multiple partitions commit concurrently.
+    """
+    async with _SessionFactory() as db:
+        conn = await _make_connection(db)
+        plan = await _make_plan_with_cb(db, conn, threshold=2)
+        await _make_step(db, plan)
+        run = await _make_run(db, plan)
+
+        # All partitions fail at the SF level (terminal_state="Failed").
+        bulk_mock = _make_bulk_client_mock(terminal_state="Failed")
+        broadcast_events: list[dict] = []
+
+        async def capture(run_id, event):
+            broadcast_events.append(event)
+
+        with (
+            patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+            patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+            patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
+            patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS, CSV_2_ROWS, CSV_2_ROWS]),
+            patch("app.services.orchestrator.ws_manager.broadcast", side_effect=capture),
+            patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        ):
+            await _execute_run(run.id, db, db_factory=_SessionFactory)
+
+        await db.refresh(run)
+        assert run.status == RunStatus.aborted
+        import json
+        summary = json.loads(run.error_summary)
+        assert "circuit_breaker" in summary
+        # The coordinator broadcasts run.aborted with reason="circuit_breaker" via WS.
+        aborted_events = [e for e in broadcast_events if e.get("event_name") == "run.aborted"]
+        assert aborted_events
+        assert aborted_events[-1].get("reason") == "circuit_breaker"
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_disabled_when_threshold_none(tmp_path):
+    """consecutive_failure_threshold=None → run completes even after many SF failures."""
+    async with _SessionFactory() as db:
+        conn = await _make_connection(db)
+        plan = await _make_plan_with_cb(db, conn, threshold=None)
+        await _make_step(db, plan)
+        run = await _make_run(db, plan)
+
+        bulk_mock = _make_bulk_client_mock(terminal_state="Failed")
+
+        with (
+            patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+            patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+            patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
+            patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS, CSV_2_ROWS, CSV_2_ROWS]),
+            patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+            patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        ):
+            await _execute_run(run.id, db, db_factory=_SessionFactory)
+
+        await db.refresh(run)
+        # No circuit breaker → run completes (with errors, but not aborted).
+        assert run.status != RunStatus.aborted
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_resets_on_success_and_does_not_trip(tmp_path):
+    """A success between failures resets the counter — CB does not trip."""
+    async with _SessionFactory() as db:
+        conn = await _make_connection(db)
+        plan = await _make_plan_with_cb(db, conn, threshold=3)
+        await _make_step(db, plan)
+        run = await _make_run(db, plan)
+
+        # Alternate: Fail, Fail, JobComplete (resets), Fail, Fail → never reaches 3 in a row.
+        states = ["Failed", "Failed", "JobComplete", "Failed", "Failed"]
+        call_count = {"n": 0}
+
+        async def varying_poll(job_id):
+            state = states[call_count["n"] % len(states)]
+            call_count["n"] += 1
+            return state, 0, 0, {"state": state}
+
+        bulk_mock = _make_bulk_client_mock()
+        bulk_mock.poll_job_once = AsyncMock(side_effect=varying_poll)
+
+        with (
+            patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+            patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+            patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock(["f.csv"]))),
+            patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS] * len(states)),
+            patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+            patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+        ):
+            await _execute_run(run.id, db, db_factory=_SessionFactory)
+
+        await db.refresh(run)
+    assert run.status != RunStatus.aborted
