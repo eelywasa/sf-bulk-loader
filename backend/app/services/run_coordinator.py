@@ -129,145 +129,152 @@ async def execute_retry_run(
 
         # SFBL-259: bind the run-scoped in-memory context for retry runs too,
         # so any helper that adopts ``get_run_context()`` works for both
-        # entry points.
-        run_context_ctx_var.set(
+        # entry points. Capture the token for reset in the ``finally`` block
+        # below so callers awaiting this coroutine cannot observe a stale
+        # ``RunContext`` once the retry run has ended.
+        _run_context_token = run_context_ctx_var.set(
             RunContext(run_id=run_id, plan_id=str(plan.id), started_at=datetime.now(timezone.utc))
         )
 
-        # Bind workflow context for this background task.
-        run_id_ctx_var.set(run_id)
-        step_id_ctx_var.set(step_id)
-        load_plan_id_ctx_var.set(str(plan.id))
-
-        # ── Mark run as running ───────────────────────────────────────────────
-        run.status = RunStatus.running
-        run.started_at = datetime.now(timezone.utc)
-        await db.commit()
-
-        await publish_run_started(run_id)
-        logger.info(
-            "Retry run %s started: step=%s partitions=%d",
-            run_id,
-            step_id,
-            len(partitions),
-            extra={"event_name": RunEvent.STARTED, "run_id": run_id,
-                   "step_id": step_id, "load_plan_id": str(plan.id)},
-        )
-
-        # ── Obtain Salesforce access token ────────────────────────────────────
         try:
-            access_token = await _get_token(db, plan.connection)
-        except Exception as exc:
-            logger.error("Retry run %s: failed to obtain access token: %s", run_id, exc,
-                         extra={"event_name": RunEvent.FAILED,
-                                "outcome_code": OutcomeCode.AUTH_ERROR,
-                                "run_id": run_id})
-            await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
-            await publish_run_failed(run_id, error=str(exc))
-            fire_terminal_notifications(run_id, RunStatus.failed)
-            return
+            # Bind workflow context for this background task.
+            run_id_ctx_var.set(run_id)
+            step_id_ctx_var.set(step_id)
+            load_plan_id_ctx_var.set(str(plan.id))
 
-        # ── Resolve output storage ────────────────────────────────────────────
-        try:
-            output_storage = await get_output_storage(plan.output_connection_id, db)
-        except (OutputConnectionNotFoundError, UnsupportedOutputProviderError) as exc:
-            logger.error("Retry run %s: failed to resolve output storage: %s", run_id, exc,
-                         extra={"event_name": RunEvent.FAILED,
-                                "outcome_code": OutcomeCode.CONFIGURATION_ERROR,
-                                "run_id": run_id})
-            await _mark_run_failed(run_id, db, error_summary={"output_storage_error": str(exc)})
-            await publish_run_failed(run_id, error=str(exc))
-            fire_terminal_notifications(run_id, RunStatus.failed)
-            return
+            # ── Mark run as running ───────────────────────────────────────────────
+            run.status = RunStatus.running
+            run.started_at = datetime.now(timezone.utc)
+            await db.commit()
 
-        semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
-
-        # ── Create JobRecord rows ─────────────────────────────────────────────
-        job_record_ids = await _build_retry_job_records(db, run_id, step_id, partitions)
-
-        # ── Process partitions concurrently ───────────────────────────────────
-        async with _BulkClient(plan.connection.instance_url, access_token) as bulk_client:
-            tasks = [
-                _default_process(
-                    run_id=run_id,
-                    step=step,
-                    plan_id=plan.id,
-                    plan_name=plan.name,
-                    job_record_id=jr_id,
-                    csv_data=csv_data,
-                    bulk_client=bulk_client,
-                    semaphore=semaphore,
-                    db_factory=AsyncSessionLocal,
-                    output_storage=output_storage,
-                )
-                for jr_id, csv_data in zip(job_record_ids, partitions)
-            ]
-            gather_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Transition any stuck intermediate-state jobs to failed
-        await db.execute(
-            update(JobRecord)
-            .where(
-                JobRecord.id.in_(job_record_ids),
-                JobRecord.status.in_([
-                    JobStatus.pending,
-                    JobStatus.uploading,
-                    JobStatus.upload_complete,
-                    JobStatus.in_progress,
-                ]),
+            await publish_run_started(run_id)
+            logger.info(
+                "Retry run %s started: step=%s partitions=%d",
+                run_id,
+                step_id,
+                len(partitions),
+                extra={"event_name": RunEvent.STARTED, "run_id": run_id,
+                       "step_id": step_id, "load_plan_id": str(plan.id)},
             )
-            .values(status=JobStatus.failed, completed_at=datetime.now(timezone.utc))
-        )
-        await db.commit()
 
-        # ── Aggregate results ─────────────────────────────────────────────────
-        total_success = 0
-        total_errors = 0
-        for i, res in enumerate(gather_results):
-            if isinstance(res, Exception):
-                logger.error(
-                    "Retry run %s partition %d: unhandled exception: %s",
-                    run_id,
-                    i,
-                    res,
-                    extra={"run_id": run_id},
+            # ── Obtain Salesforce access token ────────────────────────────────────
+            try:
+                access_token = await _get_token(db, plan.connection)
+            except Exception as exc:
+                logger.error("Retry run %s: failed to obtain access token: %s", run_id, exc,
+                             extra={"event_name": RunEvent.FAILED,
+                                    "outcome_code": OutcomeCode.AUTH_ERROR,
+                                    "run_id": run_id})
+                await _mark_run_failed(run_id, db, error_summary={"auth_error": str(exc)})
+                await publish_run_failed(run_id, error=str(exc))
+                fire_terminal_notifications(run_id, RunStatus.failed)
+                return
+
+            # ── Resolve output storage ────────────────────────────────────────────
+            try:
+                output_storage = await get_output_storage(plan.output_connection_id, db)
+            except (OutputConnectionNotFoundError, UnsupportedOutputProviderError) as exc:
+                logger.error("Retry run %s: failed to resolve output storage: %s", run_id, exc,
+                             extra={"event_name": RunEvent.FAILED,
+                                    "outcome_code": OutcomeCode.CONFIGURATION_ERROR,
+                                    "run_id": run_id})
+                await _mark_run_failed(run_id, db, error_summary={"output_storage_error": str(exc)})
+                await publish_run_failed(run_id, error=str(exc))
+                fire_terminal_notifications(run_id, RunStatus.failed)
+                return
+
+            semaphore = asyncio.Semaphore(plan.max_parallel_jobs)
+
+            # ── Create JobRecord rows ─────────────────────────────────────────────
+            job_record_ids = await _build_retry_job_records(db, run_id, step_id, partitions)
+
+            # ── Process partitions concurrently ───────────────────────────────────
+            async with _BulkClient(plan.connection.instance_url, access_token) as bulk_client:
+                tasks = [
+                    _default_process(
+                        run_id=run_id,
+                        step=step,
+                        plan_id=plan.id,
+                        plan_name=plan.name,
+                        job_record_id=jr_id,
+                        csv_data=csv_data,
+                        bulk_client=bulk_client,
+                        semaphore=semaphore,
+                        db_factory=AsyncSessionLocal,
+                        output_storage=output_storage,
+                    )
+                    for jr_id, csv_data in zip(job_record_ids, partitions)
+                ]
+                gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Transition any stuck intermediate-state jobs to failed
+            await db.execute(
+                update(JobRecord)
+                .where(
+                    JobRecord.id.in_(job_record_ids),
+                    JobRecord.status.in_([
+                        JobStatus.pending,
+                        JobStatus.uploading,
+                        JobStatus.upload_complete,
+                        JobStatus.in_progress,
+                    ]),
                 )
-            elif isinstance(res, tuple):
-                success, errors = res
-                total_success += success
-                total_errors += errors
+                .values(status=JobStatus.failed, completed_at=datetime.now(timezone.utc))
+            )
+            await db.commit()
 
-        total_records = total_success + total_errors
-        final_status = (
-            RunStatus.completed_with_errors if total_errors > 0 else RunStatus.completed
-        )
+            # ── Aggregate results ─────────────────────────────────────────────────
+            total_success = 0
+            total_errors = 0
+            for i, res in enumerate(gather_results):
+                if isinstance(res, Exception):
+                    logger.error(
+                        "Retry run %s partition %d: unhandled exception: %s",
+                        run_id,
+                        i,
+                        res,
+                        extra={"run_id": run_id},
+                    )
+                elif isinstance(res, tuple):
+                    success, errors = res
+                    total_success += success
+                    total_errors += errors
 
-        run.status = final_status
-        run.completed_at = datetime.now(timezone.utc)
-        run.total_records = total_records
-        run.total_success = total_success
-        run.total_errors = total_errors
-        await db.commit()
+            total_records = total_success + total_errors
+            final_status = (
+                RunStatus.completed_with_errors if total_errors > 0 else RunStatus.completed
+            )
 
-        await publish_run_completed(
-            run_id,
-            status=final_status.value,
-            total_records=total_records,
-            total_success=total_success,
-            total_errors=total_errors,
-        )
-        fire_terminal_notifications(run_id, final_status)
-        retry_outcome = OutcomeCode.DEGRADED if total_errors > 0 else OutcomeCode.OK
-        logger.info(
-            "Retry run %s completed (%s): records=%d success=%d errors=%d",
-            run_id,
-            final_status.value,
-            total_records,
-            total_success,
-            total_errors,
-            extra={"event_name": RunEvent.COMPLETED, "outcome_code": retry_outcome,
-                   "run_id": run_id, "load_plan_id": str(plan.id)},
-        )
+            run.status = final_status
+            run.completed_at = datetime.now(timezone.utc)
+            run.total_records = total_records
+            run.total_success = total_success
+            run.total_errors = total_errors
+            await db.commit()
+
+            await publish_run_completed(
+                run_id,
+                status=final_status.value,
+                total_records=total_records,
+                total_success=total_success,
+                total_errors=total_errors,
+            )
+            fire_terminal_notifications(run_id, final_status)
+            retry_outcome = OutcomeCode.DEGRADED if total_errors > 0 else OutcomeCode.OK
+            logger.info(
+                "Retry run %s completed (%s): records=%d success=%d errors=%d",
+                run_id,
+                final_status.value,
+                total_records,
+                total_success,
+                total_errors,
+                extra={"event_name": RunEvent.COMPLETED, "outcome_code": retry_outcome,
+                       "run_id": run_id, "load_plan_id": str(plan.id)},
+            )
+        finally:
+            # SFBL-259: reset the run-scoped ContextVar so subsequent code in the
+            # same task does not observe a stale ``RunContext``.
+            run_context_ctx_var.reset(_run_context_token)
 
 
 async def _build_retry_job_records(
@@ -338,8 +345,11 @@ async def _execute_run(
     # SFBL-259: bind the run-scoped in-memory context for the lifetime of this
     # async task. Partition tasks spawned via ``asyncio.gather`` inherit it so
     # follow-up tickets (SFBL-121 etc.) can attach run-scoped counters/flags
-    # without threading them through function signatures.
-    run_context_ctx_var.set(
+    # without threading them through function signatures. Capture the token so
+    # the ``finally`` block can reset it — otherwise a long-lived caller that
+    # awaits ``_execute_run`` could observe a stale ``RunContext`` after the
+    # run has ended, violating the documented ``get_run_context()`` contract.
+    _run_context_token = run_context_ctx_var.set(
         RunContext(run_id=run_id, plan_id=str(plan.id), started_at=datetime.now(timezone.utc))
     )
 
@@ -426,6 +436,9 @@ async def _execute_run(
         backstopped = await _backstop_mark_failed_if_running(run_id, db_factory)
         if backstopped:
             fire_terminal_notifications(run_id, RunStatus.failed)
+        # SFBL-259: reset the run-scoped ContextVar so subsequent code in the
+        # same task does not observe a stale ``RunContext``.
+        run_context_ctx_var.reset(_run_context_token)
 
 
 async def _execute_run_body(
