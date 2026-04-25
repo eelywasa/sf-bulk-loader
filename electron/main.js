@@ -134,6 +134,7 @@ function runMigrations(dataDir) {
 let backendProcess = null
 
 function startBackend(dataDir) {
+  if (backendProcess) return  // already running — reuse on window re-open (macOS)
   const env = buildBackendEnv(dataDir)
   let cmd, args
 
@@ -226,7 +227,7 @@ function waitForBackend(maxAttempts = 30) {
 async function createWindow() {
   const dataDir = app.getPath('userData')
   ensureDataDirs(dataDir)
-  runMigrations(dataDir)
+  if (!backendProcess) runMigrations(dataDir)
   startBackend(dataDir)
 
   try {
