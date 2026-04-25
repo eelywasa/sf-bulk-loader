@@ -134,6 +134,7 @@ function runMigrations(dataDir) {
 let backendProcess = null
 
 function startBackend(dataDir) {
+  if (backendProcess) return  // already running — reuse on window re-open (macOS)
   const env = buildBackendEnv(dataDir)
   let cmd, args
 
@@ -166,9 +167,19 @@ function startBackend(dataDir) {
     app.quit()
   })
 
-  backendProcess.on('exit', (code) => {
-    console.log(`[backend] process exited with code ${code}`)
+  backendProcess.on('exit', (code, signal) => {
+    console.log(`[backend] process exited with code ${code} signal ${signal}`)
     backendProcess = null
+    // If the backend exits before the window is created (e.g. port already in
+    // use), quit immediately so the app doesn't silently connect to a stale
+    // or unrelated process on the same port.
+    if (code !== 0 && code !== null) {
+      dialog.showErrorBox(
+        'Backend failed to start',
+        `The backend process exited with code ${code}. Another process may already be using port ${BACKEND_PORT}.`
+      )
+      app.quit()
+    }
   })
 }
 
@@ -216,7 +227,7 @@ function waitForBackend(maxAttempts = 30) {
 async function createWindow() {
   const dataDir = app.getPath('userData')
   ensureDataDirs(dataDir)
-  runMigrations(dataDir)
+  if (!backendProcess) runMigrations(dataDir)
   startBackend(dataDir)
 
   try {
@@ -253,9 +264,7 @@ app.whenReady().then(createWindow)
 app.on('before-quit', stopBackend)
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  app.quit()
 })
 
 app.on('activate', () => {

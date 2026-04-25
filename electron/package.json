@@ -1,6 +1,6 @@
 {
   "name": "sf-bulk-loader-desktop",
-  "version": "0.1.0",
+  "version": "0.7.1",
   "description": "Salesforce Bulk Loader — Desktop",
   "main": "main.js",
   "author": "Matthew Jenkin <mjenkin@salesforce.com>",
