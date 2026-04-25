@@ -45,7 +45,7 @@ infrastructure/dist/
 .obsidian/
 
 # Local test databases and scratch files
-backend/test_*.db
+backend/*.db
 runs.html
 
 # Claude Code local state
