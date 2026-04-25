@@ -221,12 +221,17 @@ async def test_duplicate_plan_copies_all_columns():
     from app.models.input_connection import InputConnection
     from app.models.load_plan import LoadPlan
     from app.models.load_step import LoadStep, Operation
-    from app.services.load_plan_service import (
-        _PLAN_EXCLUDED,
-        _STEP_EXCLUDED,
-        duplicate_plan,
-    )
+    from app.services.load_plan_service import duplicate_plan
     from tests.conftest import _TestSession
+
+    # Expected exclusion sets are hardcoded in the test (not imported from the
+    # service) so that a change to the service's exclusion sets MUST be made
+    # deliberately in two places. Without this, broadening the service's
+    # exclusion list (e.g. accidentally excluding ``output_connection_id``
+    # again) would silently make this test pass while ``duplicate_plan``
+    # regressed — defeating the purpose of the dynamic regression guard.
+    EXPECTED_PLAN_EXCLUDED = {"id", "created_at", "updated_at", "name"}
+    EXPECTED_STEP_EXCLUDED = {"id", "created_at", "updated_at", "load_plan_id"}
 
     async with _TestSession() as db:
         # ── Build a fully-populated plan + steps. ─────────────────────────────
@@ -290,7 +295,7 @@ async def test_duplicate_plan_copies_all_columns():
         copy = await duplicate_plan(db, plan.id)
 
         # ── Plan-level coverage. ───────────────────────────────────────────────
-        plan_cols = {c.name for c in LoadPlan.__table__.columns} - _PLAN_EXCLUDED
+        plan_cols = {c.name for c in LoadPlan.__table__.columns} - EXPECTED_PLAN_EXCLUDED
         # The 'name' column is intentionally excluded (prefixed "Copy of …");
         # assert that explicitly so a future maintainer doesn't accidentally
         # change the rename rule.
@@ -306,7 +311,7 @@ async def test_duplicate_plan_copies_all_columns():
         copy_step = copy.load_steps[0]
         assert copy_step.id != step.id  # new id
         assert copy_step.load_plan_id == copy.id  # remapped FK
-        step_cols = {c.name for c in LoadStep.__table__.columns} - _STEP_EXCLUDED
+        step_cols = {c.name for c in LoadStep.__table__.columns} - EXPECTED_STEP_EXCLUDED
         for col in step_cols:
             assert getattr(copy_step, col) == getattr(step, col), (
                 f"LoadStep.{col} was not carried through duplicate_plan "
