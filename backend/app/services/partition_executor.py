@@ -404,7 +404,13 @@ async def _process_partition_body(
                        "job_record_id": job_record_id, "sf_job_id": sf_job_id},
             )
             # SFBL-121: update circuit-breaker counter.
-            # Only SF-level job failure counts — row-level record failures
-            # inside a JobComplete partition are covered by error_threshold_pct.
-            await update_circuit_breaker(success=(terminal_state == "JobComplete"))
+            # Only SF-level job failure (terminal_state="Failed") counts.
+            # "Aborted" is an external/user abort, not a Salesforce failure.
+            # Row-level record failures inside a JobComplete partition are
+            # covered by error_threshold_pct and are excluded here.
+            if terminal_state == "JobComplete":
+                await update_circuit_breaker(success=True)
+            elif terminal_state == "Failed":
+                await update_circuit_breaker(success=False)
+            # Aborted: do not touch the counter.
             return records_processed - records_failed, records_failed
