@@ -26,7 +26,7 @@ async def get_about_payload(session: AsyncSession) -> dict[str, Any]:
         "runtime": _runtime_info(),
         "database": await _database_info(session),
         "salesforce": await _salesforce_info(),
-        "email": _email_info(),
+        "email": await _email_info(),
         "storage": await _storage_info(session),
     }
 
@@ -84,8 +84,14 @@ async def _salesforce_info() -> dict[str, Any]:
     return {"api_version": api_version}
 
 
-def _email_info() -> dict[str, Any]:
-    backend = _settings.email_backend or "noop"
+async def _email_info() -> dict[str, Any]:
+    import app.services.settings.service as _svc
+
+    try:
+        backend = await _svc.settings_service.get("email_backend")  # type: ignore[union-attr]
+    except Exception:
+        backend = _settings.email_backend or "noop"
+    backend = backend or "noop"
     return {
         "backend": backend,
         "enabled": backend != "noop",
