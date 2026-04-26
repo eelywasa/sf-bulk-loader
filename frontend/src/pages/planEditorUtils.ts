@@ -25,26 +25,66 @@ export const EMPTY_PLAN_FORM: PlanFormData = {
   output_connection_id: '',
 }
 
+/**
+ * UI-only mode for the input source widget in StepEditorModal.
+ * `pattern`    → Input connection / CSV file (legacy behaviour)
+ * `local_output` → Local output files from a prior run
+ * `from_step`  → Chain from an upstream query step (new in SFBL-264)
+ */
+export type InputSourceMode = 'pattern' | 'local_output' | 'from_step'
+
 export interface StepFormData {
+  /** Raw value of the Step Name input. Empty string means "user hasn't set a name". */
+  name: string
   object_name: string
   operation: string
+  /** UI-only; not sent directly — `handleSaveStep` maps this to the right payload fields. */
+  input_source_mode: InputSourceMode
   csv_file_pattern: string
   soql: string
   partition_size: string
   external_id_field: string
   assignment_rule_id: string
+  /** Connection ID (or '' for local, or 'local-output'); only used in pattern/local_output modes. */
   input_connection_id: string
+  /** ID of the upstream query step; only used in from_step mode. */
+  input_from_step_id: string
 }
 
 export const EMPTY_STEP_FORM: StepFormData = {
+  name: '',
   object_name: '',
   operation: 'insert',
+  input_source_mode: 'pattern',
   csv_file_pattern: '',
   soql: '',
   partition_size: '10000',
   external_id_field: '',
   assignment_rule_id: '',
   input_connection_id: '',
+  input_from_step_id: '',
+}
+
+/**
+ * Compute the auto-fill label for a step — used as the placeholder for the
+ * Step Name input when `step.name` is null.
+ * Format: "Step {seq}: {operation} {object}"
+ */
+export function computeStepLabel(sequence: number, operation: string, objectName: string): string {
+  return `Step ${sequence}: ${operation} ${objectName}`.trim()
+}
+
+/**
+ * Derive the InputSourceMode from persisted step fields.
+ * Priority: from_step > local_output > pattern (default).
+ */
+export function deriveInputSourceMode(step: {
+  input_from_step_id?: string | null
+  input_connection_id?: string | null
+}): InputSourceMode {
+  if (step.input_from_step_id) return 'from_step'
+  if (step.input_connection_id === 'local-output') return 'local_output'
+  return 'pattern'
 }
 
 // ─── Preview state ────────────────────────────────────────────────────────────

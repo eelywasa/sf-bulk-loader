@@ -34,6 +34,7 @@ export default function PlanEditor() {
     closeStepModal,
     setStepField,
     handleInputSourceChange,
+    handleInputSourceModeChange,
     handleSaveStep,
     isSavingStep,
     patternIsLiteral,
@@ -178,8 +179,10 @@ export default function PlanEditor() {
             planId={isNew ? undefined : id}
             inputConnections={inputConnections}
             isSaving={isSavingStep}
+            allSteps={sortedSteps}
             onChange={setStepField}
             onInputSourceChange={handleInputSourceChange}
+            onInputSourceModeChange={handleInputSourceModeChange}
             onToggleFilePicker={() => setShowFilePicker((v) => !v)}
             onFileSelect={(path) => {
               setStepField('csv_file_pattern', path)

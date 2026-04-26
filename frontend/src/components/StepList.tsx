@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { Button, Card, Badge } from './ui'
 import type { LoadStep, InputConnection } from '../api/types'
-import { operationVariant, isQueryOp, type PreviewEntry } from '../pages/planEditorUtils'
+import { operationVariant, isQueryOp, computeStepLabel, type PreviewEntry } from '../pages/planEditorUtils'
 
 interface StepListProps {
   steps: LoadStep[]
@@ -52,6 +52,14 @@ export default function StepList({
         <div className="divide-y divide-border-base">
           {steps.map((step, idx) => {
             const preview = previews[step.id]
+            // Find upstream step (if any) for the chain badge
+            const upstreamStep = step.input_from_step_id
+              ? steps.find((s) => s.id === step.input_from_step_id)
+              : null
+            const upstreamLabel = upstreamStep
+              ? (upstreamStep.name ||
+                  computeStepLabel(upstreamStep.sequence, upstreamStep.operation, upstreamStep.object_name))
+              : null
             return (
               <div key={step.id} className="py-4">
                 {/* Step row */}
@@ -62,13 +70,25 @@ export default function StepList({
                     </span>
                     <div className="min-w-0">
                       <p className="font-medium text-content-primary text-sm">
-                        {step.object_name}
+                        {step.name || step.object_name}
+                        {step.name && (
+                          <span className="ml-1 text-xs font-normal text-content-muted">
+                            ({step.object_name})
+                          </span>
+                        )}
                         <span className="ml-2">
                           <Badge variant={operationVariant(step.operation)}>
                             {step.operation}
                           </Badge>
                         </span>
                       </p>
+                      {/* Upstream chain badge */}
+                      {upstreamLabel && (
+                        <p className="text-xs text-content-muted mt-0.5 flex items-center gap-1">
+                          <span aria-hidden="true">→</span>
+                          <span data-testid="upstream-badge">from {upstreamLabel}</span>
+                        </p>
+                      )}
                       {isQueryOp(step.operation) ? (
                         <p className="text-xs text-content-muted mt-0.5 font-mono truncate">
                           {step.soql ? step.soql.substring(0, 80) + (step.soql.length > 80 ? '…' : '') : '(no SOQL)'}
