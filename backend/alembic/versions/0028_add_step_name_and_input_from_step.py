@@ -31,19 +31,23 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Add the new columns. Inline `sa.ForeignKey(...)` inside an
+    # ``op.batch_alter_table`` add_column is not portable: alembic's batch
+    # mode on Postgres performs a direct ALTER and silently drops the inline
+    # FK definition, leaving the column but no constraint. Add the FK
+    # explicitly via ``create_foreign_key`` after the column exists so it
+    # lands on both SQLite (via batch table-rebuild) and Postgres.
     with op.batch_alter_table("load_step") as batch:
         batch.add_column(sa.Column("name", sa.String(length=255), nullable=True))
         batch.add_column(
-            sa.Column(
-                "input_from_step_id",
-                sa.String(length=36),
-                sa.ForeignKey(
-                    "load_step.id",
-                    ondelete="SET NULL",
-                    name="fk_load_step_input_from_step_id",
-                ),
-                nullable=True,
-            )
+            sa.Column("input_from_step_id", sa.String(length=36), nullable=True)
+        )
+        batch.create_foreign_key(
+            "fk_load_step_input_from_step_id",
+            "load_step",
+            ["input_from_step_id"],
+            ["id"],
+            ondelete="SET NULL",
         )
 
     op.create_index(
@@ -59,5 +63,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("uq_load_step_plan_name", table_name="load_step")
     with op.batch_alter_table("load_step") as batch:
+        batch.drop_constraint("fk_load_step_input_from_step_id", type_="foreignkey")
         batch.drop_column("input_from_step_id")
         batch.drop_column("name")
