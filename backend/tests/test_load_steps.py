@@ -791,3 +791,29 @@ def test_reorder_inverting_reference_rejected(auth_client):
     # DB state unchanged: original sequences preserved.
     listing = auth_client.get(f"/api/load-plans/{pid}").json()["load_steps"]
     assert {s["id"]: s["sequence"] for s in listing} == {q1: 1, dml: 2}
+
+
+def test_preview_step_with_input_from_step_returns_note(auth_client):
+    """SFBL-166: a DML step with input_from_step_id has neither pattern nor
+    connection — preview must short-circuit to a descriptive note instead of
+    500ing inside _validate_glob_pattern(None)."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "stale_accounts"})["id"]
+    downstream = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    ).json()["id"]
+
+    resp = auth_client.post(f"/api/load-plans/{pid}/steps/{downstream}/preview")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["kind"] == "dml"
+    assert body["matched_files"] == []
+    assert body["total_rows"] == 0
+    assert body["note"] is not None
+    assert "stale_accounts" in body["note"]

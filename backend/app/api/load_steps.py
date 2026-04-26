@@ -359,6 +359,27 @@ async def preview_step(
             total_rows=0,
         )
 
+    # SFBL-166: a DML step that consumes an upstream query step's output has
+    # neither a csv_file_pattern nor an input_connection_id — there is nothing
+    # to discover at preview time because the artefact is produced when the
+    # run executes. Return a descriptive note and bail out before discovery.
+    if step.input_from_step_id:
+        upstream = await db.get(LoadStep, step.input_from_step_id)
+        if upstream is None:
+            label = f"step {step.input_from_step_id}"
+        else:
+            label = (
+                upstream.name
+                or f"Step {upstream.sequence}: {upstream.operation.value} {upstream.object_name}"
+            )
+        return StepPreviewResponse(
+            kind="dml",
+            pattern=None,
+            matched_files=[],
+            total_rows=0,
+            note=f"Input resolved at run time from upstream step: {label}",
+        )
+
     try:
         storage = await get_storage(step.input_connection_id or "local", db)
     except InputConnectionNotFoundError as exc:

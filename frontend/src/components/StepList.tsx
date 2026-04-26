@@ -170,19 +170,25 @@ export default function StepList({
                     )}
                     {preview.status === 'success' && preview.kind === 'dml' && (
                       <>
-                        <p className="font-medium text-info-text">
-                          {preview.data.matched_files.length} file(s) matched •{' '}
-                          {preview.data.total_rows.toLocaleString()} total rows
-                        </p>
-                        {preview.data.matched_files.map((f) => (
-                          <p key={f.filename} className="text-xs text-info-text mt-1 font-mono">
-                            {f.filename} — {f.row_count.toLocaleString()} rows
-                          </p>
-                        ))}
-                        {preview.data.matched_files.length === 0 && (
-                          <p className="text-xs text-warning-text mt-1">
-                            No files matched "{step.csv_file_pattern}"
-                          </p>
+                        {preview.data.note && step.input_from_step_id ? (
+                          <p className="font-medium text-info-text">{preview.data.note}</p>
+                        ) : (
+                          <>
+                            <p className="font-medium text-info-text">
+                              {preview.data.matched_files.length} file(s) matched •{' '}
+                              {preview.data.total_rows.toLocaleString()} total rows
+                            </p>
+                            {preview.data.matched_files.map((f) => (
+                              <p key={f.filename} className="text-xs text-info-text mt-1 font-mono">
+                                {f.filename} — {f.row_count.toLocaleString()} rows
+                              </p>
+                            ))}
+                            {preview.data.matched_files.length === 0 && (
+                              <p className="text-xs text-warning-text mt-1">
+                                No files matched "{step.csv_file_pattern}"
+                              </p>
+                            )}
+                          </>
                         )}
                       </>
                     )}
