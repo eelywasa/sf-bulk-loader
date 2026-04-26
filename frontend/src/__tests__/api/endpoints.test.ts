@@ -236,7 +236,7 @@ describe('stepsApi', () => {
     const { url, init } = captureLastFetch()
     expect(url).toBe('/api/load-plans/p1/steps/reorder')
     expect(init.method).toBe('POST')
-    expect(JSON.parse(init.body as string)).toEqual(['s2', 's1'])
+    expect(JSON.parse(init.body as string)).toEqual({ step_ids: ['s2', 's1'] })
   })
 
   it('preview → POST /api/load-plans/{planId}/steps/{stepId}/preview', async () => {
