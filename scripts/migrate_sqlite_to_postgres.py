@@ -68,7 +68,7 @@ for _placeholder_key, _placeholder_val in [
 import app.models  # noqa: F401, E402
 from app.database import Base  # noqa: E402
 
-from sqlalchemy import inspect, select, text  # noqa: E402
+from sqlalchemy import and_, inspect, select, text  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncConnection,
     AsyncEngine,
@@ -182,6 +182,26 @@ def _sorted_model_tables():
     """Return model tables in FK-safe insertion order (parents before children)."""
     all_names = {t.name for t in Base.metadata.sorted_tables}
     return [t for t in Base.metadata.sorted_tables if t.name in all_names]
+
+
+def _self_ref_fk_columns(table) -> list[str]:
+    """Return the names of columns whose FK targets the same table.
+
+    Such columns require deferred handling during a bulk copy: ordering
+    by PK can put a child row before its parent within the same table
+    (e.g. ``load_step.input_from_step_id`` is a self-reference). We
+    insert these columns as NULL and back-fill them in a second pass.
+    Only nullable self-ref columns can be deferred this way.
+    """
+    cols: list[str] = []
+    for col in table.columns:
+        if not col.foreign_keys or not col.nullable:
+            continue
+        for fk in col.foreign_keys:
+            if fk.column.table.name == table.name:
+                cols.append(col.name)
+                break
+    return cols
 
 
 def _utc_aware_row(table, row: dict) -> dict:
@@ -506,22 +526,71 @@ async def _run_migrate(
                 offset = 0
                 print(f"  Copying {table.name} ({total:,} rows) ...", end="", flush=True)
 
+                # Stable ordering for OFFSET pagination — without this,
+                # SQLite is free to return rows in any order between
+                # batches, which can skip or duplicate rows.
+                pk_cols = [c for c in table.columns if c.primary_key]
+                order_by_cols = pk_cols if pk_cols else list(table.columns)
+
+                # Self-referential nullable FK columns must be deferred:
+                # ordering by PK can place a child row before its parent
+                # within the same table. Insert NULL, back-fill below.
+                self_ref_cols = _self_ref_fk_columns(table)
+                deferred_updates: list[dict] = []  # {pk: ..., col: value, ...}
+
                 async with src_eng.connect() as src_conn:
                     while True:
                         rows = (
                             await src_conn.execute(
-                                select(table).offset(offset).limit(batch_size)
+                                select(table)
+                                .order_by(*order_by_cols)
+                                .offset(offset)
+                                .limit(batch_size)
                             )
                         ).mappings().all()
                         if not rows:
                             break
-                        await tgt_conn.execute(
-                            table.insert(),
-                            [_utc_aware_row(table, dict(r)) for r in rows],
-                        )
+                        prepared = []
+                        for r in rows:
+                            row = _utc_aware_row(table, dict(r))
+                            if self_ref_cols:
+                                deferred = {c.name: row[c.name] for c in pk_cols}
+                                for col in self_ref_cols:
+                                    if row.get(col) is not None:
+                                        deferred[col] = row[col]
+                                        row[col] = None
+                                # Only queue an UPDATE if there's
+                                # actually a non-NULL value to back-fill.
+                                if any(k not in {c.name for c in pk_cols} for k in deferred):
+                                    deferred_updates.append(deferred)
+                            prepared.append(row)
+                        await tgt_conn.execute(table.insert(), prepared)
                         inserted += len(rows)
                         offset += batch_size
                         print(".", end="", flush=True)
+
+                # Second pass: back-fill self-ref FK columns now that
+                # every parent row is present. Use a raw text UPDATE so
+                # SQLAlchemy's column-level ``onupdate`` (e.g. the
+                # ``updated_at = func.now()`` trigger on most tables)
+                # does NOT fire and overwrite the migrated timestamp.
+                if deferred_updates:
+                    pk_names = [c.name for c in pk_cols]
+                    set_sql = ", ".join(f'"{c}" = :{c}' for c in self_ref_cols)
+                    where_sql = " AND ".join(
+                        f'"{c}" = :_pk_{c}' for c in pk_names
+                    )
+                    update_sql = text(
+                        f'UPDATE "{table.name}" SET {set_sql} WHERE {where_sql}'
+                    )
+                    renamed = [
+                        {
+                            **{c: row.get(c) for c in self_ref_cols},
+                            **{f"_pk_{c}": row[c] for c in pk_names},
+                        }
+                        for row in deferred_updates
+                    ]
+                    await tgt_conn.execute(update_sql, renamed)
 
                 print(f" {inserted:,} rows")
                 tgt_counts[table.name] = inserted
@@ -603,27 +672,29 @@ async def _run_verify(source: str, target_url: str) -> int:
             pk_cols = [c for c in table.columns if c.primary_key]
             if not pk_cols:
                 continue
-            pk_col = pk_cols[0]
 
-            # Fetch a random sample of PKs from the source
+            # Fetch a random sample of full PKs (tuples) from the source.
+            # Composite-PK tables like profile_permissions need every PK
+            # column in the WHERE clause; matching on only the first column
+            # can compare unrelated rows (e.g. two permissions sharing a
+            # profile_id) and silently miss real corruption.
             all_pks = (
-                await src_conn.execute(select(pk_col))
-            ).scalars().all()
+                await src_conn.execute(select(*pk_cols))
+            ).all()
             if not all_pks:
                 continue
             sample = random.sample(all_pks, min(VERIFY_SAMPLE_SIZE, len(all_pks)))
 
             mismatches = 0
-            for pk_val in sample:
+            for pk_tuple in sample:
+                where_clause = and_(
+                    *(col == val for col, val in zip(pk_cols, pk_tuple))
+                )
                 src_row = (
-                    await src_conn.execute(
-                        select(table).where(pk_col == pk_val)
-                    )
+                    await src_conn.execute(select(table).where(where_clause))
                 ).mappings().first()
                 tgt_row = (
-                    await tgt_conn.execute(
-                        select(table).where(pk_col == pk_val)
-                    )
+                    await tgt_conn.execute(select(table).where(where_clause))
                 ).mappings().first()
 
                 if tgt_row is None:
@@ -650,7 +721,7 @@ async def _run_verify(source: str, target_url: str) -> int:
                         if sv_s != tv_s:
                             mismatches += 1
                             info(
-                                f"{table.name}.{col.name} pk={pk_val}: "
+                                f"{table.name}.{col.name} pk={pk_tuple}: "
                                 f"src={sv_s!r} tgt={tv_s!r}"
                             )
 
