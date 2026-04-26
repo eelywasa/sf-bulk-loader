@@ -1,11 +1,11 @@
 ---
-title: Salesforce JWT setup (Connected App walkthrough)
+title: Salesforce JWT setup (External Client App walkthrough)
 slug: salesforce-jwt-setup
 nav_order: 25
 tags: [salesforce, connections, setup]
 required_permission: connections.manage
 summary: >-
-  One-time Salesforce admin steps — RSA key pair, Connected App, and
+  One-time Salesforce admin steps — RSA key pair, External Client App, and
   pre-authorized running user — before you can create a Salesforce connection.
 ---
 
@@ -19,6 +19,11 @@ connection in the UI. The JWT Bearer flow is server-to-server — no browser
 login, no refresh tokens, no interactive consent. Everything is pre-authorized
 by a Salesforce admin.
 
+> **Note:** Salesforce replaced Connected Apps with **External Client Apps** as
+> the standard way to configure OAuth integrations. If your org still has a
+> Connected App from an older setup it will continue to work, but new setups
+> should use External Client Apps as documented here.
+
 ---
 
 ## Overview
@@ -26,8 +31,8 @@ by a Salesforce admin.
 The flow needs three things in place:
 
 1. An **RSA key pair** — you hold the private key; Salesforce holds the certificate.
-2. A **Connected App** in the Salesforce org with the certificate uploaded.
-3. The **running user pre-authorized** to use that Connected App without interactive consent.
+2. An **External Client App** in the Salesforce org with the certificate uploaded.
+3. The **running user pre-authorized** to use that External Client App without interactive consent.
 
 ---
 
@@ -43,7 +48,7 @@ openssl genrsa -out private.pem 2048
 openssl req -new -x509 -key private.pem -out certificate.crt -days 365
 ```
 
-OpenSSL will prompt for certificate fields (`Country`, `Common Name`, etc.).  For a
+OpenSSL will prompt for certificate fields (`Country`, `Common Name`, etc.). For a
 self-signed cert used only for Salesforce JWT auth these values are cosmetic — fill
 them in however you like.
 
@@ -54,37 +59,50 @@ them in however you like.
 | `private.pem` | Stays with you — pasted into the bulk loader UI |
 | `certificate.crt` | Uploaded to Salesforce in Step 2 |
 
-> **Key security:** `private.pem` is the credential. Store it like a password.  The
+> **Key security:** `private.pem` is the credential. Store it like a password. The
 > bulk loader encrypts it at rest (Fernet + `ENCRYPTION_KEY`), but protect the source
 > file and never commit it to version control.
 
-To renew before expiry, repeat this step, upload the new `.crt` to the Connected App,
-and update the private key stored in the bulk loader.
+To renew before expiry, repeat this step, upload the new `.crt` to the External Client
+App, and update the private key stored in the bulk loader.
 
 ---
 
-## Step 2 — Create a Connected App
+## Step 2 — Create an External Client App
 
-1. In Salesforce Setup, search for **App Manager** and click **New Connected App**.
+1. In Salesforce Setup, enter **External Client App Manager** in the Quick Find box and
+   select it under **Apps**.
 
-2. Fill in the **Basic Information** section:
-   - **Connected App Name**: anything descriptive, e.g. `Bulk Loader`
+2. Click **New External Client App**.
+
+3. Fill in the **Basic Information** section:
+   - **Name**: anything descriptive, e.g. `Bulk Loader`
    - **API Name**: auto-populated, leave it
    - **Contact Email**: your admin email
+   - **Distribution State**: `Local`
 
-3. Under **API (Enable OAuth Settings)**:
-   - Tick **Enable OAuth Settings**
-   - **Callback URL**: `https://login.salesforce.com/services/oauth2/success`
+4. Expand the **API (Enable OAuth settings)** section and check **Enable OAuth**.
+
+5. Under **App Settings**:
+   - **Callback URL**: `http://localhost:1717/OauthRedirect`
      (required by the form but never used in the JWT flow)
-   - Tick **Use digital signatures** and upload `certificate.crt`
    - **Selected OAuth Scopes** — add at minimum:
      - `Manage user data via APIs (api)`
      - `Perform requests at any time (refresh_token, offline_access)`
 
-4. Click **Save**, then **Continue**.
+6. Under **Flow Enablement**:
+   - Check **Enable JWT Bearer Flow**
+   - Upload `certificate.crt` from Step 1
 
-5. On the app detail page, click **Manage Consumer Details**.  Copy the
-   **Consumer Key** — this is the `client_id` value you will enter in the bulk loader.
+7. Uncheck **Require Proof Key for Code Exchange (PKCE) Extension** if it is checked
+   (PKCE is not used in the JWT Bearer flow).
+
+8. Click **Create**.
+
+9. On the app detail page, go to the **Settings** tab → **OAuth Settings** section →
+   click **Consumer Key and Secret**. Salesforce will send a verification code to your
+   admin email address — enter it to reveal the key. Copy the **Consumer Key** — this
+   is the `client_id` you will enter in the bulk loader.
 
 > The Consumer Secret is not used in the JWT Bearer flow.
 
@@ -92,29 +110,29 @@ and update the private key stored in the bulk loader.
 
 ## Step 3 — Pre-authorize the User
 
-This step is mandatory.  Without it Salesforce returns
+This step is mandatory. Without it Salesforce returns
 `user hasn't approved this consumer` even with a valid JWT.
 
 ### 3a — Set Permitted Users policy
 
-1. From the Connected App detail page, click **Manage** (top of page).
-2. Click **Edit Policies**.
-3. Under **OAuth Policies**, set **Permitted Users** to:
-   **Admin approved users are pre-authorized**
-4. Save.
+1. From the External Client App detail page, click the **Policies** tab.
+2. Click **Edit**.
+3. Expand the **OAuth Policies** section.
+4. Set **Permitted Users** to **Admin approved users are pre-authorized**.
+5. Click **Save**.
 
 ### 3b — Grant access via Profile or Permission Set
 
 The user that will appear in `sub` (the `username` field in the bulk loader) must be
-explicitly granted access to the Connected App.
+explicitly granted access to the External Client App.
 
 **Option A — via Profile:**
-1. Still on the Connected App manage page, scroll to **Profiles**.
+1. Still on the Policies tab, scroll to the **Profiles** section.
 2. Click **Manage Profiles** → add the profile of the running user.
 
 **Option B — via Permission Set (preferred for production):**
 1. Create or open a Permission Set.
-2. Under **Apps → Connected App Access**, add the Connected App.
+2. Under **Apps → External Client App Access**, add the External Client App.
 3. Assign the Permission Set to the running user.
 
 ---
@@ -140,20 +158,20 @@ JWT exchange and a lightweight API call.
 
 ### `user hasn't approved this consumer`
 
-The pre-authorization in Step 3 is missing or incomplete.  Verify:
+The pre-authorization in Step 3 is missing or incomplete. Verify:
 - Permitted Users is set to **Admin approved users are pre-authorized**.
-- The running user's Profile or a Permission Set with the Connected App is assigned.
+- The running user's Profile or a Permission Set with the External Client App is assigned.
 - In sandboxes, check that the Permission Set assignment was made *in the sandbox*,
   not just in production.
 
 ### `invalid_client_id`
 
-The Consumer Key (`client_id`) is wrong.  Re-copy it from **Manage Consumer Details**
-— not the App Manager list view, which shows an older format in some orgs.
+The Consumer Key (`client_id`) is wrong. Re-copy it from the **Settings** tab →
+**Consumer Key and Secret** — the value shown in the app list view may be truncated.
 
 ### `invalid_grant`
 
-The JWT signature failed validation.  Likely causes:
+The JWT signature failed validation. Likely causes:
 - The wrong private key (doesn't match the uploaded certificate).
 - The certificate has expired — regenerate the key pair and re-upload the `.crt`.
 - A copy/paste issue with the PEM — ensure the full key including header/footer lines
@@ -161,28 +179,28 @@ The JWT signature failed validation.  Likely causes:
 
 ### `JWT expired`
 
-The clock on the server running the bulk loader is significantly skewed.  The JWT has
-a 3-minute lifetime.  Sync the system clock (`ntpdate`, Windows Time service, etc.).
+The clock on the server running the bulk loader is significantly skewed. The JWT has
+a 3-minute lifetime. Sync the system clock (`ntpdate`, Windows Time service, etc.).
 
 ### `INVALID_SESSION_ID` on API calls after a successful auth
 
 The user doesn't have the API-enabled permission, or the `api` OAuth scope was not
-added to the Connected App.  Check both.
+added to the External Client App. Check both.
 
 ---
 
 ## Certificate Renewal
 
 Salesforce will stop accepting the JWT when the certificate expires (default 365 days
-from creation).  To renew:
+from creation). To renew:
 
 ```bash
 openssl genrsa -out private_new.pem 2048
 openssl req -new -x509 -key private_new.pem -out certificate_new.crt -days 365
 ```
 
-1. Upload `certificate_new.crt` to the Connected App (Edit → Use digital signatures →
-   replace the file).
+1. In the External Client App, click **Edit** → under **Flow Enablement** → replace
+   the certificate file.
 2. Update the private key in the bulk loader connection (edit the connection, paste
    `private_new.pem`).
 3. Delete the old key files from disk.
