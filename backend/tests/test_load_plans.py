@@ -336,3 +336,74 @@ def test_start_run_returns_201(auth_client):
 def test_start_run_plan_not_found_returns_404(auth_client):
     resp = auth_client.post("/api/load-plans/bad-plan/run", json={})
     assert resp.status_code == 404
+
+
+# ── SFBL-166: input_from_step_id FK remap on duplicate ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_duplicate_plan_remaps_input_from_step_id():
+    """A duplicated plan's ``input_from_step_id`` references must point at
+    the cloned upstream steps, not the source plan's step IDs."""
+    import uuid
+
+    from app.models.connection import Connection
+    from app.models.load_plan import LoadPlan
+    from app.models.load_step import LoadStep, Operation
+    from app.services.load_plan_service import duplicate_plan
+    from tests.conftest import _TestSession
+
+    async with _TestSession() as db:
+        conn = Connection(
+            id=str(uuid.uuid4()),
+            name="Test Org",
+            instance_url="https://test.salesforce.com",
+            login_url="https://login.salesforce.com",
+            client_id="cid",
+            private_key="encrypted",
+            username="user@example.com",
+            is_sandbox=True,
+        )
+        db.add(conn)
+        await db.flush()
+
+        plan = LoadPlan(
+            id=str(uuid.uuid4()),
+            connection_id=conn.id,
+            name="Source",
+        )
+        db.add(plan)
+        await db.flush()
+
+        upstream = LoadStep(
+            id=str(uuid.uuid4()),
+            load_plan_id=plan.id,
+            sequence=1,
+            object_name="Account",
+            operation=Operation.query,
+            soql="SELECT Id FROM Account",
+            name="accounts_q",
+        )
+        downstream = LoadStep(
+            id=str(uuid.uuid4()),
+            load_plan_id=plan.id,
+            sequence=2,
+            object_name="Account",
+            operation=Operation.delete,
+            input_from_step_id=upstream.id,
+        )
+        db.add_all([upstream, downstream])
+        await db.commit()
+
+        copy = await duplicate_plan(db, plan.id)
+
+        copy_steps = sorted(copy.load_steps, key=lambda s: s.sequence)
+        copy_upstream, copy_downstream = copy_steps
+
+        # Remapped: downstream's FK points at the *clone* of upstream, not the source.
+        assert copy_downstream.input_from_step_id == copy_upstream.id
+        assert copy_downstream.input_from_step_id != upstream.id
+        # Upstream clone has no input_from of its own.
+        assert copy_upstream.input_from_step_id is None
+        # Names are carried through.
+        assert copy_upstream.name == "accounts_q"

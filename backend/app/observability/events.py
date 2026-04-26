@@ -65,6 +65,9 @@ class StepEvent:
     COMPLETED = "step.completed"
     FAILED = "step.failed"
     THRESHOLD_EXCEEDED = "step.threshold_exceeded"
+    # SFBL-166: emitted by the orchestrator when a DML step's input has been
+    # resolved from an upstream query step (via input_from_step_id).
+    INPUT_RESOLVED_FROM_STEP = "step.input.resolved_from_step"
 
 
 class JobEvent:

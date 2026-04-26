@@ -188,6 +188,7 @@ class TestPartitionSizeFallback:
         mock_step.id = "step-1"
         mock_step.object_name = "Account"
         mock_step.sequence = 1
+        mock_step.input_from_step_id = None
 
         # Mock storage that returns one file with 2 data rows
         csv_content = "Name,Id\nFoo,1\nBar,2\n"
@@ -225,6 +226,7 @@ class TestPartitionSizeFallback:
             result = await step_executor._execute_step(
                 run_id="run-1",
                 step=mock_step,
+                plan=MagicMock(),
                 plan_id="plan-1",
                 plan_name="Test",
                 bulk_client=MagicMock(),
@@ -256,6 +258,7 @@ class TestPartitionSizeFallback:
         mock_step.id = "step-1"
         mock_step.object_name = "Account"
         mock_step.sequence = 1
+        mock_step.input_from_step_id = None
 
         csv_content = "Name,Id\nFoo,1\n"
         mock_storage = MagicMock()
@@ -288,6 +291,7 @@ class TestPartitionSizeFallback:
             result = await step_executor._execute_step(
                 run_id="run-1",
                 step=mock_step,
+                plan=MagicMock(),
                 plan_id="plan-1",
                 plan_name="Test",
                 bulk_client=MagicMock(),

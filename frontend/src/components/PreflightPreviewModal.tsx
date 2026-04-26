@@ -62,6 +62,8 @@ export default function PreflightPreviewModal({
                     {preview.data.error || 'SOQL invalid'}
                   </p>
                 )
+              ) : preview.data.note && step.input_from_step_id ? (
+                <p className="text-xs font-semibold text-info-text">{preview.data.note}</p>
               ) : (
                 <>
                   <p className="text-xs font-semibold text-success-text">

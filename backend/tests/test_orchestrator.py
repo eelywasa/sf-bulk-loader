@@ -1683,3 +1683,222 @@ async def test_circuit_breaker_resets_on_success_and_does_not_trip(tmp_path):
 
         await db.refresh(run)
     assert run.status != RunStatus.aborted
+
+
+# ── SFBL-263: cross-step input chaining (query → DML) ────────────────────────
+
+
+async def test_query_then_dml_chain_resolves_upstream_output(db: AsyncSession, tmp_path):
+    """End-to-end: a query step's output is consumed as input by a downstream
+    DML step via input_from_step_id.
+
+    The DML step omits both csv_file_pattern and input_connection_id; the
+    orchestrator must call resolve_step_input, which finds the upstream
+    JobRecord's success_file_path and constructs a LocalInputStorage rooted
+    at settings.output_dir.
+    """
+    import csv as _csv
+    import io
+    from app.services.bulk_query_executor import BulkQueryResult
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    upstream = LoadStep(
+        id=str(uuid.uuid4()),
+        load_plan_id=plan.id,
+        sequence=1,
+        object_name="Account",
+        operation=Operation.query,
+        soql="SELECT Id FROM Account",
+        name="stale_accounts",
+    )
+    db.add(upstream)
+    await db.commit()
+    await db.refresh(upstream)
+
+    downstream = LoadStep(
+        id=str(uuid.uuid4()),
+        load_plan_id=plan.id,
+        sequence=2,
+        object_name="Account",
+        operation=Operation.delete,
+        partition_size=10_000,
+        input_from_step_id=upstream.id,
+    )
+    db.add(downstream)
+    await db.commit()
+    await db.refresh(downstream)
+
+    run = await _make_run(db, plan)
+
+    # Write the upstream artefact to the output_dir so the resolver +
+    # LocalInputStorage can read it during the downstream step.
+    upstream_csv_bytes = b"Id\n001A,\n001B,\n001C,\n"
+    upstream_rel_path = "stale_accounts/results.csv"
+    artefact_path = tmp_path / upstream_rel_path
+    artefact_path.parent.mkdir(parents=True, exist_ok=True)
+    artefact_path.write_bytes(upstream_csv_bytes)
+
+    async def fake_run_bulk_query(*, soql, operation, instance_url, access_token,
+                                  output_storage, relative_path):
+        return BulkQueryResult(
+            row_count=3,
+            byte_count=len(upstream_csv_bytes),
+            artefact_uri=upstream_rel_path,
+            final_state="JobComplete",
+        )
+
+    captured_partitions: list[bytes] = []
+
+    def fake_partition(fh, partition_size):
+        # Stream-and-yield the file contents back as a single partition so the
+        # downstream submission carries the upstream's rows verbatim.
+        data = fh.read()
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        captured_partitions.append(data)
+        yield data
+
+    bulk_mock = _make_bulk_client_mock(
+        success_csv=b"sf__Id,sf__Created\n001A,false\n001B,false\n001C,false\n",
+        error_csv=CSV_HEADER,
+    )
+    db_factory = make_db_factory(db)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.partition_csv", side_effect=fake_partition),
+        patch("app.services.orchestrator.run_bulk_query", new=fake_run_bulk_query),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    assert run.status == RunStatus.completed, f"unexpected status: {run.status}"
+
+    # Downstream received exactly the upstream's CSV.
+    assert len(captured_partitions) == 1
+    rows = list(_csv.reader(io.StringIO(captured_partitions[0].decode("utf-8"))))
+    assert rows[0] == ["Id"]
+    assert {r[0] for r in rows[1:]} == {"001A", "001B", "001C"}
+
+    # Job records exist for both steps.
+    result = await db.execute(select(JobRecord).where(JobRecord.load_run_id == run.id))
+    jobs = list(result.scalars().all())
+    assert {j.load_step_id for j in jobs} == {upstream.id, downstream.id}
+
+    # Regression: preflight pre-count must skip the chained DML step rather
+    # than crashing on _validate_glob_pattern(None). No preflight warning
+    # for the downstream step should appear in error_summary.
+    import json as _json
+    raw_summary = run.error_summary
+    summary = _json.loads(raw_summary) if isinstance(raw_summary, str) else (raw_summary or {})
+    warnings = summary.get("preflight_warnings", []) if isinstance(summary, dict) else []
+    downstream_warnings = [w for w in warnings if w.get("step_id") == str(downstream.id)]
+    assert downstream_warnings == [], (
+        f"unexpected preflight warning for chained step: {downstream_warnings}"
+    )
+
+
+async def test_query_then_dml_chain_missing_upstream_artefact_marks_run_failed(
+    db: AsyncSession, tmp_path
+):
+    """If the upstream JobRecord has NULL success_file_path the resolver
+    raises StepReferenceResolutionError; the existing InputStorageError catch
+    in run_coordinator marks the run failed and broadcasts run.failed."""
+    from app.services.bulk_query_executor import BulkQueryResult
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    upstream = LoadStep(
+        id=str(uuid.uuid4()),
+        load_plan_id=plan.id,
+        sequence=1,
+        object_name="Account",
+        operation=Operation.query,
+        soql="SELECT Id FROM Account",
+        name="stale_accounts",
+    )
+    db.add(upstream)
+    await db.commit()
+    await db.refresh(upstream)
+
+    downstream = LoadStep(
+        id=str(uuid.uuid4()),
+        load_plan_id=plan.id,
+        sequence=2,
+        object_name="Account",
+        operation=Operation.delete,
+        partition_size=10_000,
+        input_from_step_id=upstream.id,
+    )
+    db.add(downstream)
+    await db.commit()
+    await db.refresh(downstream)
+
+    run = await _make_run(db, plan)
+
+    async def fake_run_bulk_query_no_artefact(
+        *, soql, operation, instance_url, access_token, output_storage, relative_path
+    ):
+        # The query step returns successfully but the JobRecord ends up with
+        # success_file_path=None — emulate by returning artefact_uri="" and
+        # then nulling the JobRecord field below.
+        return BulkQueryResult(
+            row_count=0,
+            byte_count=0,
+            artefact_uri="placeholder",
+            final_state="JobComplete",
+        )
+
+    bulk_mock = _make_bulk_client_mock()
+    db_factory = make_db_factory(db)
+    broadcast_mock = AsyncMock()
+
+    async def _null_artefact_after_query(*args, **kwargs):
+        # Patch hook: after the query step completes, NULL the success_file_path
+        # to simulate a corrupted artefact path / writer failure.
+        result = await fake_run_bulk_query_no_artefact(*args, **kwargs)
+        return result
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.run_bulk_query", new=_null_artefact_after_query),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=broadcast_mock),
+        patch("app.services.orchestrator.settings.output_dir", str(tmp_path)),
+    ):
+        # Run the run; the query step will populate success_file_path. We then
+        # null it via direct DB update before the downstream step runs.
+        # Simpler: run directly with no upstream artefact at all by adjusting
+        # the upstream JobRecord post-query.
+        from app.services.run_coordinator import _execute_run_body  # noqa: F401
+        # Approach: run the orchestrator once; immediately after, the upstream
+        # JobRecord exists with success_file_path="placeholder", which is not a
+        # valid s3:// URI but IS a valid local rel path. To force the
+        # NULL-success_file_path branch we patch resolve_step_input to raise.
+        from app.services.step_reference_resolver import StepReferenceResolutionError
+
+        async def fake_resolver(step, run_id, plan_arg, db_arg):
+            raise StepReferenceResolutionError(
+                f"Upstream step {step.input_from_step_id!r} has no success_file_path"
+            )
+
+        with patch("app.services.step_executor.resolve_step_input", new=fake_resolver):
+            await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    assert run.status == RunStatus.failed
+    assert run.error_summary is not None
+    assert "storage_error" in run.error_summary
+
+    # WS run.failed was broadcast.
+    broadcast_payloads = [
+        call.args[1] for call in broadcast_mock.call_args_list
+        if len(call.args) >= 2 and isinstance(call.args[1], dict)
+    ]
+    assert any(p.get("event_name") == "run.failed" for p in broadcast_payloads), (
+        f"run.failed event not in broadcast payloads: {broadcast_payloads}"
+    )

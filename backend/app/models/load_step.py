@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -59,6 +59,17 @@ class LoadStep(Base):
     input_connection_id: Mapped[Optional[str]] = mapped_column(
         String(36), nullable=True
     )
+    # SFBL-166: optional human-readable identifier; unique within a plan via
+    # the partial index below (only enforced when name IS NOT NULL).
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default=None)
+    # SFBL-166: wires this step's input to an earlier query step's run-scoped
+    # output. Mutually exclusive with csv_file_pattern and input_connection_id
+    # (enforced at the schema/service layer).
+    input_from_step_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("load_step.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=func.now(), onupdate=func.now()
@@ -66,3 +77,14 @@ class LoadStep(Base):
 
     load_plan: Mapped["LoadPlan"] = relationship("LoadPlan", back_populates="load_steps")
     job_records: Mapped[list["JobRecord"]] = relationship("JobRecord", back_populates="load_step")
+
+    __table_args__ = (
+        Index(
+            "uq_load_step_plan_name",
+            "load_plan_id",
+            "name",
+            unique=True,
+            sqlite_where=text("name IS NOT NULL"),
+            postgresql_where=text("name IS NOT NULL"),
+        ),
+    )

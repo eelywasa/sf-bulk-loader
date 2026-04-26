@@ -35,13 +35,22 @@ _log.info("Database engine: %s", engine.dialect.name)
 
 
 @event.listens_for(engine.sync_engine, "connect")
-def _set_sqlite_pragma(dbapi_connection: sqlite3.Connection, _connection_record: object) -> None:
-    """Enable WAL mode for better concurrent read/write performance."""
-    if isinstance(dbapi_connection, sqlite3.Connection):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+def _set_sqlite_pragma(dbapi_connection: object, _connection_record: object) -> None:
+    """Apply per-connection PRAGMAs for SQLite.
+
+    Gate by dialect name rather than ``isinstance(dbapi_connection,
+    sqlite3.Connection)``: the ``aiosqlite`` driver wraps the underlying
+    sqlite3 connection in its own adapter, so the isinstance check used to
+    silently skip — leaving WAL mode off and (critically) ``foreign_keys=OFF``
+    so every ``ON DELETE CASCADE`` / ``SET NULL`` declared in the schema was
+    a no-op at runtime.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 AsyncSessionLocal = async_sessionmaker(

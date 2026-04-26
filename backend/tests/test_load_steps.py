@@ -552,3 +552,324 @@ def test_preview_step_remote_file_read_error_returns_zero_row_count(auth_client)
         {"filename": "good.csv", "row_count": 1},
         {"filename": "missing.csv", "row_count": 0},
     ]
+
+
+# ── SFBL-166: name + input_from_step_id schema/validation ──────────────────────
+
+
+_QUERY_STEP = {
+    "object_name": "Account",
+    "operation": "query",
+    "soql": "SELECT Id FROM Account",
+}
+
+
+def _add_query_step(auth_client, plan_id: str, overrides=None) -> dict:
+    payload = {**_QUERY_STEP, **(overrides or {})}
+    return auth_client.post(f"/api/load-plans/{plan_id}/steps", json=payload).json()
+
+
+def test_create_step_with_name_persists(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    body = _add_query_step(auth_client, pid, {"sequence": 1, "name": "accounts_q"})
+    assert body["name"] == "accounts_q"
+
+
+def test_create_step_name_is_trimmed(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    body = _add_query_step(auth_client, pid, {"sequence": 1, "name": "  accounts_q  "})
+    assert body["name"] == "accounts_q"
+
+
+def test_create_step_empty_name_persists_as_null(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    a = _add_query_step(auth_client, pid, {"sequence": 1, "name": ""})
+    b = _add_query_step(
+        auth_client, pid, {"sequence": 2, "name": "   ", "object_name": "Contact"}
+    )
+    # Both stored as NULL — partial unique index does not collide.
+    assert a["name"] is None
+    assert b["name"] is None
+
+
+def test_create_step_duplicate_name_within_plan_rejected(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    _add_query_step(auth_client, pid, {"sequence": 1, "name": "dup"})
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={**_QUERY_STEP, "sequence": 2, "name": "dup", "object_name": "Contact"},
+    )
+    assert resp.status_code == 422
+    assert "already exists" in resp.json()["detail"]
+
+
+def test_input_from_step_id_and_csv_pattern_mutually_exclusive(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1})["id"]
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "csv_file_pattern": "x*.csv",
+            "input_from_step_id": upstream,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_input_from_step_id_and_input_connection_id_mutually_exclusive(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1})["id"]
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+            "input_connection_id": "local-output",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_input_from_step_id_nonexistent_rejected(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 1,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": "00000000-0000-0000-0000-000000000000",
+        },
+    )
+    assert resp.status_code == 422
+    assert "does not exist" in resp.json()["detail"]
+
+
+def test_input_from_step_id_later_sequence_rejected(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    later = _add_query_step(auth_client, pid, {"sequence": 5})["id"]
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": later,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_input_from_step_id_non_query_rejected(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_step(auth_client, pid, {"sequence": 1})["id"]  # insert op
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    )
+    assert resp.status_code == 422
+    assert "query" in resp.json()["detail"].lower()
+
+
+def test_input_from_step_id_cross_plan_rejected(auth_client):
+    cid = _conn_id(auth_client)
+    pid_a = _plan_id(auth_client, cid)
+    pid_b = _plan_id(auth_client, cid)
+    upstream = _add_query_step(auth_client, pid_a, {"sequence": 1})["id"]
+    resp = auth_client.post(
+        f"/api/load-plans/{pid_b}/steps",
+        json={
+            "sequence": 1,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_input_from_step_id_valid_chain_accepted(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1})["id"]
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["input_from_step_id"] == upstream
+
+
+def test_update_step_set_input_from_step_id(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1})["id"]
+    # downstream initially has no input_from
+    downstream = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "csv_file_pattern": "x*.csv",
+        },
+    ).json()["id"]
+    # Patch must clear csv_file_pattern at the same time to avoid the
+    # mutual-exclusion error.
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{downstream}",
+        json={"input_from_step_id": upstream, "csv_file_pattern": None},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["input_from_step_id"] == upstream
+
+
+def test_update_step_input_from_step_id_self_reference_rejected(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    s = _add_query_step(auth_client, pid, {"sequence": 1, "name": "self"})["id"]
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{s}",
+        json={"input_from_step_id": s},
+    )
+    assert resp.status_code == 422
+
+
+def test_reorder_preserves_valid_references(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    q1 = _add_query_step(auth_client, pid, {"sequence": 1})["id"]
+    q2 = _add_query_step(
+        auth_client, pid, {"sequence": 2, "object_name": "Contact"}
+    )["id"]
+    dml = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 3,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": q1,
+        },
+    ).json()["id"]
+    # Swap the two query steps — dml's reference (q1) is still earlier than dml.
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps/reorder",
+        json={"step_ids": [q2, q1, dml]},
+    )
+    assert resp.status_code == 200
+
+
+def test_reorder_inverting_reference_rejected(auth_client):
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    q1 = _add_query_step(auth_client, pid, {"sequence": 1})["id"]
+    dml = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": q1,
+        },
+    ).json()["id"]
+    # Put dml before q1 — would invert the reference.
+    resp = auth_client.post(
+        f"/api/load-plans/{pid}/steps/reorder",
+        json={"step_ids": [dml, q1]},
+    )
+    assert resp.status_code == 422
+    # DB state unchanged: original sequences preserved.
+    listing = auth_client.get(f"/api/load-plans/{pid}").json()["load_steps"]
+    assert {s["id"]: s["sequence"] for s in listing} == {q1: 1, dml: 2}
+
+
+def test_preview_step_with_input_from_step_returns_note(auth_client):
+    """SFBL-166: a DML step with input_from_step_id has neither pattern nor
+    connection — preview must short-circuit to a descriptive note instead of
+    500ing inside _validate_glob_pattern(None)."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "stale_accounts"})["id"]
+    downstream = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    ).json()["id"]
+
+    resp = auth_client.post(f"/api/load-plans/{pid}/steps/{downstream}/preview")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["kind"] == "dml"
+    assert body["matched_files"] == []
+    assert body["total_rows"] == 0
+    assert body["note"] is not None
+    assert "stale_accounts" in body["note"]
+
+
+def test_delete_upstream_step_with_dependents_returns_422(auth_client):
+    """SFBL-166: deleting a step that's referenced by a downstream
+    input_from_step_id must 422 with a list of dependents."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "stale_accounts"})["id"]
+    auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    )
+
+    resp = auth_client.delete(f"/api/load-plans/{pid}/steps/{upstream}")
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "Cannot delete this step" in detail
+    assert "delete Account" in detail or "Step 2" in detail
+
+
+def test_delete_step_without_dependents_succeeds(auth_client):
+    """Sanity check: a step with no downstream dependents still deletes cleanly."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "x"})["id"]
+    resp = auth_client.delete(f"/api/load-plans/{pid}/steps/{upstream}")
+    assert resp.status_code == 204
+
+
+def test_update_step_sequence_only_revalidates_existing_reference(auth_client):
+    """Codex review: updating just `sequence` on a step that already has an
+    input_from_step_id must re-run reference validation; otherwise a client
+    can invert dependency order without hitting the 422."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "u"})["id"]
+    downstream = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    ).json()["id"]
+
+    # Try to invert by updating only `sequence` on the downstream — should 422.
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{downstream}",
+        json={"sequence": 1},
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "sequence" in detail.lower() or "strictly less" in detail.lower()

@@ -122,12 +122,16 @@ export const plansApi = {
 export interface LoadStepCreate {
   object_name: string
   operation: string
+  /** Optional user-supplied name. Send raw (incl. empty string); backend trims and coerces empty→NULL. */
+  name?: string | null
   csv_file_pattern?: string | null
   soql?: string | null
   partition_size?: number
   external_id_field?: string | null
   assignment_rule_id?: string | null
   input_connection_id?: string | null
+  /** SFBL-264: ID of the upstream query step whose output feeds this step. */
+  input_from_step_id?: string | null
   sequence?: number
 }
 
@@ -139,7 +143,7 @@ export const stepsApi = {
   delete: (planId: string, stepId: string) =>
     api.delete(`/api/load-plans/${planId}/steps/${stepId}`),
   reorder: (planId: string, stepIds: string[]) =>
-    api.post<void>(`/api/load-plans/${planId}/steps/reorder`, stepIds),
+    api.post<void>(`/api/load-plans/${planId}/steps/reorder`, { step_ids: stepIds }),
   preview: (planId: string, stepId: string) =>
     api.post<StepPreviewResponse>(`/api/load-plans/${planId}/steps/${stepId}/preview`),
   validateSoql: (planId: string, soql: string) =>
