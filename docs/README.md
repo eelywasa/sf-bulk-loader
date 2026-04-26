@@ -17,6 +17,7 @@ making architectural changes.
 | [architecture/auth-and-rbac.md](architecture/auth-and-rbac.md) | Auth modes, JWT sessions, RBAC model, invitations |
 | [architecture/run-execution.md](architecture/run-execution.md) | Orchestrator, partitioning, Salesforce Bulk API, polling, aborts |
 | [architecture/storage.md](architecture/storage.md) | Input discovery, output sinks, encryption at rest |
+| [architecture/foreign-keys.md](architecture/foreign-keys.md) | FK inventory, cascade/SET NULL intent, SQLite enforcement |
 | [ui-conventions.md](ui-conventions.md) | Design tokens, `formStyles.ts`, shared components, theming rules |
 
 ---

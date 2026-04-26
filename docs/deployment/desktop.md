@@ -89,6 +89,39 @@ backend. This creates the full database schema in `db/bulk_loader.db`. On subseq
 launches the same command runs again as a no-op, or applies any pending migrations if the
 app has been updated. No user action is required — migrations are fully automatic.
 
+## Upgrading from a pre-2026-04-25 install — SQLite FK enforcement
+
+Before commit `c554767` (SFBL-166, merged 2026-04-25), the SQLite
+`PRAGMA foreign_keys=ON` connect-listener silently never ran on the
+`aiosqlite` driver, so every `ON DELETE CASCADE` and `ON DELETE SET NULL`
+declared in the schema was a runtime no-op. The fix is now in place and a
+boot-time assertion (`assert_sqlite_fk_enforcement_active`) refuses to
+start the backend if the PRAGMA is somehow off.
+
+**Operator impact on upgrade.** Once the new backend is running:
+
+- Future deletes that were silently leaving orphaned children will now
+  cascade (e.g. deleting a `LoadPlan` correctly deletes its `LoadStep`s,
+  `NotificationSubscription`s, etc.).
+- Existing rows that should already have been cleaned up are not retroactively
+  removed — they remain as orphans pointing at a missing parent.
+- A delete that was previously succeeding by accident (because RESTRICT was
+  not enforced) may now error with `IntegrityError`. This is the intended
+  behaviour; remove the children first.
+
+If you have a long-running install and want to surface latent
+inconsistencies before upgrading, run the read-only scanner:
+
+```bash
+python scripts/scan_fk_orphans.py --db /path/to/bulk_loader.db
+```
+
+A clean DB prints `0` for every FK and exits `0`. Any non-zero count
+indicates pre-existing orphans; cleanup is decided per-case (drop the
+orphan, or null the column for SET-NULL semantics) — see
+[Foreign Key Inventory](../architecture/foreign-keys.md) for the per-FK
+intent.
+
 ---
 
 ## Development Workflow
