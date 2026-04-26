@@ -68,7 +68,7 @@ async def list_runs(
         query = query.where(LoadRun.started_at >= started_after)
     if started_before is not None:
         query = query.where(LoadRun.started_at <= started_before)
-    query = query.order_by(LoadRun.started_at.desc())
+    query = query.order_by(LoadRun.started_at.desc().nulls_last())
     result = await db.execute(query)
     return list(result.scalars().all())
 

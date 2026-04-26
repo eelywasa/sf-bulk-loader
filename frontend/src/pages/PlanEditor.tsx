@@ -159,6 +159,7 @@ export default function PlanEditor() {
               onDelete={(step) => setDeleteStepTarget(step)}
               onMoveUp={handleMoveUp}
               onMoveDown={handleMoveDown}
+              onReorder={(ids) => reorderMutation.mutate(ids)}
               onPreview={(step) => void handlePreviewStep(step)}
               onAddStep={() => openStepModal()}
             />

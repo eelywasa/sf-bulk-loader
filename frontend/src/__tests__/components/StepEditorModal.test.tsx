@@ -575,6 +575,7 @@ describe('StepList upstream link badge (SFBL-264)', () => {
         onDelete={vi.fn()}
         onMoveUp={vi.fn()}
         onMoveDown={vi.fn()}
+        onReorder={vi.fn()}
         onPreview={vi.fn()}
         onAddStep={vi.fn()}
       />,

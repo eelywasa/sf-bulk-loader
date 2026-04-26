@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, DataTable, EmptyState, Modal, Spinner, type Column } from '../components/ui'
+import { Button, Card, DataTable, EmptyState, Modal, Spinner, type Column } from '../components/ui'
 import { useToast } from '../components/ui/Toast'
 import { ALERT_ERROR } from '../components/ui/formStyles'
 import { plansApi, connectionsApi } from '../api/endpoints'
@@ -9,15 +9,7 @@ import PermissionGate from '../components/PermissionGate'
 import { usePermission } from '../hooks/usePermission'
 import type { LoadPlan } from '../api/types'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+import { formatDate } from '../utils/formatters'
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -192,12 +184,14 @@ export default function PlansPage() {
           }
         />
       ) : (
-        <DataTable
-          columns={columns}
-          data={plans}
-          keyExtractor={(p) => p.id}
-          onRowClick={(p) => navigate(`/plans/${p.id}`)}
-        />
+        <Card padding={false}>
+          <DataTable
+            columns={columns}
+            data={plans}
+            keyExtractor={(p) => p.id}
+            onRowClick={(p) => navigate(`/plans/${p.id}`)}
+          />
+        </Card>
       )}
 
       {/* Delete confirmation modal */}

@@ -16,15 +16,9 @@ import type {
   ApiValidationError,
 } from '../api/types'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+import { formatDate } from '../utils/formatters'
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function extractErrors(err: unknown): string[] {
   if (err instanceof ApiError) {

@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query'
 import { runsApi, plansApi } from '../api/endpoints'
 import type { RunListParams } from '../api/endpoints'
 import type { LoadRun } from '../api/types'
-import { Card, Badge, Button, EmptyState } from '../components/ui'
+import { Card, Badge, Button, EmptyState, DataTable, Spinner, type Column } from '../components/ui'
 import type { BadgeVariant } from '../components/ui/Badge'
 import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS } from '../components/ui/formStyles'
+import { formatDatetime } from '../utils/formatters'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -21,11 +22,6 @@ const ALL_RUN_STATUSES: LoadRun['status'][] = [
 
 function statusVariant(status: LoadRun['status']): BadgeVariant {
   return status
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString()
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -82,6 +78,87 @@ export default function RunsPage() {
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
+
+  // ── Table columns ───────────────────────────────────────────────────────────
+  const planMap = new Map(plans.map((p) => [p.id, p]))
+
+  const columns: Column<LoadRun>[] = [
+    {
+      key: 'id',
+      header: 'Run ID',
+      render: (run) => (
+        <span className="font-mono text-xs text-content-secondary">
+          {run.id.slice(0, 8)}…
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (run) => (
+        <Badge variant={statusVariant(run.status)} dot>
+          {run.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'plan',
+      header: 'Plan',
+      render: (run) => {
+        const plan = planMap.get(run.load_plan_id)
+        return (
+          <span className="text-content-secondary max-w-[10rem] truncate block">
+            {plan?.name ?? (
+              <span className="text-content-muted font-mono text-xs">
+                {run.load_plan_id.slice(0, 8)}…
+              </span>
+            )}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'total_records',
+      header: 'Records',
+      render: (run) => <span className="text-content-secondary">{run.total_records ?? '—'}</span>,
+    },
+    {
+      key: 'total_success',
+      header: 'Success',
+      render: (run) => <span className="text-success-text">{run.total_success ?? '—'}</span>,
+    },
+    {
+      key: 'total_errors',
+      header: 'Errors',
+      render: (run) => <span className="text-error-text">{run.total_errors ?? '—'}</span>,
+    },
+    {
+      key: 'started_at',
+      header: 'Started',
+      render: (run) => (
+        <span className="text-content-muted whitespace-nowrap">
+          {formatDatetime(run.started_at)}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      className: 'text-right',
+      render: (run) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            navigate(`/runs/${run.id}`)
+          }}
+        >
+          View
+        </Button>
+      ),
+    },
+  ]
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -179,12 +256,9 @@ export default function RunsPage() {
       {/* Runs table */}
       <Card title="Load Runs">
         {runsQuery.isPending && (
-          <p
-            className="text-sm text-content-disabled py-6 text-center"
-            aria-label="Loading"
-          >
-            Loading runs…
-          </p>
+          <div className="flex justify-center py-12">
+            <Spinner size="md" />
+          </div>
         )}
 
         {runsQuery.isError && (
@@ -206,101 +280,45 @@ export default function RunsPage() {
         )}
 
         {runsQuery.isSuccess && runs.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-border-base text-sm">
-              <thead>
-                <tr>
-                  {['Run ID', 'Status', 'Plan', 'Records', 'Success', 'Errors', 'Started', ''].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-2 text-left text-xs font-medium text-content-muted uppercase tracking-wider whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-base">
-                {paginatedRuns.map((run) => {
-                  const plan = plans.find((p) => p.id === run.load_plan_id)
-                  return (
-                    <tr
-                      key={run.id}
-                      className="hover:bg-surface-hover cursor-pointer"
-                      onClick={() => navigate(`/runs/${run.id}`)}
-                    >
-                      <td className="px-4 py-2 font-mono text-xs text-content-link">
-                        {run.id.slice(0, 8)}…
-                      </td>
-                      <td className="px-4 py-2">
-                        <Badge variant={statusVariant(run.status)} dot>
-                          {run.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2 text-content-secondary max-w-[10rem] truncate">
-                        {plan?.name ?? <span className="text-content-muted font-mono text-xs">{run.load_plan_id.slice(0, 8)}…</span>}
-                      </td>
-                      <td className="px-4 py-2 text-content-secondary">
-                        {run.total_records ?? '—'}
-                      </td>
-                      <td className="px-4 py-2 text-success-text">
-                        {run.total_success ?? '—'}
-                      </td>
-                      <td className="px-4 py-2 text-error-text">
-                        {run.total_errors ?? '—'}
-                      </td>
-                      <td className="px-4 py-2 text-content-muted whitespace-nowrap">
-                        {formatDate(run.started_at)}
-                      </td>
-                      <td className="px-4 py-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            navigate(`/runs/${run.id}`)
-                          }}
-                        >
-                          View
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+          <>
+            <DataTable
+              columns={columns}
+              data={paginatedRuns}
+              keyExtractor={(run) => run.id}
+              onRowClick={(run) => navigate(`/runs/${run.id}`)}
+            />
 
-        {runsQuery.isSuccess && totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border-base">
-            <span className="text-sm text-content-muted">
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, runs.length)} of {runs.length} runs
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
-                aria-label="Previous page"
-              >
-                ‹ Prev
-              </button>
-              <span className="px-2 text-sm text-content-secondary">
-                {page} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-2 py-1 text-sm rounded border border-border-strong text-content-secondary disabled:opacity-40"
-                aria-label="Next page"
-              >
-                Next ›
-              </button>
-            </div>
-          </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-6 py-3 border-t border-border-base">
+                <span className="text-sm text-content-muted">
+                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, runs.length)} of {runs.length} runs
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    aria-label="Previous page"
+                  >
+                    ‹ Prev
+                  </Button>
+                  <span className="px-2 text-sm text-content-secondary">
+                    {page} / {totalPages}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    aria-label="Next page"
+                  >
+                    Next ›
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </Card>
     </div>

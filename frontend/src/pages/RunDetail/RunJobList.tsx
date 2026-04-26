@@ -76,7 +76,7 @@ export function RunJobList({ jobs, runId, operation }: RunJobListProps) {
                   showValue
                   color="blue"
                   size="sm"
-                  className="max-w-xs"
+                  className="w-full"
                 />
               )}
             </div>
