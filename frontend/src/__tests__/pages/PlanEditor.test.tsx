@@ -525,15 +525,24 @@ describe('PlanEditor', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
 
-    expect(screen.getByLabelText(/Input Source/)).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Local input files' })).toBeInTheDocument()
+    // Three-way radio group
     expect(
-      screen.getByRole('option', { name: 'Local output files (prior run results)' }),
+      screen.getByRole('radio', { name: 'Input connection / CSV file' }),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('radio', { name: 'Local output (prior run results)' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('radio', { name: 'From upstream step in this run' }),
+    ).toBeInTheDocument()
+    // Default: pattern mode selected
+    expect(screen.getByRole('radio', { name: 'Input connection / CSV file' })).toBeChecked()
+    // Connection dropdown is shown in pattern mode
+    expect(screen.getByRole('option', { name: 'Local input files' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'S3 Source' })).toBeInTheDocument()
   })
 
-  it('submits the local-output sentinel when Local output files is selected', async () => {
+  it('submits the local-output sentinel when Local output mode is selected', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
     vi.mocked(stepsApi.create).mockResolvedValue(step1)
@@ -545,8 +554,9 @@ describe('PlanEditor', () => {
 
     const dialog = screen.getByRole('dialog')
     await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Account')
+    // Switch to local_output mode via radio
+    await user.click(within(dialog).getByRole('radio', { name: 'Local output (prior run results)' }))
     await user.type(within(dialog).getByLabelText(/CSV File Pattern/), 'accounts_*.csv')
-    await user.selectOptions(within(dialog).getByLabelText(/Input Source/), 'local-output')
 
     await user.click(within(dialog).getByRole('button', { name: 'Add Step' }))
 
@@ -569,25 +579,32 @@ describe('PlanEditor', () => {
     const editButtons = screen.getAllByRole('button', { name: 'Edit' })
     await user.click(editButtons[editButtons.length - 1])
 
-    expect(screen.getByLabelText(/Input Source/)).toHaveValue('ic-1')
-    expect(screen.getByDisplayValue('remote/accounts.csv')).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog')
+    // Pattern mode should be selected (remote connection uses pattern mode)
+    expect(within(dialog).getByRole('radio', { name: 'Input connection / CSV file' })).toBeChecked()
+    // Connection picker shows the remote connection (scoped to dialog to avoid plan-connection conflict)
+    expect(within(dialog).getByLabelText(/Connection/)).toHaveValue('ic-1')
+    expect(within(dialog).getByDisplayValue('remote/accounts.csv')).toBeInTheDocument()
   })
 
-  it('clears the pattern when the input source changes', async () => {
+  it('clears the pattern and connection when switching to from_step mode', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
     renderEditor('plan-1')
     await waitFor(() => screen.getByText(/No steps yet/))
 
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
-    const patternInput = screen.getByLabelText(/CSV File Pattern/)
+    const dialog = screen.getByRole('dialog')
+    const patternInput = within(dialog).getByLabelText(/CSV File Pattern/)
     await user.type(patternInput, 'accounts.csv')
-    await user.selectOptions(screen.getByLabelText(/Input Source/), 'ic-1')
+    // Switch to from_step mode — should clear the pattern (and hide the pattern input)
+    await user.click(within(dialog).getByRole('radio', { name: 'From upstream step in this run' }))
 
-    expect(patternInput).toHaveValue('')
+    // Pattern input is hidden in from_step mode; the value should have been cleared
+    expect(within(dialog).queryByLabelText(/CSV File Pattern/)).not.toBeInTheDocument()
   })
 
-  it('uses the selected source for file browsing and header preview', async () => {
+  it('uses the selected connection for file browsing and header preview', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
     vi.mocked(filesApi.listInput).mockResolvedValue([
@@ -618,8 +635,10 @@ describe('PlanEditor', () => {
     await waitFor(() => screen.getByText(/No steps yet/))
 
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
-    await user.selectOptions(screen.getByLabelText(/Input Source/), 'ic-1')
-    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    const dialog = screen.getByRole('dialog')
+    // In pattern mode, select the S3 connection (scoped to dialog to avoid plan-connection conflict)
+    await user.selectOptions(within(dialog).getByLabelText(/Connection/), 'ic-1')
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' }))
     await waitFor(() => {
       expect(filesApi.listInput).toHaveBeenCalledWith('', 'ic-1')
     })
@@ -645,8 +664,10 @@ describe('PlanEditor', () => {
     await waitFor(() => screen.getByText(/No steps yet/))
 
     await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
-    await user.selectOptions(screen.getByLabelText(/Input Source/), 'ic-1')
-    await user.click(screen.getByRole('button', { name: 'Browse' }))
+    const dialog = screen.getByRole('dialog')
+    // In pattern mode, select a remote connection then try to browse
+    await user.selectOptions(within(dialog).getByLabelText(/Connection/), 'ic-1')
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' }))
 
     await waitFor(() => {
       expect(screen.getByText('Could not load files for this source.')).toBeInTheDocument()
