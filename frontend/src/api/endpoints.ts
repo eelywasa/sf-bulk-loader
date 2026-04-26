@@ -51,6 +51,7 @@ import type {
   Login2faEnrollAndVerifyRequest,
   Login2faEnrollAndVerifyResponse,
   AdminReset2faResponse,
+  AboutPayload,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -593,4 +594,10 @@ export const filesApi = {
       `/api/files/output/${buildPreviewPath(filePath)}/preview?${query.toString()}`,
     )
   },
+}
+
+// ─── About / system info (SFBL-269) ──────────────────────────────────────────
+
+export function getAbout(): Promise<AboutPayload> {
+  return api.get<AboutPayload>('/api/admin/about')
 }

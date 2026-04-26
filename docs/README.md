@@ -32,6 +32,7 @@ How to run, develop, and operate the app.
 | [deployment/desktop.md](deployment/desktop.md) | Desktop (Electron) deployment |
 | [deployment/aws.md](deployment/aws.md) | AWS-hosted deployment |
 | [development.md](development.md) | Local development, tests, migrations |
+| [versioning.md](versioning.md) | Version scheme, git tags, how to cut a release |
 | [observability.md](observability.md) | Event taxonomy, metrics, spans, DoD checklist |
 | [ci.md](ci.md) | CI workflow topology |
 | [email.md](email.md) | Outbound email backend, SMTP credentials, delivery log |

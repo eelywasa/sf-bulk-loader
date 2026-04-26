@@ -9,6 +9,10 @@ services:
       x-bake:
         provenance: false
         sbom: false
+      args:
+        APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     volumes:
       - ./data/input:/data/input:ro       # Source CSVs — read-only
       - ./data/output:/data/output        # Success/error result CSVs

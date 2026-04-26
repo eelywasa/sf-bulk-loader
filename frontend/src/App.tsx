@@ -20,6 +20,7 @@ import SettingsEmailPage from './pages/SettingsEmailPage'
 import SettingsSalesforcePage from './pages/SettingsSalesforcePage'
 import SettingsPartitioningPage from './pages/SettingsPartitioningPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
+import SettingsAboutPage from './pages/SettingsAboutPage'
 import ForbiddenPage from './pages/ForbiddenPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import HelpPage from './pages/HelpPage'
@@ -137,6 +138,14 @@ const router = createRouter([
         element: (
           <ProtectedRoute permission="system.settings">
             <SettingsSecurityPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/settings/about',
+        element: (
+          <ProtectedRoute permission="system.settings">
+            <SettingsAboutPage />
           </ProtectedRoute>
         ),
       },

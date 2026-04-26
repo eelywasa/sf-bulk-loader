@@ -268,27 +268,18 @@ git push origin v1.2.3
 The `release.yml` workflow fires automatically, pushes Docker images to GHCR, and attaches the
 Electron `.zip` to a GitHub Release. No manual steps required.
 
-### PR workflow — Draft PRs and Codex review
+### PR workflow
 
-CI is suppressed on draft PRs. The intended sequence for every PR is:
+Open PRs normally with `gh pr create`. CI runs on every push to the PR branch; `concurrency: cancel-in-progress: true` ensures only the latest push's run completes.
 
-1. **Open as Draft** (`gh pr create --draft`) — CI does not run.
-2. **Comment `@codex review`** — Codex reviews the diff and posts inline comments. CI still does not run.
-3. **Push fixes** for Codex comments — CI still silent (draft). `concurrency: cancel-in-progress: true` cancels any run that accidentally starts.
-4. **`gh pr ready`** — fires `ready_for_review`, CI runs once on the clean final state.
-
-This is enforced by `if: github.event.pull_request.draft == false || github.event_name == 'push'` on the `changes` job in each workflow (all other jobs `need: changes`, so they inherit the skip). The `pull_request` trigger in every workflow includes `ready_for_review` in its `types` list so marking a draft ready always fires CI.
-
-For direct-to-`main` commits (hotfixes, CI/docs-only changes) this sequence can be skipped.
+For direct-to-`main` commits (hotfixes, CI/docs-only changes) a PR is not required.
 
 ### Trigger summary
 
 | What you're working on | Workflows that will run |
 |---|---|
 | Any branch (feature, fix, etc.) | `ci-shared.yml` only |
-| Draft PR | Nothing — CI suppressed until marked Ready for review |
-| PR marked Ready for review | `ci-shared.yml` + path-filtered `ci-docker.yml` / `ci-electron.yml` / `ci-aws-skeleton.yml` |
-| Push to non-draft PR | Same as above |
+| Open PR / push to PR branch | `ci-shared.yml` + path-filtered `ci-docker.yml` / `ci-electron.yml` / `ci-aws-skeleton.yml` |
 | Push to `main` | `ci-shared.yml` plus path-filtered workflows |
 | Semantic version tag | `release.yml` only |
 

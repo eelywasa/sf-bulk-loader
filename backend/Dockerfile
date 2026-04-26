@@ -14,6 +14,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Bake version provenance into the image at build time.
+# Operators supply these via: GIT_SHA=$(git rev-parse --short HEAD) BUILD_TIME=$(date -u +%FT%TZ) docker compose build
+# CI supplies them automatically via the version-computation workflow step.
+ARG APP_VERSION=0.0.0-dev
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+ENV APP_VERSION=$APP_VERSION \
+    APP_GIT_SHA=$GIT_SHA \
+    APP_BUILD_TIME=$BUILD_TIME
+
 # Input volume is read-only; output + db volumes are writable
 RUN mkdir -p /data/input /data/output /data/db && \
     chown -R appuser:appuser /data /app

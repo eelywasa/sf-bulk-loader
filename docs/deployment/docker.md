@@ -540,3 +540,29 @@ docker compose exec backend python -m app.cli list-admins
 
 See [`docs/usage/admin-recovery.md`](../usage/admin-recovery.md) for the full procedure,
 exit-code reference, and security considerations.
+
+---
+
+## Build provenance (version, git SHA, build time)
+
+The backend image accepts three optional build arguments that are baked in as
+`ENV` variables and surfaced on **Settings → About**:
+
+| Argument | Default | Purpose |
+|---|---|---|
+| `APP_VERSION` | `0.0.0-dev` | Semantic version (e.g. `0.9.312`) |
+| `GIT_SHA` | `unknown` | Short commit hash (e.g. `abc1234`) |
+| `BUILD_TIME` | `unknown` | ISO-8601 build timestamp |
+
+CI supplies these automatically. For local builds:
+
+```bash
+GIT_SHA=$(git rev-parse --short HEAD) \
+BUILD_TIME=$(date -u +%FT%TZ) \
+APP_VERSION=0.9.0-local \
+docker compose build
+```
+
+Without them the image shows `0.0.0-dev` / `unknown` — a clear signal that it
+is a development build. See [versioning.md](../versioning.md) for how release
+versions are assigned.
