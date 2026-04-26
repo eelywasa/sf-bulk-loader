@@ -40,22 +40,11 @@ Tickets are tracked in Jira project **SFBL** at `matthew-jenkin.atlassian.net`. 
    - Test results (pass/fail counts)
    - Any notable decisions or deviations from the spec
 
-## PR Workflow — Draft PRs and Codex Review
+## PR Workflow
 
-All PRs must be opened as **Draft** and follow this sequence before CI will run:
+Open PRs normally with `gh pr create` (not `--draft`). CI runs on every push to the PR branch; `concurrency: cancel-in-progress: true` ensures only the latest push's run completes if you push multiple times.
 
-1. **Open as Draft** — `gh pr create --draft`. CI is suppressed on draft PRs.
-2. **Trigger Codex review** — comment on the PR:
-   ```
-   @codex review
-   ```
-   Codex reviews the diff and posts inline comments. CI does not run during this phase.
-3. **Address all Codex comments** — push fixes to the branch. Each push still does not trigger CI (PR is still draft).
-4. **Mark Ready for review** — `gh pr ready`. This fires the `ready_for_review` event and CI runs once on the final state.
-
-> **Why:** CI is configured to skip draft PRs and to fire on `ready_for_review`. This avoids redundant CI runs during the Codex feedback loop. `concurrency: cancel-in-progress: true` is also set on all workflows, so if you accidentally push to a non-draft PR, only the latest commit's run completes.
-
-For direct-to-main commits (hotfixes, CI/docs-only changes with no Codex value), this workflow can be skipped — push directly to `main` as normal.
+For direct-to-main commits (hotfixes, CI/docs-only changes) a PR is not required — push directly to `main` as normal.
 
 ## Epic Delivery: One PR Per Epic
 
