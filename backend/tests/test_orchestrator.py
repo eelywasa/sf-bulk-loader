@@ -1789,6 +1789,18 @@ async def test_query_then_dml_chain_resolves_upstream_output(db: AsyncSession, t
     jobs = list(result.scalars().all())
     assert {j.load_step_id for j in jobs} == {upstream.id, downstream.id}
 
+    # Regression: preflight pre-count must skip the chained DML step rather
+    # than crashing on _validate_glob_pattern(None). No preflight warning
+    # for the downstream step should appear in error_summary.
+    import json as _json
+    raw_summary = run.error_summary
+    summary = _json.loads(raw_summary) if isinstance(raw_summary, str) else (raw_summary or {})
+    warnings = summary.get("preflight_warnings", []) if isinstance(summary, dict) else []
+    downstream_warnings = [w for w in warnings if w.get("step_id") == str(downstream.id)]
+    assert downstream_warnings == [], (
+        f"unexpected preflight warning for chained step: {downstream_warnings}"
+    )
+
 
 async def test_query_then_dml_chain_missing_upstream_artefact_marks_run_failed(
     db: AsyncSession, tmp_path

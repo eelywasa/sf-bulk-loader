@@ -563,6 +563,13 @@ async def _execute_run_body(
                         "error": str(exc),
                     })
                 continue
+            # SFBL-166: a DML step that consumes an upstream query step's
+            # output has no csv_file_pattern / input_connection_id to pre-count
+            # against — the artefact is only produced when the run executes.
+            # Skip pre-count for chained steps; the upstream's row count is
+            # discovered at run time and surfaced via the live job records.
+            if step.input_from_step_id:
+                continue
             try:
                 storage = await _get_storage(step.input_connection_id, db)
                 rel_paths = storage.discover_files(step.csv_file_pattern)
