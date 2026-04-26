@@ -5,8 +5,8 @@ nav_order: 20
 tags: [connections, salesforce, jwt]
 required_permission: connections.manage
 summary: >-
-  Create the Connected App in Salesforce, generate a key pair, and add the
-  connection in the Bulk Loader UI.
+  Create an External Client App in Salesforce, generate a key pair, and add
+  the connection in the Bulk Loader UI.
 ---
 
 # Setting up a Salesforce connection
@@ -17,8 +17,7 @@ How to connect the Bulk Loader to a Salesforce org using the OAuth 2.0 JWT
 Bearer flow. Read this before authoring your first load plan. Requires the
 `connections.manage` permission in the Bulk Loader and System Administrator
 access (or equivalent) in the Salesforce org you are connecting to. For the
-full walkthrough with screenshots see
-[Salesforce JWT setup](salesforce-jwt-setup.md).
+full walkthrough see [Salesforce JWT setup](salesforce-jwt-setup.md).
 
 ---
 
@@ -34,8 +33,8 @@ You need three things in place:
 
 1. An **RSA key pair** — you hold the private key; Salesforce holds the
    certificate.
-2. A **Connected App** in the Salesforce org with the certificate uploaded.
-3. The **running user pre-authorized** to use that Connected App.
+2. An **External Client App** in the Salesforce org with the certificate uploaded.
+3. The **running user pre-authorized** to use that External Client App.
 
 ---
 
@@ -58,25 +57,34 @@ control.
 
 ---
 
-## Step 2 — Create the Connected App in Salesforce
+## Step 2 — Create an External Client App in Salesforce
 
-1. In Setup, search for **App Manager** → **New Connected App**.
-2. Under **API (Enable OAuth Settings)**:
-   - Enable OAuth Settings: **checked**
-   - Callback URL: `https://localhost` (unused, but required by the form)
-   - OAuth Scopes: `api`, `refresh_token`
-   - Use digital signatures: **checked** — upload `server.crt` from Step 1
-3. Save, then note the **Consumer Key** from the Connected App detail page —
-   you'll paste this into the UI as **Client ID**.
+1. In Setup, enter **External Client App Manager** in the Quick Find box →
+   click **New External Client App**.
+2. Fill in a name (e.g. `Bulk Loader`), contact email, and leave
+   **Distribution State** as `Local`.
+3. Expand **API (Enable OAuth settings)** and check **Enable OAuth**.
+4. Under **App Settings**:
+   - Callback URL: `http://localhost:1717/OauthRedirect` (unused, but required)
+   - OAuth Scopes: `api`, `refresh_token, offline_access`
+5. Under **Flow Enablement**:
+   - Check **Enable JWT Bearer Flow**
+   - Upload `server.crt` from Step 1
+6. Uncheck **Require Proof Key for Code Exchange (PKCE) Extension**.
+7. Click **Create**.
+8. Go to the **Settings** tab → **OAuth Settings** → click **Consumer Key and
+   Secret** (requires email verification) → copy the **Consumer Key**. This is
+   the `client_id` you will enter in the Bulk Loader.
 
 ---
 
 ## Step 3 — Pre-authorize the running user
 
-1. **Setup → Manage Connected Apps → Policies**.
-2. Set **Permitted Users** to *"Admin approved users are pre-authorized"*.
-3. Add the Salesforce user that will execute the loads (Profile or Permission
-   Set).
+1. On the External Client App detail page, click the **Policies** tab → **Edit**.
+2. Expand **OAuth Policies** → set **Permitted Users** to
+   *Admin approved users are pre-authorized* → **Save**.
+3. Add the Salesforce user that will execute the loads via Profile or Permission
+   Set (see the [full walkthrough](salesforce-jwt-setup.md) for both options).
 
 Without this step the JWT exchange will fail with `invalid_grant`.
 
@@ -91,7 +99,7 @@ Without this step the JWT exchange will fail with `invalid_grant`.
    - **Client ID**: Consumer Key from Step 2.
    - **Username**: the Salesforce user pre-authorized in Step 3.
    - **Private Key**: full contents of `server.key` including the
-     `-----BEGIN PRIVATE KEY-----` / `-----END PRIVATE KEY-----` headers.
+     `-----BEGIN RSA PRIVATE KEY-----` / `-----END RSA PRIVATE KEY-----` headers.
 3. Click **Save**.
 4. Click **Test Connection** — the UI will do a real JWT exchange and confirm
    success or surface the Salesforce error.
@@ -105,10 +113,10 @@ backend service.
 
 ### `invalid_grant` on Test Connection
 
-- **Consumer Key typo** — must match the Connected App exactly (no trailing
+- **Consumer Key typo** — must match the External Client App exactly (no trailing
   whitespace).
 - **User not pre-authorized** — confirm the Profile or Permission Set was
-  added under *Manage Connected Apps → Policies*.
+  added under the **Policies** tab.
 - **Sandbox vs production** — sandboxes must use `https://test.salesforce.com`.
 - **Clock skew** — JWT `exp` claims are time-sensitive. Make sure the server
   clock is within a few seconds of reality.
@@ -121,8 +129,8 @@ The running user is not pre-authorized. Repeat Step 3.
 
 ### `invalid_client_id`
 
-The Consumer Key doesn't match an active Connected App in the org. Double-check
-you pasted the value from the correct Connected App.
+The Consumer Key doesn't match an active External Client App in the org.
+Re-copy it from the **Settings** tab → **Consumer Key and Secret**.
 
 ---
 
