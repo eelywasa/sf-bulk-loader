@@ -15,15 +15,53 @@ The default assumes Postgres.app running locally with the developer's OS user.
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
+
+# ── Constants (need _PG_URL before the module-level skip probe) ───────────────
+_DEFAULT_PG = "postgresql+asyncpg://mjenkin@localhost:5432/test_migration"
+_PG_URL = os.environ.get("MIGRATION_TEST_PG_URL", _DEFAULT_PG)
+_ALEMBIC_REV = "0029"
+
+
+def _pg_reachable(url: str) -> bool:
+    parsed = urlparse(url.replace("+asyncpg", ""))
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 5432
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+# Skip the whole module if Postgres isn't reachable. The migration script
+# can only be exercised end-to-end against a real Postgres instance; on
+# Postgres-less CI legs there is nothing useful for this module to do.
+if not _pg_reachable(_PG_URL):
+    pytest.skip(
+        f"Postgres not reachable at {_PG_URL} — set MIGRATION_TEST_PG_URL to "
+        "a reachable Postgres instance to enable these tests.",
+        allow_module_level=True,
+    )
+
+# The CI ``ENCRYPTION_KEY`` is a non-Fernet placeholder that conftest.py
+# overrides via ``settings.encryption_key``. The migration script reads
+# ``os.environ["ENCRYPTION_KEY"]`` directly at import time, so we must
+# ensure a *valid* Fernet key is in env before the script is imported.
+try:
+    Fernet(os.environ.get("ENCRYPTION_KEY", "").encode())
+except (ValueError, AttributeError):
+    os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
 # ── Import the migration script ───────────────────────────────────────────────
 # The script lives two levels up from this file's project root, in scripts/.
@@ -49,12 +87,6 @@ from app.models.notification_subscription import (  # noqa: E402
 from app.models.profile import Profile  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.models.user_totp import UserTotp  # noqa: E402
-
-# ── Constants ─────────────────────────────────────────────────────────────────
-_DEFAULT_PG = "postgresql+asyncpg://mjenkin@localhost:5432/test_migration"
-_PG_URL = os.environ.get("MIGRATION_TEST_PG_URL", _DEFAULT_PG)
-_ALEMBIC_REV = "0029"
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
