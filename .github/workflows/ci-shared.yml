@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: ["**"]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Detect which parts of the codebase changed so downstream jobs can skip
@@ -12,6 +17,7 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.event_name == 'push'
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}

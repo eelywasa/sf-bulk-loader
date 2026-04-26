@@ -405,7 +405,7 @@ export default function Connections() {
       header: 'Name',
       render: (c) => <span className="font-medium text-content-primary">{c.name}</span>,
     },
-    { key: 'username', header: 'Username', render: (c) => <span>{c.username}</span> },
+    { key: 'username', header: 'Username', render: (c) => <span className="break-all">{c.username}</span> },
     {
       key: 'instance_url',
       header: 'Instance URL',

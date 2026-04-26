@@ -78,7 +78,7 @@ export function DataTable<T>({
                   <td
                     key={col.key}
                     className={clsx(
-                      'px-6 py-4 whitespace-nowrap text-sm text-content-primary',
+                      'px-6 py-4 text-sm text-content-primary',
                       col.className,
                     )}
                   >

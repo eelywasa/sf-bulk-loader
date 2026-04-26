@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Steps are identical for all platforms; the two jobs below differ only in
 # which runners they target and when they run. Linux runs on every push/PR;
@@ -14,6 +19,7 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.event_name == 'push'
     outputs:
       electron: ${{ steps.filter.outputs.electron }}
     steps:
