@@ -281,6 +281,8 @@ HTTPS is served on port 443. Port 80 redirects to HTTPS.
 
 PostgreSQL is recommended for multi-user or long-running installs.
 
+> **Already running on SQLite and want to switch?** See the [SQLite → Postgres migration guide](migrating-to-postgres.md) for a one-shot offline cutover CLI.
+
 ### Bundled postgres (Docker-managed)
 
 The overlay adds a `postgres:16` service and injects `DATABASE_URL` into the backend
