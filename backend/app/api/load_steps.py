@@ -231,6 +231,32 @@ async def delete_step(
     _manage: User = Depends(_require_manage),
 ) -> None:
     step = await _get_step_or_404(plan_id, step_id, db)
+
+    # SFBL-166: block deletion when any downstream step in this plan depends
+    # on this step via input_from_step_id. Same pattern as reorder validation
+    # — surface the dependents so the user can clear/repoint before deleting.
+    # (The FK is ON DELETE SET NULL as a defensive last resort, but silently
+    # nulling out a downstream step's input source is poor UX.)
+    dep_result = await db.execute(
+        select(LoadStep).where(
+            LoadStep.load_plan_id == plan_id,
+            LoadStep.input_from_step_id == step_id,
+        )
+    )
+    dependents = list(dep_result.scalars().all())
+    if dependents:
+        labels = ", ".join(
+            d.name or f"Step {d.sequence}: {d.operation.value} {d.object_name}"
+            for d in dependents
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"Cannot delete this step — it is the input source for: {labels}. "
+                "Clear or repoint the downstream step's input source first."
+            ),
+        )
+
     await db.delete(step)
     await db.commit()
 

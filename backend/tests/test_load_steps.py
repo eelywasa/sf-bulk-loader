@@ -817,3 +817,33 @@ def test_preview_step_with_input_from_step_returns_note(auth_client):
     assert body["total_rows"] == 0
     assert body["note"] is not None
     assert "stale_accounts" in body["note"]
+
+
+def test_delete_upstream_step_with_dependents_returns_422(auth_client):
+    """SFBL-166: deleting a step that's referenced by a downstream
+    input_from_step_id must 422 with a list of dependents."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "stale_accounts"})["id"]
+    auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    )
+
+    resp = auth_client.delete(f"/api/load-plans/{pid}/steps/{upstream}")
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "Cannot delete this step" in detail
+    assert "delete Account" in detail or "Step 2" in detail
+
+
+def test_delete_step_without_dependents_succeeds(auth_client):
+    """Sanity check: a step with no downstream dependents still deletes cleanly."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "x"})["id"]
+    resp = auth_client.delete(f"/api/load-plans/{pid}/steps/{upstream}")
+    assert resp.status_code == 204
