@@ -98,8 +98,12 @@ Without this step the JWT exchange will fail with `invalid_grant`.
      `https://test.salesforce.com` for sandboxes.
    - **Client ID**: Consumer Key from Step 2.
    - **Username**: the Salesforce user pre-authorized in Step 3.
-   - **Private Key**: full contents of `server.key` including the
-     `-----BEGIN RSA PRIVATE KEY-----` / `-----END RSA PRIVATE KEY-----` headers.
+   - **Private Key**: full contents of `server.key` including the header and
+     footer lines. Modern OpenSSL (3.x) emits PKCS#8 headers
+     (`-----BEGIN PRIVATE KEY-----` / `-----END PRIVATE KEY-----`); older
+     versions emit PKCS#1 headers
+     (`-----BEGIN RSA PRIVATE KEY-----` / `-----END RSA PRIVATE KEY-----`).
+     Both formats are accepted.
 3. Click **Save**.
 4. Click **Test Connection** — the UI will do a real JWT exchange and confirm
    success or surface the Salesforce error.
