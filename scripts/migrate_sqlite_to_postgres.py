@@ -80,7 +80,7 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 # Columns that hold Fernet ciphertexts. Nullable columns may be None — skip
 # those in decrypt checks. app_settings is handled separately via is_encrypted.
 ENCRYPTED_COLS: dict[str, list[str]] = {
-    "connection": ["private_key", "access_token"],
+    "connection": ["private_key"],
     "input_connection": ["access_key_id", "secret_access_key", "session_token"],
     "user_totp": ["secret_encrypted"],
 }
@@ -487,6 +487,14 @@ async def _run_migrate(
                 src_counts[table.name] = cnt
 
         async with tgt_eng.begin() as tgt_conn:
+            if force and backup_confirmed:
+                # Clear target rows in reverse FK order so children are removed
+                # before parents. Seed data inserted by alembic migrations
+                # (e.g. profiles, profile_permissions in 0021) would otherwise
+                # collide with the source rows on insert.
+                for table in reversed(tables):
+                    await tgt_conn.execute(text(f'DELETE FROM "{table.name}"'))
+
             for table in tables:
                 total = src_counts.get(table.name, 0)
                 if total == 0:

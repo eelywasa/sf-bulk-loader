@@ -53,7 +53,7 @@ from app.models.user_totp import UserTotp  # noqa: E402
 # ── Constants ─────────────────────────────────────────────────────────────────
 _DEFAULT_PG = "postgresql+asyncpg://mjenkin@localhost:5432/test_migration"
 _PG_URL = os.environ.get("MIGRATION_TEST_PG_URL", _DEFAULT_PG)
-_ALEMBIC_REV = "0028"
+_ALEMBIC_REV = "0029"
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -405,6 +405,66 @@ class TestMigrate:
         async with pg_engine.connect() as conn:
             cnt = (await conn.execute(text("SELECT COUNT(*) FROM connection"))).scalar_one()
             assert cnt == 0
+        await pg_engine.dispose()
+
+
+    async def test_force_truncates_existing_target_rows(
+        self, sqlite_db, postgres_db, fernet
+    ):
+        """With --force --i-have-a-backup the script must clear pre-existing
+        target rows before inserting source rows. Otherwise the insert will
+        collide on PK with seed data populated by alembic migrations
+        (e.g. profiles in 0021).
+        """
+        pg_engine = create_async_engine(postgres_db, poolclass=NullPool)
+        async with pg_engine.begin() as conn:
+            # Pre-existing row in app_settings — same primary key shape as the
+            # source row would not collide here because keys differ, but a
+            # collision via the seeded profiles table is the realistic case.
+            # Use profiles directly to mimic alembic 0021 seed data.
+            await conn.execute(
+                text(
+                    "INSERT INTO profiles (id, name, description, is_system, created_at) "
+                    "VALUES (:id, 'admin-stale', 'pre-existing', true, NOW())"
+                ),
+                {"id": str(uuid.uuid4())},
+            )
+        await pg_engine.dispose()
+
+        # Seed the source SQLite with one profiles row that would otherwise
+        # not collide (different id) but the goal is to prove the pre-existing
+        # row is wiped and only source rows remain.
+        src_engine = create_async_engine(
+            f"sqlite+aiosqlite:///{sqlite_db}", poolclass=NullPool
+        )
+        source_profile_id = str(uuid.uuid4())
+        async with src_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO profiles (id, name, description, is_system, created_at) "
+                    "VALUES (:id, 'source-only', 'from sqlite', false, datetime('now'))"
+                ),
+                {"id": source_profile_id},
+            )
+        await src_engine.dispose()
+
+        rc = await mig._run_migrate(
+            sqlite_db, postgres_db, force=True, backup_confirmed=True, batch_size=500
+        )
+        assert rc == 0
+
+        pg_engine = create_async_engine(postgres_db, poolclass=NullPool)
+        async with pg_engine.connect() as conn:
+            rows = (
+                await conn.execute(text("SELECT id, name FROM profiles"))
+            ).mappings().all()
+            # The pre-existing 'admin-stale' row must be wiped; only the
+            # source-side rows (fixture's 'Operator' + the one we added) remain.
+            ids = {r["id"] for r in rows}
+            names = {r["name"] for r in rows}
+            assert source_profile_id in ids
+            assert "source-only" in names
+            assert "admin-stale" not in names
         await pg_engine.dispose()
 
 

@@ -95,7 +95,7 @@ The `migrate` command:
 
 If migration fails, the Postgres database is left empty. Fix the reported error and re-run.
 
-**Non-empty target** — if you are re-running after a partial attempt and the target already has data from a previous run, pass:
+**Non-empty target** — `alembic upgrade head` seeds the `profiles` and `profile_permissions` tables (migration `0021`), so the very first migrate run always trips the empty-target check. This is expected; pass `--force --i-have-a-backup` to proceed:
 
 ```bash
 python scripts/migrate_sqlite_to_postgres.py migrate \
@@ -103,6 +103,8 @@ python scripts/migrate_sqlite_to_postgres.py migrate \
   --target postgresql+asyncpg://... \
   --force --i-have-a-backup
 ```
+
+When `--force --i-have-a-backup` is set the script `DELETE`s every row from every model-managed table before inserting source rows, so the seed data is replaced with the source's authoritative copy. The `alembic_version` row is then re-stamped to match the source.
 
 ### 5. Verify (post-flight)
 
