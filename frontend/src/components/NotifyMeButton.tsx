@@ -144,8 +144,11 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
   const primaryAction = isOn ? handleEdit : handleQuickSubscribe
   const primaryDisabled = createMut.isPending || deleteMut.isPending
 
+  // Match the BUTTON_SECONDARY_COLORS surface so the split-button reads as
+  // one control. Keep the chevron column slim (px-2.5) but match the primary
+  // button's vertical padding (py-2) and border colour (border-strong).
   const menuBtnBase =
-    'inline-flex items-center px-2.5 py-1.5 text-sm font-medium border border-l-0 border-border-base rounded-r-md bg-surface-raised hover:bg-surface-sunken text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-focus'
+    'inline-flex items-center px-2.5 py-2 text-sm font-medium border border-l-0 border-border-strong rounded-r-md bg-surface-raised hover:bg-surface-hover text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150'
 
   return (
     <>
