@@ -145,10 +145,14 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
   const primaryDisabled = createMut.isPending || deleteMut.isPending
 
   // Match the BUTTON_SECONDARY_COLORS surface so the split-button reads as
-  // one control. Keep the chevron column slim (px-2.5) but match the primary
-  // button's vertical padding (py-2) and border colour (border-strong).
+  // one control. `self-stretch` makes the chevron column inherit the primary
+  // button's height regardless of its own padding, so the two halves always
+  // share a visual baseline. Render <Menu> as a Fragment (no wrapper div) so
+  // the MenuButton sits directly inside the inline-flex parent and is flush
+  // against the primary button — MenuItems uses `anchor="bottom end"` and
+  // therefore needs no positioning context from the wrapper.
   const menuBtnBase =
-    'inline-flex items-center px-2.5 py-2 text-sm font-medium border border-l-0 border-border-strong rounded-r-md bg-surface-raised hover:bg-surface-hover text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150'
+    'inline-flex items-center self-stretch px-2.5 text-sm font-medium border border-l-0 border-border-strong rounded-r-md bg-surface-raised hover:bg-surface-hover text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-focus disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150'
 
   return (
     <>
@@ -157,12 +161,12 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
           variant="secondary"
           onClick={primaryAction}
           loading={primaryDisabled}
-          className="rounded-r-none"
+          className="!rounded-r-none"
         >
           <FontAwesomeIcon icon={faBell} className="mr-2" aria-hidden="true" />
           {primaryLabel}
         </Button>
-        <Menu as="div" className="relative">
+        <Menu as={Fragment}>
           <MenuButton className={menuBtnBase} aria-label="Notification options">
             <FontAwesomeIcon icon={faCaretDown} aria-hidden="true" />
           </MenuButton>
