@@ -69,7 +69,7 @@ export default function SettingsAboutPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <div className="p-6 max-w-3xl space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-content-primary">About</h1>
