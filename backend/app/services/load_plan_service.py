@@ -1,6 +1,8 @@
 """Load Plan domain services — plan duplication and run creation."""
 
 import logging
+import uuid
+from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -56,11 +58,42 @@ async def duplicate_plan(db: AsyncSession, plan_id: str) -> LoadPlan:
     db.add(new_plan)
     await db.flush()  # populate new_plan.id before creating steps
 
+    # Two-pass step copy so input_from_step_id (SFBL-166) can be remapped from
+    # the source step IDs to the new clones' IDs. Pass 1 creates the new rows
+    # with input_from_step_id=NULL so the FK stays valid; pass 2 patches the
+    # references using the source→clone id map.
+    #
+    # Snapshot the (source_step_id, source_input_from_step_id) tuples up front
+    # so subsequent flushes can't expire the source attributes out from under
+    # us before we read them back.
+    source_snapshots: list[tuple[str, Optional[str]]] = [
+        (step.id, step.input_from_step_id) for step in source.load_steps
+    ]
+
+    # Pre-generate the new step IDs in Python so the source→clone mapping is
+    # known before the rows are flushed. SQLAlchemy column-level ``default=``
+    # callables only fire at flush time, so reading ``new_step.id`` immediately
+    # after ``db.add()`` would yield None.
+    id_map: dict[str, str] = {
+        src_id: str(uuid.uuid4()) for src_id, _ in source_snapshots
+    }
+    new_steps: list[LoadStep] = []
     for step in source.load_steps:
-        db.add(LoadStep(
+        cloned_columns = _copy_columns(step, _STEP_EXCLUDED)
+        cloned_columns["input_from_step_id"] = None
+        new_step = LoadStep(
+            id=id_map[step.id],
             load_plan_id=new_plan.id,
-            **_copy_columns(step, _STEP_EXCLUDED),
-        ))
+            **cloned_columns,
+        )
+        db.add(new_step)
+        new_steps.append(new_step)
+
+    await db.flush()  # ensure new step rows exist before patching FKs
+
+    for (_, source_input_from), new_step in zip(source_snapshots, new_steps):
+        if source_input_from is not None:
+            new_step.input_from_step_id = id_map.get(source_input_from)
 
     await db.commit()
 

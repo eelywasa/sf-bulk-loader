@@ -36,6 +36,7 @@ from app.schemas.load_step import (
     StepReorderRequest,
     ValidateSoqlRequest,
     ValidateSoqlResponse,
+    _validate_input_source_exclusivity,
     _validate_query_dml_fields,
 )
 
@@ -107,6 +108,17 @@ async def add_step(
     step_data = data.model_dump()
     if step_data.get("sequence") is None:
         step_data["sequence"] = await load_step_service.next_sequence(db, plan_id)
+
+    await load_step_service.validate_step_input_reference(
+        db,
+        plan_id,
+        input_from_step_id=step_data.get("input_from_step_id"),
+        own_sequence=step_data["sequence"],
+    )
+    await load_step_service.validate_unique_step_name(
+        db, plan_id, name=step_data.get("name")
+    )
+
     step = LoadStep(load_plan_id=plan_id, **step_data)
     db.add(step)
     await db.commit()
@@ -152,11 +164,17 @@ async def update_step(
         if "csv_file_pattern" in update_data
         else step.csv_file_pattern
     )
+    effective_input_from_step_id = (
+        update_data["input_from_step_id"]
+        if "input_from_step_id" in update_data
+        else step.input_from_step_id
+    )
     try:
         _validate_query_dml_fields(
             effective_operation,
             effective_soql,
             effective_pattern,
+            input_from_step_id=effective_input_from_step_id,
             context="update",
         )
     except ValueError as exc:
@@ -164,6 +182,39 @@ async def update_step(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
+
+    # SFBL-166: validate the merged effective input-source state — a partial
+    # update may set input_from_step_id while leaving an existing
+    # csv_file_pattern / input_connection_id on the row.
+    effective_input_from = effective_input_from_step_id
+    effective_input_conn = (
+        update_data["input_connection_id"]
+        if "input_connection_id" in update_data
+        else step.input_connection_id
+    )
+    try:
+        _validate_input_source_exclusivity(
+            effective_input_from, effective_pattern, effective_input_conn
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    effective_sequence = update_data.get("sequence", step.sequence)
+    if "input_from_step_id" in update_data:
+        await load_step_service.validate_step_input_reference(
+            db,
+            plan_id,
+            input_from_step_id=effective_input_from,
+            own_sequence=effective_sequence,
+            own_step_id=step.id,
+        )
+    if "name" in update_data:
+        await load_step_service.validate_unique_step_name(
+            db, plan_id, name=update_data["name"], own_step_id=step.id
+        )
 
     for field, value in update_data.items():
         setattr(step, field, value)
