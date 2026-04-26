@@ -851,6 +851,41 @@ The `docs-drift` CI job enforces this on every PR.
 
 ---
 
+## Admin Settings page patterns
+
+### Editable settings — `SettingsPageShell`
+
+Pages under `/settings/*` that allow the user to change values use
+`SettingsPageShell`. It provides:
+
+- Page header with title and 60-second cache-propagation callout
+- Form rendering with dirty-tracking and Save button
+- 422 field-level error highlighting
+- 403 redirect to home for non-admins
+
+All editable settings pages require the `system.settings` permission and are
+registered in `App.tsx` wrapped in `<ProtectedRoute permission="system.settings">`.
+
+### Read-only info pages — no `SettingsPageShell`
+
+When a settings sub-page is purely read-only (no form, no Save button), do
+**not** use `SettingsPageShell` — it adds dirty-tracking and save machinery
+that don't apply. Instead:
+
+1. Wrap the page in a plain `<div>` with `max-w-2xl mx-auto px-4 py-8 space-y-6`.
+2. Use `<Section>` cards (`bg-surface-raised border border-border-base rounded-lg`)
+   with a header row (`bg-surface-elevated`) and `<Row>` items inside
+   (`divide-y divide-border-base`).
+3. Label column: `w-40 flex-shrink-0 text-sm font-medium text-content-secondary`.
+   Value column: `text-sm text-content-primary font-mono` (or `text-content-disabled`
+   for empty/unknown values rendered as `—`).
+4. Still register the route with `<ProtectedRoute permission="system.settings">` and
+   gate the sidebar link with `canSettings` so non-admins see neither.
+
+**Example:** `SettingsAboutPage.tsx` (Settings → About) follows this pattern.
+
+---
+
 ## Anti-patterns
 
 | Pattern | Why to avoid | What to do instead |

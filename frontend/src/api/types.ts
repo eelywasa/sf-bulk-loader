@@ -630,3 +630,36 @@ export interface DependenciesResponse {
     [key: string]: DependencyStatus | undefined
   }
 }
+
+// ─── About / system info (SFBL-269) ──────────────────────────────────────────
+
+export interface AboutPayload {
+  app: {
+    version: string
+    git_sha: string
+    build_time: string
+  }
+  distribution: {
+    profile: string
+    auth_mode: string | null
+  }
+  runtime: {
+    python_version: string
+    fastapi_version: string
+  }
+  database: {
+    backend: string
+    alembic_head: string
+  }
+  salesforce: {
+    api_version: string
+  }
+  email: {
+    backend: string
+    enabled: boolean
+  }
+  storage: {
+    input_connections: Record<string, number>
+    output_connections: Record<string, number>
+  }
+}

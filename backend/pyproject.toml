@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "sf-bulk-loader"
+# Placeholder — overridden at Docker build time via APP_VERSION env var.
+# The displayed version is always read from os.environ["APP_VERSION"], not this field.
+# To cut a release: push a git tag matching v<major>.<minor> (e.g. v0.8).
+# CI assembles the full version as <major>.<minor>.<github.run_number>.
+version = "0.0.0"
+description = "Orchestrates large-scale data loads into Salesforce using the Bulk API 2.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
