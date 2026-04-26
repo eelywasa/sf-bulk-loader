@@ -37,6 +37,7 @@ whichever feature you need.
 |---|---|
 | 60 | [The Files pane](files-pane.md) — inputs, outputs, previews, downloads |
 | 70 | [Bulk queries](bulk-query.md) — SOQL, validation, chaining into DML |
+| 75 | [Chaining steps](chaining-steps.md) — feed a query step's output into a DML step in the same run |
 | 80 | [Output sinks](output-sinks.md) — local vs S3 |
 | 85 | [S3 connection setup](s3-connection-setup.md) — AWS IAM, bucket, policy walkthrough |
 

@@ -44,14 +44,15 @@ declares:
 | Field | Description |
 |---|---|
 | **Sequence** | Ordering within the plan (managed by the drag handle). |
+| **Step name** | Optional human-readable identifier (e.g. `stale_accounts`). Must be unique within the plan when set. Used to reference this step as an upstream input source. |
 | **Object name** | Salesforce API name (`Account`, `Contact`, `Custom_Object__c`). For query steps this is a free-text label only. |
 | **Operation** | One of `insert`, `update`, `upsert`, `delete`, `query`, `queryAll`. See table below. |
 | **External ID field** | Required for `upsert`. The field Salesforce uses to decide insert-vs-update. |
-| **CSV file pattern** | DML steps only — glob over the input location. See [CSV format → Glob patterns](csv-format.md#glob-patterns). |
+| **CSV file pattern** | DML steps only — glob over the input location. See [CSV format → Glob patterns](csv-format.md#glob-patterns). Not used when **Input source** is set to "From upstream step". |
 | **SOQL** | Query steps only — the statement to execute. |
 | **Partition size** | Per-step override of the default partition size. |
 | **Assignment rule** | Optional Salesforce assignment rule ID (Leads / Cases). |
-| **Input source** | Local, previous-run output, or an S3 input connection. |
+| **Input source** | Three-way: local input, previous-run output (S3 or local-output), or **From upstream step in this run** — feeds a named query step's artefact directly into this DML step. See [Chaining steps](chaining-steps.md). |
 
 ### Operations
 
@@ -114,5 +115,6 @@ thresholds — none of these affect past runs.
 - [CSV format](csv-format.md)
 - [Running a load](running-loads.md) (next step)
 - [Bulk queries](bulk-query.md)
+- [Chaining steps](chaining-steps.md) — feed a query step's output into a DML step in the same run
 - [Output sinks](output-sinks.md)
 - [Notifications](notifications.md) — subscribe to run-completion events
