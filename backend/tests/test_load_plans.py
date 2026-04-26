@@ -202,6 +202,123 @@ def test_duplicate_plan_not_found_returns_404(auth_client):
     assert resp.status_code == 404
 
 
+# ── SFBL-260: dynamic field-coverage regression test ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_duplicate_plan_copies_all_columns():
+    """Every non-identity column on LoadPlan + LoadStep is carried through duplication.
+
+    Asserts dynamically against ``__table__.columns`` so any future column added
+    to either model is automatically caught by this test if duplication forgets it.
+    Without this test, the bug fixed in SFBL-260 (silently dropped
+    ``output_connection_id``, ``consecutive_failure_threshold``, ``soql``,
+    ``input_connection_id``) could recur whenever a new field is introduced.
+    """
+    import uuid
+
+    from app.models.connection import Connection
+    from app.models.input_connection import InputConnection
+    from app.models.load_plan import LoadPlan
+    from app.models.load_step import LoadStep, Operation
+    from app.services.load_plan_service import duplicate_plan
+    from tests.conftest import _TestSession
+
+    # Expected exclusion sets are hardcoded in the test (not imported from the
+    # service) so that a change to the service's exclusion sets MUST be made
+    # deliberately in two places. Without this, broadening the service's
+    # exclusion list (e.g. accidentally excluding ``output_connection_id``
+    # again) would silently make this test pass while ``duplicate_plan``
+    # regressed — defeating the purpose of the dynamic regression guard.
+    EXPECTED_PLAN_EXCLUDED = {"id", "created_at", "updated_at", "name"}
+    EXPECTED_STEP_EXCLUDED = {"id", "created_at", "updated_at", "load_plan_id"}
+
+    async with _TestSession() as db:
+        # ── Build a fully-populated plan + steps. ─────────────────────────────
+        # Every non-identity column on both models is set to a non-default value
+        # so the comparison below is meaningful (default-valued columns would
+        # match even if duplication dropped them).
+        conn = Connection(
+            id=str(uuid.uuid4()),
+            name="Test Org",
+            instance_url="https://test.salesforce.com",
+            login_url="https://login.salesforce.com",
+            client_id="cid",
+            private_key="encrypted",
+            username="user@example.com",
+            is_sandbox=True,
+        )
+        ic = InputConnection(
+            id=str(uuid.uuid4()),
+            name="S3 Output",
+            provider="s3",
+            bucket="my-bucket",
+            root_prefix="results/",
+            region="us-east-1",
+            access_key_id="encrypted-ak",
+            secret_access_key="encrypted-sk",
+        )
+        db.add_all([conn, ic])
+        await db.flush()
+
+        plan = LoadPlan(
+            id=str(uuid.uuid4()),
+            connection_id=conn.id,
+            name="Source Plan",
+            description="full coverage",
+            abort_on_step_failure=False,
+            error_threshold_pct=42.0,
+            max_parallel_jobs=7,
+            consecutive_failure_threshold=9,
+            output_connection_id=ic.id,
+        )
+        db.add(plan)
+        await db.flush()
+
+        step = LoadStep(
+            id=str(uuid.uuid4()),
+            load_plan_id=plan.id,
+            sequence=1,
+            object_name="Account",
+            operation=Operation.upsert,
+            external_id_field="ExternalId__c",
+            csv_file_pattern="accounts*.csv",
+            soql="SELECT Id FROM Account",
+            partition_size=4321,
+            assignment_rule_id="01Q5g000000XYZ1",
+            input_connection_id=ic.id,
+        )
+        db.add(step)
+        await db.commit()
+
+        # ── Duplicate via the service. ─────────────────────────────────────────
+        copy = await duplicate_plan(db, plan.id)
+
+        # ── Plan-level coverage. ───────────────────────────────────────────────
+        plan_cols = {c.name for c in LoadPlan.__table__.columns} - EXPECTED_PLAN_EXCLUDED
+        # The 'name' column is intentionally excluded (prefixed "Copy of …");
+        # assert that explicitly so a future maintainer doesn't accidentally
+        # change the rename rule.
+        assert copy.name == f"Copy of {plan.name}"
+        for col in plan_cols:
+            assert getattr(copy, col) == getattr(plan, col), (
+                f"LoadPlan.{col} was not carried through duplicate_plan "
+                f"(source={getattr(plan, col)!r}, copy={getattr(copy, col)!r})"
+            )
+
+        # ── Step-level coverage. ───────────────────────────────────────────────
+        assert len(copy.load_steps) == 1
+        copy_step = copy.load_steps[0]
+        assert copy_step.id != step.id  # new id
+        assert copy_step.load_plan_id == copy.id  # remapped FK
+        step_cols = {c.name for c in LoadStep.__table__.columns} - EXPECTED_STEP_EXCLUDED
+        for col in step_cols:
+            assert getattr(copy_step, col) == getattr(step, col), (
+                f"LoadStep.{col} was not carried through duplicate_plan "
+                f"(source={getattr(step, col)!r}, copy={getattr(copy_step, col)!r})"
+            )
+
+
 # ── Start run ──────────────────────────────────────────────────────────────────
 
 

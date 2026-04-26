@@ -1559,6 +1559,7 @@ async def _make_plan_with_cb(
     connection: Connection,
     *,
     threshold: int | None = 3,
+    max_parallel_jobs: int = 5,
 ) -> LoadPlan:
     plan = LoadPlan(
         id=str(uuid.uuid4()),
@@ -1566,7 +1567,7 @@ async def _make_plan_with_cb(
         name="CB Plan",
         abort_on_step_failure=False,
         error_threshold_pct=100.0,  # high so only CB triggers the abort
-        max_parallel_jobs=5,
+        max_parallel_jobs=max_parallel_jobs,
         consecutive_failure_threshold=threshold,
     )
     db.add(plan)
@@ -1644,10 +1645,17 @@ async def test_circuit_breaker_disabled_when_threshold_none(tmp_path):
 
 @pytest.mark.asyncio
 async def test_circuit_breaker_resets_on_success_and_does_not_trip(tmp_path):
-    """A success between failures resets the counter — CB does not trip."""
+    """A success between failures resets the counter — CB does not trip.
+
+    Uses ``max_parallel_jobs=1`` so partitions resolve sequentially and the
+    state-assignment order is deterministic. With concurrent partitions the
+    poll order is undefined — three "Failed" states could resolve in a row
+    before the "JobComplete" reset, tripping the breaker spuriously and
+    making this test flaky on CI (observed on PR #70).
+    """
     async with _SessionFactory() as db:
         conn = await _make_connection(db)
-        plan = await _make_plan_with_cb(db, conn, threshold=3)
+        plan = await _make_plan_with_cb(db, conn, threshold=3, max_parallel_jobs=1)
         await _make_step(db, plan)
         run = await _make_run(db, plan)
 

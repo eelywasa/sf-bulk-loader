@@ -14,6 +14,30 @@ from app.models.load_step import LoadStep
 logger = logging.getLogger(__name__)
 
 
+# Columns the duplication routine must NOT copy verbatim. These are either
+# generated server-side (id/timestamps), structural FKs that must be rewritten
+# to point at the new plan, or fields with intentional duplication semantics
+# (the new plan's name is prefixed "Copy of …").
+_PLAN_EXCLUDED = {"id", "created_at", "updated_at", "name"}
+_STEP_EXCLUDED = {"id", "created_at", "updated_at", "load_plan_id"}
+
+
+def _copy_columns(source, exclude: set[str]) -> dict:
+    """Return a dict of {column_name: source_value} for every mapped column
+    on *source* that is not in *exclude*.
+
+    Reading the column list from ``__table__.columns`` (rather than enumerating
+    fields by hand) means any future column added to the model is automatically
+    carried through duplication. The accompanying regression test
+    (``test_duplicate_plan_copies_all_columns``) enforces this dynamically.
+    """
+    return {
+        col.name: getattr(source, col.name)
+        for col in source.__table__.columns
+        if col.name not in exclude
+    }
+
+
 async def duplicate_plan(db: AsyncSession, plan_id: str) -> LoadPlan:
     """Deep-copy a load plan and all its steps. Returns the new plan with steps loaded."""
     result = await db.execute(
@@ -26,12 +50,8 @@ async def duplicate_plan(db: AsyncSession, plan_id: str) -> LoadPlan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
 
     new_plan = LoadPlan(
-        connection_id=source.connection_id,
         name=f"Copy of {source.name}",
-        description=source.description,
-        abort_on_step_failure=source.abort_on_step_failure,
-        error_threshold_pct=source.error_threshold_pct,
-        max_parallel_jobs=source.max_parallel_jobs,
+        **_copy_columns(source, _PLAN_EXCLUDED),
     )
     db.add(new_plan)
     await db.flush()  # populate new_plan.id before creating steps
@@ -39,13 +59,7 @@ async def duplicate_plan(db: AsyncSession, plan_id: str) -> LoadPlan:
     for step in source.load_steps:
         db.add(LoadStep(
             load_plan_id=new_plan.id,
-            sequence=step.sequence,
-            object_name=step.object_name,
-            operation=step.operation,
-            external_id_field=step.external_id_field,
-            csv_file_pattern=step.csv_file_pattern,
-            partition_size=step.partition_size,
-            assignment_rule_id=step.assignment_rule_id,
+            **_copy_columns(step, _STEP_EXCLUDED),
         ))
 
     await db.commit()
