@@ -38,7 +38,7 @@ from app.api.notification_subscriptions import router as notification_subscripti
 from app.api.utility import router as utility_router
 from app.api.utility import ws_router
 from app.auth.permissions import ALL_PERMISSION_KEYS
-from app.database import AsyncSessionLocal, engine
+from app.database import AsyncSessionLocal, assert_sqlite_fk_enforcement_active, engine
 from app.services.auth import seed_admin
 from app.services.email import delivery_log as email_delivery_log
 from app.services.email import init_email_service
@@ -49,6 +49,12 @@ from app.services.settings.service import init_settings_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: assert SQLite FK enforcement is actually on. The connect-event
+    # listener in app.database wires PRAGMA foreign_keys=ON, but a regression
+    # of its dialect-name gate would silently disable every CASCADE / SET NULL
+    # declared in the schema (SFBL-166 / -270). Fail loudly if so.
+    await assert_sqlite_fk_enforcement_active()
+
     # Startup: seed DB-backed settings from env vars / registry defaults
     _svc = init_settings_service(AsyncSessionLocal)
     await _svc.seed_from_env()
