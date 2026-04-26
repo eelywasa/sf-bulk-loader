@@ -143,7 +143,7 @@ export const stepsApi = {
   delete: (planId: string, stepId: string) =>
     api.delete(`/api/load-plans/${planId}/steps/${stepId}`),
   reorder: (planId: string, stepIds: string[]) =>
-    api.post<void>(`/api/load-plans/${planId}/steps/reorder`, stepIds),
+    api.post<void>(`/api/load-plans/${planId}/steps/reorder`, { step_ids: stepIds }),
   preview: (planId: string, stepId: string) =>
     api.post<StepPreviewResponse>(`/api/load-plans/${planId}/steps/${stepId}/preview`),
   validateSoql: (planId: string, soql: string) =>

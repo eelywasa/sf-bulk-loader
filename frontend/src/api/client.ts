@@ -85,7 +85,11 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
       const body = await response.json()
       if (response.status === 422 && Array.isArray(body.detail)) {
         detail = body.detail as ApiValidationError[]
-        message = 'Validation error'
+        // Surface the first Pydantic error in the toast/message when present —
+        // it's nearly always more useful than a generic "Validation error",
+        // and form-level error rendering still has access to `detail`.
+        const first = (body.detail as ApiValidationError[])[0]
+        message = first?.msg ? `${first.msg}` : 'Validation error'
       } else if (typeof body.detail === 'string') {
         detail = body.detail
         message = body.detail
