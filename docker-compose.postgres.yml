@@ -8,6 +8,24 @@
 #
 # The ./data/db volume from docker-compose.yml is unused when PostgreSQL is active.
 #
+# ⚠️  IMPORTANT — DATABASE_URL precedence
+#
+# The backend service below sets DATABASE_URL via:
+#   ${DATABASE_URL:-postgresql+asyncpg://bulk_loader:bulk_loader@postgres:5432/bulk_loader}
+# This is a *fallback* — it only takes effect when $DATABASE_URL is unset
+# in the shell or .env. If your .env still contains the default line
+#   DATABASE_URL=sqlite+aiosqlite:////data/db/bulk_loader.db
+# that value wins and the backend will silently keep writing to SQLite
+# even though the postgres container is up and healthy.
+#
+# To make the switch take effect, in .env either:
+#   1. Comment out the SQLite DATABASE_URL line, or
+#   2. Replace it with:
+#        DATABASE_URL=postgresql+asyncpg://bulk_loader:bulk_loader@postgres:5432/bulk_loader
+#
+# Verify which DB the backend is actually using:
+#   docker compose exec backend env | grep DATABASE_URL
+#
 # ⚠️  IMPORTANT — change the default credentials before deploying to any non-local environment.
 # The values below are for local development only. Update POSTGRES_PASSWORD and the
 # DATABASE_URL password to a strong, unique value, or set them via a .env file:

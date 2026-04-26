@@ -13,6 +13,17 @@ architecture behind what you are deploying see
 The default setup uses HTTP on port 80 and SQLite. HTTPS and PostgreSQL are optional
 overlays that can be added independently or combined.
 
+### Choosing your database
+
+| Choice | When to pick it | Setup |
+|---|---|---|
+| **SQLite** (default) | Single user, desktop-style or self-hosted single-node deployments. No additional containers. | Nothing extra — `.env.example` ships with `DATABASE_URL=sqlite+aiosqlite:////data/db/bulk_loader.db`. |
+| **PostgreSQL overlay** | Multi-user or production-style self-hosted installs. Required for `aws_hosted` distribution profile. | `-f docker-compose.postgres.yml` **plus** a `.env` change — see [PostgreSQL Overlay](#postgresql-overlay) below. |
+
+Already running on SQLite and need to keep your data? Use the
+[SQLite → Postgres migration guide](migrating-to-postgres.md) for a one-shot
+offline cutover; switching the URL alone leaves the new Postgres database empty.
+
 ---
 
 ## Prerequisites
@@ -281,14 +292,63 @@ HTTPS is served on port 443. Port 80 redirects to HTTPS.
 
 PostgreSQL is recommended for multi-user or long-running installs.
 
+> **Already running on SQLite and want to switch?** See the [SQLite → Postgres migration guide](migrating-to-postgres.md) for a one-shot offline cutover CLI.
+
 ### Bundled postgres (Docker-managed)
 
-The overlay adds a `postgres:16` service and injects `DATABASE_URL` into the backend
-automatically — **no `.env` changes are needed**.
+The overlay adds a `postgres:16` service and supplies a Postgres `DATABASE_URL`
+to the backend — but **a one-line `.env` change is required**, see
+[Switching from SQLite to Postgres](#switching-from-sqlite-to-postgres) below.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
 ```
+
+#### Switching from SQLite to Postgres
+
+The overlay sets the backend's database URL via:
+
+```yaml
+DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://bulk_loader:bulk_loader@postgres:5432/bulk_loader}
+```
+
+The `${VAR:-default}` form is a **fallback**, not an override — Docker Compose
+only uses the right-hand side when `$DATABASE_URL` is *unset*. Compose reads
+`.env` for variable substitution, so the SQLite line shipped in `.env.example`:
+
+```bash
+DATABASE_URL=sqlite+aiosqlite:////data/db/bulk_loader.db
+```
+
+…shadows the overlay's intended Postgres default. The result is silent: the
+postgres container starts cleanly and stays healthy, but the backend keeps
+writing to `data/db/bulk_loader.db`. Symptoms only surface later — an orphaned
+Postgres database stuck at an old alembic version while live data accumulates
+in SQLite.
+
+To make the overlay actually take effect, in `.env` either:
+
+1. **Comment out** the SQLite line so the overlay's fallback wins:
+   ```diff
+   -DATABASE_URL=sqlite+aiosqlite:////data/db/bulk_loader.db
+   +# DATABASE_URL=sqlite+aiosqlite:////data/db/bulk_loader.db
+   ```
+2. **Or replace it** with the explicit Postgres URL:
+   ```diff
+   -DATABASE_URL=sqlite+aiosqlite:////data/db/bulk_loader.db
+   +DATABASE_URL=postgresql+asyncpg://bulk_loader:bulk_loader@postgres:5432/bulk_loader
+   ```
+
+Verify which database the backend is actually using:
+
+```bash
+docker compose exec backend env | grep DATABASE_URL
+```
+
+> **Data is not migrated automatically.** Switching the URL points the backend
+> at an empty Postgres database; `alembic upgrade head` runs from scratch on
+> first boot. To carry your existing SQLite data across, use the
+> [SQLite → Postgres migration CLI](migrating-to-postgres.md).
 
 Default credentials (defined in `docker-compose.postgres.yml`):
 
