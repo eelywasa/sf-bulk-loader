@@ -10,14 +10,37 @@ permissions:
   packages: write
 
 jobs:
-  docker-publish:
-    name: Publish Docker Images to GHCR
-    runs-on: ubuntu-latest
+  # Build each image natively on its target architecture, then merge into a
+  # multi-platform manifest. This avoids QEMU emulation (10-20x slower) by
+  # running arm64 builds on GitHub's native ubuntu-24.04-arm runners.
+  docker-build:
+    name: Docker — ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - image: backend
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: frontend
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - image: frontend
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # needed so git describe can walk back to find tags
+          fetch-depth: 0
 
       - name: Compute version
         id: ver
@@ -30,8 +53,6 @@ jobs:
           echo "git_sha=${GIT_SHA}" >> $GITHUB_OUTPUT
           echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
 
-      - uses: docker/setup-qemu-action@v3
-
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -41,29 +62,64 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend image
+        if: matrix.image == 'backend'
         uses: docker/build-push-action@v6
         with:
           context: backend
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:${{ steps.ver.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:latest
+          tags: ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:${{ steps.ver.outputs.version }}-${{ matrix.arch }}
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.version }}
             GIT_SHA=${{ steps.ver.outputs.git_sha }}
             BUILD_TIME=${{ steps.ver.outputs.build_time }}
 
       - name: Build and push frontend image
+        if: matrix.image == 'frontend'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: frontend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:${{ steps.ver.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:latest
+          tags: ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:${{ steps.ver.outputs.version }}-${{ matrix.arch }}
+
+  docker-merge:
+    name: Docker — merge multi-platform manifests
+    needs: docker-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Compute version
+        id: ver
+        run: |
+          BASE="${GITHUB_REF_NAME#v}"
+          VERSION="${BASE}.${{ github.run_number }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge backend manifest
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:${{ steps.ver.outputs.version }} \
+            -t ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:latest \
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:${{ steps.ver.outputs.version }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-backend:${{ steps.ver.outputs.version }}-arm64
+
+      - name: Merge frontend manifest
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:${{ steps.ver.outputs.version }} \
+            -t ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:latest \
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:${{ steps.ver.outputs.version }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/sf-bulk-loader-frontend:${{ steps.ver.outputs.version }}-arm64
 
   electron-release:
     name: Build Electron — ${{ matrix.artifact_suffix }}
