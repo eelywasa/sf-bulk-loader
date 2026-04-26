@@ -203,7 +203,13 @@ async def update_step(
         ) from exc
 
     effective_sequence = update_data.get("sequence", step.sequence)
-    if "input_from_step_id" in update_data:
+    # Re-run reference validation whenever the effective state carries an
+    # input_from_step_id, not only when the patch sets one. Otherwise a
+    # client can update just `sequence` on a step that already has a
+    # reference and invert the dependency order without hitting the 422
+    # — leaving a persisted plan where the downstream step's sequence is
+    # ≤ its upstream's.
+    if effective_input_from is not None:
         await load_step_service.validate_step_input_reference(
             db,
             plan_id,

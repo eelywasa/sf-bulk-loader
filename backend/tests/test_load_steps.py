@@ -847,3 +847,29 @@ def test_delete_step_without_dependents_succeeds(auth_client):
     upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "x"})["id"]
     resp = auth_client.delete(f"/api/load-plans/{pid}/steps/{upstream}")
     assert resp.status_code == 204
+
+
+def test_update_step_sequence_only_revalidates_existing_reference(auth_client):
+    """Codex review: updating just `sequence` on a step that already has an
+    input_from_step_id must re-run reference validation; otherwise a client
+    can invert dependency order without hitting the 422."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    upstream = _add_query_step(auth_client, pid, {"sequence": 1, "name": "u"})["id"]
+    downstream = auth_client.post(
+        f"/api/load-plans/{pid}/steps",
+        json={
+            "sequence": 2,
+            "object_name": "Account",
+            "operation": "delete",
+            "input_from_step_id": upstream,
+        },
+    ).json()["id"]
+
+    # Try to invert by updating only `sequence` on the downstream — should 422.
+    resp = auth_client.put(
+        f"/api/load-plans/{pid}/steps/{downstream}",
+        json={"sequence": 1},
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "sequence" in detail.lower() or "strictly less" in detail.lower()
