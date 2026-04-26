@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import time
 
 from app.models.job import JobRecord, JobStatus
+from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep, QUERY_OPERATIONS
 from app.observability.context import input_connection_id_ctx_var, step_id_ctx_var
 from app.observability.events import JobEvent, OutcomeCode, StepEvent
@@ -42,6 +43,7 @@ from app.services.partition_executor import process_partition
 from app.services.result_persistence import _result_path, count_csv_rows
 from app.services.run_event_publisher import publish_job_status_change
 from app.services.salesforce_bulk import SalesforceBulkClient
+from app.services.step_reference_resolver import resolve_step_input
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,7 @@ async def execute_step(
     *,
     run_id: str,
     step: LoadStep,
+    plan: LoadPlan,
     plan_id: str,
     plan_name: str,
     bulk_client: SalesforceBulkClient,
@@ -107,6 +110,7 @@ async def execute_step(
             result = await _execute_step(
                 run_id=run_id,
                 step=step,
+                plan=plan,
                 plan_id=plan_id,
                 plan_name=plan_name,
                 bulk_client=bulk_client,
@@ -131,6 +135,7 @@ async def _execute_step(
     *,
     run_id: str,
     step: LoadStep,
+    plan: LoadPlan,
     plan_id: str,
     plan_name: str,
     bulk_client: SalesforceBulkClient,
@@ -162,8 +167,37 @@ async def _execute_step(
 
     # ── DML path ─────────────────────────────────────────────────────────────
     # ── 1. Resolve storage and discover CSV files ─────────────────────────────
-    storage = await _get_storage(step.input_connection_id, db)
-    rel_paths = storage.discover_files(step.csv_file_pattern)
+    if step.input_from_step_id:
+        # SFBL-166: source the input from an upstream query step's output
+        # rather than from a glob/connection. Subclassing of
+        # InputStorageError on StepReferenceResolutionError means a missing
+        # upstream artefact still flows through the existing
+        # run_coordinator catch path.
+        storage, rel_paths = await resolve_step_input(step, run_id, plan, db)
+        resolved_path = rel_paths[0] if rel_paths else None
+        upstream_label = step.name or f"step:{step.input_from_step_id}"
+        logger.info(
+            "Run %s step %s: input resolved from upstream step %s (%s) → %s [%s]",
+            run_id,
+            step.id,
+            step.input_from_step_id,
+            upstream_label,
+            resolved_path,
+            storage.provider,
+            extra={
+                "event_name": StepEvent.INPUT_RESOLVED_FROM_STEP,
+                "outcome_code": OutcomeCode.OK,
+                "run_id": run_id,
+                "step_id": str(step.id),
+                "upstream_step_id": str(step.input_from_step_id),
+                "upstream_step_name_or_label": upstream_label,
+                "resolved_path": resolved_path,
+                "provider": storage.provider,
+            },
+        )
+    else:
+        storage = await _get_storage(step.input_connection_id, db)
+        rel_paths = storage.discover_files(step.csv_file_pattern)
     if not rel_paths:
         logger.warning(
             "Run %s step %s: no files matched pattern %r on %s — skipping",
@@ -205,6 +239,13 @@ async def _execute_step(
         return 0, 0
 
     _step_start = time.perf_counter()
+    _started_extra: dict = {
+        "event_name": StepEvent.STARTED,
+        "run_id": run_id,
+        "step_id": str(step.id),
+    }
+    if step.input_from_step_id:
+        _started_extra["input_from_step_id"] = str(step.input_from_step_id)
     logger.info(
         "Run %s step %s: %d file(s) [%s] → %d partition(s)",
         run_id,
@@ -212,8 +253,7 @@ async def _execute_step(
         len(rel_paths),
         storage.provider,
         len(partitions),
-        extra={"event_name": StepEvent.STARTED, "run_id": run_id,
-               "step_id": str(step.id)},
+        extra=_started_extra,
     )
 
     # ── 3. Create JobRecord rows ──────────────────────────────────────────────

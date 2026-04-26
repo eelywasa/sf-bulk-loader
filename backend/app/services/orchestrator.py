@@ -119,6 +119,7 @@ async def _execute_step(
     *,
     run_id: str,
     step: LoadStep,
+    plan,
     plan_id: str,
     plan_name: str,
     bulk_client: SalesforceBulkClient,
@@ -133,6 +134,7 @@ async def _execute_step(
     return await step_executor.execute_step(
         run_id=run_id,
         step=step,
+        plan=plan,
         plan_id=plan_id,
         plan_name=plan_name,
         bulk_client=bulk_client,

@@ -702,6 +702,7 @@ async def _execute_run_body(
                 _step_kwargs: dict = dict(
                     run_id=run_id,
                     step=step,
+                    plan=plan,
                     plan_id=plan.id,
                     plan_name=plan.name,
                     bulk_client=bulk_client,
