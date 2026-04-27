@@ -110,6 +110,7 @@ jobs:
         env:
           ENCRYPTION_KEY: "dGVzdC1vbmx5LWtleS1ub3QtdXNlZC1pbi1wcm9kdWN0aW9uLS0tLS0="
           TEST_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/bulk_loader_test"
+          MIGRATION_TEST_PG_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/bulk_loader_test"
         run: pytest -x -q
 
   frontend-build:
