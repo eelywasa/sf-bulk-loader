@@ -110,10 +110,18 @@ export default function InviteAcceptPage() {
         if (err.status === 410) {
           setError('This invitation has already been accepted or has expired. Please contact your administrator.')
         } else if (err.status === 422) {
-          // Password policy failure — extract structured failures if available
-          const detail = (err as ApiError & { detail?: { failures?: string[] } }).detail
-          if (detail?.failures && detail.failures.length > 0) {
-            setError(`Password requirements not met: ${detail.failures.join(', ')}.`)
+          // Password policy failure — extract structured failures if available.
+          // The backend returns detail = { error, message, failures: [...] } on this path.
+          const detail = err.detail
+          const failures =
+            detail && typeof detail === 'object' && !Array.isArray(detail) &&
+            Array.isArray((detail as { failures?: unknown }).failures)
+              ? ((detail as { failures: unknown[] }).failures.filter(
+                  (f): f is string => typeof f === 'string',
+                ))
+              : []
+          if (failures.length > 0) {
+            setError(`Password requirements not met: ${failures.join(', ')}.`)
           } else {
             setError('Password does not meet the security requirements.')
           }

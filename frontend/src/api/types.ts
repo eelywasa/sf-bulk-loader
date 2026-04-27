@@ -204,10 +204,16 @@ export interface ApiValidationError {
   input?: unknown
 }
 
+export interface StructuredErrorDetail {
+  error?: string
+  message?: string
+  [k: string]: unknown
+}
+
 export interface ApiErrorShape {
   status: number
   message: string
-  detail?: string | ApiValidationError[]
+  detail?: string | ApiValidationError[] | StructuredErrorDetail
   code?: string
 }
 

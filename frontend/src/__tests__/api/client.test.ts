@@ -1,14 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ApiError, apiFetch, apiGet, apiPost, apiPut, apiDelete, getStoredToken, storeToken, clearStoredToken } from '../../api/client'
 
-// Helper to create a mock Response
+// Helper to create a mock Response.
+// statusText is passed explicitly so tests pin behaviour rather than depending
+// on the runtime's default mapping (per fetch spec, Response.statusText defaults
+// to "" for unknown statuses, and even for known statuses the value differs
+// across runtimes).
 function mockResponse(
   body: unknown,
-  { status = 200, headers = {} }: { status?: number; headers?: Record<string, string> } = {},
+  {
+    status = 200,
+    statusText = '',
+    headers = {},
+  }: { status?: number; statusText?: string; headers?: Record<string, string> } = {},
 ): Response {
   const json = JSON.stringify(body)
   return new Response(json, {
     status,
+    statusText,
     headers: { 'Content-Type': 'application/json', ...headers },
   })
 }
@@ -122,6 +131,108 @@ describe('apiFetch', () => {
     await expect(apiFetch('/api/test')).rejects.toSatisfy((err: unknown) => {
       const e = err as ApiError
       return e instanceof ApiError && e.status === 503
+    })
+  })
+
+  // ─── Structured-detail (FastAPI HTTPException(detail={error,message})) ────
+
+  it('extracts message and code from structured detail on 4xx', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse(
+        { detail: { error: 'email_in_use', message: 'Email address is already registered.' } },
+        { status: 409, statusText: 'Conflict' },
+      ),
+    )
+
+    await expect(apiFetch('/api/test')).rejects.toSatisfy((err: unknown) => {
+      const e = err as ApiError
+      return (
+        e instanceof ApiError &&
+        e.status === 409 &&
+        e.message === 'Email address is already registered.' &&
+        e.code === 'email_in_use' &&
+        typeof e.detail === 'object' &&
+        !Array.isArray(e.detail) &&
+        (e.detail as { error?: string }).error === 'email_in_use'
+      )
+    })
+  })
+
+  it('extracts message and code from structured detail on non-array 422', async () => {
+    // admin_users.py and others use detail={error, message} for some 422 paths
+    // (e.g. invalid_profile_id), distinct from Pydantic's array shape.
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse(
+        { detail: { error: 'invalid_profile_id', message: 'Profile not found.' } },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      ),
+    )
+
+    await expect(apiFetch('/api/test')).rejects.toSatisfy((err: unknown) => {
+      const e = err as ApiError
+      return (
+        e instanceof ApiError &&
+        e.status === 422 &&
+        e.message === 'Profile not found.' &&
+        e.code === 'invalid_profile_id'
+      )
+    })
+  })
+
+  it('sets code from structured detail and falls back when message is missing', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse(
+        { detail: { error: 'rate_limited' } },
+        { status: 429, statusText: 'Too Many Requests' },
+      ),
+    )
+
+    await expect(apiFetch('/api/test')).rejects.toSatisfy((err: unknown) => {
+      const e = err as ApiError
+      // No backend message → message keeps the explicit statusText fallback.
+      // We pin this on the explicit statusText we passed, not on a runtime
+      // default that varies by environment.
+      return (
+        e instanceof ApiError &&
+        e.status === 429 &&
+        e.code === 'rate_limited' &&
+        e.message === 'Too Many Requests'
+      )
+    })
+  })
+
+  it('sets message from structured detail without code when error is missing', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse(
+        { detail: { message: 'Server is temporarily unavailable.' } },
+        { status: 503, statusText: 'Service Unavailable' },
+      ),
+    )
+
+    await expect(apiFetch('/api/test')).rejects.toSatisfy((err: unknown) => {
+      const e = err as ApiError
+      return (
+        e instanceof ApiError &&
+        e.status === 503 &&
+        e.message === 'Server is temporarily unavailable.' &&
+        e.code === undefined
+      )
+    })
+  })
+
+  it('falls back to statusText when structured detail is empty', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({ detail: {} }, { status: 418, statusText: "I'm a teapot" }),
+    )
+
+    await expect(apiFetch('/api/test')).rejects.toSatisfy((err: unknown) => {
+      const e = err as ApiError
+      return (
+        e instanceof ApiError &&
+        e.status === 418 &&
+        e.message === "I'm a teapot" &&
+        e.code === undefined
+      )
     })
   })
 
