@@ -5,6 +5,7 @@ import { Button, Card, DataTable, EmptyState, Modal, Spinner, type Column } from
 import { useToast } from '../components/ui/Toast'
 import { ALERT_ERROR } from '../components/ui/formStyles'
 import { plansApi, connectionsApi } from '../api/endpoints'
+import { formatApiError } from '../api/errors'
 import PermissionGate from '../components/PermissionGate'
 import { usePermission } from '../hooks/usePermission'
 import type { LoadPlan } from '../api/types'
@@ -47,7 +48,7 @@ export default function PlansPage() {
       setDeleteTarget(null)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete plan')
+      toast.error(formatApiError(err, 'Failed to delete plan'))
       setDeleteTarget(null)
     },
   })
@@ -59,7 +60,7 @@ export default function PlansPage() {
       navigate(`/plans/${newPlan.id}`)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to duplicate plan')
+      toast.error(formatApiError(err, 'Failed to duplicate plan'))
     },
   })
 
@@ -170,7 +171,7 @@ export default function PlansPage() {
         <div className={ALERT_ERROR}>
           <p>
             Failed to load plans:{' '}
-            {loadError instanceof Error ? loadError.message : 'Unknown error'}
+            {formatApiError(loadError, 'Unknown error')}
           </p>
         </div>
       ) : !plans?.length ? (

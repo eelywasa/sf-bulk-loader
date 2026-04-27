@@ -28,7 +28,7 @@ import {
   CHECKBOX_CLASS,
 } from '../components/ui/formStyles'
 import { adminUsersApi } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { formatApiError } from '../api/errors'
 import { usePermission } from '../hooks/usePermission'
 import type { AdminUser, ProfileListItem } from '../api/types'
 
@@ -75,14 +75,6 @@ function formatDate(iso: string | null | undefined): string {
     month: 'short',
     day: 'numeric',
   })
-}
-
-function extractErrorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.message) return err.message
-  }
-  if (err instanceof Error) return err.message
-  return 'An unexpected error occurred'
 }
 
 function statusVariant(
@@ -216,7 +208,7 @@ function InviteModal({ open, profiles, onClose, onSuccess }: InviteModalProps) {
       handleClose()
     },
     onError: (err) => {
-      setError(extractErrorMessage(err))
+      setError(formatApiError(err, 'An unexpected error occurred'))
     },
   })
 
@@ -358,7 +350,7 @@ function EditModal({ open, user, profiles, onClose, onSuccess }: EditModalProps)
       handleClose()
     },
     onError: (err) => {
-      setError(extractErrorMessage(err))
+      setError(formatApiError(err, 'An unexpected error occurred'))
     },
   })
 
@@ -689,9 +681,9 @@ export default function AdminUsersPage() {
     },
     onError: (err) => {
       if (confirmAction) {
-        setConfirmAction({ ...confirmAction, error: extractErrorMessage(err) })
+        setConfirmAction({ ...confirmAction, error: formatApiError(err, 'An unexpected error occurred') })
       } else {
-        toast.error(extractErrorMessage(err))
+        toast.error(formatApiError(err, 'An unexpected error occurred'))
       }
     },
   })

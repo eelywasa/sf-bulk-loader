@@ -15,13 +15,13 @@ import type { LoadStep } from '../api/types'
 import {
   EMPTY_PLAN_FORM,
   EMPTY_STEP_FORM,
-  extractErrors,
   isQueryOp,
   validateSoqlClientSide,
   deriveInputSourceMode,
   type PlanFormData,
   type StepFormData,
 } from '../pages/planEditorUtils'
+import { formatApiError, formatApiErrors } from '../api/errors'
 
 export function usePlanEditorState(id: string | undefined) {
   const isNew = id === 'new'
@@ -133,7 +133,7 @@ export function usePlanEditorState(id: string | undefined) {
       toast.success('Plan created')
       navigate(`/plans/${newPlan.id}`)
     },
-    onError: (err) => setFormErrors(extractErrors(err)),
+    onError: (err) => setFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const updatePlanMutation = useMutation({
@@ -143,7 +143,7 @@ export function usePlanEditorState(id: string | undefined) {
       queryClient.invalidateQueries({ queryKey: ['plans'] })
       toast.success('Plan saved')
     },
-    onError: (err) => setFormErrors(extractErrors(err)),
+    onError: (err) => setFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const createStepMutation = useMutation({
@@ -153,7 +153,7 @@ export function usePlanEditorState(id: string | undefined) {
       toast.success('Step added')
       closeStepModal()
     },
-    onError: (err) => setStepFormErrors(extractErrors(err)),
+    onError: (err) => setStepFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const updateStepMutation = useMutation({
@@ -164,7 +164,7 @@ export function usePlanEditorState(id: string | undefined) {
       toast.success('Step updated')
       closeStepModal()
     },
-    onError: (err) => setStepFormErrors(extractErrors(err)),
+    onError: (err) => setStepFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const deleteStepMutation = useMutation({
@@ -175,7 +175,7 @@ export function usePlanEditorState(id: string | undefined) {
       setDeleteStepTarget(null)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete step')
+      toast.error(formatApiError(err, 'Failed to delete step'))
       setDeleteStepTarget(null)
     },
   })
@@ -204,7 +204,7 @@ export function usePlanEditorState(id: string | undefined) {
       if (ctx?.previous !== undefined) {
         queryClient.setQueryData(['plans', id], ctx.previous)
       }
-      toast.error(err instanceof Error ? err.message : 'Failed to reorder steps')
+      toast.error(formatApiError(err, 'Failed to reorder steps'))
     },
   })
 
@@ -215,7 +215,7 @@ export function usePlanEditorState(id: string | undefined) {
       navigate(`/runs/${run.id}`)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to start run')
+      toast.error(formatApiError(err, 'Failed to start run'))
     },
   })
 

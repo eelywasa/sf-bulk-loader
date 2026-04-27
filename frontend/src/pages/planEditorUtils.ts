@@ -1,5 +1,4 @@
-import { ApiError } from '../api/client'
-import type { ApiValidationError, StepPreviewResponse, ValidateSoqlResponse } from '../api/types'
+import type { StepPreviewResponse, ValidateSoqlResponse } from '../api/types'
 
 // ─── Form types ───────────────────────────────────────────────────────────────
 
@@ -114,19 +113,6 @@ export function isQueryOp(operation: string): boolean {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-export function extractErrors(err: unknown): string[] {
-  if (err instanceof ApiError) {
-    if (Array.isArray(err.detail)) {
-      return (err.detail as ApiValidationError[]).map(
-        (e) => `${e.loc.slice(1).join('.')} — ${e.msg}`,
-      )
-    }
-    if (err.message) return [err.message]
-  }
-  if (err instanceof Error) return [err.message]
-  return ['An unexpected error occurred']
-}
 
 export function operationVariant(op: string) {
   switch (op) {

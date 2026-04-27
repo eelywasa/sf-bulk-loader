@@ -22,17 +22,12 @@ import {
 } from '../components/ui/formStyles'
 import { meApi, mfaApi } from '../api/endpoints'
 import { ApiError } from '../api/client'
+import { formatApiError } from '../api/errors'
 import type { LoginHistoryEntry } from '../api/types'
 import MfaEnrollWizard from './MfaEnrollWizard'
 import MfaBackupCodesModal from './MfaBackupCodesModal'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function extractMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message
-  if (err instanceof Error) return err.message
-  return 'An unexpected error occurred'
-}
 
 function passwordStrengthHint(pwd: string): string | null {
   const issues: string[] = []
@@ -98,7 +93,7 @@ function DisplayNameCard() {
       setAlert({ kind: 'success', message: 'Display name updated.' })
     },
     onError: (err) => {
-      setAlert({ kind: 'error', message: extractMessage(err) })
+      setAlert({ kind: 'error', message: formatApiError(err, 'An unexpected error occurred') })
     },
   })
 
@@ -165,7 +160,7 @@ function EmailCard() {
           setAlert({ kind: 'error', message: err.message })
         }
       } else {
-        setAlert({ kind: 'error', message: extractMessage(err) })
+        setAlert({ kind: 'error', message: formatApiError(err, 'An unexpected error occurred') })
       }
     },
   })
@@ -259,7 +254,7 @@ function PasswordCard() {
       setConfirm('')
     },
     onError: (err) => {
-      setAlert({ kind: 'error', message: extractMessage(err) })
+      setAlert({ kind: 'error', message: formatApiError(err, 'An unexpected error occurred') })
     },
   })
 
@@ -351,7 +346,7 @@ function DisableMfaModal({ open, onClose, onDisabled }: { open: boolean; onClose
       await mfaApi.disable({ password, code: code.trim() })
       onDisabled()
     } catch (err) {
-      setError(extractMessage(err))
+      setError(formatApiError(err, 'An unexpected error occurred'))
     } finally {
       setSubmitting(false)
     }
@@ -427,7 +422,7 @@ function RegenerateBackupCodesModal({ open, onClose, onRegenerated }: { open: bo
       const res = await mfaApi.regenerateBackupCodes({ code: code.trim() })
       onRegenerated(res.backup_codes)
     } catch (err) {
-      setError(extractMessage(err))
+      setError(formatApiError(err, 'An unexpected error occurred'))
     } finally {
       setSubmitting(false)
     }
