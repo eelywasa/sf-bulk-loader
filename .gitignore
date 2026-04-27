@@ -53,3 +53,6 @@ runs.html
 
 # Guard against agent typo — .claire is not a valid path
 .claire/
+
+# Generated PDF artifacts
+*.pdf

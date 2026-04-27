@@ -1,0 +1,3 @@
+# Dependencies for generate_pdf.py (standalone PDF generation tool).
+# Install with: pip install -r requirements-pdf.txt
+reportlab>=4.0
