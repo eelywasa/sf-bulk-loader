@@ -125,6 +125,13 @@ async def _guard_last_admin(
     if target.profile_id != admin_profile.id:
         return  # Target is not an admin — guard is irrelevant
 
+    # If the target isn't currently active, the operation can't reduce the
+    # active-admin count (which only counts status='active' users). Guarding
+    # against the count here would block legitimate cleanups like deleting
+    # a stale invitation or demoting a deactivated admin (SFBL-286).
+    if target.status != "active":
+        return
+
     remaining = await _count_active_admins(db, admin_profile.id)
     # After the pending operation there would be (remaining - 1) active admins.
     if remaining <= 1:
