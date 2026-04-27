@@ -81,7 +81,10 @@ async def assert_sqlite_fk_enforcement_active() -> None:
     """
     if engine.dialect.name != "sqlite":
         return
-    async with AsyncSessionLocal() as session:
+    # Use engine directly rather than AsyncSessionLocal so this check is
+    # immune to test monkey-patching of AsyncSessionLocal (e.g. redirecting
+    # it to a PostgreSQL test DB while engine itself stays SQLite).
+    async with AsyncSession(engine) as session:
         result = await session.execute(text("PRAGMA foreign_keys"))
         value = result.scalar()
     if value != 1:
