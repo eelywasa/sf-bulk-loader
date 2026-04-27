@@ -24,6 +24,7 @@ import { OVERLAY_SHADOW_CLASS } from './ui/formStyles'
 import { useToast } from './ui/Toast'
 import { useAuth } from '../context/AuthContext'
 import { notificationSubscriptionsApi } from '../api/endpoints'
+import { formatApiError } from '../api/errors'
 import type {
   NotificationSubscription,
   NotificationSubscriptionCreate,
@@ -70,7 +71,7 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
       toast.success('Notifications enabled for this plan')
     },
     onError: (err) => {
-      const msg = err instanceof Error ? err.message : 'Failed to subscribe'
+      const msg = formatApiError(err, 'Failed to subscribe')
       if (modalOpen) setFormError(msg)
       else toast.error(msg)
     },
@@ -87,7 +88,7 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
       toast.success('Subscription updated')
     },
     onError: (err) =>
-      setFormError(err instanceof Error ? err.message : 'Failed to save'),
+      setFormError(formatApiError(err, 'Failed to save')),
   })
 
   const deleteMut = useMutation({
@@ -97,7 +98,7 @@ export function NotifyMeButton({ planId }: NotifyMeButtonProps) {
       toast.success('Unsubscribed')
     },
     onError: (err) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to unsubscribe'),
+      toast.error(formatApiError(err, 'Failed to unsubscribe')),
   })
 
   function handleQuickSubscribe() {

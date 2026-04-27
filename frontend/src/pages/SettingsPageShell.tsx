@@ -31,6 +31,7 @@ import {
 import { MaskedSecretInput } from '../components/ui/MaskedSecretInput'
 import clsx from 'clsx'
 import { ApiError } from '../api/client'
+import { formatApiError } from '../api/errors'
 
 interface FieldError {
   field: string
@@ -254,7 +255,7 @@ export function SettingsPageShell({
           return
         }
       }
-      toast.error(err instanceof Error ? err.message : 'Save failed')
+      toast.error(formatApiError(err, 'Save failed'))
     },
   })
 

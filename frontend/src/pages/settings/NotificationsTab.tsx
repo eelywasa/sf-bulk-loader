@@ -14,6 +14,7 @@ import { Badge } from '../../components/ui/Badge'
 import { useToast } from '../../components/ui/Toast'
 import { notificationSubscriptionsApi, plansApi } from '../../api/endpoints'
 import { ApiError } from '../../api/client'
+import { formatApiError } from '../../api/errors'
 import type {
   NotificationSubscription,
   NotificationSubscriptionCreate,
@@ -81,7 +82,7 @@ export function NotificationsTab() {
       setFormError(null)
       toast.success('Subscription added')
     },
-    onError: (err) => setFormError(err instanceof Error ? err.message : 'Failed to save'),
+    onError: (err) => setFormError(formatApiError(err, 'Failed to save')),
   })
 
   const updateMut = useMutation({
@@ -94,7 +95,7 @@ export function NotificationsTab() {
       setFormError(null)
       toast.success('Subscription updated')
     },
-    onError: (err) => setFormError(err instanceof Error ? err.message : 'Failed to save'),
+    onError: (err) => setFormError(formatApiError(err, 'Failed to save')),
   })
 
   const deleteMut = useMutation({
@@ -105,7 +106,7 @@ export function NotificationsTab() {
       toast.success('Subscription deleted')
     },
     onError: (err) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to delete subscription'),
+      toast.error(formatApiError(err, 'Failed to delete subscription')),
   })
 
   const testMut = useMutation({
@@ -120,13 +121,7 @@ export function NotificationsTab() {
       }
     },
     onError: (err) => {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Test failed'
-      toast.error(msg)
+      toast.error(formatApiError(err, 'Test failed'))
     },
   })
 

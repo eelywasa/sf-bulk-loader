@@ -22,7 +22,7 @@ import {
   LABEL_CLASS,
 } from '../components/ui/formStyles'
 import { mfaApi } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { formatApiError } from '../api/errors'
 import { useAuth } from '../context/AuthContext'
 import MfaBackupCodesModal from './MfaBackupCodesModal'
 import type { MfaEnrollStartResponse } from '../api/types'
@@ -34,12 +34,6 @@ export interface MfaEnrollWizardProps {
   onClose: () => void
   /** Fires after the wizard fully completes (codes acknowledged). */
   onEnrolled?: () => void
-}
-
-function extractMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message
-  if (err instanceof Error) return err.message
-  return 'Something went wrong. Please try again.'
 }
 
 export default function MfaEnrollWizard({ open, onClose, onEnrolled }: MfaEnrollWizardProps) {
@@ -74,7 +68,7 @@ export default function MfaEnrollWizard({ open, onClose, onEnrolled }: MfaEnroll
       setStartData(data)
       setStep('scan')
     } catch (err) {
-      setStartError(extractMessage(err))
+      setStartError(formatApiError(err, 'Something went wrong. Please try again.'))
     } finally {
       setLoadingStart(false)
     }
@@ -98,7 +92,7 @@ export default function MfaEnrollWizard({ open, onClose, onEnrolled }: MfaEnroll
       setStartData(null)
       setStep('codes')
     } catch (err) {
-      setConfirmError(extractMessage(err))
+      setConfirmError(formatApiError(err, 'Something went wrong. Please try again.'))
     } finally {
       setSubmitting(false)
     }

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFolder, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { filesApi, inputConnectionsApi } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { formatApiErrorStrict } from '../api/errors'
 import type { InputConnection, InputDirectoryEntry } from '../api/types'
 import { Card, CsvPreviewPanel, EmptyState, Spinner } from '../components/ui'
 import { ALERT_ERROR, LABEL_CLASS, SELECT_CLASS } from '../components/ui/formStyles'
@@ -216,7 +216,7 @@ export default function FilesPage() {
 
   if (filesError) {
     const message =
-      filesErr instanceof ApiError ? filesErr.message : 'Failed to load files'
+      formatApiErrorStrict(filesErr, 'Failed to load files')
     return (
       <div className="p-6 space-y-6">
         <div>

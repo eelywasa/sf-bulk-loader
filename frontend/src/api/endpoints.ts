@@ -234,7 +234,7 @@ export class EmailRenderFailureError extends Error {
  * token-injection logic from client.ts.
  */
 export async function postEmailTest(req: EmailTestRequest): Promise<EmailTestResponse> {
-  const { ApiError, getStoredToken, BASE_URL } = await import('./client')
+  const { ApiError, getStoredToken, BASE_URL, parseErrorBody } = await import('./client')
 
   const headers = new Headers({ 'Content-Type': 'application/json' })
   const token = getStoredToken()
@@ -252,14 +252,8 @@ export async function postEmailTest(req: EmailTestRequest): Promise<EmailTestRes
   }
 
   if (!response.ok) {
-    let message = response.statusText || `HTTP ${response.status}`
-    try {
-      const body = await response.json()
-      if (typeof body.detail === 'string') message = body.detail
-    } catch {
-      // ignore
-    }
-    throw new ApiError({ status: response.status, message })
+    const { message, detail, code } = await parseErrorBody(response)
+    throw new ApiError({ status: response.status, message, detail, code })
   }
 
   return response.json() as Promise<EmailTestResponse>
@@ -331,14 +325,15 @@ export const dependenciesApi = {
  * than the api.get helper (which only returns the JSON body).
  */
 export async function getAllSettings(): Promise<{ data: AllSettings; cacheTtl: number }> {
-  const { BASE_URL, getStoredToken, ApiError } = await import('./client')
+  const { BASE_URL, getStoredToken, ApiError, parseErrorBody } = await import('./client')
   const headers = new Headers()
   const token = getStoredToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
   const res = await fetch(`${BASE_URL}/api/settings/`, { headers })
   if (!res.ok) {
-    throw new ApiError({ status: res.status, message: res.statusText || `HTTP ${res.status}` })
+    const { message, detail, code } = await parseErrorBody(res)
+    throw new ApiError({ status: res.status, message, detail, code })
   }
   const cacheTtl = parseInt(res.headers.get('X-Settings-Cache-TTL') ?? '60', 10)
   const data: AllSettings = await res.json()
@@ -353,14 +348,15 @@ export async function getAllSettings(): Promise<{ data: AllSettings; cacheTtl: n
 export async function getSettingsCategory(
   category: string,
 ): Promise<{ data: CategorySettings; cacheTtl: number }> {
-  const { BASE_URL, getStoredToken, ApiError } = await import('./client')
+  const { BASE_URL, getStoredToken, ApiError, parseErrorBody } = await import('./client')
   const headers = new Headers()
   const token = getStoredToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
   const res = await fetch(`${BASE_URL}/api/settings/${category}`, { headers })
   if (!res.ok) {
-    throw new ApiError({ status: res.status, message: res.statusText || `HTTP ${res.status}` })
+    const { message, detail, code } = await parseErrorBody(res)
+    throw new ApiError({ status: res.status, message, detail, code })
   }
   const cacheTtl = parseInt(res.headers.get('X-Settings-Cache-TTL') ?? '60', 10)
   const data: CategorySettings = await res.json()
@@ -377,7 +373,7 @@ export async function updateSettingsCategory(
   category: string,
   patch: SettingsPatch,
 ): Promise<{ data: CategorySettings; cacheTtl: number }> {
-  const { BASE_URL, getStoredToken, ApiError } = await import('./client')
+  const { BASE_URL, getStoredToken, ApiError, parseErrorBody } = await import('./client')
   const headers = new Headers({ 'Content-Type': 'application/json' })
   const token = getStoredToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -389,20 +385,8 @@ export async function updateSettingsCategory(
   })
 
   if (!res.ok) {
-    let detail: unknown
-    let message = res.statusText || `HTTP ${res.status}`
-    try {
-      const body = await res.json()
-      if (res.status === 422 && Array.isArray(body.detail)) {
-        detail = body.detail
-        message = 'Validation error'
-      } else if (typeof body.detail === 'string') {
-        message = body.detail
-      }
-    } catch {
-      // ignore
-    }
-    throw new ApiError({ status: res.status, message, detail: detail as never })
+    const { message, detail, code } = await parseErrorBody(res)
+    throw new ApiError({ status: res.status, message, detail, code })
   }
 
   const cacheTtl = parseInt(res.headers.get('X-Settings-Cache-TTL') ?? '60', 10)

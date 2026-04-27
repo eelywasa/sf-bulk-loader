@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFolder, faChevronRight, faFile } from '@fortawesome/free-solid-svg-icons'
 import { filesApi } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { formatApiErrorStrict } from '../api/errors'
 import type { InputDirectoryEntry } from '../api/types'
 
 interface FilePickerProps {
@@ -83,7 +83,7 @@ export default function FilePicker({ source, onSelect, onClose }: FilePickerProp
         )}
         {isError && (
           <li className="px-3 py-3 text-xs text-error-text">
-            {error instanceof ApiError ? error.message : 'Could not load files for this source.'}
+            {formatApiErrorStrict(error, 'Could not load files for this source.')}
           </li>
         )}
         {!isLoading && !isError && entries.length === 0 && (

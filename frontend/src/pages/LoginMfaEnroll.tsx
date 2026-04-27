@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ApiError } from '../api/client'
+import { formatApiError } from '../api/errors'
 import { loginMfaApi } from '../api/endpoints'
 import type { Login2faEnrollStartResponse } from '../api/types'
 import {
@@ -35,12 +36,6 @@ export interface LoginMfaEnrollProps {
 }
 
 type Step = 'scan' | 'confirm' | 'codes'
-
-function extractMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message
-  if (err instanceof Error) return err.message
-  return 'Something went wrong. Please try again.'
-}
 
 export default function LoginMfaEnroll({
   mfaToken,
@@ -71,7 +66,7 @@ export default function LoginMfaEnroll({
           onAbort('Session expired, please sign in again.')
           return
         }
-        setStartError(extractMessage(err))
+        setStartError(formatApiError(err, 'Something went wrong. Please try again.'))
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,10 +99,10 @@ export default function LoginMfaEnroll({
         if (err.status === 400) {
           setConfirmError('Incorrect code — please try again.')
         } else {
-          setConfirmError(extractMessage(err))
+          setConfirmError(formatApiError(err, 'Something went wrong. Please try again.'))
         }
       } else {
-        setConfirmError(extractMessage(err))
+        setConfirmError(formatApiError(err, 'Something went wrong. Please try again.'))
       }
     } finally {
       setSubmitting(false)

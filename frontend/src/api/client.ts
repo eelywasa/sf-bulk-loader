@@ -51,6 +51,59 @@ export class ApiError extends Error {
   }
 }
 
+// ─── Error body parsing ───────────────────────────────────────────────────────
+
+export interface ParsedErrorBody {
+  message: string
+  detail?: string | ApiValidationError[] | StructuredErrorDetail
+  code?: string
+}
+
+/**
+ * Read a non-OK Response and produce {message, detail, code} ready for an
+ * ApiError. Centralised so endpoints that bypass apiFetch (header-needing
+ * paths in endpoints.ts) can surface structured-detail errors the same way.
+ *
+ * Branch order matters — the first match wins:
+ *   1. 422 with array detail → Pydantic validation; surface first error message.
+ *   2. string detail        → legacy plain-string detail.
+ *   3. object detail        → FastAPI HTTPException(detail={error, message}).
+ *   4. top-level message    → fallback for non-FastAPI shapes.
+ *   5. anything else        → keep the explicit-statusText fallback the caller seeded.
+ */
+export async function parseErrorBody(response: Response): Promise<ParsedErrorBody> {
+  let detail: string | ApiValidationError[] | StructuredErrorDetail | undefined
+  let message = response.statusText || `HTTP ${response.status}`
+  let code: string | undefined
+
+  try {
+    const body = await response.json()
+    if (response.status === 422 && Array.isArray(body.detail)) {
+      detail = body.detail as ApiValidationError[]
+      const first = (body.detail as ApiValidationError[])[0]
+      message = first?.msg ? `${first.msg}` : 'Validation error'
+    } else if (typeof body.detail === 'string') {
+      detail = body.detail
+      message = body.detail
+    } else if (
+      body.detail !== null &&
+      typeof body.detail === 'object' &&
+      !Array.isArray(body.detail)
+    ) {
+      const structured = body.detail as StructuredErrorDetail
+      detail = structured
+      if (typeof structured.message === 'string') message = structured.message
+      if (typeof structured.error === 'string') code = structured.error
+    } else if (typeof body.message === 'string') {
+      message = body.message
+    }
+  } catch {
+    // JSON parse failed — keep statusText as message
+  }
+
+  return { message, detail, code }
+}
+
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 
 export async function apiFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
@@ -78,39 +131,7 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
       }
     }
 
-    let detail: string | ApiValidationError[] | StructuredErrorDetail | undefined
-    let message = response.statusText || `HTTP ${response.status}`
-    let code: string | undefined
-
-    try {
-      const body = await response.json()
-      if (response.status === 422 && Array.isArray(body.detail)) {
-        detail = body.detail as ApiValidationError[]
-        // Surface the first Pydantic error in the toast/message when present —
-        // it's nearly always more useful than a generic "Validation error",
-        // and form-level error rendering still has access to `detail`.
-        const first = (body.detail as ApiValidationError[])[0]
-        message = first?.msg ? `${first.msg}` : 'Validation error'
-      } else if (typeof body.detail === 'string') {
-        detail = body.detail
-        message = body.detail
-      } else if (
-        body.detail !== null &&
-        typeof body.detail === 'object' &&
-        !Array.isArray(body.detail)
-      ) {
-        // FastAPI HTTPException(detail={"error": ..., "message": ...}) shape.
-        const structured = body.detail as StructuredErrorDetail
-        detail = structured
-        if (typeof structured.message === 'string') message = structured.message
-        if (typeof structured.error === 'string') code = structured.error
-      } else if (typeof body.message === 'string') {
-        message = body.message
-      }
-    } catch {
-      // JSON parse failed — keep statusText as message
-    }
-
+    const { message, detail, code } = await parseErrorBody(response)
     throw new ApiError({ status: response.status, message, detail, code })
   }
 

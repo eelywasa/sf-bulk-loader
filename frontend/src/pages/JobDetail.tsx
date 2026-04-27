@@ -2,7 +2,8 @@ import { type ReactNode, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { jobsApi, runsApi, plansApi } from '../api/endpoints'
-import { ApiError, apiFetchBlob } from '../api/client'
+import { apiFetchBlob } from '../api/client'
+import { formatApiErrorStrict } from '../api/errors'
 import type { CsvFetchParams, JobStatus } from '../api/types'
 import { isQueryOperation, operationLabel } from '../api/types'
 import { Badge, Button, Card, CsvPreviewPanel, Spinner, Tabs } from '../components/ui'
@@ -162,7 +163,7 @@ export default function JobDetail() {
   }
 
   if (isError) {
-    const message = error instanceof ApiError ? error.message : 'Failed to load job details'
+    const message = formatApiErrorStrict(error, 'Failed to load job details')
     return (
       <div className="p-6 space-y-4">
         <div className={ALERT_ERROR}>

@@ -5,7 +5,7 @@ import { Button, Card, Badge, Modal, DataTable, EmptyState, RequiredAsterisk, Sp
 import { useToast } from '../components/ui/Toast'
 import { LABEL_CLASS, INPUT_CLASS, SELECT_CLASS, TEXTAREA_CLASS, ALERT_ERROR, CHECKBOX_CLASS } from '../components/ui/formStyles'
 import { connectionsApi, inputConnectionsApi } from '../api/endpoints'
-import { ApiError } from '../api/client'
+import { formatApiError, formatApiErrors } from '../api/errors'
 import PermissionGate from '../components/PermissionGate'
 import { usePermission } from '../hooks/usePermission'
 import type {
@@ -13,25 +13,9 @@ import type {
   ConnectionCreate,
   InputConnection,
   InputConnectionCreate,
-  ApiValidationError,
 } from '../api/types'
 
 import { formatDate } from '../utils/formatters'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function extractErrors(err: unknown): string[] {
-  if (err instanceof ApiError) {
-    if (Array.isArray(err.detail)) {
-      return (err.detail as ApiValidationError[]).map(
-        (e) => `${e.loc.slice(1).join('.')} — ${e.msg}`,
-      )
-    }
-    if (err.message) return [err.message]
-  }
-  if (err instanceof Error) return [err.message]
-  return ['An unexpected error occurred']
-}
 
 // ─── Form types ───────────────────────────────────────────────────────────────
 
@@ -151,7 +135,7 @@ export default function Connections() {
       toast.success('Connection created')
       closeModal()
     },
-    onError: (err) => setFormErrors(extractErrors(err)),
+    onError: (err) => setFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const updateMutation = useMutation({
@@ -162,7 +146,7 @@ export default function Connections() {
       toast.success('Connection updated')
       closeModal()
     },
-    onError: (err) => setFormErrors(extractErrors(err)),
+    onError: (err) => setFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const deleteMutation = useMutation({
@@ -174,7 +158,7 @@ export default function Connections() {
       setTestResult(null)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete connection')
+      toast.error(formatApiError(err, 'Failed to delete connection'))
       setDeleteTarget(null)
     },
   })
@@ -186,7 +170,7 @@ export default function Connections() {
       toast.success('Storage connection created')
       closeInputModal()
     },
-    onError: (err) => setInputFormErrors(extractErrors(err)),
+    onError: (err) => setInputFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const updateInputMutation = useMutation({
@@ -197,7 +181,7 @@ export default function Connections() {
       toast.success('Storage connection updated')
       closeInputModal()
     },
-    onError: (err) => setInputFormErrors(extractErrors(err)),
+    onError: (err) => setInputFormErrors(formatApiErrors(err, 'An unexpected error occurred')),
   })
 
   const deleteInputMutation = useMutation({
@@ -209,7 +193,7 @@ export default function Connections() {
       setInputTestResult(null)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete storage connection')
+      toast.error(formatApiError(err, 'Failed to delete storage connection'))
       setInputDeleteTarget(null)
     },
   })
@@ -300,7 +284,7 @@ export default function Connections() {
         instanceUrl: result.instance_url,
       })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Test request failed')
+      toast.error(formatApiError(err, 'Test request failed'))
     } finally {
       setTestingId(null)
     }
@@ -382,7 +366,7 @@ export default function Connections() {
         message: result.message,
       })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Test request failed')
+      toast.error(formatApiError(err, 'Test request failed'))
     } finally {
       setInputTestingId(null)
     }
