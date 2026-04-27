@@ -667,7 +667,13 @@ async def test_assert_sqlite_fk_enforcement_active_raises_when_off(monkeypatch):
         def scalar(self):  # noqa: D401 - simple shim
             return 0
 
+    class _Bind:
+        class dialect:
+            name = "sqlite"
+
     class _Session:
+        bind = _Bind()
+
         async def __aenter__(self):
             return self
 
