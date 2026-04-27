@@ -1,6 +1,6 @@
 """
 Generates sf-bulk-loader-reference.pdf — portable project reference guide.
-Run: python generate_pdf.py
+Run: pip install -r requirements-pdf.txt && python generate_pdf.py
 """
 
 from datetime import datetime
@@ -751,10 +751,12 @@ def build():
     # Switch to body template after the cover PageBreak
     from reportlab.platypus import NextPageTemplate
     story.insert(0, NextPageTemplate("cover"))
-    # Find the first PageBreak and insert a template switch before it
+    # Insert before the first PageBreak so the body template takes effect on page 2.
+    # NextPageTemplate affects the template used after the *next* page break, so
+    # it must precede the break, not follow it.
     for i, el in enumerate(story):
         if isinstance(el, PageBreak):
-            story.insert(i + 1, NextPageTemplate("body"))
+            story.insert(i, NextPageTemplate("body"))
             break
 
     doc.build(story)
