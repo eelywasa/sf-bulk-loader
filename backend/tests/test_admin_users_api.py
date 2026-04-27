@@ -314,6 +314,49 @@ def test_update_user_last_admin_guard(auth_client: TestClient):
     assert resp.json()["detail"]["error"] == "last_admin_guard"
 
 
+def test_demote_invited_admin_succeeds_when_one_active_admin(auth_client: TestClient):
+    """Demoting an invited (non-active) admin must not trip last_admin_guard.
+
+    Regression for SFBL-286: the guard incorrectly fired whenever the active
+    admin count was at 1, regardless of whether the target was contributing
+    to that count. An invited admin's profile change can't reduce the active
+    count, so the operation should succeed.
+    """
+    admin_pid = _get_profile_id("admin")
+    op_pid = _get_profile_id("operator")
+    from tests.conftest import _TestSession  # type: ignore[attr-defined]
+
+    async def _clear_admin_profile():
+        async with _TestSession() as session:
+            result = await session.execute(
+                select(User).where(User.profile_id == admin_pid)
+            )
+            for u in result.scalars().all():
+                u.profile_id = op_pid
+            await session.commit()
+
+    _run(_clear_admin_profile())
+
+    # One active admin (the only one contributing to the active count)
+    _insert_user(
+        f"sole-active-admin-{uuid.uuid4().hex[:6]}@ex.com",
+        status="active",
+        profile_id=admin_pid,
+        is_admin=True,
+    )
+    # One invited admin — a pending invitation, not contributing to the count
+    invited_id = _insert_user(
+        f"invited-admin-{uuid.uuid4().hex[:6]}@ex.com",
+        status="invited",
+        profile_id=admin_pid,
+        is_admin=True,
+    )
+
+    resp = auth_client.put(f"/api/admin/users/{invited_id}", json={"profile_id": op_pid})
+    assert resp.status_code == 200
+    assert resp.json()["profile"]["name"] == "operator"
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Deactivate / reactivate
 # ──────────────────────────────────────────────────────────────────────────────
@@ -509,6 +552,60 @@ def test_soft_delete_last_admin_guard(auth_client: TestClient):
     resp = auth_client.delete(f"/api/admin/users/{uid}")
     assert resp.status_code == 409
     assert resp.json()["detail"]["error"] == "last_admin_guard"
+
+
+def test_soft_delete_invited_admin_succeeds_when_one_active_admin(auth_client: TestClient):
+    """Deleting an invited (non-active) admin must not trip last_admin_guard.
+
+    Regression for SFBL-286: original repro was an admin unable to clean up
+    a stale or mistyped admin invitation while there was only one active
+    admin. The invited user does not contribute to the active-admin count,
+    so deleting them can't leave the system without an active admin.
+    """
+    admin_pid = _get_profile_id("admin")
+    op_pid = _get_profile_id("operator")
+    from tests.conftest import _TestSession  # type: ignore[attr-defined]
+
+    async def _clear_admin_profile():
+        async with _TestSession() as session:
+            result = await session.execute(
+                select(User).where(User.profile_id == admin_pid)
+            )
+            for u in result.scalars().all():
+                u.profile_id = op_pid
+            await session.commit()
+
+    _run(_clear_admin_profile())
+
+    # One active admin
+    _insert_user(
+        f"sole-active-admin-{uuid.uuid4().hex[:6]}@ex.com",
+        status="active",
+        profile_id=admin_pid,
+        is_admin=True,
+    )
+    # One invited admin — the target of the delete
+    invited_id = _insert_user(
+        f"invited-admin-del-{uuid.uuid4().hex[:6]}@ex.com",
+        status="invited",
+        profile_id=admin_pid,
+        is_admin=True,
+    )
+
+    resp = auth_client.delete(f"/api/admin/users/{invited_id}")
+    assert resp.status_code == 204
+
+    # Verify the row is tombstoned (soft delete)
+    from tests.conftest import _TestSession  # type: ignore[attr-defined]
+
+    async def _check():
+        async with _TestSession() as session:
+            row = (
+                await session.execute(select(User).where(User.id == invited_id))
+            ).scalar_one()
+            return row.status
+
+    assert _run(_check()) == "deleted"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
