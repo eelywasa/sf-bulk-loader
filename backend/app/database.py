@@ -79,12 +79,13 @@ async def assert_sqlite_fk_enforcement_active() -> None:
 
     No-op for non-SQLite engines — Postgres always enforces FKs.
     """
-    if engine.dialect.name != "sqlite":
-        return
-    # Use engine directly rather than AsyncSessionLocal so this check is
-    # immune to test monkey-patching of AsyncSessionLocal (e.g. redirecting
-    # it to a PostgreSQL test DB while engine itself stays SQLite).
-    async with AsyncSession(engine) as session:
+    # Check the dialect of the session's bind, not the module-level engine.
+    # Tests monkey-patch AsyncSessionLocal to point at a PostgreSQL DB while
+    # leaving the module-level engine pointing at SQLite — so the check must
+    # inspect whatever engine the session is actually going to use.
+    async with AsyncSessionLocal() as session:
+        if session.bind.dialect.name != "sqlite":
+            return
         result = await session.execute(text("PRAGMA foreign_keys"))
         value = result.scalar()
     if value != 1:
