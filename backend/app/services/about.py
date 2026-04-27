@@ -60,12 +60,17 @@ def _runtime_info() -> dict[str, Any]:
 
 async def _database_info(session: AsyncSession) -> dict[str, Any]:
     backend = engine.dialect.name  # "sqlite" or "postgresql"
+    # Wrap in a SAVEPOINT so a missing alembic_version table (e.g. fresh test
+    # DB created via metadata.create_all rather than migrations) doesn't poison
+    # the parent transaction on PostgreSQL — postgres aborts the whole tx on
+    # any error unless the failure is contained in a nested transaction.
     try:
-        result = await session.execute(
-            text("SELECT version_num FROM alembic_version LIMIT 1")
-        )
-        row = result.fetchone()
-        alembic_head = row[0] if row else "unknown"
+        async with session.begin_nested():
+            result = await session.execute(
+                text("SELECT version_num FROM alembic_version LIMIT 1")
+            )
+            row = result.fetchone()
+            alembic_head = row[0] if row else "unknown"
     except Exception:
         alembic_head = "unknown"
     return {

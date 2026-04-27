@@ -583,8 +583,13 @@ async def test_pragma_disabled_cascade_is_noop():
     async test session writes to so the assertion targets the SQLite engine
     itself, not the SQLAlchemy listener. If this test fails, FK enforcement
     is being applied somewhere it shouldn't be.
+
+    SQLite-only — PRAGMA foreign_keys is not a Postgres concept.
     """
-    from tests.conftest import _DEFAULT_TEST_DB_PATH
+    from tests.conftest import _DEFAULT_TEST_DB_PATH, _is_sqlite
+
+    if not _is_sqlite:
+        pytest.skip("SQLite-specific PRAGMA test")
 
     # First seed via the normal session (FK on) so the schema is populated.
     async with _SessionFactory() as s:
