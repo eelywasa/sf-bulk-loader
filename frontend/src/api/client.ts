@@ -1,4 +1,4 @@
-import type { ApiValidationError } from './types'
+import type { ApiValidationError, StructuredErrorDetail } from './types'
 
 export const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
@@ -22,7 +22,7 @@ export function clearStoredToken(): void {
 
 export class ApiError extends Error {
   readonly status: number
-  readonly detail?: string | ApiValidationError[]
+  readonly detail?: string | ApiValidationError[] | StructuredErrorDetail
   readonly code?: string
 
   constructor({
@@ -33,7 +33,7 @@ export class ApiError extends Error {
   }: {
     status: number
     message: string
-    detail?: string | ApiValidationError[]
+    detail?: string | ApiValidationError[] | StructuredErrorDetail
     code?: string
   }) {
     super(message)
@@ -78,8 +78,9 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
       }
     }
 
-    let detail: string | ApiValidationError[] | undefined
+    let detail: string | ApiValidationError[] | StructuredErrorDetail | undefined
     let message = response.statusText || `HTTP ${response.status}`
+    let code: string | undefined
 
     try {
       const body = await response.json()
@@ -93,6 +94,16 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
       } else if (typeof body.detail === 'string') {
         detail = body.detail
         message = body.detail
+      } else if (
+        body.detail !== null &&
+        typeof body.detail === 'object' &&
+        !Array.isArray(body.detail)
+      ) {
+        // FastAPI HTTPException(detail={"error": ..., "message": ...}) shape.
+        const structured = body.detail as StructuredErrorDetail
+        detail = structured
+        if (typeof structured.message === 'string') message = structured.message
+        if (typeof structured.error === 'string') code = structured.error
       } else if (typeof body.message === 'string') {
         message = body.message
       }
@@ -100,7 +111,7 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
       // JSON parse failed — keep statusText as message
     }
 
-    throw new ApiError({ status: response.status, message, detail })
+    throw new ApiError({ status: response.status, message, detail, code })
   }
 
   // 204 No Content or 202 Accepted with empty body — return undefined
