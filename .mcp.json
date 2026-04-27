@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "atlassian": {
+      "command": "uvx",
+      "args": ["mcp-atlassian"],
+      "env": {
+        "JIRA_URL": "https://matthew-jenkin.atlassian.net",
+        "JIRA_USERNAME": "${JIRA_USERNAME}",
+        "JIRA_API_TOKEN": "${JIRA_API_TOKEN}",
+        "JIRA_PROJECTS_FILTER": "SFBL",
+        "READ_ONLY_MODE": "false",
+        "ENABLED_TOOLS": "jira_get_issue,jira_search,jira_add_comment,jira_transition_issue,jira_get_transitions"
+      }
+    }
+  }
+}
