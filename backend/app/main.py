@@ -157,7 +157,9 @@ if settings.auth_mode != "none":
     app.include_router(admin_email_router)
     app.include_router(admin_users_router)
     app.include_router(admin_profiles_router)
-    app.include_router(settings_router)
+# Settings router is mounted on all profiles — desktop has its own
+# storage category (SFBL-257), and the API filters keys by active profile.
+app.include_router(settings_router)
 app.include_router(auth_router)
 if settings.auth_mode != "none":
     app.include_router(auth_2fa_router)
