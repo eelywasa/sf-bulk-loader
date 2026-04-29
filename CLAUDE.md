@@ -46,6 +46,32 @@ Open PRs normally with `gh pr create` (not `--draft`). CI runs on every push to 
 
 For direct-to-main commits (hotfixes, CI/docs-only changes) a PR is not required — push directly to `main` as normal.
 
+## Release Workflow
+
+Tags trigger the `Release` workflow, which builds desktop installers and
+GHCR images and creates the GitHub Release. The release body is **not**
+auto-populated — release notes must be attached manually after tagging.
+
+Sequence when cutting a release:
+
+1. Wait for push-to-main CI to be fully green.
+2. Tag and push: `git tag -a vX.Y -m "vX.Y: <one-line summary>" && git push origin vX.Y`.
+3. **Wait for the Release workflow to create the GitHub Release** before
+   running `gh release edit`. The workflow takes a few minutes to spin up
+   and publish the empty release; calling `gh release edit vX.Y --notes-file …`
+   before that point fails with `release not found`. Either poll
+   `gh release view vX.Y` until it succeeds, or wait until the
+   `Build Electron — *` jobs start (the release is created early in the
+   workflow). Don't try to attach notes immediately after `git push`.
+4. Compose notes following the v0.8 / v0.9 convention — sections for
+   *Features*, *Improvements*, *Bug fixes*, *CI / infrastructure*, with
+   bold lead phrases and Jira-linked tickets — then
+   `gh release edit vX.Y --notes-file /tmp/notes.md`.
+
+Source material for the notes: `git log <prev-tag>..<new-tag> --oneline`
+plus the merged PR titles (`gh pr view <n> --json title`). Each merged PR
+since the last tag should be represented.
+
 ## Epic Delivery: One PR Per Epic
 
 An epic ships as **one shippable PR**, not a stack of per-ticket PRs. Each
