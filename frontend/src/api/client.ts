@@ -1,6 +1,7 @@
 import type { ApiValidationError, StructuredErrorDetail } from './types'
 
-export const BASE_URL = import.meta.env.VITE_API_URL ?? ''
+export const BASE_URL =
+  (window as any).electronAPI?.backendUrl ?? import.meta.env.VITE_API_URL ?? ''
 
 // ─── Token storage helpers ────────────────────────────────────────────────────
 

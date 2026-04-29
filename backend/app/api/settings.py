@@ -22,6 +22,8 @@ response header, which is present on both GET and PATCH responses.
 from __future__ import annotations
 
 import logging
+import os
+import pathlib
 from datetime import datetime, timezone
 from typing import Any
 
@@ -36,6 +38,7 @@ from app.schemas.settings import AllSettings, CategorySettings, PatchRequest, Se
 from app.auth.permissions import require_permission, SYSTEM_SETTINGS
 from app.observability.events import MfaEvent, OutcomeCode
 from app.observability.metrics import set_mfa_tenant_required
+from app.config import settings as _app_config
 from app.services.settings.registry import SETTINGS_REGISTRY
 import app.services.settings.service as _settings_svc_module
 
@@ -69,12 +72,22 @@ def _mask(value: Any, is_secret: bool) -> Any:
     return value
 
 
+def _is_visible_for_profile(meta_profiles: list[str] | None, distribution: str) -> bool:
+    """True when a setting is visible for the given distribution profile."""
+    return meta_profiles is None or distribution in meta_profiles
+
+
 async def _build_category_settings(
     category: str,
     db: AsyncSession,
 ) -> CategorySettings:
-    """Return a CategorySettings for *category*, secrets masked."""
-    keys = [k for k, m in SETTINGS_REGISTRY.items() if m.category == category]
+    """Return a CategorySettings for *category*, secrets masked, profile-filtered."""
+    distribution = _app_config.app_distribution
+    keys = [
+        k
+        for k, m in SETTINGS_REGISTRY.items()
+        if m.category == category and _is_visible_for_profile(m.profiles, distribution)
+    ]
 
     # Bulk-fetch DB rows for this category so we can get updated_at
     rows: dict[str, AppSetting] = {}
@@ -112,10 +125,11 @@ async def _build_category_settings(
 
 
 def _known_categories() -> list[str]:
-    """Return sorted list of unique categories in the registry."""
+    """Return sorted list of categories that have at least one key visible for the active profile."""
+    distribution = _app_config.app_distribution
     seen: list[str] = []
     for meta in SETTINGS_REGISTRY.values():
-        if meta.category not in seen:
+        if meta.category not in seen and _is_visible_for_profile(meta.profiles, distribution):
             seen.append(meta.category)
     return seen
 
@@ -202,6 +216,11 @@ async def patch_category_settings(
             errors.append({"field": key, "error": f"belongs to category '{meta.category}', not '{category}'"})
             continue
 
+        # 2b. Key must be visible for the active profile
+        if not _is_visible_for_profile(meta.profiles, _app_config.app_distribution):
+            errors.append({"field": key, "error": "unknown"})
+            continue
+
         # 3. Secret field with empty-string value → skip (keep existing)
         if meta.is_secret and value == "":
             skip_keys.add(key)
@@ -215,7 +234,22 @@ async def patch_category_settings(
             errors.append({"field": key, "error": f"cannot coerce value to type '{meta.type}'"})
             continue
 
-        # 5. Enum-style allow-list for known-constrained keys.  Kept inline here
+        # 5. Directory-existence validation for desktop storage keys.
+        if key in ("desktop_input_dir", "desktop_output_dir"):
+            try:
+                resolved = pathlib.Path(str(coerced_value)).expanduser().resolve()
+            except (ValueError, OSError) as exc:
+                errors.append({"field": key, "error": f"invalid path: {exc}"})
+                continue
+            if not resolved.exists() or not resolved.is_dir():
+                errors.append({"field": key, "error": "path does not exist or is not a directory"})
+                continue
+            if not os.access(resolved, os.R_OK | os.W_OK):
+                errors.append({"field": key, "error": "path is not readable/writable"})
+                continue
+            coerced_value = str(resolved)
+
+        # 6. Enum-style allow-list for known-constrained keys.  Kept inline here
         # rather than adding an `allowed_values` field to SettingMeta since this
         # is the only key (today) with a hard enum constraint at write time.
         # Accepting arbitrary strings silently persists them, which then breaks

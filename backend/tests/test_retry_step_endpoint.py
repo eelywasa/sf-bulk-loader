@@ -120,10 +120,9 @@ def test_retry_step_returns_201_with_new_run(auth_client, tmp_path):
     _seed_job(run_id, step_id, status=JobStatus.failed, error_file_path=rel)
 
     with (
-        patch("app.services.load_run_service.settings") as mock_s,
+        patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))),
         patch("app.services.orchestrator.execute_retry_run", new=AsyncMock()),
     ):
-        mock_s.output_dir = str(tmp_path)
         resp = auth_client.post(f"/api/runs/{run_id}/retry-step/{step_id}")
 
     assert resp.status_code == 201
@@ -139,10 +138,9 @@ def test_retry_step_links_new_run_to_parent(auth_client, tmp_path):
     _seed_job(run_id, step_id, status=JobStatus.failed, error_file_path=rel)
 
     with (
-        patch("app.services.load_run_service.settings") as mock_s,
+        patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))),
         patch("app.services.orchestrator.execute_retry_run", new=AsyncMock()),
     ):
-        mock_s.output_dir = str(tmp_path)
         new_run_id = auth_client.post(f"/api/runs/{run_id}/retry-step/{step_id}").json()["id"]
 
     detail = auth_client.get(f"/api/runs/{new_run_id}").json()
@@ -216,10 +214,9 @@ def test_retry_step_all_four_terminal_statuses_accepted(auth_client, tmp_path):
         _seed_job(run_id, step_id, status=JobStatus.failed, error_file_path=rel)
 
         with (
-            patch("app.services.load_run_service.settings") as mock_s,
+            patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))),
             patch("app.services.orchestrator.execute_retry_run", new=AsyncMock()),
         ):
-            mock_s.output_dir = str(tmp_path)
             resp = auth_client.post(f"/api/runs/{run_id}/retry-step/{step_id}")
 
         assert resp.status_code == 201, (
@@ -235,10 +232,9 @@ def test_retry_step_unprocessed_file_qualifies_job(auth_client, tmp_path):
     _seed_job(run_id, step_id, status=JobStatus.job_complete, unprocessed_file_path=rel)
 
     with (
-        patch("app.services.load_run_service.settings") as mock_s,
+        patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))),
         patch("app.services.orchestrator.execute_retry_run", new=AsyncMock()),
     ):
-        mock_s.output_dir = str(tmp_path)
         resp = auth_client.post(f"/api/runs/{run_id}/retry-step/{step_id}")
 
     assert resp.status_code == 201

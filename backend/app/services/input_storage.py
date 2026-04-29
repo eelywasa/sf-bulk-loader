@@ -804,11 +804,13 @@ the same :class:`BaseInputStorage` contract used for true inputs.
 
 async def get_storage(source: Optional[str], db: AsyncSession) -> BaseInputStorage:
     """Resolve *source* to the appropriate input storage provider."""
+    from app.services.settings.dirs import effective_input_dir, effective_output_dir  # noqa: PLC0415
+
     if source in (None, "", "local"):
-        return LocalInputStorage(settings.input_dir)
+        return LocalInputStorage(await effective_input_dir())
 
     if source == LOCAL_OUTPUT_SOURCE:
-        return LocalInputStorage(settings.output_dir)
+        return LocalInputStorage(await effective_output_dir())
 
     ic = await db.get(InputConnection, source)
     if ic is None:

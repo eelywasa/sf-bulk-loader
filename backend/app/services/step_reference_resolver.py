@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.models.input_connection import InputConnection
 from app.models.job import JobRecord
 from app.services.input_storage import (
@@ -110,7 +109,9 @@ async def resolve_step_input(
     # ── 3. Construct the appropriate storage backend ─────────────────────────
     if plan.output_connection_id is None:
         # Local backend — success_file_path is already relative to output_dir.
-        storage: BaseInputStorage = LocalInputStorage(settings.output_dir)
+        from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
+        storage: BaseInputStorage = LocalInputStorage(await effective_output_dir())
         rel_path = upstream_record.success_file_path
     else:
         # S3 backend — success_file_path is an s3:// URI written by the

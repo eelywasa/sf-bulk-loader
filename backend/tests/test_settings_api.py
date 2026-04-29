@@ -160,8 +160,11 @@ def test_get_all_settings_returns_all_registry_keys(client: TestClient) -> None:
         for sv in cat["settings"]:
             returned_keys.add(sv["key"])
 
-    for key in SETTINGS_REGISTRY:
-        assert key in returned_keys, f"Registry key {key!r} missing from GET / response"
+    distribution = app_settings.app_distribution
+    for key, meta in SETTINGS_REGISTRY.items():
+        visible = meta.profiles is None or distribution in meta.profiles
+        if visible:
+            assert key in returned_keys, f"Registry key {key!r} missing from GET / response"
 
 
 def test_get_all_settings_masks_secrets(client: TestClient) -> None:
@@ -467,26 +470,38 @@ def test_non_admin_patch_returns_403(client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Desktop profile — router not registered
+# Desktop profile — only desktop-visible categories exposed (SFBL-257)
 # ---------------------------------------------------------------------------
 
 
-def test_desktop_profile_settings_returns_404() -> None:
-    """On desktop profile (auth_mode=none), the settings router is not registered."""
-    from fastapi import FastAPI
+def test_desktop_profile_known_categories() -> None:
+    """On desktop, _known_categories() exposes storage but filters out hosted-only categories."""
+    from app.api.settings import _known_categories
 
-    original_auth_mode = app_settings.auth_mode
-    app_settings.auth_mode = "none"
+    original_distribution = app_settings.app_distribution
+    app_settings.app_distribution = "desktop"
 
     try:
-        from app.api.settings import router as settings_router
-
-        test_app = FastAPI()
-        if app_settings.auth_mode != "none":
-            test_app.include_router(settings_router)
-
-        with TestClient(test_app, raise_server_exceptions=False) as c:
-            resp = c.get("/api/settings/")
-        assert resp.status_code == 404
+        cats = _known_categories()
+        assert "storage" in cats
+        assert "security" not in cats
+        assert "email" not in cats
     finally:
-        app_settings.auth_mode = original_auth_mode
+        app_settings.app_distribution = original_distribution
+
+
+def test_hosted_profile_known_categories() -> None:
+    """On hosted, _known_categories() exposes security/email but filters out storage."""
+    from app.api.settings import _known_categories
+
+    # Test runs default to self_hosted, but be explicit to guard against drift
+    original_distribution = app_settings.app_distribution
+    app_settings.app_distribution = "self_hosted"
+
+    try:
+        cats = _known_categories()
+        assert "security" in cats
+        assert "email" in cats
+        assert "storage" not in cats
+    finally:
+        app_settings.app_distribution = original_distribution

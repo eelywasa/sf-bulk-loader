@@ -9,6 +9,14 @@ by Epic A (SFBL-186).  Wave S2 (SFBL-155) adds the ~20 email keys so that
 email configuration is managed via the DB-backed settings API rather than
 environment variables.  Later waves (SFBL-156/157) will add Salesforce,
 partitioning, and auth-tuning keys.
+
+Profile scoping (SFBL-257):
+  profiles=None              → visible to all distribution profiles
+  profiles=["desktop"]       → desktop only
+  profiles=["self_hosted", "aws_hosted"] → hosted profiles only
+
+The settings API filters by the active APP_DISTRIBUTION so hosted profiles
+never see desktop-only keys and vice versa.
 """
 
 from __future__ import annotations
@@ -29,6 +37,13 @@ class SettingMeta:
     description: str = ""
     env_var: str | None = None
     restart_required: bool = False
+    profiles: list[str] | None = None
+    """Distribution profiles this setting applies to.
+
+    None  → all profiles.
+    ["desktop"]  → desktop only.
+    ["self_hosted", "aws_hosted"]  → hosted profiles only.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +60,9 @@ def _register(*metas: SettingMeta) -> None:
         SETTINGS_REGISTRY[meta.key] = meta
 
 
+_HOSTED = ["self_hosted", "aws_hosted"]
+_DESKTOP = ["desktop"]
+
 # ---------------------------------------------------------------------------
 # Security / login lockout  (category="security")
 # ---------------------------------------------------------------------------
@@ -57,6 +75,7 @@ _register(
         default=20,
         description="Maximum login attempts allowed within the rate-limit window before throttling.",
         env_var="LOGIN_RATE_LIMIT_ATTEMPTS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="login_rate_limit_window_seconds",
@@ -65,6 +84,7 @@ _register(
         default=300,
         description="Window size in seconds for the login rate-limit counter.",
         env_var="LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="login_tier1_threshold",
@@ -73,6 +93,7 @@ _register(
         default=5,
         description="Number of consecutive failures that trigger a Tier-1 temporary lockout.",
         env_var="LOGIN_TIER1_THRESHOLD",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="login_tier1_window_minutes",
@@ -81,6 +102,7 @@ _register(
         default=15,
         description="Rolling window in minutes over which Tier-1 failures are counted.",
         env_var="LOGIN_TIER1_WINDOW_MINUTES",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="login_tier1_lock_minutes",
@@ -89,6 +111,7 @@ _register(
         default=15,
         description="Duration in minutes for a Tier-1 automatic account lock.",
         env_var="LOGIN_TIER1_LOCK_MINUTES",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="login_tier2_threshold",
@@ -97,6 +120,7 @@ _register(
         default=15,
         description="Total failures within tier2_window_hours that trigger a permanent Tier-2 lock.",
         env_var="LOGIN_TIER2_THRESHOLD",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="login_tier2_tier1_count",
@@ -105,6 +129,7 @@ _register(
         default=3,
         description="Number of Tier-1 locks within tier2_window_hours that trigger a Tier-2 lock.",
         env_var="LOGIN_TIER2_TIER1_COUNT",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="login_tier2_window_hours",
@@ -113,6 +138,7 @@ _register(
         default=24,
         description="Rolling window in hours over which Tier-2 lock triggers are counted.",
         env_var="LOGIN_TIER2_WINDOW_HOURS",
+        profiles=_HOSTED,
     ),
 )
 
@@ -128,6 +154,7 @@ _register(
         default=60,
         description="JWT access token lifetime in minutes. Applies to new tokens; existing tokens retain their original expiry.",
         env_var="JWT_EXPIRY_MINUTES",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="pw_reset_rate_limit_per_ip_hour",
@@ -136,6 +163,7 @@ _register(
         default=5,
         description="Maximum password-reset requests per IP address per hour.",
         env_var="PW_RESET_RATE_LIMIT_PER_IP_HOUR",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="pw_reset_rate_limit_per_email_hour",
@@ -144,6 +172,7 @@ _register(
         default=3,
         description="Maximum password-reset requests per email address per hour.",
         env_var="PW_RESET_RATE_LIMIT_PER_EMAIL_HOUR",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_change_rate_limit_per_user_hour",
@@ -152,6 +181,7 @@ _register(
         default=3,
         description="Maximum email-change requests per user per hour.",
         env_var="EMAIL_CHANGE_RATE_LIMIT_PER_USER_HOUR",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="password_reset_ttl_minutes",
@@ -160,6 +190,7 @@ _register(
         default=15,
         description="Password-reset token validity period in minutes.",
         env_var="PASSWORD_RESET_TTL_MINUTES",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_change_ttl_minutes",
@@ -168,6 +199,7 @@ _register(
         default=30,
         description="Email-change token validity period in minutes.",
         env_var="EMAIL_CHANGE_TTL_MINUTES",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="require_2fa",
@@ -181,6 +213,7 @@ _register(
             "overrides the REQUIRE_2FA env default once set."
         ),
         env_var="REQUIRE_2FA",
+        profiles=_HOSTED,
     ),
 )
 
@@ -196,6 +229,7 @@ _register(
         default="v62.0",
         description="Salesforce API version used for all Bulk API 2.0 requests, e.g. v62.0.",
         env_var="SF_API_VERSION",
+        profiles=None,
     ),
     SettingMeta(
         key="sf_poll_interval_initial",
@@ -204,6 +238,7 @@ _register(
         default=5,
         description="Initial polling interval in seconds for Bulk API job status checks.",
         env_var="SF_POLL_INTERVAL_INITIAL",
+        profiles=None,
     ),
     SettingMeta(
         key="sf_poll_interval_max",
@@ -212,6 +247,7 @@ _register(
         default=30,
         description="Maximum polling interval in seconds (exponential backoff cap) for Bulk API job status checks.",
         env_var="SF_POLL_INTERVAL_MAX",
+        profiles=None,
     ),
     SettingMeta(
         key="sf_job_timeout_minutes",
@@ -220,6 +256,7 @@ _register(
         default=30,
         description="Soft wall-clock limit in minutes for a Bulk API job. A warning is logged when exceeded; polling continues.",
         env_var="SF_JOB_TIMEOUT_MINUTES",
+        profiles=None,
     ),
     SettingMeta(
         key="sf_job_max_poll_seconds",
@@ -228,6 +265,7 @@ _register(
         default=3600,
         description="Hard cap in seconds on the polling loop for a single Bulk API job. Set to 0 to disable (unbounded). See SFBL-111.",
         env_var="SF_JOB_MAX_POLL_SECONDS",
+        profiles=None,
     ),
 )
 
@@ -243,6 +281,7 @@ _register(
         default=10_000,
         description="Default number of data rows per CSV partition when LoadStep.partition_size is not explicitly set.",
         env_var="DEFAULT_PARTITION_SIZE",
+        profiles=None,
     ),
     SettingMeta(
         key="max_partition_size",
@@ -251,6 +290,7 @@ _register(
         default=100_000_000,
         description="Maximum allowed partition size (rows). Requests exceeding this are rejected.",
         env_var="MAX_PARTITION_SIZE",
+        profiles=None,
     ),
 )
 
@@ -269,6 +309,7 @@ _register(
             "Allowed values: noop (disabled), smtp, ses."
         ),
         env_var="EMAIL_BACKEND",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_from_address",
@@ -281,6 +322,7 @@ _register(
             "'My App <noreply@example.com>'."
         ),
         env_var="EMAIL_FROM_ADDRESS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_from_name",
@@ -292,6 +334,7 @@ _register(
             "e.g. 'Salesforce Bulk Loader'. Leave blank to use the address only."
         ),
         env_var="EMAIL_FROM_NAME",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_reply_to",
@@ -300,6 +343,7 @@ _register(
         default="",
         description="Reply-To address added to outbound emails. Leave blank to omit the header.",
         env_var="EMAIL_REPLY_TO",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_max_retries",
@@ -311,6 +355,7 @@ _register(
             "(0 = no retries; each attempt after the first requires a prior failure)."
         ),
         env_var="EMAIL_MAX_RETRIES",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_retry_backoff_seconds",
@@ -322,6 +367,7 @@ _register(
             "Actual delay = min(base * 2^attempt, max) + uniform(0, base)."
         ),
         env_var="EMAIL_RETRY_BACKOFF_SECONDS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_retry_backoff_max_seconds",
@@ -330,6 +376,7 @@ _register(
         default=120.0,
         description="Cap in seconds for the exponential retry backoff delay.",
         env_var="EMAIL_RETRY_BACKOFF_MAX_SECONDS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_timeout_seconds",
@@ -341,6 +388,7 @@ _register(
             "Must be strictly less than email_claim_lease_seconds."
         ),
         env_var="EMAIL_TIMEOUT_SECONDS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_claim_lease_seconds",
@@ -353,6 +401,7 @@ _register(
             "to guarantee that a slow send cannot outlive its lease."
         ),
         env_var="EMAIL_CLAIM_LEASE_SECONDS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_pending_stale_minutes",
@@ -364,6 +413,7 @@ _register(
             "many minutes ago are considered abandoned and reaped to 'failed' at boot."
         ),
         env_var="EMAIL_PENDING_STALE_MINUTES",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_log_recipients",
@@ -375,6 +425,7 @@ _register(
             "Off by default for privacy; enable only when audit requirements demand it."
         ),
         env_var="EMAIL_LOG_RECIPIENTS",
+        profiles=_HOSTED,
     ),
     # ── SMTP settings ──────────────────────────────────────────────────────
     SettingMeta(
@@ -384,6 +435,7 @@ _register(
         default="",
         description="SMTP server hostname, e.g. smtp.sendgrid.net.",
         env_var="EMAIL_SMTP_HOST",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_smtp_port",
@@ -392,6 +444,7 @@ _register(
         default=587,
         description="SMTP server port. Use 587 for STARTTLS or 465 for implicit TLS.",
         env_var="EMAIL_SMTP_PORT",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_smtp_username",
@@ -400,6 +453,7 @@ _register(
         default="",
         description="SMTP authentication username.",
         env_var="EMAIL_SMTP_USERNAME",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_smtp_password",
@@ -412,6 +466,7 @@ _register(
             "Required when email_backend=smtp."
         ),
         env_var="EMAIL_SMTP_PASSWORD",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_smtp_starttls",
@@ -423,6 +478,7 @@ _register(
             "Set false when using implicit TLS (email_smtp_use_tls=true) on port 465."
         ),
         env_var="EMAIL_SMTP_STARTTLS",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_smtp_use_tls",
@@ -434,6 +490,7 @@ _register(
             "Mutually exclusive with email_smtp_starttls in practice."
         ),
         env_var="EMAIL_SMTP_USE_TLS",
+        profiles=_HOSTED,
     ),
     # ── SES settings ───────────────────────────────────────────────────────
     SettingMeta(
@@ -446,6 +503,7 @@ _register(
             "If blank, boto3 resolves region from its default chain."
         ),
         env_var="EMAIL_SES_REGION",
+        profiles=_HOSTED,
     ),
     SettingMeta(
         key="email_ses_configuration_set",
@@ -457,6 +515,7 @@ _register(
             "When blank the kwarg is omitted entirely."
         ),
         env_var="EMAIL_SES_CONFIGURATION_SET",
+        profiles=_HOSTED,
     ),
     # ── Frontend URL (drives email link generation) ────────────────────────
     SettingMeta(
@@ -471,5 +530,39 @@ _register(
             "inbound request origin."
         ),
         env_var="FRONTEND_BASE_URL",
+        profiles=_HOSTED,
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Storage  (category="storage")
+# ---------------------------------------------------------------------------
+
+_register(
+    SettingMeta(
+        key="desktop_input_dir",
+        category="storage",
+        type="str",
+        default="/data/input",
+        description=(
+            "Absolute path to the directory where CSV input files are read from. "
+            "Seeded from the INPUT_DIR env var on first startup. "
+            "Changes take effect immediately without restarting the app."
+        ),
+        env_var="INPUT_DIR",
+        profiles=_DESKTOP,
+    ),
+    SettingMeta(
+        key="desktop_output_dir",
+        category="storage",
+        type="str",
+        default="/data/output",
+        description=(
+            "Absolute path to the directory where result CSVs are written. "
+            "Seeded from the OUTPUT_DIR env var on first startup. "
+            "Changes take effect immediately without restarting the app."
+        ),
+        env_var="OUTPUT_DIR",
+        profiles=_DESKTOP,
     ),
 )
