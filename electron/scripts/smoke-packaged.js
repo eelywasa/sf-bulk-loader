@@ -138,10 +138,13 @@ async function main() {
   console.log(`[smoke] Launching ${executablePath}`)
   const launchArgs = platform === 'linux' ? ['--no-sandbox'] : []
 
+  // Pin the backend port so the smoke test knows where to poll. main.js reads
+  // BACKEND_PORT at startup and skips dynamic-port discovery when it is set.
   const child = spawn(executablePath, launchArgs, {
     cwd: rootDir,
     stdio: 'inherit',
     detached: process.platform !== 'win32',
+    env: { ...process.env, BACKEND_PORT: '8000' },
   })
 
   process.on('exit', () => stopProcess(child))

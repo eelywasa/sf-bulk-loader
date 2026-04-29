@@ -152,6 +152,7 @@ function runMigrations(dataDir, port) {
 // ─── Backend process ─────────────────────────────────────────────────────────
 
 let backendProcess = null
+let backendPort = null  // remembered across createWindow() calls so macOS activate reuses it
 
 function startBackend(dataDir, port) {
   if (backendProcess) return  // already running — reuse on window re-open (macOS)
@@ -205,6 +206,7 @@ function stopBackend() {
     backendProcess.kill()
     backendProcess = null
   }
+  backendPort = null
 }
 
 // ─── Backend health check ─────────────────────────────────────────────────────
@@ -255,7 +257,20 @@ async function createWindow() {
   const dataDir = app.getPath('userData')
   ensureDataDirs(dataDir)
 
-  const port = await findFreePort()
+  // If a backend is already running (macOS activate flow), reuse its port —
+  // probing a new one would make the renderer wait for a port the backend
+  // never bound to. Otherwise honour BACKEND_PORT if explicitly set (used by
+  // the packaged-app smoke test to pin to a known port), or probe for a free
+  // one starting at 47000.
+  let port
+  if (backendProcess && backendPort) {
+    port = backendPort
+  } else if (process.env.BACKEND_PORT) {
+    port = Number(process.env.BACKEND_PORT)
+  } else {
+    port = await findFreePort()
+  }
+  backendPort = port
   console.log(`[electron] Using backend port ${port}`)
 
   if (!backendProcess) runMigrations(dataDir, port)
