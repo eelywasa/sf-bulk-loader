@@ -30,7 +30,6 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - 'scripts/**'
               - '.github/workflows/ci-shared.yml'
             frontend:
               - 'frontend/**'

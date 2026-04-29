@@ -49,7 +49,7 @@ Postgres can stay up. Stopping the backend ensures no new writes land in the SQL
 ```bash
 export ENCRYPTION_KEY=$(cat data/db/encryption.key)
 
-python scripts/migrate_sqlite_to_postgres.py validate \
+python backend/scripts/migrate_sqlite_to_postgres.py validate \
   --source data/db/bulk_loader.db \
   --target postgresql+asyncpg://user:password@localhost:5432/bulk_loader
 ```
@@ -79,7 +79,7 @@ docker compose run --rm backend alembic upgrade head
 ### 4. Migrate
 
 ```bash
-python scripts/migrate_sqlite_to_postgres.py migrate \
+python backend/scripts/migrate_sqlite_to_postgres.py migrate \
   --source data/db/bulk_loader.db \
   --target postgresql+asyncpg://user:password@localhost:5432/bulk_loader
 ```
@@ -98,7 +98,7 @@ If migration fails, the Postgres database is left empty. Fix the reported error 
 **Non-empty target** — `alembic upgrade head` seeds the `profiles` and `profile_permissions` tables (migration `0021`), so the very first migrate run always trips the empty-target check. This is expected; pass `--force --i-have-a-backup` to proceed:
 
 ```bash
-python scripts/migrate_sqlite_to_postgres.py migrate \
+python backend/scripts/migrate_sqlite_to_postgres.py migrate \
   --source data/db/bulk_loader.db \
   --target postgresql+asyncpg://... \
   --force --i-have-a-backup
@@ -109,7 +109,7 @@ When `--force --i-have-a-backup` is set the script `DELETE`s every row from ever
 ### 5. Verify (post-flight)
 
 ```bash
-python scripts/migrate_sqlite_to_postgres.py verify \
+python backend/scripts/migrate_sqlite_to_postgres.py verify \
   --source data/db/bulk_loader.db \
   --target postgresql+asyncpg://user:password@localhost:5432/bulk_loader
 ```

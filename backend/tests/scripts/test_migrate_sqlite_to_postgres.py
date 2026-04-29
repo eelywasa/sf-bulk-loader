@@ -1,4 +1,4 @@
-"""Tests for scripts/migrate_sqlite_to_postgres.py (SFBL-272).
+"""Tests for backend/scripts/migrate_sqlite_to_postgres.py (SFBL-272).
 
 Drives the internal async entry points (_run_validate, _run_migrate, _run_verify)
 directly rather than invoking the CLI via subprocess, following the same pattern
@@ -65,8 +65,8 @@ except (ValueError, AttributeError):
 
 # ── Import the migration script ───────────────────────────────────────────────
 # The script lives two levels up from this file's project root, in scripts/.
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(_PROJECT_ROOT / "scripts"))
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_BACKEND_ROOT / "scripts"))
 
 import migrate_sqlite_to_postgres as mig  # noqa: E402
 
