@@ -13,7 +13,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
 from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
@@ -85,10 +84,13 @@ async def build_logs_zip(
             if unprocessed:
                 candidates.append(job.unprocessed_file_path)
 
+            from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
+            out_dir = await effective_output_dir()
             for rel_path in candidates:
                 if not rel_path:
                     continue
-                full_path = os.path.join(settings.output_dir, rel_path)
+                full_path = os.path.join(out_dir, rel_path)
                 if not os.path.isfile(full_path):
                     continue
                 parts = pathlib.PurePosixPath(rel_path.replace("\\", "/")).parts
@@ -168,11 +170,13 @@ async def prepare_retry_step(
             except Exception as exc:
                 logger.warning("prepare_retry_step: could not obtain token for SF job cleanup: %s", exc)
 
+    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
     partitions = await build_retry_partitions(
         job_records=retryable_jobs,
         step=step,
         partition_size=step.partition_size,
-        output_dir=settings.output_dir,
+        output_dir=await effective_output_dir(),
         db=db,
     )
 

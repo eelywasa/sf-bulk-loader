@@ -204,7 +204,9 @@ async def list_output_files(
     _: User = Depends(_require_files_view),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories at the given path within the local output directory."""
-    storage = LocalInputStorage(settings.output_dir)
+    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
+    storage = LocalInputStorage(await effective_output_dir())
     try:
         entries = storage.list_entries(path)
     except InputStorageError as exc:
@@ -251,7 +253,9 @@ async def preview_output_file(
                 )
         parsed_filters = parsed
 
-    storage = LocalInputStorage(settings.output_dir)
+    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
+    storage = LocalInputStorage(await effective_output_dir())
     try:
         preview = await run_in_threadpool(storage.preview_file, file_path, limit, offset, parsed_filters)
     except InputStorageError as exc:

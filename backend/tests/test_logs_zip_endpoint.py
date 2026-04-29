@@ -3,7 +3,7 @@
 import asyncio
 import io
 import zipfile
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 from app.models.job import JobRecord, JobStatus
 from app.models.load_run import LoadRun, RunStatus
@@ -112,8 +112,7 @@ def test_logs_zip_returns_200_with_zip_content_type(auth_client, tmp_path):
     _, plan_id, step_id, run_id = _setup(auth_client)
     _seed_job(run_id, step_id)  # no files → empty archive
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(f"/api/runs/{run_id}/logs.zip")
 
     assert resp.status_code == 200
@@ -136,8 +135,7 @@ def test_logs_zip_contains_expected_files_in_archive(auth_client, tmp_path):
         unprocessed_file_path=unprocessed_rel,
     )
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(f"/api/runs/{run_id}/logs.zip")
 
     names = _namelist(resp)
@@ -163,8 +161,7 @@ def test_logs_zip_success_false_excludes_success_files(auth_client, tmp_path):
         unprocessed_file_path=unprocessed_rel,
     )
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(f"/api/runs/{run_id}/logs.zip?success=false")
 
     names = _namelist(resp)
@@ -180,8 +177,7 @@ def test_logs_zip_errors_false_excludes_error_files(auth_client, tmp_path):
     _write_csv(tmp_path, error_rel)
     _seed_job(run_id, step_id, error_file_path=error_rel)
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(f"/api/runs/{run_id}/logs.zip?errors=false")
 
     names = _namelist(resp)
@@ -195,8 +191,7 @@ def test_logs_zip_unprocessed_false_excludes_unprocessed_files(auth_client, tmp_
     _write_csv(tmp_path, unprocessed_rel)
     _seed_job(run_id, step_id, unprocessed_file_path=unprocessed_rel)
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(f"/api/runs/{run_id}/logs.zip?unprocessed=false")
 
     names = _namelist(resp)
@@ -210,8 +205,7 @@ def test_logs_zip_all_false_returns_empty_zip(auth_client, tmp_path):
     _write_csv(tmp_path, success_rel)
     _seed_job(run_id, step_id, success_file_path=success_rel)
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(
             f"/api/runs/{run_id}/logs.zip?success=false&errors=false&unprocessed=false"
         )
@@ -234,8 +228,7 @@ def test_logs_zip_missing_files_silently_skipped(auth_client, tmp_path):
         error_file_path=error_rel,  # file does not exist on disk
     )
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(f"/api/runs/{run_id}/logs.zip")
 
     assert resp.status_code == 200
@@ -249,8 +242,7 @@ def test_logs_zip_null_file_paths_silently_skipped(auth_client, tmp_path):
     # All file paths are NULL
     _seed_job(run_id, step_id)
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(f"/api/runs/{run_id}/logs.zip")
 
     assert resp.status_code == 200
@@ -281,8 +273,7 @@ def test_logs_zip_multi_step_archive_structure(auth_client, tmp_path):
     _seed_job(run_id, step_a_id, error_file_path=error_rel_a)
     _seed_job(run_id, step_b_id, error_file_path=error_rel_b)
 
-    with patch("app.services.load_run_service.settings") as mock_s:
-        mock_s.output_dir = str(tmp_path)
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=str(tmp_path))):
         resp = auth_client.get(
             f"/api/runs/{run_id}/logs.zip?success=false&unprocessed=false"
         )

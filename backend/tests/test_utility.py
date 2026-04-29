@@ -3,7 +3,7 @@
 import csv
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 import pytest
 import app.models  # noqa: F401
@@ -122,7 +122,7 @@ def test_runtime_config_reflects_self_hosted_defaults(client):
 
 def test_runtime_config_reflects_desktop_profile(client):
     """/api/runtime returns correct values when distribution is desktop."""
-    from unittest.mock import patch
+    from unittest.mock import patch, AsyncMock
 
     with patch("app.api.utility.settings") as mock_settings:
         mock_settings.auth_mode = "none"
@@ -893,7 +893,7 @@ def test_list_output_files_requires_auth(client):
 
 def test_list_output_files_empty_dir(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get("/api/files/output")
     assert resp.status_code == 200
     assert resp.json() == []
@@ -903,7 +903,7 @@ def test_list_output_files_returns_csvs(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         for name in ("partition_0_success.csv", "partition_0_errors.csv", "readme.txt"):
             open(os.path.join(tmpdir, name), "w").close()
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get("/api/files/output")
     assert resp.status_code == 200
     names = [f["name"] for f in resp.json()]
@@ -915,7 +915,7 @@ def test_list_output_files_returns_csvs(auth_client):
 
 
 def test_list_output_files_missing_dir_returns_empty(auth_client):
-    with patch("app.api.utility.settings.output_dir", "/path/that/does/not/exist"):
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value="/path/that/does/not/exist")):
         resp = auth_client.get("/api/files/output")
     assert resp.status_code == 200
     assert resp.json() == []
@@ -925,7 +925,7 @@ def test_list_output_files_returns_directory_entries(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(os.path.join(tmpdir, "plan-abc"))
         open(os.path.join(tmpdir, "root.csv"), "w").close()
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get("/api/files/output")
     assert resp.status_code == 200
     kinds = {e["name"]: e["kind"] for e in resp.json()}
@@ -941,7 +941,7 @@ def test_list_output_files_with_path_param(auth_client):
             writer = csv.writer(f)
             writer.writerow(["sf__Id", "sf__Created"])
             writer.writerow(["001abc", "true"])
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get("/api/files/output?path=plan-abc/run-01")
     assert resp.status_code == 200
     entries = resp.json()
@@ -953,7 +953,7 @@ def test_list_output_files_with_path_param(auth_client):
 
 def test_list_output_files_path_traversal_returns_400(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get("/api/files/output?path=../etc")
     assert resp.status_code == 400
 
@@ -965,7 +965,7 @@ def test_preview_output_file_returns_rows(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
         csv_path = os.path.join(tmpdir, "partition_0_success.csv")
         _write_preview_csv(csv_path, rows=5)
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get("/api/files/output/partition_0_success.csv/preview?limit=5")
     assert resp.status_code == 200
     body = resp.json()
@@ -978,7 +978,7 @@ def test_preview_output_file_returns_rows(auth_client):
 
 def test_preview_output_file_not_found_returns_404(auth_client):
     with tempfile.TemporaryDirectory() as tmpdir:
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get("/api/files/output/nonexistent.csv/preview")
     assert resp.status_code == 404
 
@@ -996,7 +996,7 @@ def test_preview_output_file_in_subdirectory(auth_client):
             writer = csv.writer(f)
             writer.writerow(["sf__Id", "sf__Error"])
             writer.writerow(["", "REQUIRED_FIELD_MISSING"])
-        with patch("app.api.utility.settings.output_dir", tmpdir):
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(
                 "/api/files/output/plan-abc/run-01/partition_0_errors.csv/preview"
             )

@@ -160,8 +160,11 @@ def test_get_all_settings_returns_all_registry_keys(client: TestClient) -> None:
         for sv in cat["settings"]:
             returned_keys.add(sv["key"])
 
-    for key in SETTINGS_REGISTRY:
-        assert key in returned_keys, f"Registry key {key!r} missing from GET / response"
+    distribution = app_settings.app_distribution
+    for key, meta in SETTINGS_REGISTRY.items():
+        visible = meta.profiles is None or distribution in meta.profiles
+        if visible:
+            assert key in returned_keys, f"Registry key {key!r} missing from GET / response"
 
 
 def test_get_all_settings_masks_secrets(client: TestClient) -> None:

@@ -26,7 +26,6 @@ import boto3
 import botocore.exceptions
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.models.input_connection import InputConnection
 from app.observability.events import OutcomeCode, StorageEvent
 from app.services.input_storage import _join_s3_key, _normalise_root_prefix
@@ -490,7 +489,9 @@ async def get_output_storage(
             is not yet supported.
     """
     if not output_connection_id:
-        return LocalOutputStorage(settings.output_dir)
+        from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
+        return LocalOutputStorage(await effective_output_dir())
 
     ic: Optional[InputConnection] = await db.get(InputConnection, output_connection_id)
     if ic is None:

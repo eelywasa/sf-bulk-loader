@@ -114,17 +114,18 @@ describe('Settings → Notifications tab', () => {
     vi.restoreAllMocks()
   })
 
-  it('hides tabs on desktop profile', async () => {
-    vi.mocked(client.apiFetch).mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+  it('hides Notifications tab on desktop profile', async () => {
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
+      // StorageTab calls getSettingsCategory('storage') — return empty to avoid errors
+      .mockResolvedValue({ data: { category: 'storage', settings: [] }, cacheTtl: 60 })
 
     renderSettings()
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/no configurable settings are available/i),
-      ).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Notifications' })).toBeNull()
     })
-    expect(screen.queryByRole('tab', { name: 'Notifications' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Email' })).toBeNull()
   })
 
   it('renders existing subscriptions in a table', async () => {

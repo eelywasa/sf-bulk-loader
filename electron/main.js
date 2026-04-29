@@ -1,22 +1,40 @@
 'use strict'
 
-const { app, BrowserWindow, dialog } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain } = require('electron')
 const { spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const http = require('http')
+const net = require('net')
 const path = require('path')
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const BACKEND_PORT = 8000
 const BACKEND_HOST = '127.0.0.1'
-const BACKEND_URL = `http://${BACKEND_HOST}:${BACKEND_PORT}`
 
 const resourcesPath = app.isPackaged
   ? process.resourcesPath
   : path.join(__dirname, '..')
 const FRONTEND_INDEX = path.join(resourcesPath, 'frontend', 'dist', 'index.html')
 const BACKEND_DIR = path.join(resourcesPath, 'backend')
+
+// ─── Free port discovery ──────────────────────────────────────────────────────
+// Port 8000 is a common development port. Starting from 47000 avoids collisions
+// with well-known services and typical dev tooling.
+
+function findFreePort(start = 47000) {
+  return new Promise((resolve, reject) => {
+    const tryPort = (port) => {
+      const server = net.createServer()
+      server.listen(port, '127.0.0.1', () => server.close(() => resolve(port)))
+      server.on('error', () =>
+        port < start + 100
+          ? tryPort(port + 1)
+          : reject(new Error('No free port found in range'))
+      )
+    }
+    tryPort(start)
+  })
+}
 
 // ─── Tool discovery ──────────────────────────────────────────────────────────
 
@@ -78,7 +96,7 @@ function enrichedPath() {
 
 // ─── Backend environment ─────────────────────────────────────────────────────
 
-function buildBackendEnv(dataDir) {
+function buildBackendEnv(dataDir, port) {
   // Normalise path separators to forward slashes for the SQLite URL.
   // On Windows, path.join produces backslashes which SQLAlchemy does not accept
   // in a sqlite+aiosqlite:/// URL.
@@ -93,13 +111,15 @@ function buildBackendEnv(dataDir) {
     JWT_SECRET_KEY_FILE: path.join(dataDir, 'db', 'jwt_secret.key'),
     INPUT_DIR: path.join(dataDir, 'input'),
     OUTPUT_DIR: path.join(dataDir, 'output'),
+    BACKEND_HOST,
+    BACKEND_PORT: String(port),
   }
 }
 
 // ─── Database migrations ─────────────────────────────────────────────────────
 
-function runMigrations(dataDir) {
-  const env = buildBackendEnv(dataDir)
+function runMigrations(dataDir, port) {
+  const env = buildBackendEnv(dataDir, port)
   let cmd, args
 
   if (app.isPackaged) {
@@ -133,9 +153,9 @@ function runMigrations(dataDir) {
 
 let backendProcess = null
 
-function startBackend(dataDir) {
+function startBackend(dataDir, port) {
   if (backendProcess) return  // already running — reuse on window re-open (macOS)
-  const env = buildBackendEnv(dataDir)
+  const env = buildBackendEnv(dataDir, port)
   let cmd, args
 
   if (app.isPackaged) {
@@ -145,7 +165,7 @@ function startBackend(dataDir) {
   } else {
     // Dev: use uvicorn from the backend venv
     cmd = findVenvUvicorn()
-    args = ['app.main:app', '--host', BACKEND_HOST, '--port', String(BACKEND_PORT)]
+    args = ['app.main:app', '--host', BACKEND_HOST, '--port', String(port)]
   }
 
   backendProcess = spawn(cmd, args, { cwd: BACKEND_DIR, env })
@@ -170,13 +190,10 @@ function startBackend(dataDir) {
   backendProcess.on('exit', (code, signal) => {
     console.log(`[backend] process exited with code ${code} signal ${signal}`)
     backendProcess = null
-    // If the backend exits before the window is created (e.g. port already in
-    // use), quit immediately so the app doesn't silently connect to a stale
-    // or unrelated process on the same port.
     if (code !== 0 && code !== null) {
       dialog.showErrorBox(
         'Backend failed to start',
-        `The backend process exited with code ${code}. Another process may already be using port ${BACKEND_PORT}.`
+        `The backend process exited with code ${code}.`
       )
       app.quit()
     }
@@ -192,13 +209,14 @@ function stopBackend() {
 
 // ─── Backend health check ─────────────────────────────────────────────────────
 
-function waitForBackend(maxAttempts = 30) {
+function waitForBackend(port, maxAttempts = 30) {
+  const backendUrl = `http://${BACKEND_HOST}:${port}`
   return new Promise((resolve, reject) => {
     let attempts = 0
 
     const check = () => {
       http
-        .get(`${BACKEND_URL}/api/health`, (res) => {
+        .get(`${backendUrl}/api/health`, (res) => {
           if (res.statusCode === 200) {
             resolve()
           } else {
@@ -222,21 +240,36 @@ function waitForBackend(maxAttempts = 30) {
   })
 }
 
+// ─── IPC handlers ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('dialog:openDirectory', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  })
+  return canceled ? null : filePaths[0]
+})
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 
 async function createWindow() {
   const dataDir = app.getPath('userData')
   ensureDataDirs(dataDir)
-  if (!backendProcess) runMigrations(dataDir)
-  startBackend(dataDir)
+
+  const port = await findFreePort()
+  console.log(`[electron] Using backend port ${port}`)
+
+  if (!backendProcess) runMigrations(dataDir, port)
+  startBackend(dataDir, port)
 
   try {
-    await waitForBackend()
+    await waitForBackend(port)
   } catch (err) {
     console.error('[electron] Backend failed to start:', err.message)
     app.quit()
     return
   }
+
+  const backendUrl = `http://${BACKEND_HOST}:${port}`
 
   const win = new BrowserWindow({
     width: 1400,
@@ -245,8 +278,9 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
+      additionalArguments: [`--backend-url=${backendUrl}`],
       // webSecurity is disabled so the file:// renderer can make requests to
-      // http://127.0.0.1:8000 without CORS blocking. This is acceptable because:
+      // http://127.0.0.1:{port} without CORS blocking. This is acceptable because:
       //   - the backend binds to loopback only (127.0.0.1)
       //   - the desktop profile uses auth_mode=none (no credentials to steal)
       //   - no network-accessible API is exposed

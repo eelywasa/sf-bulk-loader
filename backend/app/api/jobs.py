@@ -15,7 +15,6 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.permissions import FILES_VIEW_CONTENTS, RUNS_VIEW, require_permission
-from app.config import settings
 from app.database import get_db
 from app.models.job import JobRecord, JobStatus
 from app.models.load_run import LoadRun
@@ -125,6 +124,7 @@ def _preview_csv(
     limit: int,
     offset: int = 0,
     filters: list[dict[str, str]] | None = None,
+    output_dir: str = "/data/output",
 ) -> Dict[str, Any]:
     """Return a paginated page of data rows from a local result CSV."""
     if not relative_path:
@@ -132,7 +132,7 @@ def _preview_csv(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{description} is not available for this job",
         )
-    full_path = os.path.join(settings.output_dir, relative_path)
+    full_path = os.path.join(output_dir, relative_path)
     if not os.path.isfile(full_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -159,14 +159,16 @@ def _preview_csv_from_bytes(
     return _parse_csv_stream(fh, filename, limit, offset, filters)
 
 
-def _serve_csv(relative_path: Optional[str], description: str) -> FileResponse:
+def _serve_csv(
+    relative_path: Optional[str], description: str, output_dir: str = "/data/output"
+) -> FileResponse:
     """Return a FileResponse for a local result CSV or raise 404 if unavailable."""
     if not relative_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{description} is not available for this job",
         )
-    full_path = os.path.join(settings.output_dir, relative_path)
+    full_path = os.path.join(output_dir, relative_path)
     if not os.path.isfile(full_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -217,7 +219,10 @@ async def _serve_result_file(
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-    return _serve_csv(ref, description)
+    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
+    out_dir = await effective_output_dir()
+    return _serve_csv(ref, description, out_dir)
 
 
 async def _preview_result_file(
@@ -245,7 +250,10 @@ async def _preview_result_file(
             ) from exc
         filename = ref.rsplit("/", 1)[-1]
         return await run_in_threadpool(_preview_csv_from_bytes, data, filename, limit, offset, filters)
-    return await run_in_threadpool(_preview_csv, ref, description, limit, offset, filters)
+    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+
+    out_dir = await effective_output_dir()
+    return await run_in_threadpool(_preview_csv, ref, description, limit, offset, filters, out_dir)
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────

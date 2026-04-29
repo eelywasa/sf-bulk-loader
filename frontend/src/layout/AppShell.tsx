@@ -127,6 +127,18 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
             </button>
           )}
 
+          {/* Desktop storage settings */}
+          {!authRequired && canSettings && (
+            <button
+              onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings') }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+              role="menuitem"
+            >
+              <FontAwesomeIcon icon={faFolderOpen} className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+              <span>Storage</span>
+            </button>
+          )}
+
           {/* Admin settings rows — only shown to users with system.settings permission */}
           {authRequired && canSettings && (
             <>

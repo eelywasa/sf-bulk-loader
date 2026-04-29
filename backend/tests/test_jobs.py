@@ -196,9 +196,8 @@ def test_download_success_csv(auth_client):
 
         job_id = _seed_job_with_files(plan_id, run_id, success=csv_rel)
 
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/success-csv")
 
     assert resp.status_code == 200
@@ -231,9 +230,8 @@ def test_download_error_csv_file_missing_on_disk_returns_404(auth_client):
     # Record exists in DB but file is gone from disk
     job_id = _seed_job_with_files(plan_id, run_id, error="missing_file.csv")
 
-    from unittest.mock import patch
-    with patch("app.api.jobs.settings") as mock_settings:
-        mock_settings.output_dir = "/nonexistent"
+    from unittest.mock import patch, AsyncMock
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value="/nonexistent")):
         resp = auth_client.get(f"/api/jobs/{job_id}/error-csv")
 
     assert resp.status_code == 404
@@ -296,9 +294,8 @@ def test_preview_success_csv_returns_header_and_rows(auth_client):
         )
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/success-csv/preview")
 
     assert resp.status_code == 200
@@ -323,9 +320,8 @@ def test_preview_success_csv_has_next_true(auth_client):
         )
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/success-csv/preview?limit=2")
 
     assert resp.status_code == 200
@@ -346,9 +342,8 @@ def test_preview_success_csv_has_next_false_on_last_page(auth_client):
         )
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/success-csv/preview?limit=5")
 
     assert resp.status_code == 200
@@ -368,9 +363,8 @@ def test_preview_success_csv_offset_returns_second_page(auth_client):
         )
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/success-csv/preview?limit=2&offset=2")
 
     assert resp.status_code == 200
@@ -402,9 +396,8 @@ def test_preview_success_csv_filtered_returns_filtered_rows(auth_client):
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
         filters_json = urllib.parse.quote('[{"column":"sf__Error","value":"DUPLICATE"}]')
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(
                 f"/api/jobs/{job_id}/success-csv/preview?filters={filters_json}"
             )
@@ -431,9 +424,8 @@ def test_preview_success_csv_filtered_no_matches(auth_client):
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
         filters_json = urllib.parse.quote('[{"column":"sf__Id","value":"NOMATCH"}]')
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(
                 f"/api/jobs/{job_id}/success-csv/preview?filters={filters_json}"
             )
@@ -456,9 +448,8 @@ def test_preview_success_csv_file_missing_on_disk_returns_404(auth_client):
     _, plan_id, run_id = _setup_run(auth_client)
     job_id = _seed_job_with_files(plan_id, run_id, success="missing.csv")
 
-    from unittest.mock import patch
-    with patch("app.api.jobs.settings") as mock_settings:
-        mock_settings.output_dir = "/nonexistent"
+    from unittest.mock import patch, AsyncMock
+    with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value="/nonexistent")):
         resp = auth_client.get(f"/api/jobs/{job_id}/success-csv/preview")
 
     assert resp.status_code == 404
@@ -474,9 +465,8 @@ def test_preview_success_csv_unknown_filter_column_returns_400(auth_client):
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
         filters_json = urllib.parse.quote('[{"column":"Nonexistent","value":"x"}]')
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(
                 f"/api/jobs/{job_id}/success-csv/preview?filters={filters_json}"
             )
@@ -494,9 +484,8 @@ def test_preview_success_csv_malformed_filters_json_returns_400(auth_client):
         job_id = _seed_job_with_files(plan_id, run_id, success="success.csv")
 
         bad = urllib.parse.quote("not-json")
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/success-csv/preview?filters={bad}")
 
     assert resp.status_code == 400
@@ -514,9 +503,8 @@ def test_preview_error_csv_returns_header_and_rows(auth_client):
         )
         job_id = _seed_job_with_files(plan_id, run_id, error="error.csv")
 
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/error-csv/preview")
 
     assert resp.status_code == 200
@@ -538,9 +526,8 @@ def test_preview_unprocessed_csv_returns_header_and_rows(auth_client):
         )
         job_id = _seed_job_with_unprocessed(plan_id, run_id, unprocessed="unprocessed.csv")
 
-        from unittest.mock import patch
-        with patch("app.api.jobs.settings") as mock_settings:
-            mock_settings.output_dir = tmpdir
+        from unittest.mock import patch, AsyncMock
+        with patch("app.services.settings.dirs.effective_output_dir", new=AsyncMock(return_value=tmpdir)):
             resp = auth_client.get(f"/api/jobs/{job_id}/unprocessed-csv/preview")
 
     assert resp.status_code == 200
