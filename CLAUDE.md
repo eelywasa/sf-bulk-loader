@@ -49,28 +49,37 @@ For direct-to-main commits (hotfixes, CI/docs-only changes) a PR is not required
 ## Release Workflow
 
 Tags trigger the `Release` workflow, which builds desktop installers and
-GHCR images and creates the GitHub Release. The release body is **not**
-auto-populated — release notes must be attached manually after tagging.
+GHCR images and uploads them to the GitHub Release. The workflow uses
+`softprops/action-gh-release@v2`, which **updates** an existing release
+rather than creating a new one — so the cleanest flow is to create the
+release with notes attached up front, in the same call that creates the
+tag. The workflow then finds the existing release and adds artifacts to it.
 
 Sequence when cutting a release:
 
 1. Wait for push-to-main CI to be fully green.
-2. Tag and push: `git tag -a vX.Y -m "vX.Y: <one-line summary>" && git push origin vX.Y`.
-3. **Wait for the Release workflow to create the GitHub Release** before
-   running `gh release edit`. The workflow takes a few minutes to spin up
-   and publish the empty release; calling `gh release edit vX.Y --notes-file …`
-   before that point fails with `release not found`. Either poll
-   `gh release view vX.Y` until it succeeds, or wait until the
-   `Build Electron — *` jobs start (the release is created early in the
-   workflow). Don't try to attach notes immediately after `git push`.
-4. Compose notes following the v0.8 / v0.9 convention — sections for
-   *Features*, *Improvements*, *Bug fixes*, *CI / infrastructure*, with
-   bold lead phrases and Jira-linked tickets — then
-   `gh release edit vX.Y --notes-file /tmp/notes.md`.
+2. Compose release notes following the v0.8 / v0.9 convention — sections
+   for *Features*, *Improvements*, *Bug fixes*, *CI / infrastructure*,
+   with bold lead phrases and Jira-linked tickets. Source material:
+   `git log <prev-tag>..HEAD --oneline` plus merged PR titles
+   (`gh pr view <n> --json title`). Each merged PR since the last tag
+   should be represented.
+3. Create the tag **and** the release in one shot:
+   ```bash
+   gh release create vX.Y \
+     --target main \
+     --title "vX.Y" \
+     --notes-file /tmp/notes.md
+   ```
+   This pushes the tag to the remote, creates the GitHub Release with
+   notes, and triggers the Release workflow.
+4. Wait for the workflow to complete and verify the installers and
+   GHCR images are attached.
 
-Source material for the notes: `git log <prev-tag>..<new-tag> --oneline`
-plus the merged PR titles (`gh pr view <n> --json title`). Each merged PR
-since the last tag should be represented.
+Avoid the older `git tag && git push origin vX.Y && gh release edit ...`
+flow: the Release workflow takes a few minutes to publish an empty
+release, and `gh release edit` fails with "release not found" if called
+before then. Creating the release up front sidesteps the race entirely.
 
 ## Epic Delivery: One PR Per Epic
 
