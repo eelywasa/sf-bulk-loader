@@ -92,7 +92,7 @@ some `CASCADE` deletes that should have removed child rows may have left
 orphans behind. Scan for them with:
 
 ```bash
-python scripts/scan_fk_orphans.py --db /path/to/sf_bulk_loader.db
+python backend/scripts/scan_fk_orphans.py --db /path/to/sf_bulk_loader.db
 ```
 
 The script is read-only. It walks each FK above and counts rows whose

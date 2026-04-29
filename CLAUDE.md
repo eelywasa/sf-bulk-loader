@@ -228,21 +228,27 @@ cd frontend && npm run typecheck
 ## Backend Architecture
 
 ```
-backend/app/
-├── main.py          # FastAPI app init, CORS, router registration
-├── config.py        # Pydantic Settings — reads from .env or ../.env
-├── database.py      # Async SQLAlchemy engine, session factory, Base
-├── models/          # SQLAlchemy 2.0 ORM models
-├── schemas/         # Pydantic request/response schemas (mirror models/)
-├── api/             # Route handlers (connections, load_plans, load_steps, load_runs, jobs, utility)
-├── services/        # Business logic
-│   ├── orchestrator.py      # Main execution engine
-│   ├── salesforce_auth.py   # JWT Bearer OAuth 2.0, Fernet-encrypted private keys, token caching
-│   ├── salesforce_bulk.py   # Bulk API 2.0 client — job lifecycle, polling with backoff
-│   └── csv_processor.py     # Glob discovery, streaming CSV partitioning
-└── utils/
-    └── ws_manager.py        # WebSocket manager for real-time run status broadcasts
+backend/
+├── app/
+│   ├── main.py          # FastAPI app init, CORS, router registration
+│   ├── config.py        # Pydantic Settings — reads from .env or ../.env
+│   ├── database.py      # Async SQLAlchemy engine, session factory, Base
+│   ├── models/          # SQLAlchemy 2.0 ORM models
+│   ├── schemas/         # Pydantic request/response schemas (mirror models/)
+│   ├── api/             # Route handlers (connections, load_plans, load_steps, load_runs, jobs, utility)
+│   ├── services/        # Business logic
+│   │   ├── orchestrator.py      # Main execution engine
+│   │   ├── salesforce_auth.py   # JWT Bearer OAuth 2.0, Fernet-encrypted private keys, token caching
+│   │   ├── salesforce_bulk.py   # Bulk API 2.0 client — job lifecycle, polling with backoff
+│   │   └── csv_processor.py     # Glob discovery, streaming CSV partitioning
+│   └── utils/
+│       └── ws_manager.py        # WebSocket manager for real-time run status broadcasts
+└── scripts/             # Backend operator/admin scripts (run from repo root: python backend/scripts/...)
+    ├── migrate_sqlite_to_postgres.py   # One-shot SQLite → Postgres data migration
+    └── scan_fk_orphans.py              # Read-only FK orphan scanner (pre-dates PRAGMA fix)
 ```
+
+**Backend scripts convention:** Any standalone operator or admin script that imports from `app/` or otherwise belongs to the backend must live under `backend/scripts/`, not at the repo root. This matters because the CI path filter gates the PostgreSQL test jobs on `backend/**`; scripts at the repo root would be missed and their tests would never run under Postgres.
 
 ### Execution Flow (orchestrator.py)
 `execute_run(run_id)` runs as a background task:

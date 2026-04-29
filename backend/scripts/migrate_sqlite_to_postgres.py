@@ -15,15 +15,15 @@ migrate is run.
 Usage:
     export ENCRYPTION_KEY=$(cat /data/db/encryption.key)
 
-    python scripts/migrate_sqlite_to_postgres.py validate \\
+    python backend/scripts/migrate_sqlite_to_postgres.py validate \\
         --source /data/db/bulk_loader.db \\
         --target postgresql+asyncpg://user:pass@localhost:5432/bulk_loader
 
-    python scripts/migrate_sqlite_to_postgres.py migrate \\
+    python backend/scripts/migrate_sqlite_to_postgres.py migrate \\
         --source /data/db/bulk_loader.db \\
         --target postgresql+asyncpg://user:pass@localhost:5432/bulk_loader
 
-    python scripts/migrate_sqlite_to_postgres.py verify \\
+    python backend/scripts/migrate_sqlite_to_postgres.py verify \\
         --source /data/db/bulk_loader.db \\
         --target postgresql+asyncpg://user:pass@localhost:5432/bulk_loader
 """

@@ -113,7 +113,7 @@ If you have a long-running install and want to surface latent
 inconsistencies before upgrading, run the read-only scanner:
 
 ```bash
-python scripts/scan_fk_orphans.py --db /path/to/bulk_loader.db
+python backend/scripts/scan_fk_orphans.py --db /path/to/bulk_loader.db
 ```
 
 A clean DB prints `0` for every FK and exits `0`. Any non-zero count

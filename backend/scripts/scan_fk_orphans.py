@@ -16,8 +16,8 @@ whose non-NULL FK column points at a missing parent. It is read-only.
 
 Usage::
 
-    python scripts/scan_fk_orphans.py --db /path/to/sf_bulk_loader.db
-    python scripts/scan_fk_orphans.py                         # uses DATABASE_URL
+    python backend/scripts/scan_fk_orphans.py --db /path/to/sf_bulk_loader.db
+    python backend/scripts/scan_fk_orphans.py                 # uses DATABASE_URL
 
 Exit codes:
     0 — no orphans found in any FK
