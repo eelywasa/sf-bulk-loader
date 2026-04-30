@@ -68,6 +68,7 @@ const backendStack = new BackendStack(app, `${prefix}-Backend`, {
   encryptionKeySecret: dataStack.encryptionKeySecret,
   jwtSecretKeySecret: dataStack.jwtSecretKeySecret,
   databaseUrlSecret: dataStack.databaseUrlSecret,
+  adminEmailSecret: dataStack.adminEmailSecret,
   adminPasswordSecret: dataStack.adminPasswordSecret,
   backendDomainName: envConfig.backendDomainName as string,
   backendCertificateArn: envConfig.backendCertificateArn as string,

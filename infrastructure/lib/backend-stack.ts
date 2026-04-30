@@ -27,6 +27,7 @@ export interface BackendStackProps extends cdk.StackProps {
   encryptionKeySecret: secretsmanager.Secret;
   jwtSecretKeySecret: secretsmanager.Secret;
   databaseUrlSecret: secretsmanager.Secret;
+  adminEmailSecret: secretsmanager.Secret;
   adminPasswordSecret: secretsmanager.Secret;
   /** DNS hostname that CloudFront uses as the backend origin (for example api.example.com). */
   backendDomainName: string;
@@ -62,7 +63,8 @@ export interface BackendStackProps extends cdk.StackProps {
  *     /{env}/bulk-loader/encryption-key  → ENCRYPTION_KEY
  *     /{env}/bulk-loader/jwt-secret-key  → JWT_SECRET_KEY
  *     /{env}/bulk-loader/database-url    → DATABASE_URL
- *     /{env}/bulk-loader/admin-password  → ADMIN_PASSWORD
+ *     /{env}/bulk-loader/admin-email     → ADMIN_EMAIL    (first boot only)
+ *     /{env}/bulk-loader/admin-password  → ADMIN_PASSWORD (first boot only)
  *
  *   SSM Parameter Store (non-sensitive) → ECS task environment:
  *     /{env}/bulk-loader/cors-origins    → CORS_ORIGINS
@@ -155,6 +157,7 @@ export class BackendStack extends cdk.Stack {
         ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(props.encryptionKeySecret),
         JWT_SECRET_KEY: ecs.Secret.fromSecretsManager(props.jwtSecretKeySecret),
         DATABASE_URL: ecs.Secret.fromSecretsManager(props.databaseUrlSecret),
+        ADMIN_EMAIL: ecs.Secret.fromSecretsManager(props.adminEmailSecret),
         ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(props.adminPasswordSecret),
       },
 
@@ -188,6 +191,7 @@ export class BackendStack extends cdk.Stack {
     props.encryptionKeySecret.grantRead(taskDefinition.executionRole!);
     props.jwtSecretKeySecret.grantRead(taskDefinition.executionRole!);
     props.databaseUrlSecret.grantRead(taskDefinition.executionRole!);
+    props.adminEmailSecret.grantRead(taskDefinition.executionRole!);
     props.adminPasswordSecret.grantRead(taskDefinition.executionRole!);
     corsOriginsParam.grantRead(taskDefinition.executionRole!);
     logLevelParam.grantRead(taskDefinition.executionRole!);

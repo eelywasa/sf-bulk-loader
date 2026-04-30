@@ -29,7 +29,8 @@ export interface DataStackProps extends cdk.StackProps {
  *   /{env}/bulk-loader/encryption-key  → ENCRYPTION_KEY
  *   /{env}/bulk-loader/jwt-secret-key  → JWT_SECRET_KEY
  *   /{env}/bulk-loader/database-url    → DATABASE_URL
- *   /{env}/bulk-loader/admin-password  → ADMIN_PASSWORD
+ *   /{env}/bulk-loader/admin-email     → ADMIN_EMAIL    (used on first boot only)
+ *   /{env}/bulk-loader/admin-password  → ADMIN_PASSWORD (used on first boot only)
  *
  * Provision actual secret values before first ECS deployment:
  *   aws secretsmanager put-secret-value \
@@ -51,6 +52,7 @@ export class DataStack extends cdk.Stack {
   public readonly encryptionKeySecret: secretsmanager.Secret;
   public readonly jwtSecretKeySecret: secretsmanager.Secret;
   public readonly databaseUrlSecret: secretsmanager.Secret;
+  public readonly adminEmailSecret: secretsmanager.Secret;
   public readonly adminPasswordSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
@@ -164,6 +166,11 @@ export class DataStack extends cdk.Stack {
       secretName: `/${env}/bulk-loader/database-url`,
       description: 'Full PostgreSQL asyncpg connection URL including credentials (DATABASE_URL)',
       // Format: postgresql+asyncpg://user:password@rds-endpoint:5432/bulk_loader?ssl=require
+    });
+
+    this.adminEmailSecret = new secretsmanager.Secret(this, 'AdminEmailSecret', {
+      secretName: `/${env}/bulk-loader/admin-email`,
+      description: 'Bootstrap admin email / login identifier for first-boot user seeding (ADMIN_EMAIL)',
     });
 
     this.adminPasswordSecret = new secretsmanager.Secret(this, 'AdminPasswordSecret', {
