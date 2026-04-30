@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
@@ -17,6 +18,8 @@ export interface DataStackProps extends cdk.StackProps {
  * DataStack — persistent data layer for the aws_hosted distribution.
  *
  * Provisions:
+ *   - ECR repository for the backend Docker image (must exist before BackendStack
+ *     deploys, so the ECS service can pull a real tag — see SFBL-276)
  *   - RDS PostgreSQL instance in private subnets
  *   - S3 bucket for input CSV files (source data)
  *   - S3 bucket for output/results files
@@ -32,8 +35,16 @@ export interface DataStackProps extends cdk.StackProps {
  *   aws secretsmanager put-secret-value \
  *     --secret-id /{env}/bulk-loader/encryption-key \
  *     --secret-string "$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+ *
+ * Deploy order (per SFBL-276 first-deploy fix):
+ *   1. NetworkStack   — VPC + security groups
+ *   2. DataStack      — ECR + RDS + S3 + Secrets Manager  ← (this stack)
+ *   3. (operator)     — push the initial backend image to ECR
+ *   4. BackendStack   — ECS service consumes the existing repository
+ *   5. FrontendStack  — CloudFront + S3 + BucketDeployment
  */
 export class DataStack extends cdk.Stack {
+  public readonly backendRepository: ecr.Repository;
   public readonly database: rds.DatabaseInstance;
   public readonly inputBucket: s3.Bucket;
   public readonly outputBucket: s3.Bucket;
@@ -46,6 +57,24 @@ export class DataStack extends cdk.Stack {
     super(scope, id, props);
 
     const env = props.envName;
+
+    // --- ECR Repository ---
+    // Must exist before BackendStack so the ECS service can pull a real tag.
+    // Operators push the initial image between DataStack and BackendStack
+    // deploys; subsequent deploys use the migration-task pattern from SFBL-277.
+    this.backendRepository = new ecr.Repository(this, 'BackendRepository', {
+      repositoryName: `bulk-loader-backend-${env}`,
+      removalPolicy: env === 'production'
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY,
+      lifecycleRules: [
+        {
+          // Retain only the 10 most recent images to control storage costs.
+          maxImageCount: 10,
+          description: 'Keep last 10 images',
+        },
+      ],
+    });
 
     // --- RDS PostgreSQL ---
     // Placed in isolated subnets — no internet route, reachable from within the VPC only.
@@ -143,6 +172,11 @@ export class DataStack extends cdk.Stack {
     });
 
     // --- Outputs ---
+    new cdk.CfnOutput(this, 'EcrRepositoryUri', {
+      value: this.backendRepository.repositoryUri,
+      description: 'ECR repository URI — push the backend image here before deploying BackendStack',
+      exportName: `${this.stackName}-EcrRepositoryUri`,
+    });
     new cdk.CfnOutput(this, 'InputBucketName', {
       value: this.inputBucket.bucketName,
       description: 'S3 bucket for input CSV files',

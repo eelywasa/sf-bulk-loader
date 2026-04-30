@@ -64,6 +64,7 @@ const backendStack = new BackendStack(app, `${prefix}-Backend`, {
   backendServiceSecurityGroup: networkStack.backendServiceSecurityGroup,
   inputBucket: dataStack.inputBucket,
   outputBucket: dataStack.outputBucket,
+  backendRepository: dataStack.backendRepository,
   encryptionKeySecret: dataStack.encryptionKeySecret,
   jwtSecretKeySecret: dataStack.jwtSecretKeySecret,
   databaseUrlSecret: dataStack.databaseUrlSecret,

@@ -18,6 +18,12 @@ export interface BackendStackProps extends cdk.StackProps {
   backendServiceSecurityGroup: ec2.SecurityGroup;
   inputBucket: s3.Bucket;
   outputBucket: s3.Bucket;
+  /**
+   * ECR repository created by DataStack. BackendStack consumes the existing
+   * repository — operators must push at least one image to it before this
+   * stack is deployed (see SFBL-276 deploy ordering).
+   */
+  backendRepository: ecr.IRepository;
   encryptionKeySecret: secretsmanager.Secret;
   jwtSecretKeySecret: secretsmanager.Secret;
   databaseUrlSecret: secretsmanager.Secret;
@@ -36,7 +42,6 @@ export interface BackendStackProps extends cdk.StackProps {
  * BackendStack — ECS/Fargate backend service for the aws_hosted distribution.
  *
  * Provisions:
- *   - ECR repository for the backend Docker image
  *   - ECS cluster (Fargate; no EC2 capacity to manage)
  *   - Fargate task definition with:
  *       - Secrets Manager injection for all sensitive env vars
@@ -45,6 +50,11 @@ export interface BackendStackProps extends cdk.StackProps {
  *   - Application Load Balancer (HTTPS on 443 → HTTP on 8000 internally)
  *   - Route53 alias record for the backend origin hostname used by CloudFront
  *   - CloudWatch Logs log group
+ *
+ * The ECR repository for the backend image is created by DataStack (see
+ * SFBL-276 — first-deploy ordering fix). Operators must push an image to
+ * the repository before deploying this stack, otherwise the ECS service
+ * fails its first task launch with an image-not-found error.
  *
  * Runtime config injection model:
  *
@@ -80,23 +90,7 @@ export class BackendStack extends cdk.Stack {
     super(scope, id, props);
 
     const env = props.envName;
-
-    // --- ECR Repository ---
-    // Build and push the backend image here before deploying ECS.
-    // See aws.md for the full docker buildx → ECR push workflow.
-    const repository = new ecr.Repository(this, 'BackendRepository', {
-      repositoryName: `bulk-loader-backend-${env}`,
-      removalPolicy: env === 'production'
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
-      lifecycleRules: [
-        {
-          // Retain only the 10 most recent images to control storage costs.
-          maxImageCount: 10,
-          description: 'Keep last 10 images',
-        },
-      ],
-    });
+    const repository = props.backendRepository;
 
     // --- CloudWatch Logs ---
     const logGroup = new logs.LogGroup(this, 'BackendLogGroup', {
@@ -286,10 +280,6 @@ export class BackendStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'BackendOriginDomainName', {
       value: props.backendDomainName,
       description: 'DNS name that CloudFront uses as the HTTPS backend origin',
-    });
-    new cdk.CfnOutput(this, 'EcrRepositoryUri', {
-      value: repository.repositoryUri,
-      description: 'ECR repository URI — push the backend image here before deploying',
     });
     new cdk.CfnOutput(this, 'EcsClusterName', {
       value: cluster.clusterName,
