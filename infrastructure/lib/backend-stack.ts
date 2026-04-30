@@ -192,9 +192,14 @@ export class BackendStack extends cdk.Stack {
 
       portMappings: [{ containerPort: 8000 }],
 
-      // Container health check mirrors the /api/health endpoint.
+      // Container health check uses /api/health/live: process-only check that
+      // returns 200 whenever the uvicorn server is running. Used by ECS to
+      // decide whether to restart the container. We deliberately do NOT use
+      // /api/health/ready here, because a transient DB blip would cause ECS
+      // to kill an otherwise-healthy task that just needs the DB to recover.
+      // See app/api/utility.py for the endpoint definitions.
       healthCheck: {
-        command: ['CMD-SHELL', 'curl -f http://localhost:8000/api/health || exit 1'],
+        command: ['CMD-SHELL', 'curl -f http://localhost:8000/api/health/live || exit 1'],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         retries: 3,
@@ -264,12 +269,19 @@ export class BackendStack extends cdk.Stack {
 
     // Register ECS service with ALB target group.
     // /api/* and /ws/* are routed to the backend; / is handled by CloudFront → S3.
+    //
+    // ALB target health uses /api/health/ready, which returns 503 when the DB
+    // is unreachable. This pulls a degraded task out of rotation so traffic
+    // does not hit it; ECS keeps the task alive (the container's own
+    // /api/health/live check still passes) so the task can rejoin once the
+    // DB recovers. The legacy /api/health endpoint returns 200 even when DB
+    // connectivity is broken, which is why we do not use it here.
     httpsListener.addTargets('BackendTarget', {
       port: 8000,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [service],
       healthCheck: {
-        path: '/api/health',
+        path: '/api/health/ready',
         interval: cdk.Duration.seconds(30),
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 3,
