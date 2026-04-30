@@ -71,9 +71,14 @@ is required or acceptable for a reproducible deployment.
 | Stack | Contents |
 |-------|----------|
 | `BulkLoader-{env}-Network` | VPC, public subnets (ALB + ECS) and isolated subnets (RDS) across 2 AZs, S3 Gateway Endpoint |
-| `BulkLoader-{env}-Data` | RDS PostgreSQL, S3 input + output buckets, Secrets Manager secrets |
-| `BulkLoader-{env}-Backend` | ECR repository, ECS cluster, Fargate task/service, ALB, backend Route53 alias |
-| `BulkLoader-{env}-Frontend` | CloudFront distribution, S3 frontend bucket |
+| `BulkLoader-{env}-Data` | ECR repository, RDS PostgreSQL (with `force_ssl=1` parameter group), S3 input + output buckets, Secrets Manager secrets, SES domain identity |
+| `BulkLoader-{env}-Backend` | ECS cluster, Fargate task/service, ALB, backend Route53 alias, SES IAM policies |
+| `BulkLoader-{env}-Frontend` | CloudFront distribution, S3 frontend bucket, automated `BucketDeployment` of the Vite build |
+
+**ECR lives in `Data`, not `Backend`** — this is deliberate. The ECS service in
+`Backend` cannot start until at least one image exists in ECR; the split lets
+the operator deploy `Network + Data` first, push the image, then deploy
+`Backend + Frontend`. See "First Deployment" below.
 
 Environments (`staging`, `production`) are parameterised via CDK context — same code, different
 values. Environment configuration lives in `infrastructure/cdk.json` under `context.environments`.
@@ -110,9 +115,14 @@ All application configuration is injected into the ECS task at launch. No config
 mounted; no filesystem state is read for configuration. The application reads everything from
 environment variables, which is compatible with the existing `config.py` model.
 
-### Secrets Manager (sensitive values)
+All injected env vars use the ECS task `secrets:` mapping — both Secrets Manager
+and SSM Parameter Store values are resolved at task launch via
+`ecs.Secret.fromSecretsManager(...)` / `ecs.Secret.fromSsmParameter(...)`. This
+means a parameter edit + service rolling restart picks up the new value
+without a `cdk deploy`. The synthesised template carries the parameter ARN
+references, never the literal value.
 
-Injected as ECS task secrets — values never appear in plaintext in the task definition.
+### Secrets Manager (sensitive values)
 
 | Secret name | App env var | Contents |
 |-------------|-------------|----------|
@@ -123,15 +133,21 @@ Injected as ECS task secrets — values never appear in plaintext in the task de
 | `/{env}/bulk-loader/admin-password` | `ADMIN_PASSWORD` | Bootstrap admin password (used on first boot only) |
 | `/{env}/bulk-loader/rds-credentials` | (internal) | RDS master credentials — managed by RDS, used to construct DATABASE_URL |
 
-### SSM Parameter Store (non-sensitive values)
-
-Resolved by ECS at task launch and injected as plain environment variables.
+### SSM Parameter Store (non-sensitive runtime config)
 
 | Parameter name | App env var | Example value |
 |----------------|-------------|---------------|
 | `/{env}/bulk-loader/cors-origins` | `CORS_ORIGINS` | `["https://bulk-loader.example.com"]` |
 | `/{env}/bulk-loader/log-level` | `LOG_LEVEL` | `INFO` |
+| `/{env}/bulk-loader/admin-username` | `ADMIN_USERNAME` | `admin` (display name for the bootstrap user) |
 | `/{env}/bulk-loader/frontend-base-url` | `FRONTEND_BASE_URL` | `https://bulk-loader.example.com` — used to build absolute URLs in outbound email (invitations, password resets) |
+| `/{env}/bulk-loader/email-from-address` | `EMAIL_FROM_ADDRESS` | `notifications@your-domain.example` — must be verified in SES (see "Email (SES)" section) |
+| `/{env}/bulk-loader/email-ses-region` | `EMAIL_SES_REGION` | `eu-west-1` (defaults to deploy region if blank) |
+
+Other runtime-tunable values — `SF_API_VERSION`, `DEFAULT_PARTITION_SIZE`,
+JWT lifetime, login rate limits, password reset TTLs — are managed via the
+`/settings/*` admin UI post-deploy and stored in the `app_settings` table.
+They do not need to be injected as env vars.
 
 ### Hardcoded in task definition
 
@@ -363,7 +379,17 @@ The `aws_hosted` profile requires a PostgreSQL `DATABASE_URL`. Any standard
 DATABASE_URL=postgresql+asyncpg://user:password@rds-endpoint:5432/bulk_loader?ssl=require
 ```
 
-Add `?ssl=require` for RDS instances with SSL enforcement (recommended).
+`?ssl=require` is mandatory — the RDS instance is configured with a custom
+parameter group that sets `rds.force_ssl=1`, so the server rejects any
+non-TLS connection. The `BulkLoader-{env}-Data` stack output
+`RdsParameterGroupName` lets operators verify the parameter group is
+actually attached post-deploy.
+
+Storage is encrypted at rest (`storageEncrypted: true` set explicitly on
+the `DatabaseInstance`).
+
+The `aws_hosted` profile rejects SQLite at startup — `config.py` enforces
+that `DATABASE_URL` starts with `postgresql+asyncpg://`.
 
 Alembic migrations run automatically on container start before uvicorn:
 
@@ -373,35 +399,161 @@ CMD: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 This means each ECS task start applies any pending migrations. In production with multiple
 tasks, only one task should run migrations — configure `minHealthyPercent: 100` and deploy
-one task at a time, or use a separate one-off migration task. **TODO: implement a migration
-task pattern for production multi-task deployments.**
+one task at a time, or use a separate one-off migration task. **The one-shot migration
+task pattern is being implemented under SFBL-277**, which will gate inline migrations
+behind a `RUN_MIGRATIONS` env var (default `true` for self-hosted, set `false` in
+the AWS task definition).
 
 ---
 
 ## File Storage
 
-The `aws_hosted` profile sets `input_storage_mode=s3`. Source CSV files are read from S3
-rather than the local filesystem. Configure an input connection in the application UI
-(Connections page → New Input Connection → S3 provider) pointing at the input S3 bucket
-provisioned by the Data stack.
+The `aws_hosted` profile sets `input_storage_mode=s3`. Source CSV files are
+read from S3 rather than the local filesystem; result files from the Bulk
+API are written to S3.
 
-Output/result files from the Bulk API are stored in the output S3 bucket. The ECS task
-role grants read/write access to both buckets automatically.
+### S3 input/output connections (IAM access keys required)
+
+The application reads and writes S3 via per-Connection AWS access keys
+stored encrypted in the database, **not** via the ECS task role's default
+credential chain. This means the Data stack's input/output buckets are not
+automatically accessible to the running application — operators must
+configure an InputConnection (or OutputConnection) in the UI with explicit
+credentials.
+
+Setup steps after the buckets are provisioned:
+
+1. **Create an IAM user** in the deploying account, e.g. `bulk-loader-{env}-s3`.
+2. **Attach an inline policy** scoped to the input + output buckets:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": ["s3:ListBucket"],
+         "Resource": [
+           "arn:aws:s3:::<input-bucket>",
+           "arn:aws:s3:::<output-bucket>"
+         ]
+       },
+       {
+         "Effect": "Allow",
+         "Action": ["s3:GetObject"],
+         "Resource": ["arn:aws:s3:::<input-bucket>/*"]
+       },
+       {
+         "Effect": "Allow",
+         "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+         "Resource": ["arn:aws:s3:::<output-bucket>/*"]
+       }
+     ]
+   }
+   ```
+3. **Generate access keys** for the IAM user and copy them.
+4. **In the running application**, navigate to *Connections → New Input
+   Connection*. Choose the S3 provider, paste the access key ID + secret,
+   set the bucket and region, and use the connection's "Test" button to
+   verify read (and write, for output connections) access.
+
+The bucket retention lifecycle rules are driven by the chosen tier (see
+"Sizing and cost"). With `inputRetentionDays`/`outputRetentionDays` > 0,
+S3 will expire objects after that many days; set to 0 to retain forever.
+
+A code-path alternative — `InputConnection.use_task_role` mode that lets
+boto3 resolve credentials from the ECS task role's default credential
+chain, eliminating BYO keys for first-party buckets — is filed under
+[SFBL-295](https://matthew-jenkin.atlassian.net/browse/SFBL-295) (production-scale hardening epic).
+
+---
+
+## Email (SES)
+
+The `aws_hosted` profile defaults `email_backend=ses`. The application
+sends transactional email (invitations, password resets, run completion
+notifications) via SES v2 SendEmail using the ECS task role for IAM. The
+CDK provisions:
+
+- An `AWS::SES::EmailIdentity` for the configured domain
+  (`hostedZoneDomain`, or override via `cdk.json` env's
+  `sesIdentityDomain`).
+- A MAIL FROM subdomain (`mail.<domain>`) so receiving providers don't
+  show the "via amazonses.com" attribution.
+- Two scoped IAM policies on the ECS task role:
+  - `SesSendScopedToIdentity` — `ses:SendEmail` and `ses:SendRawEmail`,
+    restricted to the SES identity ARN. Limits blast radius if the role
+    is compromised.
+  - `SesAccountReadForHealthProbe` — `ses:GetAccount` and
+    `ses:GetSendQuota`, `Resource: "*"` (these are account-wide reads
+    that don't accept a resource ARN). Used by the
+    `/api/health/dependencies` SES probe.
+
+### Identity verification — DNS records
+
+DKIM verification requires three CNAME records added to your DNS
+provider. CDK does not auto-write them (the synth step would otherwise
+require a Route53 lookup against the deploying account, which fails in
+CI / placeholder environments). After `cdk deploy BulkLoader-{env}-Data`,
+read the DKIM records from the CloudFormation outputs:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name BulkLoader-{env}-Data \
+  --query "Stacks[0].Outputs[?starts_with(OutputKey, 'SesDkimRecord')].OutputValue" \
+  --output text
+```
+
+Each line is `<token>._domainkey.<domain> CNAME <token>.dkim.amazonses.com`.
+Add all three to the hosted zone for the domain. Verification typically
+completes within minutes; the SES console shows "Successful" once propagated.
+
+For the MAIL FROM domain (`mail.<domain>`), you also need:
+- `MX` record: `mail.<domain> 10 feedback-smtp.<region>.amazonses.com`
+- `TXT` record: `mail.<domain> "v=spf1 include:amazonses.com ~all"`
+
+### Configuring the From address
+
+After identity verification, set `EMAIL_FROM_ADDRESS` via SSM (see Runtime
+Configuration table above). The address must use the verified domain or a
+subdomain of it (e.g. `notifications@your-domain.example`).
+
+### Testing
+
+After SES is verified and `EMAIL_FROM_ADDRESS` is set:
+
+1. Trigger a password-reset from the running app (use the bootstrap admin
+   account).
+2. Watch CloudWatch Logs for the `email_ses_*` events.
+3. Confirm receipt at the test mailbox.
+4. Hit `/api/health/dependencies` and verify the `email` line is healthy
+   (uses `ses:GetSendQuota` — this is what the IAM policy
+   `SesAccountReadForHealthProbe` enables).
+
+If your account is in the SES sandbox, recipients must also be verified
+in the SES console. Production access is requested via the SES console
+(typically approved within 24h).
 
 ---
 
 ## Multi-Environment Pattern
 
-The CDK stacks support `staging` and `production` environments out of the box via CDK context.
-Environment-specific values (instance sizes, desired task counts, certificate ARNs, domain names,
-and hosted zone) live in `cdk.json` under `context.environments`. The stack code is shared and
-parameterised — no duplication.
+The CDK stacks support `staging` and `production` environments out of the
+box via CDK context. Environment-specific values (certificate ARNs, domain
+names, hosted zone) live in `cdk.json` under `context.environments`. The
+stack code is shared and parameterised — no duplication.
+
+Sizing — RDS instance class, ECS replica count, log retention, S3
+lifecycle — comes from a tier preset (Bronze / Silver / Gold) defined
+under `cdk.json` `context.tiers`. Each environment selects one via the
+`tier` field. See "Sizing and cost" above for what each tier provisions
+and the monthly cost estimate.
 
 To add a new environment:
 
-1. Add a block under `context.environments` in `cdk.json`
-2. Provision the ACM certificate for that environment
-3. Run `cdk deploy --all -c env=<new-env>`
+1. Add a block under `context.environments` in `cdk.json` with a `tier`
+   field (or override the tier shape per-env in `cdk.context.json`).
+2. Provision the ACM certificate for that environment.
+3. Run `cdk deploy --all -c env=<new-env>`.
 
 ---
 
