@@ -51,7 +51,13 @@ class TestAdvisoryLockSqlite:
             from alembic import command
 
             backend_root = Path(__file__).resolve().parent.parent
-            cfg = Config(str(backend_root / "alembic.ini"))
+            # Build the Config without an alembic.ini file path. env.py
+            # only calls `fileConfig(config.config_file_name)` when the path
+            # is set; bypassing it keeps the logging.fileConfig call out of
+            # the test session. fileConfig defaults to disable_existing_loggers
+            # = True, which silently kills every logger the rest of the test
+            # suite depends on for log-capture assertions.
+            cfg = Config()
             cfg.set_main_option("script_location", str(backend_root / "alembic"))
 
             # First upgrade — applies all migrations.
@@ -159,7 +165,10 @@ class TestAdvisoryLockPostgres:
         from alembic import command
 
         backend_root = Path(__file__).resolve().parent.parent
-        cfg = Config(str(backend_root / "alembic.ini"))
+        # Build the Config without an alembic.ini path. See the SQLite test
+        # above for why — fileConfig in env.py would silently disable every
+        # logger in the pytest session.
+        cfg = Config()
         cfg.set_main_option("script_location", str(backend_root / "alembic"))
 
         # Run all migrations under the advisory lock. The wrapper in
