@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -26,10 +28,13 @@ export interface FrontendStackProps extends cdk.StackProps {
  * TLS is terminated at CloudFront (wss:// at client, ws:// at ALB internally).
  * The certificate must be provisioned in us-east-1 regardless of the deployment region.
  *
- * After deploying this stack, upload the frontend build:
- *   cd frontend && npm run build
- *   aws s3 sync dist/ s3://<FrontendBucketName> --delete
- * Or use the CDK BucketDeployment construct below (currently stubbed).
+ * Frontend build deployment:
+ *   The Vite build at ../frontend/dist is uploaded to S3 and a CloudFront
+ *   invalidation is issued automatically by the BucketDeployment construct
+ *   below. Operators must run `cd frontend && npm run build` before
+ *   `cdk deploy BulkLoader-{env}-Frontend`. If ../frontend/dist is missing
+ *   at synth time the BucketDeployment is skipped with a warning — useful
+ *   for `cdk synth` smoke checks during development without a build.
  */
 export class FrontendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
@@ -114,20 +119,35 @@ export class FrontendStack extends cdk.Stack {
     });
 
     // --- Frontend Deployment ---
-    // TODO: wire up BucketDeployment to upload the Vite build output automatically.
-    // For now, deploy manually:
-    //   cd frontend && npm run build
-    //   aws s3 sync dist/ s3://<FrontendBucketName> --delete
-    //   aws cloudfront create-invalidation --distribution-id <DistributionId> --paths '/*'
+    // Uploads ../frontend/dist into the frontend bucket and invalidates the
+    // CloudFront distribution. Operators must run `cd frontend && npm run build`
+    // before `cdk deploy BulkLoader-{env}-Frontend` so the dist is present at
+    // synth time. Without it, the construct cannot package the asset.
     //
-    // Example BucketDeployment (uncomment and adjust path after build is integrated into CI):
-    // new s3deploy.BucketDeployment(this, 'DeployFrontend', {
-    //   sources: [s3deploy.Source.asset('../frontend/dist')],
-    //   destinationBucket: frontendBucket,
-    //   distribution,
-    //   distributionPaths: ['/*'],
-    // });
-    void s3deploy; // referenced above in the TODO comment — suppress unused import warning
+    // The dist path is resolved relative to the cdk app cwd (infrastructure/).
+    // We skip the construct when dist/ is missing so `cdk synth` still works
+    // for type-checking and template-shape validation in dev workflows that
+    // don't include a frontend build.
+    const distPath = path.resolve(__dirname, '..', '..', 'frontend', 'dist');
+    if (fs.existsSync(distPath) && fs.existsSync(path.join(distPath, 'index.html'))) {
+      new s3deploy.BucketDeployment(this, 'DeployFrontend', {
+        sources: [s3deploy.Source.asset(distPath)],
+        destinationBucket: frontendBucket,
+        distribution,
+        distributionPaths: ['/*'],
+        prune: true,  // remove objects from S3 that are not in dist/
+      });
+    } else {
+      // Surface the missing-build state at synth time so operators notice
+      // before running `cdk deploy`. Annotation appears in `cdk synth` output
+      // and on the CloudFormation events stream.
+      cdk.Annotations.of(this).addWarning(
+        `Frontend build not found at ${distPath}. ` +
+        `Run \`cd frontend && npm run build\` before \`cdk deploy\` so the ` +
+        `BucketDeployment construct can package the SPA. \`cdk synth\` will ` +
+        `succeed but the deployed frontend bucket will be empty until a build is uploaded.`
+      );
+    }
 
     // --- Outputs ---
     new cdk.CfnOutput(this, 'DistributionDomainName', {
