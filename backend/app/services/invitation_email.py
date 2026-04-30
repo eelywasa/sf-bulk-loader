@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 
-from app.config import settings
 from app.models.user import User
 from app.observability.events import AuthEvent, OutcomeCode
 from app.services.email.message import EmailCategory
@@ -23,9 +22,37 @@ _log = logging.getLogger(__name__)
 _TEMPLATE = "auth/invitation"
 
 
-def _build_accept_url(raw_token: str) -> str:
-    """Construct the accept URL from BASE_URL config."""
-    base_url = (settings.base_url or "").rstrip("/")
+async def _get_frontend_base_url() -> str:
+    """Resolve frontend_base_url from SettingsService.
+
+    Mirrors the pattern in auth_reset.py / profile.py / notifications/channels/email.py
+    so all email-emitting paths read the same DB-backed setting (registry key
+    ``frontend_base_url``, env var ``FRONTEND_BASE_URL`` for first-boot seed).
+    """
+    from app.services.settings.service import settings_service as _svc
+    if _svc is not None:
+        return (await _svc.get("frontend_base_url")) or ""
+    return ""
+
+
+async def _build_accept_url(raw_token: str) -> str:
+    """Construct the accept URL from the DB-backed frontend_base_url setting.
+
+    Logs a warning when frontend_base_url is unconfigured — the admin caller
+    still gets the raw token in the API response and can share the link
+    manually, but the email body will contain a broken URL.
+    """
+    base_url = (await _get_frontend_base_url()).rstrip("/")
+    if not base_url:
+        _log.warning(
+            "FRONTEND_BASE_URL not configured; invitation accept URL will be "
+            "relative. Set FRONTEND_BASE_URL in .env (or via /settings/email "
+            "post-boot) so invite emails contain a complete link.",
+            extra={
+                "event_name": AuthEvent.INVITATION_EMAIL_SENT,
+                "outcome_code": OutcomeCode.CONFIGURATION_ERROR,
+            },
+        )
     return f"{base_url}/invite/accept?token={raw_token}"
 
 
@@ -66,7 +93,7 @@ async def send_invitation_email(
         )
         return
 
-    accept_url = _build_accept_url(raw_token)
+    accept_url = await _build_accept_url(raw_token)
     display_name = user.display_name or user.email
 
     try:
