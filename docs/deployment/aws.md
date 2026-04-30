@@ -405,6 +405,94 @@ To add a new environment:
 
 ---
 
+## Sizing and cost
+
+The CDK exposes three named **tier presets** under `context.tiers` in `cdk.json`. Each
+environment selects a tier; the stack code reads tier values for instance classes,
+task counts, log retention, and the optional production-scale layers
+(arq/Redis worker tier, WAF, autoscaling). All prices below are **eu-west-1 (Ireland)
+on-demand, USD/month**, post-Free-Tier. Adjust by ~−10% for `us-east-1`, ~+10% for
+`ap-southeast-2`.
+
+### Tier matrix
+
+| Component | **Bronze** | **Silver** | **Gold** |
+|---|---|---|---|
+| Use case | 1-2 admins, demo/PoC | Small team (3-10 users), regular use | Customer-facing, audit/compliance |
+| RDS instance | db.t4g.micro Single-AZ | db.t4g.small Single-AZ | db.t4g.medium **Multi-AZ** |
+| RDS storage / backups | 20 GB / 1-day | 20 GB / 7-day | 100 GB / 30-day + cross-region snapshot |
+| Fargate API tasks | 1× (0.5 vCPU / 1 GB) | 2× (0.5 vCPU / 1 GB) | 2× (1 vCPU / 2 GB) + autoscaling 2-6 |
+| Fargate worker tier | none (orchestrator runs in API task) | none | 2× (1 vCPU / 2 GB) + queue-depth autoscaling |
+| Redis (rate-limit + arq) | none — per-process limiter | none — per-process limiter | ElastiCache cache.t4g.small Multi-AZ |
+| ALB | yes | yes | yes + access logs to S3 |
+| CloudFront | yes | yes | yes + AWS WAF managed-rule baseline |
+| Secrets Manager | 5 secrets | 5 secrets | 5 secrets + automated RDS credential rotation |
+| CloudWatch Logs | 1-week retention | 1-month retention | 1-year retention + metric-filter alarms |
+| ContainerInsights v2 | off | on | on |
+| CloudWatch alarms | none | RDS storage + ECS task count (~3) | full suite (~12) + SNS topics |
+
+### Monthly cost (eu-west-1)
+
+| Line item | Bronze | Silver | Gold |
+|---|---:|---:|---:|
+| RDS instance + storage + backups | $15 | $29 | $132 |
+| Fargate (API) | $20 | $40 | $80 |
+| Fargate (worker tier) | — | — | $80 |
+| ElastiCache Redis | — | — | $52 |
+| ALB (+ access logs at Gold) | $25 | $25 | $28 |
+| CloudFront (+ WAF at Gold) | $1 | $5 | $35 |
+| S3 (input + output + frontend) | $2 | $5 | $15 |
+| Secrets Manager | $2 | $2 | $2 |
+| ECR | $1 | $1 | $2 |
+| Route53 | $0.50 | $0.50 | $0.50 |
+| CloudWatch Logs + ContainerInsights | $3 | $10 | $25 |
+| CloudWatch alarms + SNS | — | $1 | $2 |
+| SES | $0 | $0 | $1 |
+| **Total** | **~$70/mo** | **~$120/mo** | **~$455/mo** |
+
+### What you give up at each tier
+
+**Bronze.** Single API task — task failure is a ~1-2 minute outage while ECS restarts.
+Single-AZ RDS — AZ failure means restore from backup (~30-60 min RTO). No alarms — you
+find out about problems when a user does. Caps at ~5 concurrent users before connection
+or CPU limits hit. Inline Alembic migrations on container start work fine because there
+is only one task.
+
+**Silver.** Two API tasks gives task-level HA, but the DB is still Single-AZ — an AZ
+outage still hurts. Per-process rate limiter is now broken across replicas (two
+processes don't share state) but acceptable for an internal team where login flooding
+is not a real threat. Migrations must use the one-shot migration task pattern (see
+"Ongoing Deployments") because concurrent service-task starts would race.
+
+**Gold.** Adds Multi-AZ RDS, Redis-backed shared state, the arq worker tier, WAF, and
+full alarming. Most of the increment over Silver is operational insurance — outages
+that would have been minutes at Silver become seconds at Gold; states that were
+unobserved become observed.
+
+### Caveats and variable costs
+
+- **ALB hourly ($25) is the floor at all tiers** — required for HTTPS termination and
+  WebSocket pass-through. Replacing with API Gateway HTTP API would save ~$24/month at
+  idle but is a non-trivial backend rewrite (WSS via a separate WebSocket API).
+- **Data egress to internet** — driven by output CSV downloads at $0.09/GB. A customer
+  pulling 100 GB/month of result files adds ~$9/month.
+- **Salesforce API egress** — free outbound from Fargate; bulk CSV bytes go S3 ↔ S3
+  over the free gateway endpoint.
+- **NAT Gateway** — zero (architecture deliberately uses public subnets).
+
+### Lever guide
+
+Knobs that materially shift cost without a tier change:
+
+- **RDS Multi-AZ on/off** — doubles the RDS instance cost. Skip for Bronze/Silver
+  unless you have a written uptime requirement.
+- **Worker tier on/off (Gold only)** — saves ~$80/month if you can run the orchestrator
+  in the API tasks. Acceptable when concurrent partition counts are low.
+- **WAF on/off (Gold only)** — saves ~$25/month. Skip if not customer-facing.
+- **CloudWatch log retention** — halve it to halve the storage line.
+
+---
+
 ## Security Notes
 
 - The Fargate container runs as a non-root user (inherited from `backend/Dockerfile`)
