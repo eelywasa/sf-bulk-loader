@@ -93,15 +93,34 @@ export class DataStack extends cdk.Stack {
       'Allow PostgreSQL from ECS tasks',
     );
 
+    // Custom parameter group — enforces TLS at the server (rds.force_ssl=1).
+    // Without this, Postgres accepts non-SSL connections even though the
+    // application connects with ?ssl=require; an attacker who reaches the
+    // VPC could downgrade the connection. The parameter group also gives us
+    // a lever for future tuning (shared_buffers, log_min_duration_statement,
+    // etc.) without recreating the DB.
+    const dbEngine = rds.DatabaseInstanceEngine.postgres({
+      version: rds.PostgresEngineVersion.VER_16,
+    });
+    const dbParameterGroup = new rds.ParameterGroup(this, 'DbParameterGroup', {
+      engine: dbEngine,
+      description: `Bulk Loader Postgres 16 parameter group (${env}) — force_ssl enforced`,
+      parameters: {
+        // Reject any connection that doesn't negotiate TLS. Application
+        // already connects with sslmode=require; this closes the loophole
+        // where a misconfigured client could connect in plaintext.
+        'rds.force_ssl': '1',
+      },
+    });
+
     // Instance size, Multi-AZ, allocated storage, and backup retention are
     // driven by the tier preset (props.tier). Production-grade tiers (Gold,
     // and Silver in production envs) opt into deletion protection + RETAIN
     // removal policy; Bronze stays DESTROY-on-stack-delete for cheap teardown.
     const isProductionGrade = props.tier.rdsMultiAz;
     this.database = new rds.DatabaseInstance(this, 'Database', {
-      engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16,
-      }),
+      engine: dbEngine,
+      parameterGroup: dbParameterGroup,
       instanceType: new ec2.InstanceType(props.tier.rdsInstanceClass),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
@@ -113,6 +132,10 @@ export class DataStack extends cdk.Stack {
       credentials: rds.Credentials.fromGeneratedSecret('bulk_loader_user', {
         secretName: `/${env}/bulk-loader/rds-credentials`,
       }),
+      // Always encrypt storage at rest. CDK defaults to encryption-on for
+      // most engines but we set it explicitly to make the security posture
+      // visible in the synthesised template.
+      storageEncrypted: true,
       multiAz: props.tier.rdsMultiAz,
       allocatedStorage: props.tier.rdsAllocatedStorage,
       maxAllocatedStorage: Math.max(props.tier.rdsAllocatedStorage * 5, 100),
@@ -199,6 +222,12 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'RdsEndpoint', {
       value: this.database.dbInstanceEndpointAddress,
       description: 'RDS PostgreSQL endpoint',
+    });
+    // Output the parameter group's CFN ref (resolves to the generated group name)
+    // so operators can verify the DB is using the force_ssl group post-deploy.
+    new cdk.CfnOutput(this, 'RdsParameterGroupName', {
+      value: (dbParameterGroup.node.defaultChild as rds.CfnDBParameterGroup).ref,
+      description: 'RDS parameter group name (force_ssl=1 — server-enforced TLS)',
     });
   }
 }
