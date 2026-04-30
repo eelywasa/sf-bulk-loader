@@ -130,7 +130,10 @@ class TestSendInvitationEmail:
         """The accept URL built from _build_accept_url includes the raw token."""
         from app.services.invitation_email import _build_accept_url
 
-        url = _build_accept_url("abc123")
+        async def _test():
+            return await _build_accept_url("abc123")
+
+        url = _run(_test())
         assert "abc123" in url
         assert "/invite/accept" in url
 

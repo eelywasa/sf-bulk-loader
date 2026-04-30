@@ -529,3 +529,159 @@ helper raised.
 **Trade-off:** The main body of `_execute_run` is now a nested function
 (`_execute_run_body`). That indirection is the cost of wrapping ~200 lines of code in
 `try/finally` without breaking the existing early-return paths.
+
+---
+
+## 019 — AWS-hosted CDK stack split: ECR in DataStack (SFBL-276)
+
+The first iteration of `aws_hosted` (Ticket 9) put both the ECR repository
+and the ECS service in `BackendStack`. A fresh `cdk deploy --all` would
+then start a Fargate task whose ECR image tag did not yet exist —
+deterministic first-deploy failure.
+
+ECR is now in `DataStack`, alongside RDS / S3 / Secrets Manager. Deploy
+order is **Network → Data → push image → Backend → Frontend**, with the
+operator pushing the initial image between the Data and Backend deploys.
+`BackendStack` consumes the ECR repo by reference (`Repository.fromRepositoryAttributes`).
+
+**Trade-off:** the logical resource path changed from
+`BulkLoader-{env}-Backend/BackendRepository` to
+`BulkLoader-{env}-Data/BackendRepository`. For an existing environment
+this would be a delete-and-recreate. The original CDK was scaffolding only
+(no real environments existed), so the change is benign — but the SFBL-280
+`self_hosted → aws_hosted` migration guide must call this out.
+
+---
+
+## 020 — SSM parameters injected as ECS Secrets, not Environment (SFBL-276)
+
+Originally `CORS_ORIGINS`, `LOG_LEVEL`, and `ADMIN_USERNAME` were passed
+to the ECS task via `parameter.stringValue` under the `environment:` block.
+CDK resolves `.stringValue` at synth time, so the literal value gets baked
+into the CloudFormation template — editing the SSM parameter has no effect
+without a `cdk deploy`.
+
+All SSM-sourced env vars now go via `ecs.Secret.fromSsmParameter(...)`
+under the `secrets:` block. ECS resolves the live parameter value when
+the task starts, so a parameter edit + service rolling restart picks up
+the new value without touching CDK. Same pattern as the existing Secrets
+Manager values.
+
+**Why this matters:** operational levers (CORS allowed origins, log
+verbosity, SES sender, etc.) need to be tunable without a CDK redeploy.
+The previous approach silently broke that expectation.
+
+---
+
+## 021 — Health checks: ALB readiness vs container liveness (SFBL-276)
+
+Both checks originally hit `/api/health` (`utility.py:445`), which returns
+HTTP 200 even when the database is unreachable. Effect: a degraded task
+stayed in service rotation and continued failing real requests; ECS never
+restarted the container because nothing observed liveness as broken.
+
+Now:
+- **Container Docker health check** → `/api/health/live` (`utility.py:322`).
+  Fast process-only probe; returns 200 whenever uvicorn is alive. Used by
+  ECS to decide whether to restart the container.
+- **ALB target group health check** → `/api/health/ready` (`utility.py:333`).
+  Dependency-aware probe; returns 503 when the DB ping fails. The ALB
+  pulls a degraded task out of rotation; ECS keeps it alive (liveness
+  still passes) so it can rejoin once the DB recovers.
+
+Standard liveness-vs-readiness split. The legacy `/api/health` endpoint
+is retained for backward compatibility with existing self-hosted Docker
+healthchecks.
+
+---
+
+## 022 — IAM split: S3 connections via BYO keys, SES via task role (SFBL-276/279)
+
+Two architectural choices that share a theme: which boto3 calls run as
+the ECS task role, and which run with explicit credentials.
+
+**S3 input/output buckets — BYO IAM access keys.** `S3OutputStorage` and
+`InputConnection.test` construct boto3 clients with explicit
+`access_key_id` / `secret_access_key` decrypted from the encrypted
+`input_connection` row. The CDK does **not** grant S3 perms on the input/
+output buckets to the task role — those grants would be unused, and
+keeping them would mislead readers. Operators create an IAM user, generate
+access keys, and paste them into the InputConnection form via the UI.
+Documented in `docs/deployment/aws.md` "S3 input/output connections".
+
+The code-path alternative (`InputConnection.use_task_role` mode that lets
+boto3 resolve from the default credential chain) is filed under SFBL-295
+in the production-scale epic.
+
+**SES — task role with two scoped policies.** The SES backend uses the
+boto3 default chain — i.e. the ECS task role. CDK adds two policies:
+- `SesSendScopedToIdentity`: `ses:SendEmail` + `ses:SendRawEmail`,
+  restricted to the SES identity ARN. Least-privilege send.
+- `SesAccountReadForHealthProbe`: `ses:GetAccount` + `ses:GetSendQuota`,
+  `Resource: "*"`. These are account-wide reads that don't accept a
+  resource ARN, used by the `/api/health/dependencies` SES probe.
+
+The split makes the security review easy: send actions can only emit
+email as the deployment's own identity; read actions only inform the
+health probe.
+
+---
+
+## 023 — RDS hardening: server-enforced TLS + explicit storage encryption (SFBL-279)
+
+Two postures left to defaults in the original CDK:
+
+- **TLS at the server**: the application connects with `?ssl=require` but
+  the DB would have accepted plaintext if a misconfigured client tried.
+  Now: a custom Postgres parameter group with `rds.force_ssl=1` rejects
+  any non-TLS connection at the server. The CFN output
+  `RdsParameterGroupName` lets operators verify the DB is using the
+  hardened group post-deploy.
+- **Storage encryption**: `storageEncrypted: true` set explicitly. CDK
+  defaults to encryption-on for most engines but making it explicit
+  prevents a future CDK change from silently regressing it.
+
+**Trade-off:** custom parameter group means a future Postgres major version
+upgrade requires creating a new parameter group for the new engine
+version. Acceptable for the 2–3 year cadence Postgres major versions ship.
+
+---
+
+## 024 — SES domain identity without auto-DKIM (SFBL-279)
+
+The CDK provisions an `ses.EmailIdentity` for the configured domain and a
+`mail.<domain>` MAIL FROM subdomain. CDK does **not** auto-write the DKIM
+or MAIL FROM records to Route53 — instead it surfaces the three DKIM
+tokens as CloudFormation outputs (`SesDkimRecord1/2/3`) for the operator
+to add manually.
+
+**Why not auto-DKIM:** `ses.Identity.publicHostedZone(zone)` requires a
+`HostedZone.fromLookup`, which runs against the deploying account at
+synth time and fails in CI / placeholder accounts. Manual DKIM is two
+minutes of console clicks for a Route53-managed zone and is the only
+way the synth step works without account credentials.
+
+An automated path that writes the records via a separate stack (or a
+context flag that gates the lookup) is a follow-up under SFBL-295.
+
+---
+
+## 025 — Bronze / Silver / Gold tier presets (SFBL-279)
+
+Sizing values (RDS instance class, multi-AZ, allocated storage, backup
+retention, ECS task shape, replica count, log retention,
+ContainerInsights, S3 lifecycle, optional Gold-only worker / Redis / WAF
+flags) are now driven by named tier presets defined under `cdk.json`
+`context.tiers`. Each environment selects one via the `tier` field.
+
+Default mapping: `staging → bronze`, `production → silver`. The Gold
+tier is fully defined in the preset but its production-scale resources
+(arq/Redis worker tier, WAF, autoscaling, Fargate Spot) are not yet
+provisioned by SFBL-275 — SFBL-295 reads the same flags and adds them.
+
+**Why not per-env hardcoded values:** the previous design conflated
+"which environment" with "how big". Bronze production and Gold staging
+are both legitimate configurations, and the tier abstraction lets us
+articulate that. Cost matrix and per-tier trade-offs live in
+`docs/deployment/aws.md` "Sizing and cost".
+
