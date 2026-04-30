@@ -23,6 +23,19 @@ export interface TierConfig {
   rdsMultiAz: boolean;
   rdsAllocatedStorage: number;
   rdsBackupRetentionDays: number;
+  /**
+   * Whether to protect the RDS instance from accidental deletion. Drives both
+   * `deletionProtection: true` on the DBInstance (RDS-level guard against the
+   * DeleteDBInstance API call) and `RemovalPolicy.RETAIN` on the CDK construct
+   * (CloudFormation will retain the DB if the stack is destroyed). Should be
+   * enabled for any tier that holds real data — i.e. Silver and Gold.
+   *
+   * Decoupled from `rdsMultiAz` because Multi-AZ is a HA/cost decision while
+   * deletion protection is a data-loss guard; they don't have to move
+   * together. Silver runs single-AZ but still holds real data and should be
+   * protected.
+   */
+  rdsDeletionProtection: boolean;
 
   // ECS — Fargate task shape and replica count
   ecsDesiredCount: number;

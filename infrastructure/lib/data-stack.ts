@@ -128,11 +128,17 @@ export class DataStack extends cdk.Stack {
       },
     });
 
-    // Instance size, Multi-AZ, allocated storage, and backup retention are
-    // driven by the tier preset (props.tier). Production-grade tiers (Gold,
-    // and Silver in production envs) opt into deletion protection + RETAIN
-    // removal policy; Bronze stays DESTROY-on-stack-delete for cheap teardown.
-    const isProductionGrade = props.tier.rdsMultiAz;
+    // RDS shape (instance class, Multi-AZ, allocated storage, backup retention)
+    // and the deletion-protection / retention safety controls are all driven
+    // by the tier preset, but they are independent fields:
+    //
+    //   rdsMultiAz             — HA/cost decision (does the DB span 2 AZs?)
+    //   rdsDeletionProtection  — data-loss guard (block DeleteDBInstance and
+    //                            keep the DB on stack destroy)
+    //
+    // Coupling these would mean Silver (single-AZ but real production data)
+    // loses its protection, which would be a regression from the previous
+    // env==='production' check. Bronze opts out for cheap dev teardown.
     this.database = new rds.DatabaseInstance(this, 'Database', {
       engine: dbEngine,
       parameterGroup: dbParameterGroup,
@@ -154,8 +160,8 @@ export class DataStack extends cdk.Stack {
       multiAz: props.tier.rdsMultiAz,
       allocatedStorage: props.tier.rdsAllocatedStorage,
       maxAllocatedStorage: Math.max(props.tier.rdsAllocatedStorage * 5, 100),
-      deletionProtection: isProductionGrade,
-      removalPolicy: isProductionGrade
+      deletionProtection: props.tier.rdsDeletionProtection,
+      removalPolicy: props.tier.rdsDeletionProtection
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
       backupRetention: cdk.Duration.days(props.tier.rdsBackupRetentionDays),
