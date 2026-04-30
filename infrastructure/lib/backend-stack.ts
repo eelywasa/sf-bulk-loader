@@ -66,10 +66,18 @@ export interface BackendStackProps extends cdk.StackProps {
  *     /{env}/bulk-loader/admin-email     → ADMIN_EMAIL    (first boot only)
  *     /{env}/bulk-loader/admin-password  → ADMIN_PASSWORD (first boot only)
  *
- *   SSM Parameter Store (non-sensitive) → ECS task environment:
+ *   SSM Parameter Store (non-sensitive) → ECS task secrets (resolved at task launch):
  *     /{env}/bulk-loader/cors-origins    → CORS_ORIGINS
  *     /{env}/bulk-loader/log-level       → LOG_LEVEL
  *     /{env}/bulk-loader/admin-username  → ADMIN_USERNAME
+ *
+ *   These are passed via the container `secrets:` block using
+ *   `ecs.Secret.fromSsmParameter(...)` rather than `parameter.stringValue`
+ *   under `environment:`. The latter resolves at synth time and bakes the
+ *   literal value into the CloudFormation template — meaning a parameter
+ *   change does not propagate to a new task without `cdk deploy`. Using
+ *   `ecs.Secret.fromSsmParameter` means ECS reads the live value when the
+ *   task starts, so a parameter edit + service rolling restart picks it up.
  *
  *   Hardcoded in task definition (distribution policy, not secrets):
  *     APP_DISTRIBUTION=aws_hosted
@@ -135,6 +143,10 @@ export class BackendStack extends cdk.Stack {
     //   aws ssm put-parameter --name /{env}/bulk-loader/cors-origins --value '["https://your-domain.example"]' --type String
     //   aws ssm put-parameter --name /{env}/bulk-loader/log-level     --value 'INFO'                          --type String
     //   aws ssm put-parameter --name /{env}/bulk-loader/admin-username --value 'admin'                        --type String
+    //
+    // Imported via fromStringParameterName so CDK references the parameter by
+    // ARN at deploy time. ECS resolves the live value when the task starts
+    // (see ecs.Secret.fromSsmParameter usage below).
     const corsOriginsParam = ssm.StringParameter.fromStringParameterName(
       this, 'CorsOriginsParam', `/${env}/bulk-loader/cors-origins`
     );
@@ -152,27 +164,30 @@ export class BackendStack extends cdk.Stack {
         logGroup,
       }),
 
-      // Sensitive values from Secrets Manager — never appear in task definition plaintext.
+      // All injected env vars go via the secrets: mapping so values resolve at
+      // task launch, not at synth time. Sensitive values come from Secrets
+      // Manager; non-sensitive values come from SSM Parameter Store. Both
+      // mechanisms fetch the live value before the container starts, so a
+      // parameter edit + rolling restart picks up the new value without
+      // a CDK redeploy.
       secrets: {
+        // Sensitive values — never appear in task definition plaintext.
         ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(props.encryptionKeySecret),
         JWT_SECRET_KEY: ecs.Secret.fromSecretsManager(props.jwtSecretKeySecret),
         DATABASE_URL: ecs.Secret.fromSecretsManager(props.databaseUrlSecret),
         ADMIN_EMAIL: ecs.Secret.fromSecretsManager(props.adminEmailSecret),
         ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(props.adminPasswordSecret),
+        // Non-sensitive runtime config — read live from SSM at task launch.
+        CORS_ORIGINS: ecs.Secret.fromSsmParameter(corsOriginsParam),
+        LOG_LEVEL: ecs.Secret.fromSsmParameter(logLevelParam),
+        ADMIN_USERNAME: ecs.Secret.fromSsmParameter(adminUsernameParam),
       },
 
-      // Non-sensitive config injected as plain environment variables.
-      // SSM Parameter Store values are resolved at task launch by ECS (not by the app).
+      // Plain environment variables — only for static distribution policy.
+      // Anything runtime-tunable lives in SSM/Secrets Manager via secrets: above.
       environment: {
         // Distribution profile — drives all aws_hosted startup validation in config.py.
         APP_DISTRIBUTION: 'aws_hosted',
-        // SSM-sourced values resolved by ECS at task launch.
-        // CDK references the parameter ARN; ECS fetches the value before container start.
-        CORS_ORIGINS: corsOriginsParam.stringValue,
-        LOG_LEVEL: logLevelParam.stringValue,
-        ADMIN_USERNAME: adminUsernameParam.stringValue,
-        // TODO: add SF_API_VERSION, DEFAULT_PARTITION_SIZE if environment-specific values
-        //       are needed; otherwise the application defaults in config.py are used.
       },
 
       portMappings: [{ containerPort: 8000 }],
