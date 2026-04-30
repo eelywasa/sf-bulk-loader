@@ -685,3 +685,44 @@ are both legitimate configurations, and the tier abstraction lets us
 articulate that. Cost matrix and per-tier trade-offs live in
 `docs/deployment/aws.md` "Sizing and cost".
 
+
+---
+
+## 026 — Migration on deploy: one-shot Fargate task + advisory lock (SFBL-277)
+
+The Dockerfile CMD originally ran `alembic upgrade head && uvicorn ...`,
+which is the right default for self-hosted Docker compose (single
+container, no concurrency) but unsafe for `aws_hosted` ECS rolling
+deploys: two service tasks can start concurrently and race on the
+schema. Even when Postgres' implicit lock on `alembic_version`
+serialises the two upgrades, the mixed-version window where new code
+runs against partially-migrated schema is hard to reason about.
+
+**Choice — one-shot migration TaskDefinition + RUN_MIGRATIONS gate**:
+
+- Service `TaskDefinition` runs with `RUN_MIGRATIONS=false`. The
+  Dockerfile CMD honours the gate and skips `alembic upgrade head` —
+  service tasks start uvicorn directly.
+- A second `MigrationTaskDefinition` (same image, same secrets, same
+  task role) runs with `RUN_MIGRATIONS=true` and a `command: ['sh',
+  '-c', 'alembic upgrade head']` override. CI invokes it via
+  `aws ecs run-task` between `docker push` and the service
+  `update-service`.
+- A Postgres advisory lock (`pg_advisory_lock(<key>)` in
+  `alembic/env.py`) wraps the upgrade. Belt-and-braces: serialises
+  any caller — including manual `alembic` runs from a bastion — who
+  bypasses the runbook flow.
+
+**Options considered and rejected:**
+
+| Option | Why rejected |
+|---|---|
+| CDK Custom Resource → Lambda | Lambda needs VPC + RDS access; 15-min timeout; complex DB connectivity setup |
+| Init container with Postgres advisory lock | Fargate's init-container support is awkward; harder to reason about |
+| `minHealthyPercent: 100`, deploy one task at a time | Doesn't fully eliminate the race; still has the mixed-version window |
+
+**Trade-off:** the deploy now requires three steps in sequence (build →
+migrate → roll). CI scripts the orchestration; the operator who has to
+do it by hand also follows the same sequence per the runbook. The
+advisory lock means even doing the steps out of order is recoverable.
+

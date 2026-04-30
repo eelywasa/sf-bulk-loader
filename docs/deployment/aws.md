@@ -354,16 +354,69 @@ curl -f ${DOMAIN}/
 
 ## Ongoing Deployments
 
-**Backend update** (new image):
-1. Build and push image to ECR (`docker buildx build ... && docker push ...`)
-2. `aws ecs update-service --force-new-deployment` or `cdk deploy BulkLoader-{env}-Backend`
+### Backend update (new image)
 
-**Frontend update**:
-1. `cd frontend && npm run build`
-2. `aws s3 sync dist/ s3://{bucket} --delete`
-3. `aws cloudfront create-invalidation --distribution-id {id} --paths '/*'`
+Service tasks run with `RUN_MIGRATIONS=false` so that concurrent task
+starts during a rolling deploy never race on `alembic upgrade head`.
+Migrations run as a one-shot job between image push and service rollout:
 
-**Infrastructure change**:
+1. Build and push the image to ECR:
+   ```bash
+   ECR_URI=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Data \
+     --query "Stacks[0].Outputs[?OutputKey=='EcrRepositoryUri'].OutputValue" --output text)
+   aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_URI
+   docker buildx build --platform linux/amd64 -t $ECR_URI:latest -f backend/Dockerfile backend/
+   docker push $ECR_URI:latest
+   ```
+2. Run the one-shot migration task and wait for it to complete:
+   ```bash
+   MIGRATION_ARN=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Backend \
+     --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" --output text)
+   SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Backend \
+     --query "Stacks[0].Outputs[?OutputKey=='BackendServiceSecurityGroupId'].OutputValue" --output text)
+   SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" \
+     "Name=tag:aws-cdk:subnet-type,Values=Public" --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+   aws ecs run-task \
+     --cluster bulk-loader-{env} \
+     --task-definition $MIGRATION_ARN \
+     --launch-type FARGATE \
+     --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}"
+   # Then poll until STOPPED with exit code 0:
+   aws ecs wait tasks-stopped --cluster bulk-loader-{env} --tasks $TASK_ARN
+   ```
+   The migration task acquires a Postgres advisory lock for the duration of
+   `alembic upgrade head` (see `backend/alembic/env.py`). Concurrent
+   migration runs serialise on the lock; the second caller observes the
+   schema is at head and exits in milliseconds.
+3. Force a new service deployment so service tasks come up against the
+   migrated schema:
+   ```bash
+   aws ecs update-service --cluster bulk-loader-{env} \
+     --service BulkLoader-{env}-Backend-Service --force-new-deployment
+   ```
+
+For migrations that are forward-compatible with the previous code
+(adding a nullable column, adding a new table) you can run step 2 first,
+then step 3 — old code keeps running against the new schema during the
+rollout. For migrations that aren't forward-compatible (NOT NULL flips,
+column drops), schedule a maintenance window: scale the service to 0,
+run the migration task, redeploy the service.
+
+### Frontend update
+
+The frontend build is uploaded automatically by the `BucketDeployment`
+construct in `BulkLoader-{env}-Frontend`:
+
+1. `cd frontend && npm install && npm run build`
+2. `cdk deploy BulkLoader-{env}-Frontend -c env={env}` — picks up the
+   new `frontend/dist/` contents, syncs to S3, and invalidates the
+   CloudFront distribution.
+
+The legacy three-step manual flow (`aws s3 sync` + `aws cloudfront
+create-invalidation`) is no longer needed.
+
+### Infrastructure change
+
 1. Edit stacks in `infrastructure/lib/`
 2. `cdk diff -c env={env}` to review changes
 3. `cdk deploy --all -c env={env}` to apply
@@ -391,18 +444,31 @@ the `DatabaseInstance`).
 The `aws_hosted` profile rejects SQLite at startup — `config.py` enforces
 that `DATABASE_URL` starts with `postgresql+asyncpg://`.
 
-Alembic migrations run automatically on container start before uvicorn:
+Alembic migrations are gated by the `RUN_MIGRATIONS` env var
+(default `true`):
 
 ```
-CMD: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
+CMD: if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then alembic upgrade head; fi
+     && uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-This means each ECS task start applies any pending migrations. In production with multiple
-tasks, only one task should run migrations — configure `minHealthyPercent: 100` and deploy
-one task at a time, or use a separate one-off migration task. **The one-shot migration
-task pattern is being implemented under SFBL-277**, which will gate inline migrations
-behind a `RUN_MIGRATIONS` env var (default `true` for self-hosted, set `false` in
-the AWS task definition).
+- **Self-hosted Docker compose** leaves `RUN_MIGRATIONS` unset, so each
+  container start applies pending migrations inline. Single container, no
+  concurrency.
+- **`aws_hosted` ECS service tasks** run with `RUN_MIGRATIONS=false`. They
+  start uvicorn directly without touching Alembic — concurrent service
+  tasks during a rolling deploy never race.
+- **`aws_hosted` MigrationTaskDefinition** runs `alembic upgrade head` as
+  a one-shot Fargate task before each service rollout. See
+  "Ongoing Deployments" above for the deploy sequence.
+
+The migration code path also acquires a Postgres advisory lock for the
+duration of the upgrade (`backend/alembic/env.py`). This is
+belt-and-braces — the canonical deploy flow only ever invokes a single
+migration task at a time, but if anyone bypasses that flow (e.g. running
+`alembic upgrade head` from a bastion during a deploy), the second
+caller blocks on the lock until the first finishes, then observes the
+schema is at head and exits cleanly.
 
 ---
 
