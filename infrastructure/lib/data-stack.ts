@@ -147,6 +147,29 @@ export class DataStack extends cdk.Stack {
     });
 
     // --- S3 Buckets ---
+    // Lifecycle expiration is driven by the tier preset. A value of 0 means
+    // "retain forever" (no lifecycle rule emitted). Defaults: Bronze 7d / 30d
+    // input/output, Silver 30d / 90d, Gold 30d / 90d. See
+    // docs/deployment/aws.md "Sizing and cost".
+    const inputLifecycle: s3.LifecycleRule[] =
+      props.tier.inputRetentionDays > 0
+        ? [
+            {
+              id: 'expire-old-input',
+              expiration: cdk.Duration.days(props.tier.inputRetentionDays),
+            },
+          ]
+        : [];
+    const outputLifecycle: s3.LifecycleRule[] =
+      props.tier.outputRetentionDays > 0
+        ? [
+            {
+              id: 'expire-old-output',
+              expiration: cdk.Duration.days(props.tier.outputRetentionDays),
+            },
+          ]
+        : [];
+
     // Input bucket: source CSV files uploaded by users or pipelines.
     this.inputBucket = new s3.Bucket(this, 'InputBucket', {
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -154,7 +177,7 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
-      // TODO: add lifecycle rule to expire old input files after N days
+      lifecycleRules: inputLifecycle,
     });
 
     // Output bucket: Bulk API result files downloaded by the orchestrator.
@@ -164,13 +187,7 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
-      lifecycleRules: [
-        {
-          // TODO: tune retention period per operational requirements
-          expiration: cdk.Duration.days(90),
-          id: 'expire-old-results',
-        },
-      ],
+      lifecycleRules: outputLifecycle,
     });
 
     // --- Secrets Manager ---
