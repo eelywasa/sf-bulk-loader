@@ -26,6 +26,15 @@ export interface DataStackProps extends cdk.StackProps {
    * "mail.example.com" but the app runs at "bulk.example.com".
    */
   sesIdentityDomain?: string;
+  /**
+   * If true, adopt an existing verified SES identity for sesIdentityDomain
+   * rather than creating a new one. Use this when the SES identity is
+   * already verified (e.g. via the SES console or a prior deployment) and
+   * CloudFormation would otherwise refuse to create a duplicate. Defaults
+   * to false (CDK creates a new identity, which is the right move for a
+   * fresh AWS account).
+   */
+  sesIdentityAdoptExisting?: boolean;
 }
 
 /**
@@ -247,26 +256,42 @@ export class DataStack extends cdk.Stack {
     // The SES backend (app/services/email/backends/ses.py) sends via
     // SES v2 SendEmail using credentials from the boto3 default chain
     // (the ECS task role). Without a verified identity SES rejects with
-    // MailFromDomainNotVerifiedException / MessageRejected. We provision
-    // a domain identity with DKIM enabled.
+    // MailFromDomainNotVerifiedException / MessageRejected.
+    //
+    // Two paths:
+    //
+    // 1. Fresh account (sesIdentityAdoptExisting=false / unset, default).
+    //    CDK creates a new ses.EmailIdentity for the configured domain
+    //    with DKIM enabled and a mail.<domain> MAIL FROM. Operator adds
+    //    the DKIM CNAMEs (surfaced via the SesDkimRecord1/2/3 outputs)
+    //    to DNS to complete verification.
+    //
+    // 2. Pre-existing verified identity (sesIdentityAdoptExisting=true).
+    //    CDK references the existing identity by name without trying to
+    //    create or modify it. CloudFormation otherwise refuses to create
+    //    a duplicate identity for the same domain — this branch is the
+    //    answer for accounts that have already verified the domain via
+    //    the SES console or an earlier deployment. No DKIM outputs in
+    //    this branch — operator already configured DNS when they verified
+    //    the identity.
     //
     // We use ses.Identity.domain (not Identity.publicHostedZone) so the
-    // synth step doesn't require Route53 hosted zone lookup — that lookup
+    // synth step doesn't require Route53 hosted-zone lookup — that lookup
     // runs against the deploying account during synth and fails in CI/dev
-    // with placeholder zone names. The trade-off is that the operator must
-    // add the DKIM CNAME records to their DNS provider manually (the
-    // SesDkimRecords output below surfaces the three required tokens). For
-    // a Route53-managed zone this is two minutes of console clicks; for an
-    // automated path, see the post-MVP follow-up in SFBL-295.
-    //
-    // MAIL FROM domain (mail.<domain>) closes the "via amazonses.com"
-    // attribution shown by some receiving providers and improves
-    // deliverability. Operator also adds the MX + TXT records to DNS.
+    // with placeholder zone names.
     const sesDomain = props.sesIdentityDomain ?? props.hostedZoneDomain;
-    const sesIdentity = new ses.EmailIdentity(this, 'SesIdentity', {
-      identity: ses.Identity.domain(sesDomain),
-      mailFromDomain: `mail.${sesDomain}`,
-    });
+    let sesIdentity: ses.IEmailIdentity;
+    let sesIdentityCreated = false;
+    if (props.sesIdentityAdoptExisting) {
+      sesIdentity = ses.EmailIdentity.fromEmailIdentityName(this, 'SesIdentity', sesDomain);
+    } else {
+      const created = new ses.EmailIdentity(this, 'SesIdentity', {
+        identity: ses.Identity.domain(sesDomain),
+        mailFromDomain: `mail.${sesDomain}`,
+      });
+      sesIdentity = created;
+      sesIdentityCreated = true;
+    }
     this.sesIdentityArn = sesIdentity.emailIdentityArn;
 
     // --- Outputs ---
@@ -300,22 +325,30 @@ export class DataStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'SesIdentityDomain', {
       value: sesDomain,
-      description: 'SES domain identity name — add the DKIM CNAMEs below to DNS to verify',
+      description: sesIdentityCreated
+        ? 'SES domain identity name — add the DKIM CNAMEs below to DNS to verify'
+        : 'SES domain identity name (adopted, already verified)',
     });
-    // Surface the three DKIM CNAMEs the operator must add to DNS to
-    // complete identity verification. Token shape:
-    //   <token>._domainkey.<domain>  CNAME  <token>.dkim.amazonses.com
-    new cdk.CfnOutput(this, 'SesDkimRecord1', {
-      value: `${sesIdentity.dkimDnsTokenName1}._domainkey.${sesDomain} CNAME ${sesIdentity.dkimDnsTokenValue1}`,
-      description: 'SES DKIM record 1 of 3 — add to DNS as CNAME',
-    });
-    new cdk.CfnOutput(this, 'SesDkimRecord2', {
-      value: `${sesIdentity.dkimDnsTokenName2}._domainkey.${sesDomain} CNAME ${sesIdentity.dkimDnsTokenValue2}`,
-      description: 'SES DKIM record 2 of 3 — add to DNS as CNAME',
-    });
-    new cdk.CfnOutput(this, 'SesDkimRecord3', {
-      value: `${sesIdentity.dkimDnsTokenName3}._domainkey.${sesDomain} CNAME ${sesIdentity.dkimDnsTokenValue3}`,
-      description: 'SES DKIM record 3 of 3 — add to DNS as CNAME',
-    });
+    // DKIM CNAMEs are only meaningful when CDK creates the identity. When
+    // adopting an existing identity, the DNS records are already in place
+    // and the construct doesn't expose the DKIM tokens.
+    if (sesIdentityCreated) {
+      const created = sesIdentity as ses.EmailIdentity;
+      // Surface the three DKIM CNAMEs the operator must add to DNS to
+      // complete identity verification. Token shape:
+      //   <token>._domainkey.<domain>  CNAME  <token>.dkim.amazonses.com
+      new cdk.CfnOutput(this, 'SesDkimRecord1', {
+        value: `${created.dkimDnsTokenName1}._domainkey.${sesDomain} CNAME ${created.dkimDnsTokenValue1}`,
+        description: 'SES DKIM record 1 of 3 — add to DNS as CNAME',
+      });
+      new cdk.CfnOutput(this, 'SesDkimRecord2', {
+        value: `${created.dkimDnsTokenName2}._domainkey.${sesDomain} CNAME ${created.dkimDnsTokenValue2}`,
+        description: 'SES DKIM record 2 of 3 — add to DNS as CNAME',
+      });
+      new cdk.CfnOutput(this, 'SesDkimRecord3', {
+        value: `${created.dkimDnsTokenName3}._domainkey.${sesDomain} CNAME ${created.dkimDnsTokenValue3}`,
+        description: 'SES DKIM record 3 of 3 — add to DNS as CNAME',
+      });
+    }
   }
 }

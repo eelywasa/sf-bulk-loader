@@ -62,6 +62,7 @@ const dataStack = new DataStack(app, `${prefix}-Data`, {
   tier,
   hostedZoneDomain: envConfig.hostedZoneDomain as string,
   sesIdentityDomain: envConfig.sesIdentityDomain as string | undefined,
+  sesIdentityAdoptExisting: envConfig.sesIdentityAdoptExisting as boolean | undefined,
   description: `Salesforce Bulk Loader — data layer (${envName})`,
 });
 dataStack.addDependency(networkStack);
