@@ -53,13 +53,15 @@ const networkStack = new NetworkStack(app, `${prefix}-Network`, {
   description: `Salesforce Bulk Loader — network layer (${envName})`,
 });
 
-// Stack 2: RDS, S3, and Secrets Manager
+// Stack 2: RDS, S3, Secrets Manager, ECR, SES identity
 const dataStack = new DataStack(app, `${prefix}-Data`, {
   env: awsEnv,
   envName,
   vpc: networkStack.vpc,
   backendServiceSecurityGroup: networkStack.backendServiceSecurityGroup,
   tier,
+  hostedZoneDomain: envConfig.hostedZoneDomain as string,
+  sesIdentityDomain: envConfig.sesIdentityDomain as string | undefined,
   description: `Salesforce Bulk Loader — data layer (${envName})`,
 });
 dataStack.addDependency(networkStack);
@@ -77,6 +79,7 @@ const backendStack = new BackendStack(app, `${prefix}-Backend`, {
   databaseUrlSecret: dataStack.databaseUrlSecret,
   adminEmailSecret: dataStack.adminEmailSecret,
   adminPasswordSecret: dataStack.adminPasswordSecret,
+  sesIdentityArn: dataStack.sesIdentityArn,
   backendDomainName: envConfig.backendDomainName as string,
   backendCertificateArn: envConfig.backendCertificateArn as string,
   hostedZoneDomain: envConfig.hostedZoneDomain as string,

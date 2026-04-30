@@ -27,6 +27,8 @@ export interface BackendStackProps extends cdk.StackProps {
   databaseUrlSecret: secretsmanager.Secret;
   adminEmailSecret: secretsmanager.Secret;
   adminPasswordSecret: secretsmanager.Secret;
+  /** SES domain identity ARN — IAM ses:SendEmail/SendRawEmail are scoped to this resource. */
+  sesIdentityArn: string;
   /** DNS hostname that CloudFront uses as the backend origin (for example api.example.com). */
   backendDomainName: string;
   /** ACM certificate ARN for the ALB HTTPS listener. */
@@ -66,9 +68,11 @@ export interface BackendStackProps extends cdk.StackProps {
  *     /{env}/bulk-loader/admin-password  → ADMIN_PASSWORD (first boot only)
  *
  *   SSM Parameter Store (non-sensitive) → ECS task secrets (resolved at task launch):
- *     /{env}/bulk-loader/cors-origins    → CORS_ORIGINS
- *     /{env}/bulk-loader/log-level       → LOG_LEVEL
- *     /{env}/bulk-loader/admin-username  → ADMIN_USERNAME
+ *     /{env}/bulk-loader/cors-origins         → CORS_ORIGINS
+ *     /{env}/bulk-loader/log-level            → LOG_LEVEL
+ *     /{env}/bulk-loader/admin-username       → ADMIN_USERNAME
+ *     /{env}/bulk-loader/email-from-address   → EMAIL_FROM_ADDRESS  (SES sender)
+ *     /{env}/bulk-loader/email-ses-region     → EMAIL_SES_REGION    (optional)
  *
  *   These are passed via the container `secrets:` block using
  *   `ecs.Secret.fromSsmParameter(...)` rather than `parameter.stringValue`
@@ -165,6 +169,12 @@ export class BackendStack extends cdk.Stack {
     const adminUsernameParam = ssm.StringParameter.fromStringParameterName(
       this, 'AdminUsernameParam', `/${env}/bulk-loader/admin-username`
     );
+    const emailFromAddressParam = ssm.StringParameter.fromStringParameterName(
+      this, 'EmailFromAddressParam', `/${env}/bulk-loader/email-from-address`
+    );
+    const emailSesRegionParam = ssm.StringParameter.fromStringParameterName(
+      this, 'EmailSesRegionParam', `/${env}/bulk-loader/email-ses-region`
+    );
 
     const container = taskDefinition.addContainer('backend', {
       image: ecs.ContainerImage.fromEcrRepository(repository, props.ecrImageTag),
@@ -190,6 +200,8 @@ export class BackendStack extends cdk.Stack {
         CORS_ORIGINS: ecs.Secret.fromSsmParameter(corsOriginsParam),
         LOG_LEVEL: ecs.Secret.fromSsmParameter(logLevelParam),
         ADMIN_USERNAME: ecs.Secret.fromSsmParameter(adminUsernameParam),
+        EMAIL_FROM_ADDRESS: ecs.Secret.fromSsmParameter(emailFromAddressParam),
+        EMAIL_SES_REGION: ecs.Secret.fromSsmParameter(emailSesRegionParam),
       },
 
       // Plain environment variables — only for static distribution policy.
@@ -225,6 +237,35 @@ export class BackendStack extends cdk.Stack {
     corsOriginsParam.grantRead(taskDefinition.executionRole!);
     logLevelParam.grantRead(taskDefinition.executionRole!);
     adminUsernameParam.grantRead(taskDefinition.executionRole!);
+    emailFromAddressParam.grantRead(taskDefinition.executionRole!);
+    emailSesRegionParam.grantRead(taskDefinition.executionRole!);
+
+    // --- IAM: SES permissions for the application's EmailService ---
+    // The SES backend (app/services/email/backends/ses.py) uses the boto3
+    // default credential chain (i.e. the ECS task role) and calls SES v2
+    // SendEmail/SendRawEmail at runtime, plus SES v1 GetSendQuota for the
+    // health probe at /api/health/dependencies (cached 60s).
+    //
+    // Two policies, scoped differently:
+    //   1. Send actions — restricted to the SES identity ARN provisioned
+    //      by DataStack. Limits the blast radius if the role is ever
+    //      compromised: it can only send as the deployment's own identity.
+    //   2. Read actions — Resource: "*" because GetSendQuota / GetAccount
+    //      are account-wide reads that don't accept a resource ARN.
+    taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: 'SesSendScopedToIdentity',
+        actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+        resources: [props.sesIdentityArn],
+      }),
+    );
+    taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: 'SesAccountReadForHealthProbe',
+        actions: ['ses:GetSendQuota', 'ses:GetAccount'],
+        resources: ['*'],
+      }),
+    );
 
     // Suppress unused variable warning — container is used implicitly through taskDefinition.
     void container;

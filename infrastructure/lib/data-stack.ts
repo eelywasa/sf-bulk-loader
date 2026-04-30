@@ -4,6 +4,7 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as ses from 'aws-cdk-lib/aws-ses';
 import { Construct } from 'constructs';
 import { TierConfig } from './tier-config';
 
@@ -13,6 +14,18 @@ export interface DataStackProps extends cdk.StackProps {
   backendServiceSecurityGroup: ec2.SecurityGroup;
   /** Bronze/Silver/Gold tier preset — drives RDS sizing, backups, S3 lifecycle. */
   tier: TierConfig;
+  /**
+   * Route53 hosted zone domain (e.g. "your-domain.example"). Used for both
+   * the backend ALB alias record (consumed by BackendStack) and the SES
+   * EmailIdentity DKIM/MAIL-FROM records provisioned in this stack.
+   */
+  hostedZoneDomain: string;
+  /**
+   * SES identity domain. Defaults to hostedZoneDomain. Override only if the
+   * sender domain differs from the application domain — e.g. emails go from
+   * "mail.example.com" but the app runs at "bulk.example.com".
+   */
+  sesIdentityDomain?: string;
 }
 
 /**
@@ -55,6 +68,8 @@ export class DataStack extends cdk.Stack {
   public readonly databaseUrlSecret: secretsmanager.Secret;
   public readonly adminEmailSecret: secretsmanager.Secret;
   public readonly adminPasswordSecret: secretsmanager.Secret;
+  /** SES domain identity ARN. Consumed by BackendStack for IAM scoping of ses:SendEmail. */
+  public readonly sesIdentityArn: string;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -222,6 +237,32 @@ export class DataStack extends cdk.Stack {
       description: 'Bootstrap admin password for first-boot user seeding (ADMIN_PASSWORD)',
     });
 
+    // --- SES — domain identity for application-sent email ---
+    // The SES backend (app/services/email/backends/ses.py) sends via
+    // SES v2 SendEmail using credentials from the boto3 default chain
+    // (the ECS task role). Without a verified identity SES rejects with
+    // MailFromDomainNotVerifiedException / MessageRejected. We provision
+    // a domain identity with DKIM enabled.
+    //
+    // We use ses.Identity.domain (not Identity.publicHostedZone) so the
+    // synth step doesn't require Route53 hosted zone lookup — that lookup
+    // runs against the deploying account during synth and fails in CI/dev
+    // with placeholder zone names. The trade-off is that the operator must
+    // add the DKIM CNAME records to their DNS provider manually (the
+    // SesDkimRecords output below surfaces the three required tokens). For
+    // a Route53-managed zone this is two minutes of console clicks; for an
+    // automated path, see the post-MVP follow-up in SFBL-295.
+    //
+    // MAIL FROM domain (mail.<domain>) closes the "via amazonses.com"
+    // attribution shown by some receiving providers and improves
+    // deliverability. Operator also adds the MX + TXT records to DNS.
+    const sesDomain = props.sesIdentityDomain ?? props.hostedZoneDomain;
+    const sesIdentity = new ses.EmailIdentity(this, 'SesIdentity', {
+      identity: ses.Identity.domain(sesDomain),
+      mailFromDomain: `mail.${sesDomain}`,
+    });
+    this.sesIdentityArn = sesIdentity.emailIdentityArn;
+
     // --- Outputs ---
     new cdk.CfnOutput(this, 'EcrRepositoryUri', {
       value: this.backendRepository.repositoryUri,
@@ -245,6 +286,30 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'RdsParameterGroupName', {
       value: (dbParameterGroup.node.defaultChild as rds.CfnDBParameterGroup).ref,
       description: 'RDS parameter group name (force_ssl=1 — server-enforced TLS)',
+    });
+    new cdk.CfnOutput(this, 'SesIdentityArn', {
+      value: this.sesIdentityArn,
+      description: 'SES domain identity ARN (sender identity for application email)',
+      exportName: `${this.stackName}-SesIdentityArn`,
+    });
+    new cdk.CfnOutput(this, 'SesIdentityDomain', {
+      value: sesDomain,
+      description: 'SES domain identity name — add the DKIM CNAMEs below to DNS to verify',
+    });
+    // Surface the three DKIM CNAMEs the operator must add to DNS to
+    // complete identity verification. Token shape:
+    //   <token>._domainkey.<domain>  CNAME  <token>.dkim.amazonses.com
+    new cdk.CfnOutput(this, 'SesDkimRecord1', {
+      value: `${sesIdentity.dkimDnsTokenName1}._domainkey.${sesDomain} CNAME ${sesIdentity.dkimDnsTokenValue1}`,
+      description: 'SES DKIM record 1 of 3 — add to DNS as CNAME',
+    });
+    new cdk.CfnOutput(this, 'SesDkimRecord2', {
+      value: `${sesIdentity.dkimDnsTokenName2}._domainkey.${sesDomain} CNAME ${sesIdentity.dkimDnsTokenValue2}`,
+      description: 'SES DKIM record 2 of 3 — add to DNS as CNAME',
+    });
+    new cdk.CfnOutput(this, 'SesDkimRecord3', {
+      value: `${sesIdentity.dkimDnsTokenName3}._domainkey.${sesDomain} CNAME ${sesIdentity.dkimDnsTokenValue3}`,
+      description: 'SES DKIM record 3 of 3 — add to DNS as CNAME',
     });
   }
 }
