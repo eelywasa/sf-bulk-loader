@@ -1,8 +1,12 @@
 // This file shows the shape of cdk.context.json for local overrides.
 // cdk.context.json is git-ignored — copy this to cdk.context.json and fill in real values.
 //
-// Most environment config lives in cdk.json under context.environments.
+// Most environment config lives in cdk.json under context.environments and context.tiers.
 // Use cdk.context.json only for values that should NOT be committed (account IDs, real ARNs).
+//
+// Tier presets (bronze / silver / gold) are defined in cdk.json under context.tiers.
+// Each environment selects a tier; override the tier here only if you need a custom shape.
+// See docs/deployment/aws.md "Sizing and cost" for what each tier provisions.
 //
 // Usage:
 //   cp cdk.context.json.example cdk.context.json
@@ -12,25 +16,23 @@
 {
   "environments": {
     "staging": {
+      "tier": "bronze",
       "vpcCidr": "10.10.0.0/16",
       "domainName": "staging.bulk-loader.example.com",
       "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       "backendDomainName": "api-staging.bulk-loader.example.com",
-      "backendCertificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "backendCertificateArn": "arn:aws:acm:eu-west-1:123456789012:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
       "hostedZoneDomain": "bulk-loader.example.com",
-      "rdsInstanceClass": "db.t3.medium",
-      "ecsDesiredCount": 1,
       "ecrImageTag": "latest"
     },
     "production": {
+      "tier": "silver",
       "vpcCidr": "10.20.0.0/16",
       "domainName": "bulk-loader.example.com",
       "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
       "backendDomainName": "api.bulk-loader.example.com",
-      "backendCertificateArn": "arn:aws:acm:ap-southeast-2:123456789012:certificate/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "backendCertificateArn": "arn:aws:acm:eu-west-1:123456789012:certificate/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
       "hostedZoneDomain": "bulk-loader.example.com",
-      "rdsInstanceClass": "db.t3.large",
-      "ecsDesiredCount": 2,
       "ecrImageTag": "stable"
     }
   }

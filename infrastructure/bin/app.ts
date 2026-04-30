@@ -4,6 +4,7 @@ import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
 import { BackendStack } from '../lib/backend-stack';
 import { FrontendStack } from '../lib/frontend-stack';
+import { resolveTier } from '../lib/tier-config';
 
 const app = new cdk.App();
 
@@ -26,6 +27,14 @@ if (!envConfig) {
     `Available: ${Object.keys(environments ?? {}).join(', ')}`
   );
 }
+
+// Resolve the Bronze/Silver/Gold tier preset for this environment.
+// Tier shapes live in cdk.json context.tiers; each env names one via the
+// `tier` field. Stacks read sizing/retention/feature-flag values from the
+// resolved preset rather than from per-environment overrides.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const tiers = app.node.tryGetContext('tiers') as Record<string, any> | undefined;
+const tier = resolveTier(envName, envConfig, tiers);
 
 // Use the AWS account/region from the caller's environment.
 // Run `aws configure` or set AWS_PROFILE before deploying.
@@ -50,7 +59,7 @@ const dataStack = new DataStack(app, `${prefix}-Data`, {
   envName,
   vpc: networkStack.vpc,
   backendServiceSecurityGroup: networkStack.backendServiceSecurityGroup,
-  rdsInstanceClass: envConfig.rdsInstanceClass as string,
+  tier,
   description: `Salesforce Bulk Loader — data layer (${envName})`,
 });
 dataStack.addDependency(networkStack);
@@ -71,7 +80,7 @@ const backendStack = new BackendStack(app, `${prefix}-Backend`, {
   backendDomainName: envConfig.backendDomainName as string,
   backendCertificateArn: envConfig.backendCertificateArn as string,
   hostedZoneDomain: envConfig.hostedZoneDomain as string,
-  ecsDesiredCount: (envConfig.ecsDesiredCount as number) ?? 1,
+  tier,
   ecrImageTag: (envConfig.ecrImageTag as string) ?? 'latest',
   description: `Salesforce Bulk Loader — backend service (${envName})`,
 });

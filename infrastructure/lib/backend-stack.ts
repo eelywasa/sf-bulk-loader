@@ -9,6 +9,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
+import { TierConfig, logRetentionFromDays } from './tier-config';
 
 export interface BackendStackProps extends cdk.StackProps {
   envName: string;
@@ -32,7 +33,8 @@ export interface BackendStackProps extends cdk.StackProps {
   backendCertificateArn: string;
   /** Route53 hosted zone name that owns backendDomainName. */
   hostedZoneDomain: string;
-  ecsDesiredCount: number;
+  /** Bronze/Silver/Gold tier preset — drives ECS task shape, replica count, log retention. */
+  tier: TierConfig;
   ecrImageTag: string;
 }
 
@@ -102,9 +104,7 @@ export class BackendStack extends cdk.Stack {
     // --- CloudWatch Logs ---
     const logGroup = new logs.LogGroup(this, 'BackendLogGroup', {
       logGroupName: `/bulk-loader/${env}/backend`,
-      retention: env === 'production'
-        ? logs.RetentionDays.ONE_MONTH
-        : logs.RetentionDays.ONE_WEEK,
+      retention: logRetentionFromDays(props.tier.logRetentionDays),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
@@ -113,7 +113,9 @@ export class BackendStack extends cdk.Stack {
       vpc: props.vpc,
       clusterName: `bulk-loader-${env}`,
       enableFargateCapacityProviders: true,
-      containerInsightsV2: ecs.ContainerInsights.ENABLED,
+      containerInsightsV2: props.tier.containerInsightsEnabled
+        ? ecs.ContainerInsights.ENABLED
+        : ecs.ContainerInsights.DISABLED,
     });
 
     // --- IAM Task Role ---
@@ -138,8 +140,8 @@ export class BackendStack extends cdk.Stack {
 
     // --- Fargate Task Definition ---
     const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {
-      memoryLimitMiB: 1024,
-      cpu: 512,
+      memoryLimitMiB: props.tier.ecsTaskMemory,
+      cpu: props.tier.ecsTaskCpu,
       taskRole,
       // The execution role is auto-created by CDK with permissions to pull from ECR
       // and write to CloudWatch Logs. CDK also grants it access to the secrets below.
@@ -258,7 +260,7 @@ export class BackendStack extends cdk.Stack {
     const service = new ecs.FargateService(this, 'Service', {
       cluster,
       taskDefinition,
-      desiredCount: props.ecsDesiredCount,
+      desiredCount: props.tier.ecsDesiredCount,
       securityGroups: [props.backendServiceSecurityGroup],
       // Tasks run in public subnets and are assigned public IPs so they can reach
       // the Salesforce API without a NAT Gateway. Inbound traffic is restricted by
@@ -268,10 +270,20 @@ export class BackendStack extends cdk.Stack {
       // Rolling deploy: always keep at least one healthy task during updates.
       minHealthyPercent: 50,
       maxHealthyPercent: 200,
-      capacityProviderStrategies: [
-        { capacityProvider: 'FARGATE', weight: 1 },
-        // TODO: add FARGATE_SPOT weight for non-production to reduce cost
-      ],
+      // Capacity provider strategy:
+      // - Bronze/Silver: 100% on-demand FARGATE.
+      // - Gold (tier.useFargateSpot=true): hybrid — keeps 1 task on-demand
+      //   so the service stays up if Spot is reclaimed, runs additional tasks
+      //   on FARGATE_SPOT for cost savings. Per SFBL-295 the worker tier is
+      //   the primary Spot consumer; the API tier hybrid is a smaller win.
+      capacityProviderStrategies: props.tier.useFargateSpot
+        ? [
+            { capacityProvider: 'FARGATE', weight: 1, base: 1 },
+            { capacityProvider: 'FARGATE_SPOT', weight: 1 },
+          ]
+        : [
+            { capacityProvider: 'FARGATE', weight: 1 },
+          ],
     });
 
     // Register ECS service with ALB target group.

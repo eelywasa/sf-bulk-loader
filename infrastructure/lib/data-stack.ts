@@ -5,13 +5,14 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
+import { TierConfig } from './tier-config';
 
 export interface DataStackProps extends cdk.StackProps {
   envName: string;
   vpc: ec2.Vpc;
   backendServiceSecurityGroup: ec2.SecurityGroup;
-  /** RDS instance class string, e.g. 'db.t3.medium'. */
-  rdsInstanceClass: string;
+  /** Bronze/Silver/Gold tier preset — drives RDS sizing, backups, S3 lifecycle. */
+  tier: TierConfig;
 }
 
 /**
@@ -92,11 +93,16 @@ export class DataStack extends cdk.Stack {
       'Allow PostgreSQL from ECS tasks',
     );
 
+    // Instance size, Multi-AZ, allocated storage, and backup retention are
+    // driven by the tier preset (props.tier). Production-grade tiers (Gold,
+    // and Silver in production envs) opt into deletion protection + RETAIN
+    // removal policy; Bronze stays DESTROY-on-stack-delete for cheap teardown.
+    const isProductionGrade = props.tier.rdsMultiAz;
     this.database = new rds.DatabaseInstance(this, 'Database', {
       engine: rds.DatabaseInstanceEngine.postgres({
         version: rds.PostgresEngineVersion.VER_16,
       }),
-      instanceType: new ec2.InstanceType(props.rdsInstanceClass),
+      instanceType: new ec2.InstanceType(props.tier.rdsInstanceClass),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [dbSecurityGroup],
@@ -107,16 +113,14 @@ export class DataStack extends cdk.Stack {
       credentials: rds.Credentials.fromGeneratedSecret('bulk_loader_user', {
         secretName: `/${env}/bulk-loader/rds-credentials`,
       }),
-      multiAz: env === 'production',
-      allocatedStorage: 20,
-      maxAllocatedStorage: 100,
-      deletionProtection: env === 'production',
-      removalPolicy: env === 'production'
+      multiAz: props.tier.rdsMultiAz,
+      allocatedStorage: props.tier.rdsAllocatedStorage,
+      maxAllocatedStorage: Math.max(props.tier.rdsAllocatedStorage * 5, 100),
+      deletionProtection: isProductionGrade,
+      removalPolicy: isProductionGrade
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
-      backupRetention: env === 'production'
-        ? cdk.Duration.days(7)
-        : cdk.Duration.days(1),
+      backupRetention: cdk.Duration.days(props.tier.rdsBackupRetentionDays),
     });
 
     // --- S3 Buckets ---
