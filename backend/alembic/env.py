@@ -96,23 +96,35 @@ async def run_async_migrations() -> None:
                 "Acquiring Postgres advisory lock 0x%x for alembic upgrade",
                 _ALEMBIC_ADVISORY_LOCK_KEY,
             )
-            await connection.execute(
-                text("SELECT pg_advisory_lock(:key)"),
-                {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
-            )
+            # Acquire the lock inside an explicit transaction and commit
+            # immediately. The advisory lock is session-scoped (not
+            # transaction-scoped) so it survives the commit, but committing
+            # leaves the SQLAlchemy connection in a clean no-transaction
+            # state — alembic's `context.begin_transaction()` then opens a
+            # fresh transaction for the migrations themselves. Without this,
+            # SQLA's auto-begin leaves a hanging transaction that confuses
+            # alembic's per-migration transaction lifecycle.
+            async with connection.begin() as _lock_tx:
+                await connection.execute(
+                    text("SELECT pg_advisory_lock(:key)"),
+                    {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
+                )
+                await _lock_tx.commit()
         try:
             await connection.run_sync(do_run_migrations)
         finally:
             if is_postgres:
-                # Release explicitly. The lock would also drop on session
-                # close (NullPool means each connection is closed after
-                # use) but releasing here makes the intent clear and
-                # decouples this from pool behaviour.
+                # Release explicitly via a fresh transaction. The lock would
+                # also drop on session close (NullPool means each connection
+                # is closed after use) but releasing here makes the intent
+                # clear and decouples correctness from pool behaviour.
                 try:
-                    await connection.execute(
-                        text("SELECT pg_advisory_unlock(:key)"),
-                        {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
-                    )
+                    async with connection.begin() as _unlock_tx:
+                        await connection.execute(
+                            text("SELECT pg_advisory_unlock(:key)"),
+                            {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
+                        )
+                        await _unlock_tx.commit()
                 except Exception as exc:  # pragma: no cover — defensive
                     _log.warning(
                         "Advisory lock release failed (will drop on connection close): %s",
