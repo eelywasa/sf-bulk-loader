@@ -37,13 +37,13 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  subgraph network[BulkLoader-{env}-Network]
+  subgraph network["BulkLoader-#123;env#125;-Network"]
     vpc[VPC<br/>public + isolated subnets]
     sgalb[ALB SG]
     sgsvc[Backend service SG]
   end
 
-  subgraph data[BulkLoader-{env}-Data]
+  subgraph data["BulkLoader-#123;env#125;-Data"]
     ecr[ECR repo]
     rds[(RDS PostgreSQL)]
     s3in[(Input bucket)]
@@ -52,7 +52,7 @@ flowchart TB
     sesId[SES identity]
   end
 
-  subgraph backend[BulkLoader-{env}-Backend]
+  subgraph backend["BulkLoader-#123;env#125;-Backend"]
     cluster[ECS cluster]
     svctd[Service TaskDef<br/>RUN_MIGRATIONS=false]
     migtd[Migration TaskDef<br/>RUN_MIGRATIONS=true]
@@ -60,7 +60,7 @@ flowchart TB
     routeApi[Route53 A-ALIAS<br/>backendDomainName]
   end
 
-  subgraph frontend[BulkLoader-{env}-Frontend]
+  subgraph frontend["BulkLoader-#123;env#125;-Frontend"]
     s3fe[(Frontend bucket<br/>OAC-only)]
     cfDist[CloudFront distribution]
   end
