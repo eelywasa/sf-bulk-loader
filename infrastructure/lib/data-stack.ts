@@ -206,11 +206,19 @@ export class DataStack extends cdk.Stack {
           ]
         : [];
 
+    // Input + output buckets: production retains data on stack destroy; non-prod
+    // tiers (staging, dev) clean up to avoid orphaned buckets accumulating across
+    // deploy/destroy cycles. Mirrors the frontend bucket and ECR repo policy.
+    const dataBucketRemoval =
+      env === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+    const dataBucketAutoDelete = env !== 'production';
+
     // Input bucket: source CSV files uploaded by users or pipelines.
     this.inputBucket = new s3.Bucket(this, 'InputBucket', {
       encryption: s3.BucketEncryption.S3_MANAGED,
       versioned: false,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      removalPolicy: dataBucketRemoval,
+      autoDeleteObjects: dataBucketAutoDelete,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       lifecycleRules: inputLifecycle,
@@ -220,7 +228,8 @@ export class DataStack extends cdk.Stack {
     this.outputBucket = new s3.Bucket(this, 'OutputBucket', {
       encryption: s3.BucketEncryption.S3_MANAGED,
       versioned: false,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      removalPolicy: dataBucketRemoval,
+      autoDeleteObjects: dataBucketAutoDelete,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       lifecycleRules: outputLifecycle,
