@@ -8,12 +8,10 @@ you are provisioning a new environment, rotating a deployment's secrets, or
 wiring up SSM/Secrets Manager. For the admin CLI used to recover locked-out
 accounts see [`docs/usage/admin-recovery.md`](../usage/admin-recovery.md).
 
-> **Status: Skeleton implemented (Ticket 9)**
->
-> The CDK infrastructure stacks exist at `infrastructure/` and the architecture is fully
-> defined. A complete working deployment requires provisioning secrets, pushing a backend
-> image to ECR, and running `cdk deploy`. The application code is ready for `aws_hosted`
-> deployment — no backend or frontend changes are required.
+> **Status: validated end-to-end against `bulkloader.forcetide.net`
+> on 2026-05-01 (SFBL-278).** All four stacks deploy cleanly; the
+> first-deployment runbook below captures every gotcha hit during that
+> validation.
 
 ---
 
@@ -184,25 +182,95 @@ for hosted distributions.
 
 ## First Deployment
 
-### 1. Bootstrap CDK (once per account/region)
+> **Read this whole section before starting.** First deploys against a clean
+> account hit several non-obvious gotchas that aren't visible from a single
+> `cdk deploy --all` invocation. The flow below is the one validated against
+> `bulkloader.forcetide.net` during SFBL-278; in particular the
+> *MigrationTaskDef chicken-and-egg* (step 8), the *frontend build flavour*
+> (step 9), and the *Route53 alias for the frontend domain* (step 11) all
+> require manual operator action that the CDK does not currently automate.
+
+### Common first-deploy gotchas
+
+- **Two ACM certs are required in two different regions.** CloudFront
+  always reads its certificate from `us-east-1`, regardless of where the
+  rest of your stack lives. The ALB certificate must be in the deployment
+  region. If you forget the `us-east-1` cert, FrontendStack synth fails.
+- **`cdk.json` placeholders win over `cdk.context.json`** because CDK
+  deep-merges them with `cdk.json` taking priority for overlapping keys.
+  Strip any `domainName` / `certificateArn` / `hostedZoneDomain`
+  placeholders out of `cdk.json`'s environment blocks — `cdk.context.json`
+  is the single source of truth for first-deploy values.
+- **`npm run build:desktop` is not the AWS build.** It bakes
+  `VITE_API_URL=http://127.0.0.1:8000` and a hash router into the bundle
+  — fine for Electron, broken on AWS. Always use plain `npm run build`
+  before deploying FrontendStack (step 9).
+- **MigrationTaskDef is created by BackendStack but the service starts
+  before migrations run.** `lifespan()` in `app/main.py` queries
+  `profile_permissions` / calls `seed_admin` immediately on task start,
+  which crashes against an empty schema. The service crashloops and
+  BackendStack hangs. Workaround in step 8 below; longer-term fix
+  ([SFBL-298](https://matthew-jenkin.atlassian.net/browse/SFBL-298)
+  proposes relocating MigrationTaskDef to DataStack so it exists before
+  the service ever starts).
+- **CloudFront does not auto-create the Route53 alias for the frontend
+  domain.** ALB origins for `backendDomainName` are aliased automatically;
+  CloudFront aliases for `domainName` are not. Step 11 adds it manually.
+
+### 1. Bootstrap CDK (once per account, **two regions**)
 
 ```bash
-cdk bootstrap aws://ACCOUNT_ID/REGION
+cdk bootstrap aws://ACCOUNT_ID/eu-west-1     # or your deploy region
+cdk bootstrap aws://ACCOUNT_ID/us-east-1     # required for the CloudFront cert
 ```
 
-### 2. Configure environment values
+### 2. Provision ACM certificates and validate via DNS
 
-Copy the example context file and fill in real values:
+```bash
+DOMAIN=bulkloader.example.com         # frontend (CloudFront) domain
+API_DOMAIN=api.bulkloader.example.com # ALB origin used by CloudFront's /api/* and /ws/* behaviors
+HOSTED_ZONE=example.com               # Route53 hosted zone that owns both names
+DEPLOY_REGION=eu-west-1
+
+# CloudFront cert MUST be in us-east-1
+CERT_FRONTEND_ARN=$(aws acm request-certificate \
+  --region us-east-1 \
+  --domain-name "$DOMAIN" \
+  --validation-method DNS \
+  --query CertificateArn --output text)
+
+# ALB cert in the deploy region
+CERT_ALB_ARN=$(aws acm request-certificate \
+  --region "$DEPLOY_REGION" \
+  --domain-name "$API_DOMAIN" \
+  --validation-method DNS \
+  --query CertificateArn --output text)
+
+# Read the DNS validation records ACM expects, then add them as CNAMEs
+# in the hosted zone. Both certs must reach Status: ISSUED before
+# CloudFormation will be willing to use them.
+aws acm describe-certificate --region us-east-1   --certificate-arn "$CERT_FRONTEND_ARN" --query 'Certificate.DomainValidationOptions[].ResourceRecord'
+aws acm describe-certificate --region "$DEPLOY_REGION" --certificate-arn "$CERT_ALB_ARN"      --query 'Certificate.DomainValidationOptions[].ResourceRecord'
+```
+
+Validation typically completes in a couple of minutes once the CNAMEs are
+in place.
+
+### 3. Configure environment values
 
 ```bash
 cd infrastructure
 cp cdk.context.json.example cdk.context.json
-# Edit cdk.context.json with real certificate ARNs, domain names, and hosted zone values.
+# Edit cdk.context.json — see fields below.
 ```
 
-Or edit `infrastructure/cdk.json` directly for values safe to commit (no account IDs or real ARNs).
+Confirm `cdk.json`'s `context.environments.<env>` block does **not** carry
+overlapping `domainName` / `certificateArn` / `hostedZoneDomain` /
+`backendDomainName` / `backendCertificateArn` placeholders for the env you
+are deploying — those values must come from `cdk.context.json` so each
+deployment can hold real values without committing them.
 
-Environment config now includes:
+Required fields:
 
 | Key | Purpose |
 |-----|---------|
@@ -210,20 +278,33 @@ Environment config now includes:
 | `certificateArn` | CloudFront certificate ARN (must be in `us-east-1`) |
 | `backendDomainName` | Backend origin hostname used by CloudFront (for example `api.example.com`) |
 | `backendCertificateArn` | ALB certificate ARN in the deployment region |
-| `hostedZoneDomain` | Route53 hosted zone that owns `backendDomainName` |
+| `hostedZoneDomain` | Route53 hosted zone that owns `backendDomainName` and `domainName` |
+| `sesIdentityDomain` (optional) | SES sender domain — defaults to `hostedZoneDomain` |
+| `sesIdentityAdoptExisting` (optional) | `true` if the SES identity is already verified outside this stack |
 
-### 3. Deploy infrastructure stacks
+### 4. Deploy Network + Data only
 
 ```bash
-cd infrastructure
 npm install
-npx cdk deploy --all -c env=staging
+npx cdk deploy BulkLoader-${ENV}-Network BulkLoader-${ENV}-Data -c env=${ENV}
 ```
 
-This creates all four stacks in dependency order. Note the outputs — you'll need the ECR URI,
-backend origin domain name, and bucket names from the CloudFormation outputs.
+This provisions the VPC, RDS, S3 buckets, Secrets Manager entries, and
+the ECR repository. **Do not deploy `--all` yet** — Backend will fail
+to reach steady state until you populate secrets (step 5) and push an
+image (step 7), and Frontend will fail until `frontend/dist` is built
+(step 9).
 
-### 4. Provision secrets before first ECS start
+Capture the outputs you'll need:
+
+```bash
+ECR_URI=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
+  --query "Stacks[0].Outputs[?OutputKey=='EcrRepositoryUri'].OutputValue" --output text)
+RDS_ENDPOINT=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
+  --query "Stacks[0].Outputs[?OutputKey=='RdsEndpoint'].OutputValue" --output text)
+```
+
+### 5. Provision secrets before first ECS start
 
 The Secrets Manager secrets are created empty by CDK. Populate them before ECS attempts to start:
 
@@ -265,37 +346,33 @@ aws secretsmanager put-secret-value \
   --secret-string "your-admin-password"
 ```
 
-### 5. Provision SSM parameters
+### 6. Provision SSM parameters
 
 ```bash
-ENV=staging
-CLOUDFRONT_DOMAIN=<your-domain-or-cf-domain>
+aws ssm put-parameter --name /${ENV}/bulk-loader/cors-origins \
+  --value "[\"https://${DOMAIN}\"]" --type String
 
-aws ssm put-parameter \
-  --name /${ENV}/bulk-loader/cors-origins \
-  --value "[\"https://${CLOUDFRONT_DOMAIN}\"]" \
-  --type String
+aws ssm put-parameter --name /${ENV}/bulk-loader/log-level \
+  --value INFO --type String
 
-aws ssm put-parameter \
-  --name /${ENV}/bulk-loader/log-level \
-  --value INFO \
-  --type String
+aws ssm put-parameter --name /${ENV}/bulk-loader/frontend-base-url \
+  --value "https://${DOMAIN}" --type String
 
-aws ssm put-parameter \
-  --name /${ENV}/bulk-loader/frontend-base-url \
-  --value "https://${CLOUDFRONT_DOMAIN}" \
-  --type String
+aws ssm put-parameter --name /${ENV}/bulk-loader/admin-username \
+  --value admin --type String
+
+aws ssm put-parameter --name /${ENV}/bulk-loader/email-from-address \
+  --value "no-reply@${HOSTED_ZONE}" --type String
+
+aws ssm put-parameter --name /${ENV}/bulk-loader/email-ses-region \
+  --value "${DEPLOY_REGION}" --type String
 ```
 
-### 6. Build and push the backend image to ECR
+### 7. Build and push the backend image to ECR
 
 ```bash
-# Get ECR URI from CloudFormation output: BulkLoader-{env}-Backend EcrRepositoryUri
-ECR_URI=<from-cfn-output>
-AWS_REGION=<your-region>
-
-aws ecr get-login-password --region $AWS_REGION | \
-  docker login --username AWS --password-stdin $ECR_URI
+aws ecr get-login-password --region "$DEPLOY_REGION" | \
+  docker login --username AWS --password-stdin "$ECR_URI"
 
 docker buildx build \
   --platform linux/amd64 \
@@ -306,49 +383,153 @@ docker buildx build \
 docker push ${ECR_URI}:latest
 ```
 
-### 7. Force ECS service update
+### 8. Deploy BackendStack — handle the first-deploy migration race
 
-After pushing a new image, trigger a rolling deploy:
+This is the trickiest step on a clean account. The MigrationTaskDefinition
+is created **inside** BackendStack, but the ECS service in the same stack
+boots immediately and tries to call `lifespan()` against an empty schema —
+which crashes. The service crashloops, never reaches steady state, and
+BackendStack stalls until the rollback timeout.
+
+The workaround: kick off `cdk deploy` in the background, wait until the
+MigrationTaskDef exists, run the migration manually, force a service
+deployment, then let CDK finish.
 
 ```bash
+# 1. Start the deploy in the background.
+nohup npx cdk deploy BulkLoader-${ENV}-Backend -c env=${ENV} \
+  --require-approval never > /tmp/backend-deploy.log 2>&1 &
+DEPLOY_PID=$!
+
+# 2. Poll until the MigrationTaskDef ARN is available.
+until MIGRATION_ARN=$(aws cloudformation describe-stacks \
+        --stack-name BulkLoader-${ENV}-Backend \
+        --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" \
+        --output text 2>/dev/null) && [ -n "$MIGRATION_ARN" ] && [ "$MIGRATION_ARN" != "None" ]; do
+  sleep 15
+done
+echo "MigrationTaskDef ready: $MIGRATION_ARN"
+
+# 3. Look up the security group + public subnets the service uses.
+SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Backend \
+  --query "Stacks[0].Outputs[?OutputKey=='BackendServiceSecurityGroupId'].OutputValue" --output text)
+VPC_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Network \
+  --query "Stacks[0].Outputs[?OutputKey=='VpcId'].OutputValue" --output text)
+SUBNETS=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:aws-cdk:subnet-type,Values=Public" \
+  --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+
+# 4. Run the migration task once and wait for it to exit cleanly.
+TASK_ARN=$(aws ecs run-task \
+  --cluster bulk-loader-${ENV} \
+  --task-definition "$MIGRATION_ARN" \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+  --query 'tasks[0].taskArn' --output text)
+aws ecs wait tasks-stopped --cluster bulk-loader-${ENV} --tasks "$TASK_ARN"
+
+# 5. Force a fresh service deployment now that the schema exists.
 aws ecs update-service \
   --cluster bulk-loader-${ENV} \
   --service BulkLoader-${ENV}-Backend-Service \
   --force-new-deployment
+
+# 6. Wait for cdk deploy to finish — it will reach CREATE_COMPLETE
+#    once the service hits steady state.
+wait $DEPLOY_PID
 ```
 
-Or redeploy the backend stack (CDK will trigger a new task revision):
+Save the migration task ARN in case you need to re-run it later.
+
+### 9. Build the frontend SPA — **plain `npm run build`, not `build:desktop`**
 
 ```bash
-npx cdk deploy BulkLoader-${ENV}-Backend -c env=${ENV}
+cd frontend
+npm install
+npm run build           # ← MUST be this, not `npm run build:desktop`
+cd ..
 ```
 
-### 8. Deploy the frontend
+`npm run build:desktop` bakes `VITE_API_URL=http://127.0.0.1:8000` and
+the hash router into the bundle for Electron — both wrong on AWS.
+The plain `build` script produces a relative-URL, browser-router build
+that goes through CloudFront's `/api/*` and `/ws/*` behaviors to reach
+the ALB.
+
+Verify the bundle is clean before deploying:
 
 ```bash
-# Build the React SPA
-cd frontend && npm run build && cd ..
-
-# Get bucket name from CloudFormation output: BulkLoader-{env}-Frontend FrontendBucketName
-BUCKET=<from-cfn-output>
-DIST_ID=<from-cfn-output>   # DistributionId
-
-aws s3 sync frontend/dist/ s3://${BUCKET} --delete
-aws cloudfront create-invalidation --distribution-id ${DIST_ID} --paths '/*'
+grep -oE '127\.0\.0\.1:8000|localhost:8000' frontend/dist/assets/*.js && \
+  echo "STOP — desktop build leaked into dist/" || echo "ok"
 ```
 
-### 9. Smoke test
+### 10. Deploy FrontendStack
 
 ```bash
-# Replace with your CloudFront domain or custom domain
-DOMAIN=https://<distribution-domain-or-domainName>
+npx cdk deploy BulkLoader-${ENV}-Frontend -c env=${ENV}
+```
 
-curl -f ${DOMAIN}/api/health
+The `BucketDeployment` construct uploads `frontend/dist/` to S3 and
+issues a CloudFront invalidation automatically. CloudFront distribution
+provisioning typically takes 5–15 minutes on first creation.
+
+### 11. Add the Route53 alias for the frontend domain
+
+CDK does not auto-create the alias from `domainName` to the CloudFront
+distribution (only the ALB origin alias for `backendDomainName` is
+automated). Add it once:
+
+```bash
+DIST_DNS=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Frontend \
+  --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue" --output text)
+HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name --dns-name "$HOSTED_ZONE." \
+  --query 'HostedZones[0].Id' --output text | sed 's|/hostedzone/||')
+
+cat > /tmp/cf-alias.json <<EOF
+{ "Changes": [ { "Action": "UPSERT", "ResourceRecordSet": {
+  "Name": "${DOMAIN}.", "Type": "A",
+  "AliasTarget": {
+    "HostedZoneId": "Z2FDTNDATAQYW2",
+    "DNSName": "${DIST_DNS}.",
+    "EvaluateTargetHealth": false
+  }
+} } ] }
+EOF
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id "$HOSTED_ZONE_ID" \
+  --change-batch file:///tmp/cf-alias.json
+```
+
+`Z2FDTNDATAQYW2` is the well-known CloudFront hosted-zone-ID constant —
+it's not derived from anything in your account.
+
+### 12. Smoke test
+
+```bash
+# Health behind CloudFront (exercises CloudFront → ALB → ECS → RDS)
+curl -fsS "https://${DOMAIN}/api/health/ready"
 # Expected: {"status":"ok"}
 
-curl -f ${DOMAIN}/
-# Expected: 200 with React HTML
+# Login as the bootstrap admin
+ADMIN_PASSWORD=$(aws secretsmanager get-secret-value \
+  --secret-id /${ENV}/bulk-loader/admin-password --query SecretString --output text)
+ADMIN_EMAIL=$(aws secretsmanager get-secret-value \
+  --secret-id /${ENV}/bulk-loader/admin-email --query SecretString --output text)
+
+TOKEN=$(curl -fsS -X POST "https://${DOMAIN}/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASSWORD}\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Confirm RBAC permissions hydrate correctly
+curl -fsS -H "Authorization: Bearer $TOKEN" "https://${DOMAIN}/api/auth/me" | python3 -m json.tool
 ```
+
+A successful response from `/api/auth/me` proves the full path works:
+TLS termination at CloudFront, /api/* origin rewrite to the ALB, ECS
+task → RDS query, JWT signing with the deployed secret, RBAC permission
+matrix hydrated from migrated tables.
 
 ---
 

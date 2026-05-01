@@ -726,3 +726,59 @@ migrate → roll). CI scripts the orchestration; the operator who has to
 do it by hand also follows the same sequence per the runbook. The
 advisory lock means even doing the steps out of order is recoverable.
 
+## 027 — First-deploy MigrationTaskDef chicken-and-egg: workaround now, relocate later (SFBL-278 / SFBL-298)
+
+Decision 026 split migrations out into a `MigrationTaskDefinition`
+created by `BackendStack`, alongside the service `TaskDefinition`. That
+works on every deploy **after** the first one, but the first deploy
+against a clean account hits a chicken-and-egg: `BackendStack` creates
+the migration task and the service task in the same stack, and the
+service task starts immediately against an empty schema. `lifespan()` in
+`app/main.py` queries `profile_permissions` and calls `seed_admin` on
+boot — which crashes against a DB with no tables. Service tasks
+crashloop, the service never reaches steady state, and `BackendStack`
+hangs in `CREATE_IN_PROGRESS` until rollback.
+
+**Choice now — operator runbook workaround:** the first-deploy runbook
+(`docs/deployment/aws.md` step 8) starts `cdk deploy BulkLoader-${ENV}-Backend`
+in the background, polls until the `MigrationTaskDefinitionArn` output
+appears, runs the migration task manually with `aws ecs run-task`, then
+issues `update-service --force-new-deployment` so service tasks come up
+against a populated schema. CDK then reaches `CREATE_COMPLETE`.
+
+This is intentionally a runbook step rather than a code change in PR 2:
+the workaround is mechanical, the validation against
+`bulkloader.forcetide.net` proved it works, and shipping it lets PR 2
+focus on the actual aws-validation surface.
+
+**Options considered and rejected for the immediate fix:**
+
+| Option | Why rejected for now |
+|---|---|
+| `dependsOn` between service and migration task in the same stack | ECS service `dependsOn` only works for sibling containers in a single task definition, not across task definitions in the same service |
+| CloudFormation custom resource to run the migration during stack creation | Lambda needs VPC + RDS access; 15-minute timeout; reintroduces the connectivity complexity 026 explicitly rejected |
+| Make `lifespan()` tolerant of an empty schema | Defers crashes from boot to first request, makes the failure mode harder to diagnose, and only papers over the underlying ordering problem |
+
+**Cleaner architectural fix — deferred to [SFBL-298](https://matthew-jenkin.atlassian.net/browse/SFBL-298):**
+relocate `MigrationTaskDefinition` from `BackendStack` to `DataStack`.
+The migration task definition then exists as soon as the data layer
+(RDS + secrets + ECR repo) is up, before the service stack is even
+synthesised. The CI / runbook flow becomes:
+
+1. `cdk deploy Network Data` → DataStack now publishes
+   `MigrationTaskDefinitionArn` as a stack output.
+2. Push image to ECR.
+3. `aws ecs run-task` against the migration task — schema is at head.
+4. `cdk deploy Backend` — service tasks come up against a populated
+   schema, no race, no manual `force-new-deployment`.
+
+The migration task only depends on the image + secrets + RDS, all of
+which DataStack already owns; moving it is a stack-membership change
+without touching the underlying construct properties. PR-2's runbook
+explicitly references SFBL-298 so the workaround has a clear sunset.
+
+**Trade-off accepted:** until SFBL-298 ships, every operator who runs a
+truly clean first-deploy hits this manual step. The runbook is explicit
+and the workaround is reliable; subsequent deploys use the standard
+three-step flow from decision 026 unchanged.
+
