@@ -32,6 +32,8 @@ How to run, develop, and operate the app.
 | [deployment/docker.md](deployment/docker.md) | Self-hosted Docker deployment — configuration, HTTPS, PostgreSQL |
 | [deployment/desktop.md](deployment/desktop.md) | Desktop (Electron) deployment |
 | [deployment/aws.md](deployment/aws.md) | AWS-hosted deployment |
+| [deployment/migrating-to-postgres.md](deployment/migrating-to-postgres.md) | Self-hosted SQLite → PostgreSQL cutover |
+| [deployment/migrating-to-aws-hosted.md](deployment/migrating-to-aws-hosted.md) | Self-hosted → AWS-hosted cutover (DB, encryption key, S3, SES, DNS) |
 | [development.md](development.md) | Local development, tests, migrations |
 | [versioning.md](versioning.md) | Version scheme, git tags, how to cut a release |
 | [observability.md](observability.md) | Event taxonomy, metrics, spans, DoD checklist |
