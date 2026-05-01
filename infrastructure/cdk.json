@@ -67,7 +67,7 @@
         "useFargateSpot": true
       }
     },
-    "_environments_doc": "Real environment values live in cdk.context.json (gitignored). cdk.json keeps only the tier preset assignment + ecrImageTag default; everything else (domain names, ACM cert ARNs, hosted zone, VPC CIDR, region) is operator-specific and must come from cdk.context.json. See docs/deployment/aws.md for the cdk.context.json shape.",
+    "_environments_doc": "Real environment values for staging/production live in cdk.context.json (gitignored). cdk.json keeps only the tier preset assignment + ecrImageTag default; everything else (domain names, ACM cert ARNs, hosted zone, VPC CIDR, region) is operator-specific and must come from cdk.context.json. The `ci` environment is the exception — it carries safe non-routable placeholders so `cdk synth -c env=ci` works in CI without operator credentials. See docs/deployment/aws.md for the cdk.context.json shape.",
     "environments": {
       "staging": {
         "tier": "bronze",
@@ -76,6 +76,19 @@
       "production": {
         "tier": "silver",
         "ecrImageTag": "stable"
+      },
+      "ci": {
+        "tier": "bronze",
+        "ecrImageTag": "latest",
+        "region": "eu-west-1",
+        "vpcCidr": "10.0.0.0/16",
+        "domainName": "ci.example.invalid",
+        "certificateArn": "arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000",
+        "backendDomainName": "api.ci.example.invalid",
+        "backendCertificateArn": "arn:aws:acm:eu-west-1:000000000000:certificate/00000000-0000-0000-0000-000000000000",
+        "hostedZoneDomain": "example.invalid",
+        "sesIdentityDomain": "example.invalid",
+        "sesIdentityAdoptExisting": false
       }
     }
   }
