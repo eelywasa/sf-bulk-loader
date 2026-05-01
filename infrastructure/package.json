@@ -8,7 +8,8 @@
     "watch": "tsc -w",
     "synth": "cdk synth",
     "diff": "cdk diff",
-    "deploy": "cdk deploy"
+    "deploy": "cdk deploy",
+    "diagram": "cdk synth -c env=ci -q && cdk-dia --target cdk.out/aws-stacks.png --tree cdk.out/tree.json && mkdir -p ../docs/architecture/diagrams && mv cdk.out/aws-stacks.png ../docs/architecture/diagrams/aws-stacks.png"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.170.0",
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "aws-cdk": "^2.170.0",
+    "cdk-dia": "^0.12.3",
     "typescript": "~5.6.0"
   }
 }

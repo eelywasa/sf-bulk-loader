@@ -210,6 +210,19 @@ and shared components. **Must be kept in sync with the code** — any change
 to tokens, `formStyles.ts`, or shared UI components requires a corresponding
 update to this file in the same task.
 
+### AWS topology diagrams
+
+`docs/architecture/aws-topology.md` carries two views of the AWS deployment:
+hand-drawn Mermaid diagrams (request path + stack ownership) and an
+auto-generated `cdk-dia` PNG at `docs/architecture/diagrams/aws-stacks.png`.
+**Both must be refreshed in the same PR as any change under
+`infrastructure/lib/`** — the auto-generated PNG via `cd infrastructure &&
+npm run diagram` (requires Graphviz), and the Mermaid views by hand when
+request flow, stack ownership, or labelled resources change. The drift
+checklist is at the bottom of `aws-topology.md`. Stale topology diagrams
+mislead operators debugging the live system, so reviewers should flag any
+infra-touching PR that doesn't refresh them.
+
 ### Epic DoD
 
 The *Epic Definition of Done — documentation* rules above still apply: docs
