@@ -67,25 +67,14 @@
         "useFargateSpot": true
       }
     },
+    "_environments_doc": "Real environment values live in cdk.context.json (gitignored). cdk.json keeps only the tier preset assignment + ecrImageTag default; everything else (domain names, ACM cert ARNs, hosted zone, VPC CIDR, region) is operator-specific and must come from cdk.context.json. See docs/deployment/aws.md for the cdk.context.json shape.",
     "environments": {
       "staging": {
         "tier": "bronze",
-        "vpcCidr": "10.10.0.0/16",
-        "domainName": "staging.your-domain.example",
-        "certificateArn": "arn:aws:acm:us-east-1:ACCOUNT:certificate/STAGING-CLOUDFRONT-CERT-ID",
-        "backendDomainName": "api-staging.your-domain.example",
-        "backendCertificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/STAGING-ALB-CERT-ID",
-        "hostedZoneDomain": "your-domain.example",
         "ecrImageTag": "latest"
       },
       "production": {
         "tier": "silver",
-        "vpcCidr": "10.20.0.0/16",
-        "domainName": "bulk-loader.your-domain.example",
-        "certificateArn": "arn:aws:acm:us-east-1:ACCOUNT:certificate/PROD-CLOUDFRONT-CERT-ID",
-        "backendDomainName": "api.your-domain.example",
-        "backendCertificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/PROD-ALB-CERT-ID",
-        "hostedZoneDomain": "your-domain.example",
         "ecrImageTag": "stable"
       }
     }
