@@ -8,11 +8,11 @@ export interface NetworkStackProps extends cdk.StackProps {
 }
 
 /**
- * NetworkStack — VPC and network topology for the aws_hosted distribution.
+ * NetworkStack - VPC and network topology for the aws_hosted distribution.
  *
  * Layout:
  *   - 2 Availability Zones
- *   - Public subnets:   ALB, ECS Fargate tasks (public IPs — no NAT Gateway required)
+ *   - Public subnets:   ALB, ECS Fargate tasks (public IPs - no NAT Gateway required)
  *   - Isolated subnets: RDS (no internet route; reachable from the VPC only)
  *
  * No NAT Gateway is provisioned. Fargate tasks receive public IPs and reach the
@@ -46,7 +46,7 @@ export class NetworkStack extends cdk.Stack {
           cidrMask: 24,
         },
         {
-          // RDS only. No route to the internet — accessible from within the VPC
+          // RDS only. No route to the internet - accessible from within the VPC
           // exclusively. Using PRIVATE_ISOLATED rather than PRIVATE_WITH_EGRESS
           // ensures no NAT dependency is created even if natGateways is later
           // increased.
@@ -57,7 +57,7 @@ export class NetworkStack extends cdk.Stack {
       ],
     });
 
-    // S3 Gateway Endpoint — free; routes S3 traffic over the AWS backbone.
+    // S3 Gateway Endpoint - free; routes S3 traffic over the AWS backbone.
     // Eliminates internet egress charges for input CSV reads and result CSV writes.
     this.vpc.addGatewayEndpoint('S3GatewayEndpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,

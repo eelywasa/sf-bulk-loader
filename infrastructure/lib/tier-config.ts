@@ -1,5 +1,5 @@
 /**
- * TierConfig — shape of a Bronze/Silver/Gold sizing preset.
+ * TierConfig - shape of a Bronze/Silver/Gold sizing preset.
  *
  * Presets live in `cdk.json` under `context.tiers`. Each environment block
  * under `context.environments` selects one via the `tier` field. Resolved
@@ -10,15 +10,15 @@
  *
  * - Fields up to `outputRetentionDays` are consumed by SFBL-275 stacks
  *   (Network / Data / Backend / Frontend).
- * - Gold-specific feature flags below — `workerEnabled`, `redisEnabled`,
- *   `redisInstanceClass`, `redisMultiAz`, `wafEnabled`, `useFargateSpot` —
+ * - Gold-specific feature flags below - `workerEnabled`, `redisEnabled`,
+ *   `redisInstanceClass`, `redisMultiAz`, `wafEnabled`, `useFargateSpot` -
  *   are part of the contract today but are not yet provisioned. SFBL-295
  *   reads the same flags and adds the corresponding resources (worker
  *   Fargate tier, ElastiCache Redis, AWS WAF, Fargate Spot capacity
  *   provider strategy) when each is true.
  */
 export interface TierConfig {
-  // RDS — sized in B1 / consumed throughout DataStack
+  // RDS - sized in B1 / consumed throughout DataStack
   rdsInstanceClass: string;
   rdsMultiAz: boolean;
   rdsAllocatedStorage: number;
@@ -28,7 +28,7 @@ export interface TierConfig {
    * `deletionProtection: true` on the DBInstance (RDS-level guard against the
    * DeleteDBInstance API call) and `RemovalPolicy.RETAIN` on the CDK construct
    * (CloudFormation will retain the DB if the stack is destroyed). Should be
-   * enabled for any tier that holds real data — i.e. Silver and Gold.
+   * enabled for any tier that holds real data - i.e. Silver and Gold.
    *
    * Decoupled from `rdsMultiAz` because Multi-AZ is a HA/cost decision while
    * deletion protection is a data-loss guard; they don't have to move
@@ -37,7 +37,7 @@ export interface TierConfig {
    */
   rdsDeletionProtection: boolean;
 
-  // ECS — Fargate task shape and replica count
+  // ECS - Fargate task shape and replica count
   ecsDesiredCount: number;
   ecsTaskCpu: number;
   ecsTaskMemory: number;
@@ -46,11 +46,11 @@ export interface TierConfig {
   logRetentionDays: number;
   containerInsightsEnabled: boolean;
 
-  // S3 lifecycle (B3) — 0 = retain forever
+  // S3 lifecycle (B3) - 0 = retain forever
   inputRetentionDays: number;
   outputRetentionDays: number;
 
-  // Gold-only flags — consumed by SFBL-295. Default-falsy on Bronze/Silver.
+  // Gold-only flags - consumed by SFBL-295. Default-falsy on Bronze/Silver.
   workerEnabled?: boolean;
   redisEnabled?: boolean;
   redisInstanceClass?: string;
@@ -60,10 +60,10 @@ export interface TierConfig {
 }
 
 /**
- * Resolve a tier shape from CDK context — `tiers[envConfig.tier]`.
+ * Resolve a tier shape from CDK context - `tiers[envConfig.tier]`.
  *
  * Throws with a clear message if the environment doesn't name a tier or
- * the tier preset is missing — both are setup errors that should fail at
+ * the tier preset is missing - both are setup errors that should fail at
  * synth time, not at deploy time.
  */
 export function resolveTier(
@@ -93,7 +93,7 @@ export function resolveTier(
 
 /**
  * Convert `logRetentionDays` from a number into the CDK enum value used by
- * `logs.LogGroup({ retention })`. CDK doesn't accept arbitrary day values —
+ * `logs.LogGroup({ retention })`. CDK doesn't accept arbitrary day values -
  * only specific RetentionDays enum members. Round to the nearest supported
  * value (always rounding up so we never retain less than the operator asked).
  */

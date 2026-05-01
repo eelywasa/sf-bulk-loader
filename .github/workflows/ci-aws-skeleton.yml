@@ -57,6 +57,9 @@ jobs:
 
       - name: Synthesise CloudFormation templates
         # Validates that all four stacks (Network, Data, Backend, Frontend) are
-        # structurally sound. No AWS credentials or live deployment required.
-        run: npx cdk synth -c env=staging
+        # structurally sound. Uses the `ci` env in cdk.json which carries safe
+        # non-routable placeholders for vpcCidr / cert ARNs / domain names —
+        # staging and production deliberately have no placeholders in cdk.json
+        # so operators must populate cdk.context.json (gitignored) before deploy.
+        run: npx cdk synth -c env=ci
         working-directory: infrastructure

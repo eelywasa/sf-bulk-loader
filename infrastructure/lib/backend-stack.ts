@@ -18,7 +18,7 @@ export interface BackendStackProps extends cdk.StackProps {
   backendServiceSecurityGroup: ec2.SecurityGroup;
   /**
    * ECR repository created by DataStack. BackendStack consumes the existing
-   * repository — operators must push at least one image to it before this
+   * repository - operators must push at least one image to it before this
    * stack is deployed (see SFBL-276 deploy ordering).
    */
   backendRepository: ecr.IRepository;
@@ -27,7 +27,7 @@ export interface BackendStackProps extends cdk.StackProps {
   databaseUrlSecret: secretsmanager.Secret;
   adminEmailSecret: secretsmanager.Secret;
   adminPasswordSecret: secretsmanager.Secret;
-  /** SES domain identity ARN — IAM ses:SendEmail/SendRawEmail are scoped to this resource. */
+  /** SES domain identity ARN - IAM ses:SendEmail/SendRawEmail are scoped to this resource. */
   sesIdentityArn: string;
   /** DNS hostname that CloudFront uses as the backend origin (for example api.example.com). */
   backendDomainName: string;
@@ -35,13 +35,13 @@ export interface BackendStackProps extends cdk.StackProps {
   backendCertificateArn: string;
   /** Route53 hosted zone name that owns backendDomainName. */
   hostedZoneDomain: string;
-  /** Bronze/Silver/Gold tier preset — drives ECS task shape, replica count, log retention. */
+  /** Bronze/Silver/Gold tier preset - drives ECS task shape, replica count, log retention. */
   tier: TierConfig;
   ecrImageTag: string;
 }
 
 /**
- * BackendStack — ECS/Fargate backend service for the aws_hosted distribution.
+ * BackendStack - ECS/Fargate backend service for the aws_hosted distribution.
  *
  * Provisions:
  *   - ECS cluster (Fargate; no EC2 capacity to manage)
@@ -54,7 +54,7 @@ export interface BackendStackProps extends cdk.StackProps {
  *   - CloudWatch Logs log group
  *
  * The ECR repository for the backend image is created by DataStack (see
- * SFBL-276 — first-deploy ordering fix). Operators must push an image to
+ * SFBL-276 - first-deploy ordering fix). Operators must push an image to
  * the repository before deploying this stack, otherwise the ECS service
  * fails its first task launch with an image-not-found error.
  *
@@ -77,7 +77,7 @@ export interface BackendStackProps extends cdk.StackProps {
  *   These are passed via the container `secrets:` block using
  *   `ecs.Secret.fromSsmParameter(...)` rather than `parameter.stringValue`
  *   under `environment:`. The latter resolves at synth time and bakes the
- *   literal value into the CloudFormation template — meaning a parameter
+ *   literal value into the CloudFormation template - meaning a parameter
  *   change does not propagate to a new task without `cdk deploy`. Using
  *   `ecs.Secret.fromSsmParameter` means ECS reads the live value when the
  *   task starts, so a parameter edit + service rolling restart picks it up.
@@ -85,7 +85,7 @@ export interface BackendStackProps extends cdk.StackProps {
  *   Hardcoded in task definition (distribution policy, not secrets):
  *     APP_DISTRIBUTION=aws_hosted
  *
- * The application reads all of these from environment variables — no code changes
+ * The application reads all of these from environment variables - no code changes
  * are needed in config.py. The aws_hosted profile validates at startup that
  * transport_mode=https, input_storage_mode=s3, and DATABASE_URL is PostgreSQL.
  *
@@ -96,7 +96,7 @@ export interface BackendStackProps extends cdk.StackProps {
  * client layer; the ALB forwards ws:// to the container transparently.
  */
 export class BackendStack extends cdk.Stack {
-  /** DNS name of the Application Load Balancer — consumed by FrontendStack for API routing. */
+  /** DNS name of the Application Load Balancer - consumed by FrontendStack for API routing. */
   public readonly albDnsName: string;
 
   constructor(scope: Construct, id: string, props: BackendStackProps) {
@@ -128,7 +128,7 @@ export class BackendStack extends cdk.Stack {
     // (see app/services/output_storage.py and app/api/input_connections.py),
     // so the task role does NOT need direct S3 grants on the input/output
     // buckets. Operators must create an IAM user, generate access keys, and
-    // paste them into the InputConnection form via the UI — see
+    // paste them into the InputConnection form via the UI - see
     // docs/deployment/aws.md "S3 input/output connections" section.
     //
     // SFBL-295 will add an `InputConnection.use_task_role` mode that lets
@@ -151,7 +151,7 @@ export class BackendStack extends cdk.Stack {
       // and write to CloudWatch Logs. CDK also grants it access to the secrets below.
     });
 
-    // SSM Parameter Store — non-sensitive config resolved at task launch.
+    // SSM Parameter Store - non-sensitive config resolved at task launch.
     // Provision these parameters before first ECS deployment:
     //   aws ssm put-parameter --name /{env}/bulk-loader/cors-origins --value '["https://your-domain.example"]' --type String
     //   aws ssm put-parameter --name /{env}/bulk-loader/log-level     --value 'INFO'                          --type String
@@ -190,13 +190,13 @@ export class BackendStack extends cdk.Stack {
       // parameter edit + rolling restart picks up the new value without
       // a CDK redeploy.
       secrets: {
-        // Sensitive values — never appear in task definition plaintext.
+        // Sensitive values - never appear in task definition plaintext.
         ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(props.encryptionKeySecret),
         JWT_SECRET_KEY: ecs.Secret.fromSecretsManager(props.jwtSecretKeySecret),
         DATABASE_URL: ecs.Secret.fromSecretsManager(props.databaseUrlSecret),
         ADMIN_EMAIL: ecs.Secret.fromSecretsManager(props.adminEmailSecret),
         ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(props.adminPasswordSecret),
-        // Non-sensitive runtime config — read live from SSM at task launch.
+        // Non-sensitive runtime config - read live from SSM at task launch.
         CORS_ORIGINS: ecs.Secret.fromSsmParameter(corsOriginsParam),
         LOG_LEVEL: ecs.Secret.fromSsmParameter(logLevelParam),
         ADMIN_USERNAME: ecs.Secret.fromSsmParameter(adminUsernameParam),
@@ -204,11 +204,17 @@ export class BackendStack extends cdk.Stack {
         EMAIL_SES_REGION: ecs.Secret.fromSsmParameter(emailSesRegionParam),
       },
 
-      // Plain environment variables — only for static distribution policy.
-      // Anything runtime-tunable lives in SSM/Secrets Manager via secrets: above.
+      // Plain environment variables - only for static distribution policy
+      // and the migration gate. Anything runtime-tunable lives in
+      // SSM/Secrets Manager via secrets: above.
       environment: {
-        // Distribution profile — drives all aws_hosted startup validation in config.py.
+        // Distribution profile - drives all aws_hosted startup validation in config.py.
         APP_DISTRIBUTION: 'aws_hosted',
+        // SFBL-277: service tasks never run migrations - the one-shot
+        // MigrationTaskDefinition below handles that out-of-band before
+        // each rolling deploy. See docs/deployment/aws.md "Ongoing
+        // Deployments" for the deploy sequence.
+        RUN_MIGRATIONS: 'false',
       },
 
       portMappings: [{ containerPort: 8000 }],
@@ -247,10 +253,10 @@ export class BackendStack extends cdk.Stack {
     // health probe at /api/health/dependencies (cached 60s).
     //
     // Two policies, scoped differently:
-    //   1. Send actions — restricted to the SES identity ARN provisioned
+    //   1. Send actions - restricted to the SES identity ARN provisioned
     //      by DataStack. Limits the blast radius if the role is ever
     //      compromised: it can only send as the deployment's own identity.
-    //   2. Read actions — Resource: "*" because GetSendQuota / GetAccount
+    //   2. Read actions - Resource: "*" because GetSendQuota / GetAccount
     //      are account-wide reads that don't accept a resource ARN.
     taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -267,7 +273,7 @@ export class BackendStack extends cdk.Stack {
       }),
     );
 
-    // Suppress unused variable warning — container is used implicitly through taskDefinition.
+    // Suppress unused variable warning - container is used implicitly through taskDefinition.
     void container;
 
     // --- Application Load Balancer ---
@@ -305,7 +311,7 @@ export class BackendStack extends cdk.Stack {
       securityGroups: [props.backendServiceSecurityGroup],
       // Tasks run in public subnets and are assigned public IPs so they can reach
       // the Salesforce API without a NAT Gateway. Inbound traffic is restricted by
-      // the security group to the ALB only — no direct public access to port 8000.
+      // the security group to the ALB only - no direct public access to port 8000.
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       assignPublicIp: true,
       // Rolling deploy: always keep at least one healthy task during updates.
@@ -313,7 +319,7 @@ export class BackendStack extends cdk.Stack {
       maxHealthyPercent: 200,
       // Capacity provider strategy:
       // - Bronze/Silver: 100% on-demand FARGATE.
-      // - Gold (tier.useFargateSpot=true): hybrid — keeps 1 task on-demand
+      // - Gold (tier.useFargateSpot=true): hybrid - keeps 1 task on-demand
       //   so the service stays up if Spot is reclaimed, runs additional tasks
       //   on FARGATE_SPOT for cost savings. Per SFBL-295 the worker tier is
       //   the primary Spot consumer; the API tier hybrid is a smaller win.
@@ -375,6 +381,99 @@ export class BackendStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'EcsClusterName', {
       value: cluster.clusterName,
       description: 'ECS cluster name',
+    });
+
+    // -------------------------------------------------------------------------
+    // SFBL-277: One-shot migration task definition.
+    //
+    // ECS rolling deploys can start two service tasks concurrently. Letting
+    // both run `alembic upgrade head` on startup races on the schema and
+    // (worse) leaves a window where new code runs against a partially-
+    // migrated DB. The fix is to run migrations from exactly one task,
+    // before the service rollout begins.
+    //
+    // This task definition shares the image, execution role, secrets, and
+    // env injection of the main service task, but:
+    //   - sets RUN_MIGRATIONS=true so the Dockerfile CMD runs alembic
+    //   - has no port mappings (it's a one-shot, doesn't accept traffic)
+    //   - has no health check (it runs to completion and exits)
+    //   - a Postgres advisory lock inside alembic/env.py serialises against
+    //     anyone else who happens to call upgrade simultaneously
+    //
+    // Deploy sequence (per docs/deployment/aws.md "Ongoing Deployments"):
+    //   1. docker buildx build && docker push  (new image to ECR)
+    //   2. aws ecs run-task --task-definition <migrationTaskArn>
+    //      --launch-type FARGATE
+    //      --network-configuration 'awsvpcConfiguration=
+    //        {subnets=[...],securityGroups=[<backendSG>],assignPublicIp=ENABLED}'
+    //      and wait for STOPPED with exit code 0
+    //   3. aws ecs update-service --force-new-deployment
+    //
+    // The exported MigrationTaskDefinitionArn output below tells CI which
+    // task to invoke without having to look up the version.
+    // -------------------------------------------------------------------------
+
+    const migrationTaskDefinition = new ecs.FargateTaskDefinition(this, 'MigrationTaskDef', {
+      memoryLimitMiB: props.tier.ecsTaskMemory,
+      cpu: props.tier.ecsTaskCpu,
+      taskRole,
+    });
+
+    migrationTaskDefinition.addContainer('migration', {
+      image: ecs.ContainerImage.fromEcrRepository(repository, props.ecrImageTag),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'migration',
+        logGroup,
+      }),
+      // Same secret/SSM injection as the service task - the migration runs
+      // the full app config validator at boot.
+      secrets: {
+        ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(props.encryptionKeySecret),
+        JWT_SECRET_KEY: ecs.Secret.fromSecretsManager(props.jwtSecretKeySecret),
+        DATABASE_URL: ecs.Secret.fromSecretsManager(props.databaseUrlSecret),
+        ADMIN_EMAIL: ecs.Secret.fromSecretsManager(props.adminEmailSecret),
+        ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(props.adminPasswordSecret),
+        CORS_ORIGINS: ecs.Secret.fromSsmParameter(corsOriginsParam),
+        LOG_LEVEL: ecs.Secret.fromSsmParameter(logLevelParam),
+        ADMIN_USERNAME: ecs.Secret.fromSsmParameter(adminUsernameParam),
+        EMAIL_FROM_ADDRESS: ecs.Secret.fromSsmParameter(emailFromAddressParam),
+        EMAIL_SES_REGION: ecs.Secret.fromSsmParameter(emailSesRegionParam),
+      },
+      environment: {
+        APP_DISTRIBUTION: 'aws_hosted',
+        // Run the alembic upgrade then exit. The "&& uvicorn ..." in the
+        // Dockerfile CMD will still execute uvicorn after the migration,
+        // which is wasted work but harmless - the task is a one-shot,
+        // ECS exits when the first command returns. We override the
+        // command below to skip uvicorn entirely.
+        RUN_MIGRATIONS: 'true',
+      },
+      // Override the Dockerfile CMD: only run alembic upgrade head, then
+      // exit cleanly. No uvicorn, no service.
+      command: ['sh', '-c', 'alembic upgrade head'],
+    });
+
+    // Grant the migration task's execution role the same secret/SSM access
+    // as the service task's execution role.
+    props.encryptionKeySecret.grantRead(migrationTaskDefinition.executionRole!);
+    props.jwtSecretKeySecret.grantRead(migrationTaskDefinition.executionRole!);
+    props.databaseUrlSecret.grantRead(migrationTaskDefinition.executionRole!);
+    props.adminEmailSecret.grantRead(migrationTaskDefinition.executionRole!);
+    props.adminPasswordSecret.grantRead(migrationTaskDefinition.executionRole!);
+    corsOriginsParam.grantRead(migrationTaskDefinition.executionRole!);
+    logLevelParam.grantRead(migrationTaskDefinition.executionRole!);
+    adminUsernameParam.grantRead(migrationTaskDefinition.executionRole!);
+    emailFromAddressParam.grantRead(migrationTaskDefinition.executionRole!);
+    emailSesRegionParam.grantRead(migrationTaskDefinition.executionRole!);
+
+    new cdk.CfnOutput(this, 'MigrationTaskDefinitionArn', {
+      value: migrationTaskDefinition.taskDefinitionArn,
+      description: 'ARN of the one-shot Alembic migration task - invoke via aws ecs run-task before service rollout',
+      exportName: `${this.stackName}-MigrationTaskDefinitionArn`,
+    });
+    new cdk.CfnOutput(this, 'BackendServiceSecurityGroupId', {
+      value: props.backendServiceSecurityGroup.securityGroupId,
+      description: 'Security group ID for ECS tasks - pass to aws ecs run-task --network-configuration',
     });
   }
 }
