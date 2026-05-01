@@ -36,11 +36,16 @@ if (!envConfig) {
 const tiers = app.node.tryGetContext('tiers') as Record<string, any> | undefined;
 const tier = resolveTier(envName, envConfig, tiers);
 
-// Use the AWS account/region from the caller's environment.
-// Run `aws configure` or set AWS_PROFILE before deploying.
+// AWS account comes from the caller's environment (CDK_DEFAULT_ACCOUNT,
+// set automatically by `aws sts get-caller-identity`). Region comes from
+// the env config (`cdk.json`/`cdk.context.json`) so it's pinned to the
+// chosen deployment region regardless of whatever AWS_DEFAULT_REGION /
+// CDK_DEFAULT_REGION the operator's shell happens to have. Falls back
+// to CDK_DEFAULT_REGION if envConfig.region is unset (preserves the
+// original behaviour for environments that haven't opted in).
 const awsEnv: cdk.Environment = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
-  region: process.env.CDK_DEFAULT_REGION,
+  region: (envConfig.region as string | undefined) ?? process.env.CDK_DEFAULT_REGION,
 };
 
 const prefix = `BulkLoader-${envName}`;
@@ -50,7 +55,7 @@ const networkStack = new NetworkStack(app, `${prefix}-Network`, {
   env: awsEnv,
   envName,
   vpcCidr: envConfig.vpcCidr as string,
-  description: `Salesforce Bulk Loader — network layer (${envName})`,
+  description: `Salesforce Bulk Loader - network layer (${envName})`,
 });
 
 // Stack 2: RDS, S3, Secrets Manager, ECR, SES identity
@@ -63,7 +68,7 @@ const dataStack = new DataStack(app, `${prefix}-Data`, {
   hostedZoneDomain: envConfig.hostedZoneDomain as string,
   sesIdentityDomain: envConfig.sesIdentityDomain as string | undefined,
   sesIdentityAdoptExisting: envConfig.sesIdentityAdoptExisting as boolean | undefined,
-  description: `Salesforce Bulk Loader — data layer (${envName})`,
+  description: `Salesforce Bulk Loader - data layer (${envName})`,
 });
 dataStack.addDependency(networkStack);
 
@@ -86,7 +91,7 @@ const backendStack = new BackendStack(app, `${prefix}-Backend`, {
   hostedZoneDomain: envConfig.hostedZoneDomain as string,
   tier,
   ecrImageTag: (envConfig.ecrImageTag as string) ?? 'latest',
-  description: `Salesforce Bulk Loader — backend service (${envName})`,
+  description: `Salesforce Bulk Loader - backend service (${envName})`,
 });
 backendStack.addDependency(dataStack);
 
@@ -97,7 +102,7 @@ new FrontendStack(app, `${prefix}-Frontend`, {
   domainName: envConfig.domainName as string,
   certificateArn: envConfig.certificateArn as string,
   backendOriginDomainName: envConfig.backendDomainName as string,
-  description: `Salesforce Bulk Loader — frontend hosting (${envName})`,
+  description: `Salesforce Bulk Loader - frontend hosting (${envName})`,
 }).addDependency(backendStack);
 
 app.synth();

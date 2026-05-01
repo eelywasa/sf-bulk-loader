@@ -11,14 +11,14 @@ import { Construct } from 'constructs';
 export interface FrontendStackProps extends cdk.StackProps {
   envName: string;
   domainName: string;
-  /** ACM certificate ARN — must be in us-east-1 for CloudFront. */
+  /** ACM certificate ARN - must be in us-east-1 for CloudFront. */
   certificateArn: string;
   /** Backend origin hostname covered by the ALB certificate (for example api.example.com). */
   backendOriginDomainName: string;
 }
 
 /**
- * FrontendStack — CloudFront + S3 static hosting for the aws_hosted distribution.
+ * FrontendStack - CloudFront + S3 static hosting for the aws_hosted distribution.
  *
  * Architecture:
  *   Browser → CloudFront → /api/*  → backend origin hostname → ALB → ECS/Fargate
@@ -33,21 +33,21 @@ export interface FrontendStackProps extends cdk.StackProps {
  *   invalidation is issued automatically by the BucketDeployment construct
  *   below. Operators must run `cd frontend && npm run build` before
  *   `cdk deploy BulkLoader-{env}-Frontend`. If ../frontend/dist is missing
- *   at synth time the BucketDeployment is skipped with a warning — useful
+ *   at synth time the BucketDeployment is skipped with a warning - useful
  *   for `cdk synth` smoke checks during development without a build.
  */
 export class FrontendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
     super(scope, id, props);
 
-    // --- S3 Bucket — static frontend assets ---
+    // --- S3 Bucket - static frontend assets ---
     const frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
       encryption: s3.BucketEncryption.S3_MANAGED,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
-      // Bucket is not public — CloudFront accesses it via Origin Access Control (OAC).
+      // Bucket is not public - CloudFront accesses it via Origin Access Control (OAC).
     });
 
     // --- CloudFront Origin Access Control ---
@@ -59,7 +59,7 @@ export class FrontendStack extends cdk.Stack {
 
     // --- ALB origin for API and WebSocket paths ---
     // The ALB handles /api/* and /ws/* paths.
-    // CloudFront does not terminate WebSocket connections — it proxies them through.
+    // CloudFront does not terminate WebSocket connections - it proxies them through.
     const albOrigin = new origins.HttpOrigin(props.backendOriginDomainName, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
       // CloudFront connects using a hostname covered by the ALB certificate.
@@ -67,7 +67,7 @@ export class FrontendStack extends cdk.Stack {
 
     // --- CloudFront Distribution ---
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
-      comment: `Salesforce Bulk Loader — ${props.envName}`,
+      comment: `Salesforce Bulk Loader - ${props.envName}`,
       defaultRootObject: 'index.html',
 
       // Default behavior: serve React SPA from S3.
@@ -88,7 +88,7 @@ export class FrontendStack extends cdk.Stack {
           cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
-        // /ws/* → ALB → Fargate (WebSocket — not cached, all methods, long TTL disabled)
+        // /ws/* → ALB → Fargate (WebSocket - not cached, all methods, long TTL disabled)
         '/ws/*': {
           origin: albOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -156,7 +156,7 @@ export class FrontendStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'DistributionId', {
       value: distribution.distributionId,
-      description: 'CloudFront distribution ID — needed for cache invalidation on deploy',
+      description: 'CloudFront distribution ID - needed for cache invalidation on deploy',
     });
     new cdk.CfnOutput(this, 'FrontendBucketName', {
       value: frontendBucket.bucketName,
