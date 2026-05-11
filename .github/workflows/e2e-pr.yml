@@ -32,7 +32,12 @@ jobs:
   e2e-tier-1a:
     name: E2E Tier 1a (org-free)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20 min headroom for the backend image build, which can take 5-8 min
+    # (with occasional PyPI retries pushing it higher). The actual Playwright
+    # run is sub-minute. FOLLOW-UP: extract the backend/frontend image build
+    # into a shared upstream job that both 1a + 1b depend on, so the build
+    # runs once and the tier jobs parallelize — would cut wall-clock by ~half.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -144,7 +149,12 @@ jobs:
   e2e-tier-1b:
     name: E2E Tier 1b (fixture-mode)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20 min headroom for the backend image build, which can take 5-8 min
+    # (with occasional PyPI retries pushing it higher). The actual Playwright
+    # run is sub-minute. FOLLOW-UP: extract the backend/frontend image build
+    # into a shared upstream job that both 1a + 1b depend on, so the build
+    # runs once and the tier jobs parallelize — would cut wall-clock by ~half.
+    timeout-minutes: 20
     # Gate lifted by SFBL-322 — SFBL-320 (fixture-mode backend), SFBL-321
     # (describe fixture files) and SFBL-322 (canary spec) are all complete.
 
