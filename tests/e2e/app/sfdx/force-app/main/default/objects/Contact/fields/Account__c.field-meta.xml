@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Custom Account lookup on Contact used by the Tier 2 E2E suite (SFBL-328).
+
+  WHY this exists separately from the standard Contact.Account lookup:
+    The contact-upsert-relationship spec asserts a byte-exact CSV header
+    of `Account__r.External_Id__c` (H1 finding in SFBL-301). The `__r`
+    suffix is reserved for custom lookups — the standard Account
+    relationship on Contact is named `Account` (no suffix), so trying to
+    upsert with `Account__r.External_Id__c` against the standard
+    relationship returns
+
+      InvalidBatch : Unable to find relationship: Account__r
+
+    Adding this custom Account__c lookup creates a real `Account__r`
+    relationship that satisfies the H1 byte-exact assertion without
+    forcing the spec to relax the header form. The field is otherwise
+    inert: it lives only on the scratch org and is not wired into any
+    business logic.
+-->
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Account__c</fullName>
+    <description>Custom Account lookup used by Tier 2 E2E specs to exercise the Account__r.External_Id__c (H1 byte-exact) relationship-header upsert path. Not used by production code.</description>
+    <label>E2E Account Lookup</label>
+    <referenceTo>Account</referenceTo>
+    <relationshipName>Account</relationshipName>
+    <relationshipLabel>E2E Contacts</relationshipLabel>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+    <deleteConstraint>SetNull</deleteConstraint>
+</CustomField>

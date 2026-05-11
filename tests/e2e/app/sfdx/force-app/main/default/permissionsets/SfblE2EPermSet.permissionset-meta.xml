@@ -29,6 +29,11 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
+        <field>Contact.Account__c</field>
+        <editable>true</editable>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
         <field>SfblE2ETest__c.External_Id__c</field>
         <editable>true</editable>
         <readable>true</readable>
