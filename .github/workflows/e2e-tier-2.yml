@@ -200,52 +200,6 @@ jobs:
       #   - 15/18-char org ID normalisation (L2 third-pass).
       #   - Active-shape prerequisite check (L1 + M1 fourth-pass).
       # -----------------------------------------------------------------------
-      # DIAGNOSTIC (temporary — to be reverted once the create-scratch-org
-      # failure mode on PR #89 is understood): dump every Dev Hub side
-      # constraint that might be silently rejecting the scratch-create
-      # request.  The error wording "INVALID_INPUT: The callback URL
-      # provided is not valid" is the same regardless of which callback
-      # URL is set on the Dev Hub ECA, so the underlying issue is likely
-      # not the callback URL at all.
-      - name: DIAG — Dev Hub config dump
-        continue-on-error: true
-        run: |
-          set +e
-          echo "=== sf org display ==="
-          sf org display --target-org "${SFDX_DEVHUB_USERNAME}" --json | jq '.result | {id, instanceUrl, username, apiVersion, edition, isDevHub, organizationType}' || true
-          echo
-          echo "=== Active org shapes (if any) ==="
-          sf org list shape --json | jq '.result // []' || true
-          echo
-          echo "=== ScratchOrgInfo permissions check (can the user even create scratch orgs?) ==="
-          sf data query --target-org "${SFDX_DEVHUB_USERNAME}" --json \
-            -q "SELECT Id, OrgName, Status, ScratchOrg, ErrorCode FROM ScratchOrgInfo ORDER BY CreatedDate DESC LIMIT 5" | jq '.result.records // []' || true
-          echo
-          echo "=== Default Salesforce API version ==="
-          sf --version
-        env:
-          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
-
-      - name: DIAG — scratch-create with full debug
-        continue-on-error: true
-        env:
-          SF_LOG_LEVEL: debug
-          SFDX_LOG_LEVEL: debug
-          NODE_OPTIONS: --unhandled-rejections=warn
-          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
-        run: |
-          set +e
-          echo "=== sf org create scratch (debug) ==="
-          sf org create scratch \
-            -f tests/e2e/sf/sfdx/config/project-scratch-def.json \
-            --target-dev-hub "${SFDX_DEVHUB_USERNAME}" \
-            --alias diag-create-${{ github.run_id }} \
-            --duration-days 1 \
-            --no-track-source 2>&1 | tee /tmp/sf-create-debug.log
-          echo
-          echo "=== Extracted: ScratchOrgInfo payload + error response ==="
-          grep -B 2 -A 30 -iE "scratchorginfo|callbackurl|connectedappcallback|request body|response.*body|error.*code|invalid_input|message" /tmp/sf-create-debug.log | head -200 || true
-
       - name: Create scratch org
         run: bash tests/e2e/sf/scripts/scratch_create.sh
 
