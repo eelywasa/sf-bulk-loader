@@ -1,0 +1,427 @@
+name: E2E Tier 2 — PR label opt-in
+
+# SECURITY POLICY (D8):
+# - Uses `pull_request`, NOT `pull_request_target` — secrets are never available to fork PR code.
+# - Same-repo PRs only (head.repo.fork == false guard on the job).
+# - See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+#
+# This workflow fires when a maintainer adds the `tier-2` label to a same-repo PR,
+# or when a same-repo PR with that label is synchronised or reopened.
+#
+# Nightly cron → .github/workflows/e2e-tier-2-nightly.yml
+# Release-tag gate → .github/workflows/release.yml (tier-2-e2e job)
+#
+# Fork PRs: skipped entirely (would not receive secrets even if they ran).
+# Maintainer-curated manual runs via workflow_dispatch are the path for fork
+# PRs needing Tier 2 verification after a diff review.
+
+on:
+  pull_request:
+    # `labeled` MUST be listed explicitly — the default set
+    # [opened, synchronize, reopened] does NOT include it, so the workflow
+    # would never fire when the label is first added (review-pass finding M2).
+    types: [labeled, synchronize, reopened]
+
+  # Ad-hoc manual firing from the Actions UI.  Inputs let the operator override
+  # the scratch-org alias, skip teardown for post-mortem inspection, or reuse
+  # a long-lived scratch to iterate on Playwright specs without burning daily
+  # Dev Hub quota.
+  workflow_dispatch:
+    inputs:
+      scratch_org_alias:
+        description: 'Override E2E_SCRATCH_ORG (default: workflow-generated unique alias). Ignored when reuse_shared_scratch=true.'
+        type: string
+        required: false
+        default: ''
+      skip_destroy:
+        description: 'Skip scratch-org destroy at the end (for post-mortem inspection — REMEMBER TO DELETE MANUALLY)'
+        type: boolean
+        required: false
+        default: false
+      reuse_shared_scratch:
+        description: 'Reuse the long-lived scratch in secret TIER2_REUSE_AUTH_URL. Skips create/permset/destroy; only re-deploys SFDX (idempotent), re-discovers consumer key, smoke-tests, and runs Playwright. Zero daily-quota cost per iteration.'
+        type: boolean
+        required: false
+        default: false
+
+# Minimum permissions — contents: read for checkout, pull-requests: read
+# to check labels on pull_request events.
+permissions:
+  contents: read
+  pull-requests: read
+
+# Only one Tier 2 run at a time per ref to avoid scratch-org quota exhaustion.
+concurrency:
+  group: e2e-tier-2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tier-2-e2e:
+    name: E2E Tier 2 — scratch org
+    runs-on: ubuntu-latest
+    # Wall-clock target: under 15 min including scratch-org spin-up (D8).
+    timeout-minutes: 30
+
+    # Gate: only run when:
+    #   (a) the `tier-2` label is present, AND
+    #   (b) the PR is from the same repo (not a fork) — secrets policy (D8).
+    # workflow_dispatch bypasses the PR check entirely (no PR context exists).
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.fork == false &&
+        contains(github.event.pull_request.labels.*.name, 'tier-2')
+      )
+
+    env:
+      # Scratch org alias selection (precedence):
+      #   1. reuse_shared_scratch=true → fixed alias 'tier2-shared' (the
+      #      long-lived scratch authed via TIER2_REUSE_AUTH_URL secret)
+      #   2. scratch_org_alias input set → use that
+      #   3. otherwise → unique per-run alias e2e-tier2-<run_id>
+      E2E_SCRATCH_ORG: ${{ inputs.reuse_shared_scratch && 'tier2-shared' || (inputs.scratch_org_alias != '' && inputs.scratch_org_alias) || format('e2e-tier2-{0}', github.run_id) }}
+      # E2E_ORG_SHAPE defaults to "default" (no org shape) unless overridden
+      # in the repo's Actions variables. Set to a 15- or 18-char org ID to
+      # enable org-shape mode (see scratch_create.sh for full details).
+      E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+      # Disable sf CLI colour output (PR #89 run 25694848427: sf data query
+      # --json emitted ANSI codes mid-JSON, breaking JSON.parse on consumers).
+      # The helper also strips ANSI defensively; NO_COLOR is the cleaner fix.
+      NO_COLOR: '1'
+      FORCE_COLOR: '0'
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Set up runtimes
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # -----------------------------------------------------------------------
+      # 3a. Preflight — check all required secrets are present.
+      #
+      # Without this step, a missing secret produces an opaque auth failure
+      # several steps in (e.g. "sf org login jwt: error: Invalid JWT").
+      # Fail fast with a clear pointer at the setup runbook instead.
+      # -----------------------------------------------------------------------
+      - name: Preflight — verify Tier 2 secrets are configured
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+          TIER2_REUSE_AUTH_URL: ${{ secrets.TIER2_REUSE_AUTH_URL }}
+          REUSE_SHARED_SCRATCH: ${{ inputs.reuse_shared_scratch }}
+        run: |
+          MISSING=()
+          # SFDX_AUTH_URL (Dev Hub) is only needed when we're CREATING a scratch.
+          # When reusing an existing scratch we don't need Dev Hub access at all.
+          if [ "${REUSE_SHARED_SCRATCH}" != "true" ]; then
+            [ -z "${SFDX_AUTH_URL}" ]              && MISSING+=("SFDX_AUTH_URL")
+          fi
+          [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
+          if [ "${REUSE_SHARED_SCRATCH}" = "true" ] && [ -z "${TIER2_REUSE_AUTH_URL}" ]; then
+            MISSING+=("TIER2_REUSE_AUTH_URL (required when reuse_shared_scratch=true)")
+          fi
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Tier 2 cannot run — missing GitHub secret(s): ${MISSING[*]}"
+            echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
+            exit 1
+          fi
+          if [ "${REUSE_SHARED_SCRATCH}" != "true" ] && ! [[ "${SFDX_AUTH_URL}" =~ ^force://.+ ]]; then
+            echo "::error::SFDX_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
+            echo "::error::Generate via: sf org display --target-org <devhub-alias> --verbose --json | jq -r '.result.sfdxAuthUrl'"
+            exit 1
+          fi
+          if [ "${REUSE_SHARED_SCRATCH}" = "true" ] && ! [[ "${TIER2_REUSE_AUTH_URL}" =~ ^force://.+ ]]; then
+            echo "::error::TIER2_REUSE_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
+            exit 1
+          fi
+          echo "All required Tier 2 secrets are present (reuse_shared_scratch=${REUSE_SHARED_SCRATCH})."
+
+      # -----------------------------------------------------------------------
+      # 3b. Install JWT signing dependency (Codex P2 on PR #89)
+      #
+      # jwt_smoke_test.sh's Python helper signs the JWT bearer assertion;
+      # it prefers `cryptography` and falls back to PyJWT.  Neither is on
+      # the GHA ubuntu-latest base image, so install explicitly here — the
+      # smoke test would otherwise ImportError before validating the org
+      # and the operator would see a confusing failure mode.
+      # -----------------------------------------------------------------------
+      - name: Install JWT signing dependency (cryptography)
+        run: pip install --no-input cryptography
+
+      # The Tier 2 specs invoke tests/e2e/app/fixtures/csv/*.py at runtime
+      # (via child_process from Playwright), and those scripts import Faker
+      # through the shared csv_factory.  Install the requirements file
+      # explicitly so the runtime invocation succeeds.
+      - name: Install CSV factory dependencies (Faker)
+        run: pip install --no-input -r tests/e2e/sf/fixtures/csv/requirements.txt
+
+      # -----------------------------------------------------------------------
+      # 3b. Install Salesforce CLI
+      # -----------------------------------------------------------------------
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      # -----------------------------------------------------------------------
+      # 4. Dev Hub auth via sfdx-url (refresh-token URL captured from an
+      # operator's interactive `sf org login web` session).  We pivoted away
+      # from JWT-via-ECA Dev Hub auth on PR #89: ECA-authenticated sessions
+      # (UI-created or SFDX-deployed) consistently fail scratch-org creation
+      # with C-1016 "RemoteOrgSignupFailed" — apparently a Salesforce-side
+      # constraint on which client identities can provision scratch orgs from
+      # a JWT'd session.  The sfdx-url path reproduces the interactive
+      # operator's session in CI without needing an ECA at all.
+      #
+      # Rotation: indefinite by default; rotate annually or when the
+      # operator's SF admin password changes (revokes refresh tokens).
+      # See docs/deployment/salesforce-jwt-setup.md § "Dev Hub auth".
+      - name: Authenticate to Dev Hub via sfdx-url
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          # Write the URL to a temp file then point the CLI at it.  The
+          # alternative --sfdx-url-stdin flag's behaviour varies across sf CLI
+          # versions (PR #89 run 25685029092: newer CLI interpreted the flag
+          # as value-taking and rejected --alias as an unknown positional
+          # argument).  --sfdx-url-file is unambiguous.
+          AUTH_FILE="$(mktemp)"
+          trap 'rm -f "$AUTH_FILE"' EXIT
+          printf '%s' "$SFDX_AUTH_URL" > "$AUTH_FILE"
+          chmod 600 "$AUTH_FILE"
+
+          sf org login sfdx-url \
+            --sfdx-url-file "$AUTH_FILE" \
+            --alias devhub \
+            --set-default-dev-hub
+
+          USERNAME="$(sf org display --target-org devhub --json | jq -r '.result.username')"
+          INSTANCE="$(sf org display --target-org devhub --json | jq -r '.result.instanceUrl')"
+          echo "INFO: Dev Hub authentication via sfdx-url complete (username: ${USERNAME}, instance: ${INSTANCE})"
+
+      # -----------------------------------------------------------------------
+      # 5. Create scratch org (D3)
+      #
+      # scratch_create.sh handles:
+      #   - Default vs. org-shape scratch-def selection (E2E_ORG_SHAPE).
+      #   - 15/18-char org ID normalisation (L2 third-pass).
+      #   - Active-shape prerequisite check (L1 + M1 fourth-pass).
+      # -----------------------------------------------------------------------
+      # When reuse_shared_scratch=true: log into the long-lived scratch
+      # directly via its sfdxAuthUrl (from TIER2_REUSE_AUTH_URL secret).  No
+      # quota cost.  Skips the Dev Hub session entirely — we don't need it
+      # for spec execution against an already-provisioned scratch.
+      - name: Authenticate to shared scratch (reuse mode)
+        if: inputs.reuse_shared_scratch
+        env:
+          TIER2_REUSE_AUTH_URL: ${{ secrets.TIER2_REUSE_AUTH_URL }}
+        run: |
+          AUTH_FILE="$(mktemp)"
+          trap 'rm -f "$AUTH_FILE"' EXIT
+          printf '%s' "$TIER2_REUSE_AUTH_URL" > "$AUTH_FILE"
+          chmod 600 "$AUTH_FILE"
+          sf org login sfdx-url \
+            --sfdx-url-file "$AUTH_FILE" \
+            --alias tier2-shared \
+            --set-default
+          USERNAME="$(sf org display --target-org tier2-shared --json | jq -r '.result.username')"
+          INSTANCE="$(sf org display --target-org tier2-shared --json | jq -r '.result.instanceUrl')"
+          echo "INFO: Reusing scratch (username: ${USERNAME}, instance: ${INSTANCE}) — skipping create/permset/destroy"
+
+      - name: Create scratch org
+        if: '!inputs.reuse_shared_scratch'
+        run: bash tests/e2e/sf/scripts/scratch_create.sh
+
+      # -----------------------------------------------------------------------
+      # 6. Deploy SFDX project to scratch org
+      #
+      # Deploys both SFDX projects:
+      #   - tests/e2e/sf/sfdx       — Salesforce ECA + certificate + permission set
+      #   - tests/e2e/app/sfdx      — App-specific SfblE2ETest__c custom object
+      # -----------------------------------------------------------------------
+      - name: Deploy SFDX project to scratch org
+        run: |
+          cd tests/e2e/sf/sfdx
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+
+      # -----------------------------------------------------------------------
+      # 7a. Assign permission set + create SetupEntityAccess link (SFBL-327)
+      #
+      # Assigns SfblE2EPermSet to the scratch admin user and creates the
+      # SetupEntityAccess record linking the permission set to the ECA.
+      # WITHOUT this step AdminApprovedPreAuthorized is not activated and
+      # the JWT bearer grant fails with a 400 auth error.
+      # -----------------------------------------------------------------------
+      # Permset assignment + SetupEntityAccess linking are one-time per scratch.
+      # When reusing the shared scratch, they were already done at the first
+      # provisioning; re-running would fail on duplicate-assignment errors.
+      - name: Assign permission set and create SetupEntityAccess link
+        if: '!inputs.reuse_shared_scratch'
+        run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
+
+      # -----------------------------------------------------------------------
+      # 7b. Discover ECA consumer key (SFBL-327)
+      #
+      # Retrieves ExtlClntAppGlobalOauthSettings:SfblE2E from the scratch org
+      # and parses the <consumerKey> element from the XML.  Exports the key
+      # to GITHUB_ENV so downstream steps can reference it as
+      # $E2E_BULK_LOADER_CONSUMER_KEY.
+      # -----------------------------------------------------------------------
+      - name: Discover ECA consumer key
+        run: |
+          CONSUMER_KEY="$(bash tests/e2e/sf/scripts/discover_eca_consumer_key.sh)"
+          echo "E2E_BULK_LOADER_CONSUMER_KEY=${CONSUMER_KEY}" >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # 7c. JWT smoke test — bulk-loader auth path (SFBL-327)
+      #
+      # Performs a direct JWT bearer grant against
+      # <instance_url>/services/oauth2/token using the private key PEM from
+      # the SFBL_E2E_BULK_LOADER_JWT_KEY secret.  This mirrors EXACTLY the
+      # auth path used by backend/app/services/salesforce_auth.py.
+      #
+      # A failure here exits the workflow before any Playwright spec runs,
+      # with a clear ECA-setup error message instead of confusing downstream
+      # spec failures.
+      # -----------------------------------------------------------------------
+      - name: JWT smoke test — bulk-loader auth path
+        env:
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          bash tests/e2e/sf/scripts/jwt_smoke_test.sh
+
+          # Export org details for setup_connection.ts (used by Playwright specs).
+          ORG_JSON="$(sf org display --target-org "${E2E_SCRATCH_ORG}" --json)"
+          INSTANCE_URL="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['instanceUrl'].rstrip('/'))
+          ")"
+          ADMIN_USERNAME="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['username'])
+          ")"
+          {
+            echo "E2E_SCRATCH_ORG_INSTANCE_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_LOGIN_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_USERNAME=${ADMIN_USERNAME}"
+          } >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # 8. Run Tier 2 Playwright specs (Codex P1 on PR #89 — replaces the
+      # previous placeholder echo which would have let release artifacts
+      # ship even when the actual specs failed).
+      #
+      # Steps:
+      #   a. Create writable data dirs for the backend volumes.
+      #   b. Write a minimal .env (APP_DISTRIBUTION=desktop disables the
+      #      login wall so Playwright can drive the UI directly; the
+      #      bulk loader still talks to Salesforce via the per-spec
+      #      Connection row that setup_connection.ts creates).
+      #   c. Bring up the stack with --build (no shared build-images job
+      #      yet — TODO: SFBL-340 to factor into a reusable workflow that
+      #      can share image builds with e2e-pr.yml's pattern).
+      #   d. Install Playwright deps.
+      #   e. Run `npm run e2e:2` with the env vars wired through.
+      #   f. Upload Playwright report on failure for diagnosis.
+      #   g. Dump container logs on failure.
+      #   h. Bring the stack down (always — stack tear-down precedes the
+      #      scratch-org destroy to release ports before SF auth cleanup).
+      # -----------------------------------------------------------------------
+      - name: Create data directories
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
+
+      - name: Create stack env file (no fixture mode — Tier 2 hits real SF)
+        run: |
+          echo 'APP_DISTRIBUTION=desktop' > .env
+
+      - name: Bring up app stack
+        run: docker compose -f docker-compose.yml up -d --build --wait --timeout 600
+
+      - name: Verify stack is reachable
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Install Playwright deps
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Tier 2 Playwright specs
+        working-directory: tests/e2e
+        env:
+          CI: 'true'
+          E2E_BASE_URL: 'http://localhost'
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+          E2E_RUN_ID: ${{ github.run_id }}
+        run: npm run e2e:2
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-tier-2-${{ github.run_id }}
+          path: tests/e2e/playwright-report/
+          retention-days: 14
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs
+
+      - name: Bring down app stack
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
+
+      # -----------------------------------------------------------------------
+      # 9. Destroy scratch org — ALWAYS runs to prevent org leaks (D3)
+      #
+      # Exception: when invoked via workflow_dispatch with skip_destroy=true,
+      # leave the org up for post-mortem inspection.  The dispatch input
+      # description warns the operator that they must delete it manually.
+      # -----------------------------------------------------------------------
+      # Destroy gated on three conditions:
+      #   - the run must have actually created a scratch (skip when reusing)
+      #   - the operator must not have opted into skip_destroy via dispatch
+      #   - always() so this fires even on earlier failures (cleanup hygiene)
+      - name: Destroy scratch org
+        if: always() && !inputs.reuse_shared_scratch && !(github.event_name == 'workflow_dispatch' && inputs.skip_destroy)
+        run: bash tests/e2e/sf/scripts/scratch_destroy.sh
+
+      - name: Skip scratch-org destroy (workflow_dispatch with skip_destroy=true)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
+        run: |
+          echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
+          echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."
+          echo "::warning::To capture its sfdxAuthUrl for reuse:"
+          echo "::warning::  sf org display --target-org ${E2E_SCRATCH_ORG} --verbose --json | jq -r '.result.sfdxAuthUrl' | gh secret set TIER2_REUSE_AUTH_URL"
+
+      - name: Reuse mode — scratch left intact
+        if: inputs.reuse_shared_scratch
+        run: |
+          echo "::notice::Reuse mode — shared scratch '${E2E_SCRATCH_ORG}' was not modified destructively (no create/permset/destroy)."
+          echo "::notice::Re-fire workflow_dispatch with reuse_shared_scratch=true to iterate Playwright against this scratch at zero daily-quota cost."
