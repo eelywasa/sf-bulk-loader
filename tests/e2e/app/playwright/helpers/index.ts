@@ -8,3 +8,4 @@
 export * from "./api";
 export * from "./auth";
 export * from "./e2e_prefix";
+export * from "./setup_connection";
