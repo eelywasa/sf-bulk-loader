@@ -1,0 +1,238 @@
+name: E2E PR Checks (Tier 1a + 1b)
+
+# Runs on every PR — the lightweight, org-free and fixture-based tiers.
+# Tier 2 (real Salesforce scratch org) is NOT triggered here; see D8 in
+# docs/specs/e2e-testing-spec.md for the full trigger policy. Tier 2 lives
+# inside release.yml (release-tag gate) and a nightly cron workflow.
+#
+# Security policy (D8 / pull_request_target warning):
+#   Uses `pull_request` — NOT `pull_request_target`. This means workflow code
+#   always runs in the context of the PR branch, not the base branch. No
+#   repository secrets are needed for Tier 1a or 1b; if secrets ever become
+#   required for a new step, they must NOT be added to this workflow for fork
+#   PRs. See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Least privilege — no secrets required for Tier 1a or 1b
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Tier 1a — org-free flows: file pane, plan list, RBAC nav, settings, login
+  # Runs on every PR. Target: under ~2 minutes.
+  # ---------------------------------------------------------------------------
+  e2e-tier-1a:
+    name: E2E Tier 1a (org-free)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          # D7/D13: lockfile lives at tests/e2e/, not the repo root
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create data directories
+        # data/db and data/output are mounted as writable volumes; chmod 777 so
+        # the non-root container user (appuser) can write on the CI runner.
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
+
+      - name: Create CI env file
+        # APP_DISTRIBUTION=desktop disables the login wall so Playwright can
+        # reach the app directly without auth credentials.
+        # ENCRYPTION_KEY/JWT_SECRET_KEY are auto-generated on first start and
+        # written to /data/db/*.key (writable volume) — intentionally omitted.
+        run: |
+          echo 'APP_DISTRIBUTION=desktop' > .env
+
+      - name: Build backend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          load: true
+          tags: sfbl-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: sfbl-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Bring up stack
+        # docker-compose.ci.yml overrides build: → image: so compose uses the
+        # pre-built images above rather than rebuilding. --wait blocks until
+        # the backend healthcheck passes (curl /api/health/ready).
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --timeout 120
+
+      - name: Verify stack is reachable
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Install Playwright deps
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Tier 1a
+        working-directory: tests/e2e
+        env:
+          CI: 'true'
+          # The nginx proxy inside the frontend container serves on port 80;
+          # override the default (5173, which is the local Vite dev server).
+          E2E_BASE_URL: 'http://localhost'
+        run: npm run e2e:1a
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-tier-1a
+          path: tests/e2e/playwright-report/
+          retention-days: 7
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+
+      - name: Bring down stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+
+  # ---------------------------------------------------------------------------
+  # Tier 1b — metadata-reading flows using captured describe fixtures
+  # (field-mapping panel, object combobox, SOQL validator)
+  #
+  # GATED OFF until SFBL-320 (fixture-mode backend support) + SFBL-321
+  # (describe fixture files) + SFBL-322 (Tier 1b canary spec) all land.
+  # SFBL-322 is the gate-keeper: it flips this `if: false` to a real
+  # condition (or removes it entirely) once the Tier 1b infrastructure
+  # is ready to run.
+  # ---------------------------------------------------------------------------
+  e2e-tier-1b:
+    name: E2E Tier 1b (fixture-mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # SFBL-322 flips this on when SFBL-320 + SFBL-321 + SFBL-322 are complete
+    if: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create data directories
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
+
+      - name: Create CI env file (fixture mode)
+        # SF_DESCRIBE_FIXTURES_DIR: app overlay searched first, sf baseline as
+        # fallback (D5 ordered-lookup contract). This keeps the backend from
+        # attempting live Salesforce calls during Tier 1b.
+        run: |
+          echo 'APP_DISTRIBUTION=desktop' > .env
+          echo 'SF_DESCRIBE_FIXTURES_DIR=tests/e2e/app/fixtures/describe:tests/e2e/sf/fixtures/describe' >> .env
+
+      - name: Build backend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          load: true
+          tags: sfbl-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: sfbl-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Bring up stack (fixture mode)
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --timeout 120
+
+      - name: Verify stack is reachable
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Install Playwright deps
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Tier 1b
+        working-directory: tests/e2e
+        env:
+          CI: 'true'
+          E2E_BASE_URL: 'http://localhost'
+        run: npm run e2e:1b
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-tier-1b
+          path: tests/e2e/playwright-report/
+          retention-days: 7
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+
+      - name: Bring down stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
