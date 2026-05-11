@@ -52,6 +52,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Explicit `scope=` on the GHA cache directives is critical (SFBL-335
+      # follow-up): without it, docker/build-push-action derives a scope key
+      # from the workflow + job name + some internals, and we observed two
+      # consecutive PR pushes writing *different* cache manifests rather than
+      # the second hitting the first's cache (PR #88 runs 25672963085 /
+      # 25673555777 / 25674253813 each took ~6-10 min from cold).  Pinning the
+      # scope to a stable string per image (`backend` / `frontend`) gives
+      # subsequent pushes on the same PR a deterministic key to hit.
       - name: Build backend image (with layer cache)
         uses: docker/build-push-action@v6
         with:
@@ -59,8 +67,8 @@ jobs:
           push: false
           load: true
           tags: sfbl-backend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
       - name: Build frontend image (with layer cache)
         uses: docker/build-push-action@v6
@@ -70,8 +78,8 @@ jobs:
           push: false
           load: true
           tags: sfbl-frontend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
       - name: Export images to tarballs
         # docker save uncompressed; the upload-artifact step zstds on the way
