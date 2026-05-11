@@ -289,6 +289,23 @@ jobs:
         run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
 
       # -----------------------------------------------------------------------
+      # 7a-2. Deactivate Salesforce's standard duplicate rules
+      #
+      # Scratch orgs ship with three active "Standard *_Duplicate_Rule" records
+      # (Account, Contact, Lead). They trigger on fuzzy Name matches and reject
+      # Bulk API inserts blanket with
+      #   DUPLICATES_DETECTED:Duplicate Alert:--
+      # even when the External_Id__c value is unique (the rule doesn't consult
+      # it). Bulk API 2.0 has no per-request header to bypass — the only
+      # reliable path is to flip IsActive=false via the Tooling API.
+      #
+      # The script is idempotent: only IsActive=true rules are touched, so
+      # reuse-mode runs are no-ops once the first run has disabled them.
+      # -----------------------------------------------------------------------
+      - name: Deactivate Salesforce standard duplicate rules
+        run: bash tests/e2e/sf/scripts/disable_duplicate_rules.sh
+
+      # -----------------------------------------------------------------------
       # 7b. Discover ECA consumer key (SFBL-327)
       #
       # Retrieves ExtlClntAppGlobalOauthSettings:SfblE2E from the scratch org
