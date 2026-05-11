@@ -261,11 +261,16 @@ jobs:
       #   - tests/e2e/app/sfdx      — App-specific SfblE2ETest__c custom object
       # -----------------------------------------------------------------------
       - name: Deploy SFDX project to scratch org
+        # --ignore-conflicts is safe here: each scratch is a closed
+        # system the workflow owns end-to-end, and on reuse runs the
+        # remote already has the same metadata we're about to deploy.
+        # Without the flag, reuse-mode runs fail with "There are
+        # changes in the org that conflict with the local changes…".
         run: |
           cd tests/e2e/sf/sfdx
-          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --ignore-conflicts --wait 10
           cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
-          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --ignore-conflicts --wait 10
 
       # -----------------------------------------------------------------------
       # 7a. Assign permission set + create SetupEntityAccess link (SFBL-327)
