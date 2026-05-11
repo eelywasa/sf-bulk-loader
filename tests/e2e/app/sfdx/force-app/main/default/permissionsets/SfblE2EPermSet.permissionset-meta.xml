@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Grants SF Bulk Loader E2E access to: (a) the SfblE2E external client app (JWT bearer flow) via runtime SetupEntityAccess link, and (b) FLS on the custom fields the Tier 2 specs upsert and query.</description>
+    <label>Sfbl E2E</label>
+    <!--
+      Two-part responsibility:
+
+      1. ECA OAuth gate (SFBL-327): a runtime SetupEntityAccess record is created by
+         setup_permset_and_access.sh linking THIS permission set to the SfblE2E ECA.
+         Without that link, AdminApprovedPreAuthorized does not activate and JWT
+         bearer auth fails.  The link is a data record (not metadata) — can't be
+         deployed via sf project deploy start.
+
+      2. Custom-field FLS (SFBL-328): Salesforce does NOT auto-grant FLS to
+         metadata-API-deployed custom fields, even for System Administrator profile.
+         PR #89 run 25693622361 surfaced "No such column 'External_Id__c' on entity
+         'Account'" during a sf data query after the field was successfully
+         deployed.  Explicit fieldPermissions below grant the Tier 2 specs' running
+         user the FLS they need.
+    -->
+    <fieldPermissions>
+        <field>Account.External_Id__c</field>
+        <editable>true</editable>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>Contact.Contact_External_Id__c</field>
+        <editable>true</editable>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <field>SfblE2ETest__c.External_Id__c</field>
+        <editable>true</editable>
+        <readable>true</readable>
+    </fieldPermissions>
+    <objectPermissions>
+        <object>SfblE2ETest__c</object>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+</PermissionSet>

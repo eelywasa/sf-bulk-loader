@@ -64,12 +64,16 @@ export function sfQuery(
   const cmd = `sf data query --target-org ${shellQuote(target)} --json --query ${shellQuote(soql)}`;
 
   let stdout: string;
+  let stderr = "";
   try {
-    stdout = execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+    // Capture stderr too (not piped to /dev/null) — sf CLI sometimes emits
+    // warnings or telemetry notices to stderr that explain confusing stdout.
+    const result = execSync(cmd, {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    stdout = result;
   } catch (err: unknown) {
-    // `sf` exits non-zero on query errors.  The error object has a `stdout`
-    // property with the JSON payload (including the error message) when --json
-    // is used.  Extract it so callers see the Salesforce error, not a Node one.
     const execErr = err as { stdout?: string; stderr?: string; message?: string };
     const body = execErr.stdout ?? execErr.stderr ?? execErr.message ?? String(err);
     throw new Error(`[sfQuery] sf data query failed:\n${body}`);
@@ -77,10 +81,31 @@ export function sfQuery(
 
   let parsed: SfQueryResult;
   try {
-    parsed = JSON.parse(stdout) as SfQueryResult;
-  } catch {
+    // Tolerant parse: sf CLI versions have been observed to emit a leading
+    // "You acknowledge and agree that the CLI..." banner or other non-JSON
+    // text before the `--json` body when stderr+stdout get muxed in CI logs.
+    // Strip everything before the first `{` to keep the parse robust.
+    const firstBrace = stdout.indexOf("{");
+    const jsonPortion = firstBrace > 0 ? stdout.slice(firstBrace) : stdout;
+    parsed = JSON.parse(jsonPortion) as SfQueryResult;
+  } catch (parseErr) {
+    // Diagnostic-rich error: include byte length, hex of first/last 32 bytes,
+    // and the visible head + tail of stdout so future failures don't keep
+    // tripping us with "looks valid but isn't".
+    const head = stdout.slice(0, 600);
+    const tail = stdout.length > 600 ? stdout.slice(-200) : "";
+    const headHex = Buffer.from(stdout.slice(0, 32), "utf8")
+      .toString("hex")
+      .replace(/(.{2})/g, "$1 ")
+      .trim();
     throw new Error(
-      `[sfQuery] Could not parse sf output as JSON:\n${stdout.slice(0, 500)}`,
+      `[sfQuery] Could not parse sf output as JSON.\n` +
+        `  parseErr: ${(parseErr as Error).message}\n` +
+        `  stdout.length=${stdout.length}\n` +
+        `  stdout[0..32] (hex): ${headHex || "(empty)"}\n` +
+        `  stderr (captured: ${stderr.length} bytes):\n${stderr || "(empty)"}\n` +
+        `  stdout HEAD (≤600):\n${head}\n` +
+        (tail ? `  stdout TAIL (≤200):\n${tail}\n` : ""),
     );
   }
 
