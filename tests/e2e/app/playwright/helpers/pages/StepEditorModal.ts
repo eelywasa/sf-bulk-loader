@@ -149,8 +149,25 @@ export class StepEditorModal {
 
   // ── Modal dismiss ──────────────────────────────────────────────────────────
 
-  /** Close the modal without saving. */
+  /**
+   * Close the modal without saving.
+   *
+   * The Cancel button lives in the modal's footer.  When operation === 'upsert'
+   * the modal body is tall enough that the footer sits outside the default
+   * Playwright viewport (1280×720 in CI).  Page-level scroll doesn't help —
+   * the modal is fixed-position — so we explicitly scroll the dialog's own
+   * scroll container before clicking.
+   *
+   * Observed on PR #88 CI run 25673555777 / job 75366654421: the click
+   * retried 114 times over 60s with "element is outside of the viewport"
+   * before the test timed out.
+   *
+   * Scoping the locator to `dialog` also future-proofs against any other
+   * page-level "Cancel" buttons (e.g. unsaved-changes confirmation banners).
+   */
   async cancel(): Promise<void> {
-    await this.page.getByRole("button", { name: "Cancel" }).click();
+    const cancel = this.dialog.getByRole("button", { name: "Cancel" });
+    await cancel.scrollIntoViewIfNeeded();
+    await cancel.click();
   }
 }
