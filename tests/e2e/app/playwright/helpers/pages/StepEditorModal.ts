@@ -152,22 +152,21 @@ export class StepEditorModal {
   /**
    * Close the modal without saving.
    *
-   * The Cancel button lives in the modal's footer.  When operation === 'upsert'
-   * the modal body is tall enough that the footer sits outside the default
-   * Playwright viewport (1280×720 in CI).  Page-level scroll doesn't help —
-   * the modal is fixed-position — so we explicitly scroll the dialog's own
-   * scroll container before clicking.
+   * The Cancel button in the modal footer is unclickable in the default
+   * CI viewport (1280×720) when operation === 'upsert' — the modal panel
+   * extends below the viewport with no internal scroll container, so the
+   * footer sits outside the visible area.  `scrollIntoViewIfNeeded()`
+   * does not help (Playwright reports "done scrolling" but the element
+   * remains outside the viewport on a fixed-position panel).
    *
-   * Observed on PR #88 CI run 25673555777 / job 75366654421: the click
-   * retried 114 times over 60s with "element is outside of the viewport"
-   * before the test timed out.
+   * The modal is built on HeadlessUI `Dialog` (frontend/src/components/ui/Modal.tsx),
+   * which closes on Escape natively.  Press Escape and assert the dialog
+   * disappears — robust against viewport sizing.
    *
-   * Scoping the locator to `dialog` also future-proofs against any other
-   * page-level "Cancel" buttons (e.g. unsaved-changes confirmation banners).
+   * Observed on PR #88 CI runs 25673555777 / 25674253813.
    */
   async cancel(): Promise<void> {
-    const cancel = this.dialog.getByRole("button", { name: "Cancel" });
-    await cancel.scrollIntoViewIfNeeded();
-    await cancel.click();
+    await this.page.keyboard.press("Escape");
+    await this.dialog.waitFor({ state: "hidden", timeout: 5_000 });
   }
 }
