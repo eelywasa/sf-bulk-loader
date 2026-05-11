@@ -166,7 +166,21 @@ function generateContactsCsv(
  * @returns          The first line of the first matching partition CSV.
  */
 function readPartitionHeader(outputDir: string, runId: string): string | null {
-  const runOutDir = path.join(outputDir, runId);
+  // The orchestrator writes partition CSVs under
+  //   <output_dir>/<short_run_id>-<plan_slug>/<step_id>/<job_id>/partition_*.csv
+  // where <short_run_id> is the first 8 characters of the UUID run id (see
+  // backend/app/services/partition_executor.py's path-builder).
+  // We can't just join(outputDir, runId): we have to scan one level down for
+  // a subdirectory whose name *starts with* the short run id.
+  if (!fs.existsSync(outputDir)) return null;
+  const shortRunId = runId.slice(0, 8);
+  const candidate = fs
+    .readdirSync(outputDir, { withFileTypes: true })
+    .find(
+      (entry) => entry.isDirectory() && entry.name.startsWith(`${shortRunId}-`),
+    );
+  if (!candidate) return null;
+  const runOutDir = path.join(outputDir, candidate.name);
   if (!fs.existsSync(runOutDir)) return null;
 
   // Recursively find all CSV files under the run's output directory.
