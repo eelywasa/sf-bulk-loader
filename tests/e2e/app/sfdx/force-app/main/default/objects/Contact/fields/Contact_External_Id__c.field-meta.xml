@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Contact_External_Id__c</fullName>
+    <description>External ID used by SF Bulk Loader E2E tests to upsert Contact records without ID mapping. Must be unique and non-null in test fixtures. Used in contact-upsert-relationship spec as the upsert key while Account__r.External_Id__c resolves the AccountId.</description>
+    <externalId>true</externalId>
+    <label>Contact External Id</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

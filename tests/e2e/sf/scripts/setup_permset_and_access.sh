@@ -33,13 +33,31 @@ set -euo pipefail
 
 echo "[setup_permset_and_access] target org: ${E2E_SCRATCH_ORG}" >&2
 
-# ── Step 1: Assign the permission set to the scratch admin user ───────────────
+# ── Step 1: Assign the permission sets to the scratch admin user ──────────────
+#
+# Two permsets are assigned:
+#   - SfblE2EPermSet      — gates the ECA OAuth flow (links via SetupEntityAccess below)
+#   - SfblE2EFieldAccess  — grants FLS on the custom fields the Tier 2 specs
+#                            query (Account.External_Id__c,
+#                            Contact.Contact_External_Id__c,
+#                            SfblE2ETest__c.External_Id__c).  Salesforce does
+#                            NOT auto-grant FLS to metadata-API-deployed
+#                            custom fields, even for System Administrator —
+#                            PR #89 run 25693622361 surfaced the symptom:
+#                            "No such column 'External_Id__c' on entity 'Account'"
+#                            during a sf data query, despite the field being
+#                            successfully deployed minutes earlier.
 echo "[setup_permset_and_access] assigning SfblE2EPermSet ..." >&2
 sf org assign permset \
   --name SfblE2EPermSet \
   --target-org "${E2E_SCRATCH_ORG}"
 
-echo "[setup_permset_and_access] permission set assigned." >&2
+echo "[setup_permset_and_access] assigning SfblE2EFieldAccess ..." >&2
+sf org assign permset \
+  --name SfblE2EFieldAccess \
+  --target-org "${E2E_SCRATCH_ORG}"
+
+echo "[setup_permset_and_access] permission sets assigned." >&2
 
 # ── Step 2: Look up IDs needed for SetupEntityAccess ─────────────────────────
 echo "[setup_permset_and_access] resolving ECA and permission-set IDs ..." >&2
