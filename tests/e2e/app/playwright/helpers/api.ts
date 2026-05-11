@@ -152,3 +152,73 @@ export async function deletePlan(
     );
   }
 }
+
+// ── Load Steps ─────────────────────────────────────────────────────────────────
+
+export interface LoadStepPayload {
+  /** Salesforce SObject API name (e.g. "Account", "Contact"). */
+  object_name: string;
+  /** DML operation ("insert" | "upsert" | "update" | "delete"). */
+  operation: string;
+  /** Glob pattern relative to the backend's input_dir (e.g. "accounts.csv"). */
+  csv_file_pattern?: string;
+  /**
+   * External ID field name used for upsert matching (e.g. "External_Id__c").
+   * Required for upsert; ignored for insert/update/delete.
+   */
+  external_id_field?: string;
+  /**
+   * Maximum rows per Bulk API job partition.  Defaults to the backend's
+   * default (10,000).  Use a small value in tests only if you want multiple
+   * partitions.
+   */
+  partition_size?: number;
+  /** Step display name.  Optional — the backend derives one from object+op if absent. */
+  name?: string;
+}
+
+export interface LoadStepRecord {
+  id: string;
+  load_plan_id: string;
+  object_name: string;
+  operation: string;
+}
+
+/**
+ * Create a load step for an existing plan via the API (D10).
+ *
+ * Steps are nested under /api/load-plans/{plan_id}/steps.
+ */
+export async function createStep(
+  request: APIRequestContext,
+  planId: string,
+  payload: LoadStepPayload,
+): Promise<LoadStepRecord> {
+  const response = await request.post(`/api/load-plans/${planId}/steps`, {
+    data: payload,
+  });
+  if (!response.ok()) {
+    throw new Error(
+      `createStep failed: ${response.status()} ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as LoadStepRecord;
+}
+
+/**
+ * Delete a load step by plan ID and step ID.  Ignores 404 (already deleted).
+ */
+export async function deleteStep(
+  request: APIRequestContext,
+  planId: string,
+  stepId: string,
+): Promise<void> {
+  const response = await request.delete(
+    `/api/load-plans/${planId}/steps/${stepId}`,
+  );
+  if (!response.ok() && response.status() !== 404) {
+    throw new Error(
+      `deleteStep(${planId}/${stepId}) failed: ${response.status()} ${await response.text()}`,
+    );
+  }
+}
