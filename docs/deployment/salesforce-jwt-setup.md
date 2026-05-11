@@ -177,34 +177,71 @@ accessible from the API — only the encrypted blob is stored.
 
 ### E2E Tier 2 CI (GitHub Actions)
 
-Add four repository secrets in **Settings → Secrets and variables → Actions**:
+The CI Tier 2 workflows use **two** distinct auth flows:
 
-| Secret name | Value |
-|-------------|-------|
-| `SFDX_DEVHUB_JWT_KEY` | Full contents of `server.key` (the PEM, including headers). |
-| `SFDX_DEVHUB_CONSUMER_KEY` | The Consumer Key from the ECA. |
-| `SFDX_DEVHUB_USERNAME` | The username of the Dev Hub user the JWT will impersonate. |
-| `SFDX_DEVHUB_INSTANCE_URL` | The Dev Hub's **My Domain URL** — `https://<yourorg>.my.salesforce.com`. **NOT** `https://login.salesforce.com`. |
+1. **Dev Hub auth** (the outer scratch-org-creation session) → **sfdx-url**, not JWT
+2. **Bulk-loader auth into each scratch org** (the inner SF Bulk API session) → **JWT** against the per-scratch ECA deployed by SFBL-324
 
-The CI workflow (`e2e-tier-2.yml`) writes the PEM to `/tmp/key.pem` during
-auth, then deletes it immediately after the `sf org login jwt` call succeeds.
+Add two repository secrets in **Settings → Secrets and variables → Actions**:
 
-> **Spring '26 JWT audience validation trap**: omitting `--instance-url` or
-> passing `https://login.salesforce.com` causes the CLI to sign the JWT with
-> `aud=https://login.salesforce.com`, which Salesforce now rejects under
-> strict audience validation. The token exchange may appear to succeed, but
-> the session is downgraded and the *next* privileged operation (typically
-> `sf org create scratch`) fails with a misleading
-> `INVALID_INPUT: The callback URL provided is not valid` error. The Tier 2
-> workflows pass the My Domain URL explicitly via `--instance-url
-> $SFDX_DEVHUB_INSTANCE_URL` to avoid this.
+| Secret name | Source | Value |
+|---|---|---|
+| `SFDX_AUTH_URL` | `sf org display --target-org <devhub-alias> --verbose --json \| jq -r '.result.sfdxAuthUrl'` | `force://...` URL encoding a long-lived refresh token for the Dev Hub. |
+| `SFBL_E2E_BULK_LOADER_JWT_KEY` | `~/.sfbl-e2e/server.key` (the spike-era keypair's private half) | PEM contents — used inside each scratch org against the SFBL-324-deployed bulk-loader ECA. |
 
-Find your Dev Hub's My Domain URL:
+#### Why sfdx-url for Dev Hub auth (not JWT)
 
-```bash
-sf org display --target-org <devhub-alias> --json | jq -r '.result.instanceUrl'
-# Example output: https://yourorg.my.salesforce.com
-```
+PR #89's first Tier 2 wiring used JWT against a Dev Hub ECA. It failed at
+scratch-org creation with `RemoteOrgSignupFailed C-1016` — apparently a
+Salesforce-side constraint where ECA-authenticated Dev Hub sessions can't
+provision scratch orgs. The same failure mode held for UI-created ECAs and
+SFDX-deployed ECAs, ruling out metadata shape as the cause.
+
+The sfdx-url path captures the operator's already-working interactive
+session (the one that succeeds for `sf org create scratch` locally) and
+reproduces it in CI. No ECA needed for Dev Hub access.
+
+#### Generating SFDX_AUTH_URL
+
+1. Authenticate interactively to the Dev Hub on your laptop:
+   ```bash
+   sf org login web --alias <devhub-alias> --set-default-dev-hub \
+     --instance-url https://<yourorg>.my.salesforce.com
+   ```
+   (Browser opens; click through.)
+
+2. Extract the URL:
+   ```bash
+   sf org display --target-org <devhub-alias> --verbose --json \
+     | jq -r '.result.sfdxAuthUrl'
+   ```
+
+3. Store as a GH secret:
+   ```bash
+   gh secret set SFDX_AUTH_URL --body '<paste the force://... URL>'
+   ```
+
+#### Rotation
+
+The sfdx-url contains a long-lived refresh token. Lifetime is
+**indefinite-until-revoked** by default; in practice:
+
+| Event | Effect |
+|---|---|
+| SF admin password change | Refresh token invalidated → URL stops working |
+| Manual revoke (Setup → Connected Apps OAuth Usage → Block) | Stops immediately |
+| Tightened refresh-token policy on the SF CLI Connected App | New expiry applies |
+| Account locked / deactivated | Stops |
+| ~30 days of total inactivity (depends on org session policy) | Stops |
+
+Recommended cadence: **rotate annually** as calendar hygiene, or whenever
+you change your SF admin password. Re-run the steps under "Generating
+SFDX_AUTH_URL" to refresh.
+
+> **Security framing**: unlike JWT (where the GH secret is just the consumer
+> key and the private key stays on your laptop), the `SFDX_AUTH_URL` IS the
+> full credential. Protect the GH secret like a password. Audit
+> Setup → Login History periodically for unexpected IPs.
 
 ---
 

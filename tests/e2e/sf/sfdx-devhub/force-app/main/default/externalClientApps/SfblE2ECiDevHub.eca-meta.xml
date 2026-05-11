@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExternalClientApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <contactEmail>sfbl-e2e@example.com</contactEmail>
+    <description>SF Bulk Loader E2E Tier 2 CI — JWT bearer auth to the Dev Hub for scratch-org provisioning (SFBL-325)</description>
+    <distributionState>Local</distributionState>
+    <isProtected>false</isProtected>
+    <label>SFBL E2E CI Dev Hub</label>
+    <!-- orgScopedExternalApp is org-specific (OrgId:DeveloperName); set by Salesforce on deploy. Never commit it. -->
+</ExternalClientApplication>

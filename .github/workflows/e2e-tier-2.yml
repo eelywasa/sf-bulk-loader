@@ -108,30 +108,20 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Preflight — verify Tier 2 secrets are configured
         env:
-          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
-          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
-          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
-          SFDX_DEVHUB_INSTANCE_URL: ${{ secrets.SFDX_DEVHUB_INSTANCE_URL }}
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
           SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
         run: |
           MISSING=()
-          [ -z "${SFDX_DEVHUB_JWT_KEY}" ]          && MISSING+=("SFDX_DEVHUB_JWT_KEY")
-          [ -z "${SFDX_DEVHUB_CONSUMER_KEY}" ]     && MISSING+=("SFDX_DEVHUB_CONSUMER_KEY")
-          [ -z "${SFDX_DEVHUB_USERNAME}" ]         && MISSING+=("SFDX_DEVHUB_USERNAME")
-          [ -z "${SFDX_DEVHUB_INSTANCE_URL}" ]     && MISSING+=("SFDX_DEVHUB_INSTANCE_URL")
+          [ -z "${SFDX_AUTH_URL}" ]                && MISSING+=("SFDX_AUTH_URL")
           [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Tier 2 cannot run — missing GitHub secret(s): ${MISSING[*]}"
             echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
-            echo "::error::Set via: gh secret set <NAME> < /path/to/value  (or Settings → Secrets and variables → Actions)"
             exit 1
           fi
-          # Validate SFDX_DEVHUB_INSTANCE_URL shape: must be https://<something>.my.salesforce.com
-          # (Spring '26 strict JWT audience validation rejects login.salesforce.com aliases).
-          if ! [[ "${SFDX_DEVHUB_INSTANCE_URL}" =~ ^https://[^/]+\.my\.salesforce\.com/?$ ]]; then
-            echo "::error::SFDX_DEVHUB_INSTANCE_URL='${SFDX_DEVHUB_INSTANCE_URL}' is not a My Domain URL."
-            echo "::error::Expected shape: https://<your-org>.my.salesforce.com  (NOT https://login.salesforce.com)"
-            echo "::error::Find your Dev Hub My Domain URL via: sf org display --target-org <devhub-alias> --json | jq -r '.result.instanceUrl'"
+          if ! [[ "${SFDX_AUTH_URL}" =~ ^force://.+ ]]; then
+            echo "::error::SFDX_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
+            echo "::error::Generate via: sf org display --target-org <devhub-alias> --verbose --json | jq -r '.result.sfdxAuthUrl'"
             exit 1
           fi
           echo "All required Tier 2 secrets are present."
@@ -155,42 +145,30 @@ jobs:
         run: npm install -g @salesforce/cli@latest
 
       # -----------------------------------------------------------------------
-      # 4. JWT login to Dev Hub (D6)
+      # 4. Dev Hub auth via sfdx-url (refresh-token URL captured from an
+      # operator's interactive `sf org login web` session).  We pivoted away
+      # from JWT-via-ECA Dev Hub auth on PR #89: ECA-authenticated sessions
+      # (UI-created or SFDX-deployed) consistently fail scratch-org creation
+      # with C-1016 "RemoteOrgSignupFailed" — apparently a Salesforce-side
+      # constraint on which client identities can provision scratch orgs from
+      # a JWT'd session.  The sfdx-url path reproduces the interactive
+      # operator's session in CI without needing an ECA at all.
       #
-      # Secrets required (never exposed on fork PRs — see security note above):
-      #   SFDX_DEVHUB_JWT_KEY      — PEM private key contents
-      #   SFDX_DEVHUB_CONSUMER_KEY — OAuth consumer key (client ID)
-      #   SFDX_DEVHUB_USERNAME     — Dev Hub org username
-      # -----------------------------------------------------------------------
-      - name: Authenticate to Dev Hub via JWT
+      # Rotation: indefinite by default; rotate annually or when the
+      # operator's SF admin password changes (revokes refresh tokens).
+      # See docs/deployment/salesforce-jwt-setup.md § "Dev Hub auth".
+      - name: Authenticate to Dev Hub via sfdx-url
         env:
-          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
-          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
-          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
-          # Spring '26 strict JWT audience validation requires the exact My
-          # Domain URL of the Dev Hub (e.g. https://yourorg.my.salesforce.com).
-          # Without this, the CLI defaults to https://login.salesforce.com, the
-          # JWT's `aud` claim doesn't match what the Dev Hub expects, and the
-          # session token is silently downgraded.  The downgrade surfaces at
-          # the next privileged operation (sf org create scratch) as a
-          # misleading "INVALID_INPUT: The callback URL provided is not valid".
-          SFDX_DEVHUB_INSTANCE_URL: ${{ secrets.SFDX_DEVHUB_INSTANCE_URL }}
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: |
-          # Write the private key PEM to a temp file so the CLI can read it.
-          printf '%s' "${SFDX_DEVHUB_JWT_KEY}" > /tmp/key.pem
-          chmod 600 /tmp/key.pem
-
-          sf org login jwt \
-            -i "${SFDX_DEVHUB_CONSUMER_KEY}" \
-            --jwt-key-file /tmp/key.pem \
-            --username "${SFDX_DEVHUB_USERNAME}" \
-            --instance-url "${SFDX_DEVHUB_INSTANCE_URL}" \
+          # Avoid logging the URL contents — it's a credential.
+          printf '%s' "$SFDX_AUTH_URL" | sf org login sfdx-url \
+            --sfdx-url-stdin \
+            --alias devhub \
             --set-default-dev-hub
-
-          # Remove the key from disk immediately after auth.
-          rm -f /tmp/key.pem
-
-          echo "INFO: Dev Hub authentication complete (username: ${SFDX_DEVHUB_USERNAME}, instance: ${SFDX_DEVHUB_INSTANCE_URL})"
+          USERNAME="$(sf org display --target-org devhub --json | jq -r '.result.username')"
+          INSTANCE="$(sf org display --target-org devhub --json | jq -r '.result.instanceUrl')"
+          echo "INFO: Dev Hub authentication via sfdx-url complete (username: ${USERNAME}, instance: ${INSTANCE})"
 
       # -----------------------------------------------------------------------
       # 5. Create scratch org (D3)

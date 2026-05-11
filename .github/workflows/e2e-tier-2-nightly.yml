@@ -88,25 +88,19 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Preflight — verify Tier 2 secrets are configured
         env:
-          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
-          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
-          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
-          SFDX_DEVHUB_INSTANCE_URL: ${{ secrets.SFDX_DEVHUB_INSTANCE_URL }}
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
           SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
         run: |
           MISSING=()
-          [ -z "${SFDX_DEVHUB_JWT_KEY}" ]          && MISSING+=("SFDX_DEVHUB_JWT_KEY")
-          [ -z "${SFDX_DEVHUB_CONSUMER_KEY}" ]     && MISSING+=("SFDX_DEVHUB_CONSUMER_KEY")
-          [ -z "${SFDX_DEVHUB_USERNAME}" ]         && MISSING+=("SFDX_DEVHUB_USERNAME")
-          [ -z "${SFDX_DEVHUB_INSTANCE_URL}" ]     && MISSING+=("SFDX_DEVHUB_INSTANCE_URL")
+          [ -z "${SFDX_AUTH_URL}" ]                && MISSING+=("SFDX_AUTH_URL")
           [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Tier 2 cannot run — missing GitHub secret(s): ${MISSING[*]}"
             echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
             exit 1
           fi
-          if ! [[ "${SFDX_DEVHUB_INSTANCE_URL}" =~ ^https://[^/]+\.my\.salesforce\.com/?$ ]]; then
-            echo "::error::SFDX_DEVHUB_INSTANCE_URL must be a My Domain URL, not https://login.salesforce.com."
+          if ! [[ "${SFDX_AUTH_URL}" =~ ^force://.+ ]]; then
+            echo "::error::SFDX_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
             exit 1
           fi
           echo "All required Tier 2 secrets are present."
@@ -124,36 +118,20 @@ jobs:
         run: npm install -g @salesforce/cli@latest
 
       # -----------------------------------------------------------------------
-      # 4. JWT login to Dev Hub (D6)
-      #
-      # Secrets required:
-      #   SFDX_DEVHUB_JWT_KEY      — PEM private key contents
-      #   SFDX_DEVHUB_CONSUMER_KEY — OAuth consumer key (client ID)
-      #   SFDX_DEVHUB_USERNAME     — Dev Hub org username
+      # 4. Dev Hub auth via sfdx-url — see e2e-tier-2.yml block for the
+      # rationale (JWT-via-ECA Dev Hub auth fails scratch-create with C-1016).
       # -----------------------------------------------------------------------
-      - name: Authenticate to Dev Hub via JWT
+      - name: Authenticate to Dev Hub via sfdx-url
         env:
-          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
-          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
-          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
-          # Spring '26 strict JWT audience validation — see e2e-tier-2.yml comment block.
-          SFDX_DEVHUB_INSTANCE_URL: ${{ secrets.SFDX_DEVHUB_INSTANCE_URL }}
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: |
-          # Write the private key PEM to a temp file so the CLI can read it.
-          printf '%s' "${SFDX_DEVHUB_JWT_KEY}" > /tmp/key.pem
-          chmod 600 /tmp/key.pem
-
-          sf org login jwt \
-            -i "${SFDX_DEVHUB_CONSUMER_KEY}" \
-            --jwt-key-file /tmp/key.pem \
-            --username "${SFDX_DEVHUB_USERNAME}" \
-            --instance-url "${SFDX_DEVHUB_INSTANCE_URL}" \
+          printf '%s' "$SFDX_AUTH_URL" | sf org login sfdx-url \
+            --sfdx-url-stdin \
+            --alias devhub \
             --set-default-dev-hub
-
-          # Remove the key from disk immediately after auth.
-          rm -f /tmp/key.pem
-
-          echo "INFO: Dev Hub authentication complete (username: ${SFDX_DEVHUB_USERNAME}, instance: ${SFDX_DEVHUB_INSTANCE_URL})"
+          USERNAME="$(sf org display --target-org devhub --json | jq -r '.result.username')"
+          INSTANCE="$(sf org display --target-org devhub --json | jq -r '.result.instanceUrl')"
+          echo "INFO: Dev Hub authentication via sfdx-url complete (username: ${USERNAME}, instance: ${INSTANCE})"
 
       # -----------------------------------------------------------------------
       # 5. Create scratch org (D3)

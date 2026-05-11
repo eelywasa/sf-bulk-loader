@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Grants SF Bulk Loader E2E Tier 2 CI access to the SfblE2ECiDevHub external client app (JWT bearer flow to the Dev Hub)</description>
+    <label>SFBL E2E CI Dev Hub</label>
+    <!--
+      After metadata deploy and permset assignment, setup_devhub_eca.sh creates a SetupEntityAccess
+      record linking this permission set to the SfblE2ECiDevHub ECA. Without this record,
+      AdminApprovedPreAuthorized does not activate and JWT bearer auth fails.
+
+      The SetupEntityAccess link is a runtime data record (not metadata) and cannot be deployed
+      via sf project deploy start.
+    -->
+</PermissionSet>
