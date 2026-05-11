@@ -416,9 +416,39 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
         run: |
           echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
-          echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."
-          echo "::warning::To capture its sfdxAuthUrl for reuse:"
-          echo "::warning::  sf org display --target-org ${E2E_SCRATCH_ORG} --verbose --json | jq -r '.result.sfdxAuthUrl' | gh secret set TIER2_REUSE_AUTH_URL"
+          echo "::warning::Cleanup later: sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt (from a Dev-Hub-authed CLI)"
+          echo "::notice::sfdxAuthUrl captured as artifact 'tier2-scratch-auth-url' (1-day retention)."
+          echo "::notice::Operator: download the artifact via Actions UI, then:"
+          echo "::notice::  gh secret set TIER2_REUSE_AUTH_URL < tier2-scratch-auth-url/sfdx-auth-url.txt"
+          echo "::notice::Subsequent dispatches with reuse_shared_scratch=true cost 0 daily quota."
+
+      # Capture the scratch's sfdxAuthUrl as a (GitHub-encrypted) artifact.
+      # Without this, the kept-alive scratch can't be reused: the scratch's
+      # auth state lives only on the runner's filesystem (destroyed at runner
+      # termination), and Salesforce-side metadata doesn't expose
+      # refresh-token-bearing auth URLs.  Operator extracts the artifact and
+      # sets the TIER2_REUSE_AUTH_URL secret to enable reuse mode.
+      # 1-day retention keeps the credential blast radius small.
+      - name: Capture sfdxAuthUrl for reuse
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
+        run: |
+          mkdir -p /tmp/tier2-reuse
+          AUTH_URL="$(sf org display --target-org "${E2E_SCRATCH_ORG}" --verbose --json | jq -r '.result.sfdxAuthUrl')"
+          if [ -z "$AUTH_URL" ] || [ "$AUTH_URL" = "null" ]; then
+            echo "::error::Could not extract sfdxAuthUrl from scratch ${E2E_SCRATCH_ORG}"
+            exit 1
+          fi
+          printf '%s' "$AUTH_URL" > /tmp/tier2-reuse/sfdx-auth-url.txt
+          chmod 600 /tmp/tier2-reuse/sfdx-auth-url.txt
+          echo "::notice::Captured sfdxAuthUrl (length=${#AUTH_URL})"
+
+      - name: Upload sfdxAuthUrl artifact
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-scratch-auth-url
+          path: /tmp/tier2-reuse/sfdx-auth-url.txt
+          retention-days: 1
 
       - name: Reuse mode — scratch left intact
         if: inputs.reuse_shared_scratch
