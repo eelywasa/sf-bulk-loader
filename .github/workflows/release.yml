@@ -58,16 +58,22 @@ jobs:
           SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
           SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
           SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
+          SFDX_DEVHUB_INSTANCE_URL: ${{ secrets.SFDX_DEVHUB_INSTANCE_URL }}
           SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
         run: |
           MISSING=()
           [ -z "${SFDX_DEVHUB_JWT_KEY}" ]          && MISSING+=("SFDX_DEVHUB_JWT_KEY")
           [ -z "${SFDX_DEVHUB_CONSUMER_KEY}" ]     && MISSING+=("SFDX_DEVHUB_CONSUMER_KEY")
           [ -z "${SFDX_DEVHUB_USERNAME}" ]         && MISSING+=("SFDX_DEVHUB_USERNAME")
+          [ -z "${SFDX_DEVHUB_INSTANCE_URL}" ]     && MISSING+=("SFDX_DEVHUB_INSTANCE_URL")
           [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Release Tier 2 gate cannot run — missing GitHub secret(s): ${MISSING[*]}"
             echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
+            exit 1
+          fi
+          if ! [[ "${SFDX_DEVHUB_INSTANCE_URL}" =~ ^https://[^/]+\.my\.salesforce\.com/?$ ]]; then
+            echo "::error::SFDX_DEVHUB_INSTANCE_URL must be a My Domain URL, not https://login.salesforce.com."
             exit 1
           fi
           echo "All required Tier 2 secrets are present."
@@ -87,6 +93,8 @@ jobs:
           SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
           SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
           SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
+          # Spring '26 strict JWT audience validation — see e2e-tier-2.yml comment block.
+          SFDX_DEVHUB_INSTANCE_URL: ${{ secrets.SFDX_DEVHUB_INSTANCE_URL }}
         run: |
           printf '%s' "${SFDX_DEVHUB_JWT_KEY}" > /tmp/key.pem
           chmod 600 /tmp/key.pem
@@ -94,9 +102,10 @@ jobs:
             -i "${SFDX_DEVHUB_CONSUMER_KEY}" \
             --jwt-key-file /tmp/key.pem \
             --username "${SFDX_DEVHUB_USERNAME}" \
+            --instance-url "${SFDX_DEVHUB_INSTANCE_URL}" \
             --set-default-dev-hub
           rm -f /tmp/key.pem
-          echo "INFO: Dev Hub authentication complete (username: ${SFDX_DEVHUB_USERNAME})"
+          echo "INFO: Dev Hub authentication complete (username: ${SFDX_DEVHUB_USERNAME}, instance: ${SFDX_DEVHUB_INSTANCE_URL})"
 
       - name: Create scratch org
         run: bash tests/e2e/sf/scripts/scratch_create.sh

@@ -177,16 +177,34 @@ accessible from the API — only the encrypted blob is stored.
 
 ### E2E Tier 2 CI (GitHub Actions)
 
-Add three repository secrets in **Settings → Secrets and variables → Actions**:
+Add four repository secrets in **Settings → Secrets and variables → Actions**:
 
 | Secret name | Value |
 |-------------|-------|
 | `SFDX_DEVHUB_JWT_KEY` | Full contents of `server.key` (the PEM, including headers). |
-| `SFDX_DEVHUB_CONSUMER_KEY` | The Consumer Key from the Connected App. |
+| `SFDX_DEVHUB_CONSUMER_KEY` | The Consumer Key from the ECA. |
 | `SFDX_DEVHUB_USERNAME` | The username of the Dev Hub user the JWT will impersonate. |
+| `SFDX_DEVHUB_INSTANCE_URL` | The Dev Hub's **My Domain URL** — `https://<yourorg>.my.salesforce.com`. **NOT** `https://login.salesforce.com`. |
 
 The CI workflow (`e2e-tier-2.yml`) writes the PEM to `/tmp/key.pem` during
 auth, then deletes it immediately after the `sf org login jwt` call succeeds.
+
+> **Spring '26 JWT audience validation trap**: omitting `--instance-url` or
+> passing `https://login.salesforce.com` causes the CLI to sign the JWT with
+> `aud=https://login.salesforce.com`, which Salesforce now rejects under
+> strict audience validation. The token exchange may appear to succeed, but
+> the session is downgraded and the *next* privileged operation (typically
+> `sf org create scratch`) fails with a misleading
+> `INVALID_INPUT: The callback URL provided is not valid` error. The Tier 2
+> workflows pass the My Domain URL explicitly via `--instance-url
+> $SFDX_DEVHUB_INSTANCE_URL` to avoid this.
+
+Find your Dev Hub's My Domain URL:
+
+```bash
+sf org display --target-org <devhub-alias> --json | jq -r '.result.instanceUrl'
+# Example output: https://yourorg.my.salesforce.com
+```
 
 ---
 
