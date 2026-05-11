@@ -167,21 +167,32 @@ function generateContactsCsv(
  */
 function readPartitionHeader(outputDir: string, runId: string): string | null {
   // The orchestrator writes partition CSVs under
-  //   <output_dir>/<short_run_id>-<plan_slug>/<step_id>/<job_id>/partition_*.csv
-  // where <short_run_id> is the first 8 characters of the UUID run id (see
-  // backend/app/services/partition_executor.py's path-builder).
-  // We can't just join(outputDir, runId): we have to scan one level down for
-  // a subdirectory whose name *starts with* the short run id.
+  //   <output_dir>/<plan_short_id>-<plan_slug>/<run_short_id>/<step_id>/<job_id>/partition_*.csv
+  // where the short ids are the first 8 characters of the respective UUIDs.
+  // We get the *run* UUID; the plan dir wraps it. Walk one level into the
+  // plan dirs and look for a sub-dir matching the short run id.
   if (!fs.existsSync(outputDir)) return null;
   const shortRunId = runId.slice(0, 8);
-  const candidate = fs
-    .readdirSync(outputDir, { withFileTypes: true })
-    .find(
-      (entry) => entry.isDirectory() && entry.name.startsWith(`${shortRunId}-`),
-    );
-  if (!candidate) return null;
-  const runOutDir = path.join(outputDir, candidate.name);
-  if (!fs.existsSync(runOutDir)) return null;
+
+  let runOutDir: string | null = null;
+  for (const planEntry of fs.readdirSync(outputDir, { withFileTypes: true })) {
+    if (!planEntry.isDirectory()) continue;
+    const planDir = path.join(outputDir, planEntry.name);
+    // Look for a child directory whose name *is* (or starts with) the short
+    // run id — Tier 2's runs only ever produce one short-run-id sub-dir.
+    const runEntry = fs
+      .readdirSync(planDir, { withFileTypes: true })
+      .find(
+        (e) =>
+          e.isDirectory() &&
+          (e.name === shortRunId || e.name.startsWith(`${shortRunId}-`)),
+      );
+    if (runEntry) {
+      runOutDir = path.join(planDir, runEntry.name);
+      break;
+    }
+  }
+  if (!runOutDir || !fs.existsSync(runOutDir)) return null;
 
   // Recursively find all CSV files under the run's output directory.
   function findCsvs(dir: string): string[] {
