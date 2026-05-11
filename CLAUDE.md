@@ -150,6 +150,24 @@ If any of the above is skipped, the epic PR is not ready to open. A "docs
 refresh" follow-up story is an anti-pattern — it tends to be deprioritised
 and leaves the product in a state where the docs actively mislead users.
 
+### Epic Definition of Done — E2E spec coverage
+
+**UI features ship with Tier 1a/1b spec coverage as part of the epic DoD, not as a follow-up.**
+
+When an epic introduces or materially changes user-facing UI flows, the epic's child
+stories include Tier 1a or Tier 1b spec coverage in their acceptance criteria:
+
+- **Tier 1a** for org-free flows (file management, plan listing, RBAC nav, settings, login).
+- **Tier 1b** for flows that read SObject metadata (mapping panel, step editor object
+  combobox, SOQL validator, bulk-query builder).
+- **Tier 2** (the real-scratch-org tier) is a separate concern not part of standard epic
+  DoD; it ships via the enabler's nightly + release-tag schedule (see
+  `docs/specs/e2e-testing-spec.md` § D8).
+
+Specs live under `tests/e2e/app/playwright/tier-{1a,1b}/` per `e2e-testing-spec.md`
+§ D7/D13. The retrofitted speculative Tier 1b sections on SFBL-311..315 are the first
+epic to apply this rule; future UI epics ship with the coverage from day one.
+
 ## Documentation Policy
 
 The docs are organised into three **pillars** plus a spec layer. The index at

@@ -1,0 +1,1510 @@
+{
+  "child_relationships": [
+    {
+      "child_sobject": "AcceptedEventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "ActionPlan",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "ActivityHistory",
+      "field": "PrimaryWhoId"
+    },
+    {
+      "child_sobject": "ActivityHistory",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "AdvAcctForecastSetUse",
+      "field": "ForecastContextId"
+    },
+    {
+      "child_sobject": "AgentWork",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "AgentWorkChangeEvent",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "AIInsightValue",
+      "field": "SobjectLookupValueId"
+    },
+    {
+      "child_sobject": "AIRecordInsight",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "ApplicationForm",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "ApplicationFormChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "ApprovalSubmission",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "ApprovalWorkItem",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AssessmentTaskContentDocument",
+      "field": "ContentContextId"
+    },
+    {
+      "child_sobject": "AttachedContentDocument",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "AttachedContentNote",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "Attachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "AuthFormRequestRecord",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AuthFormRequestRecordChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AuthorizationFormConsent",
+      "field": "ConsentGiverId"
+    },
+    {
+      "child_sobject": "AuthorizationFormConsentChangeEvent",
+      "field": "ConsentGiverId"
+    },
+    {
+      "child_sobject": "CampaignMember",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "CampaignMember",
+      "field": "LeadOrContactId"
+    },
+    {
+      "child_sobject": "CampaignMemberChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "CareProgramEnrollee",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "CareProgramEnrolleeChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "CollaborationGroupRecord",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "CollaborationGroupRecordChangeEvent",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "CombinedAttachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "ContactEncounterParticipant",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "ContactRequest",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "ContentDistribution",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "ContentDocumentLink",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "ContentDocumentLinkChangeEvent",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "ContentVersion",
+      "field": "FirstPublishLocationId"
+    },
+    {
+      "child_sobject": "ContentVersionChangeEvent",
+      "field": "FirstPublishLocationId"
+    },
+    {
+      "child_sobject": "DeclinedEventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItem",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItemChangeEvent",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "DocumentEnvelope",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "DsarPolicyLog",
+      "field": "DataSubjectId"
+    },
+    {
+      "child_sobject": "DuplicateRecordItem",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "EmailBounceEvent",
+      "field": "BouncedObjectId"
+    },
+    {
+      "child_sobject": "EmailMessage",
+      "field": "FromId"
+    },
+    {
+      "child_sobject": "EmailMessageRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "EmailStatus",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "EngagementAttendee",
+      "field": "ExternalAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementAttendeeChangeEvent",
+      "field": "ExternalAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementInteraction",
+      "field": "InitiatingAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementInteractionChangeEvent",
+      "field": "InitiatingAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementScore",
+      "field": "BaseId"
+    },
+    {
+      "child_sobject": "EngagementTopic",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "EngagementTopic",
+      "field": "TopicId"
+    },
+    {
+      "child_sobject": "EngagementTopicChangeEvent",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "EngagementTopicChangeEvent",
+      "field": "TopicId"
+    },
+    {
+      "child_sobject": "EntitySubscription",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "Event",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "EventChangeEvent",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "EventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "EventRelationChangeEvent",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "EventWhoRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "FeedComment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "FeedItem",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "FlowExecutionErrorEvent",
+      "field": "ContextRecordId"
+    },
+    {
+      "child_sobject": "FlowOrchestrationWorkItem",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "FlowRecordRelation",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "GeneratedDocument",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "GenericAsmtTaskContext",
+      "field": "ContextId"
+    },
+    {
+      "child_sobject": "GenericVisitTaskContext",
+      "field": "ContextId"
+    },
+    {
+      "child_sobject": "GroupCensus",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "GroupCensusChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequest",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequestChangeEvent",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "LeadCleanInfo",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "LeadFeed",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "LeadHistory",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "LeadShare",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "ListEmail",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "ListEmailChangeEvent",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "ListEmailIndividualRecipient",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "ListEmailSentResult",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "ListEmailSentResultChangeEvent",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "MessagingEndUser",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "MessagingEndUserChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "MessagingSession",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "MessagingSessionChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "MultipartyInfoAuthRequest",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "MultipartyInfoAuthRequestChangeEvent",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "NetworkActivityAudit",
+      "field": "ParentEntityId"
+    },
+    {
+      "child_sobject": "NetworkFeedResponseMetric",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "Note",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "NoteAndAttachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "OpenActivity",
+      "field": "PrimaryWhoId"
+    },
+    {
+      "child_sobject": "OpenActivity",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "OutgoingEmail",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "OutgoingEmailRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "PartyProfile",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "PartyProfileChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "PendingServiceRouting",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingChangeEvent",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingInteractionInfo",
+      "field": "PrimaryRecordId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingInteractionInfo",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "PrivacyHold",
+      "field": "ReferenceRecordId"
+    },
+    {
+      "child_sobject": "ProcessInstance",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "ProcessInstanceChangeEvent",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "ProcessInstanceHistory",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "RecordAction",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "RecordActionHistory",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "RecordAlert",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "RecordAlert",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "RecordAlertChangeEvent",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "RecordAlertChangeEvent",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "ServiceAppointment",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "ServiceAppointmentAttendee",
+      "field": "AttendeeId"
+    },
+    {
+      "child_sobject": "ServiceAppointmentChangeEvent",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "SocialPersona",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "SocialPost",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "SocialPostChangeEvent",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "SurveyInvitation",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "SurveyInvitation",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "SurveyInvitationChangeEvent",
+      "field": "LeadId"
+    },
+    {
+      "child_sobject": "SurveyInvitationChangeEvent",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "SurveyResponse",
+      "field": "SubmitterId"
+    },
+    {
+      "child_sobject": "SurveyResponseChangeEvent",
+      "field": "SubmitterId"
+    },
+    {
+      "child_sobject": "SurveySubject",
+      "field": "SubjectId"
+    },
+    {
+      "child_sobject": "SurveySubjectChangeEvent",
+      "field": "SubjectId"
+    },
+    {
+      "child_sobject": "Task",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "TaskChangeEvent",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "TaskRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TaskRelationChangeEvent",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TaskWhoRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TopicAssignment",
+      "field": "EntityId"
+    },
+    {
+      "child_sobject": "TransactionJournal",
+      "field": "ReferredPartyId"
+    },
+    {
+      "child_sobject": "TransactionJournalChangeEvent",
+      "field": "ReferredPartyId"
+    },
+    {
+      "child_sobject": "UndecidedEventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "UserDefinedLabelAssignment",
+      "field": "ItemId"
+    },
+    {
+      "child_sobject": "UserEmailPreferredPerson",
+      "field": "PersonRecordId"
+    },
+    {
+      "child_sobject": "UserEmailPreferredPersonChangeEvent",
+      "field": "PersonRecordId"
+    },
+    {
+      "child_sobject": "UserPrioritizedRecord",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "VideoCall",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VideoCallChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VideoCallParticipant",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "VideoCallParticipantChangeEvent",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "VoiceCall",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VoiceCallChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "WaitlistParticipant",
+      "field": "ParticipantId"
+    }
+  ],
+  "fetched_at": "2026-05-11T11:34:17Z",
+  "fields": [
+    {
+      "api_name": "Address",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Address",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "address",
+      "updateable": false
+    },
+    {
+      "api_name": "AnnualRevenue",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Annual Revenue",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "currency",
+      "updateable": true
+    },
+    {
+      "api_name": "BirthDate",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Birth Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": true
+    },
+    {
+      "api_name": "City",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "City",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "Company",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Company",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "CompanyLocal",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Company Name (Local)",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "ConvertedAccountId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Converted Account ID",
+      "nillable": true,
+      "reference_to": [
+        "Account"
+      ],
+      "relationship_name": "ConvertedAccount",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "ConvertedContactId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Converted Contact ID",
+      "nillable": true,
+      "reference_to": [
+        "Contact"
+      ],
+      "relationship_name": "ConvertedContact",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "ConvertedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Converted Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": false
+    },
+    {
+      "api_name": "ConvertedOpportunityId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Converted Opportunity ID",
+      "nillable": true,
+      "reference_to": [
+        "Opportunity"
+      ],
+      "relationship_name": "ConvertedOpportunity",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "Country",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Country",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "CreatedById",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Created By ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "CreatedBy",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "CreatedDate",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Created Date",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "CurrencyIsoCode",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Lead Currency",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Description",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Description",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "textarea",
+      "updateable": true
+    },
+    {
+      "api_name": "DoNotCall",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Do Not Call",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "Email",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": true,
+      "label": "Email",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "email",
+      "updateable": true
+    },
+    {
+      "api_name": "EmailBouncedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Email Bounced Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": true
+    },
+    {
+      "api_name": "EmailBouncedReason",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Email Bounced Reason",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "EngagementScoreId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Behavior Score ID",
+      "nillable": true,
+      "reference_to": [
+        "EngagementScore"
+      ],
+      "relationship_name": "EngagementScore",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "Fax",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Fax",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "FirstName",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "First Name",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "FirstNameLocal",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "First Name (Local)",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "GenderIdentity",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Gender Identity",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "GeocodeAccuracy",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Geocode Accuracy",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "HasOptedOutOfEmail",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Email Opt Out",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "HasOptedOutOfFax",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Fax Opt Out",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "HasPrivacyHold",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Privacy Hold",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "Id",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": true,
+      "label": "Lead ID",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "id",
+      "updateable": false
+    },
+    {
+      "api_name": "IndividualId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Individual ID",
+      "nillable": true,
+      "reference_to": [
+        "Individual"
+      ],
+      "relationship_name": "Individual",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "Industry",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Industry",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "IsConverted",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Converted",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsDeleted",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Deleted",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsLocked",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Is Locked",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsPriorityRecord",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Important",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsUnreadByOwner",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Unread By Owner",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "Jigsaw",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Data.com Key",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "JigsawContactId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Jigsaw Contact ID",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": "JigsawContact",
+      "type": "string",
+      "updateable": false
+    },
+    {
+      "api_name": "LastActivityDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Activity",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": false
+    },
+    {
+      "api_name": "LastModifiedById",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Modified By ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "LastModifiedBy",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "LastModifiedDate",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Modified Date",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastName",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Name",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "LastNameLocal",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Name (Local)",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "LastReferencedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Referenced Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastTransferDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Transfer Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": false
+    },
+    {
+      "api_name": "LastViewedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Viewed Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "Latitude",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Latitude",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "double",
+      "updateable": true
+    },
+    {
+      "api_name": "LeadSource",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Lead Source",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Longitude",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Longitude",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "double",
+      "updateable": true
+    },
+    {
+      "api_name": "MasterRecordId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Master Record ID",
+      "nillable": true,
+      "reference_to": [
+        "Lead"
+      ],
+      "relationship_name": "MasterRecord",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "MayEdit",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "May Edit",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "MobilePhone",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mobile Phone",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "Name",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Full Name",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": false
+    },
+    {
+      "api_name": "NumberOfEmployees",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Employees",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "int",
+      "updateable": true
+    },
+    {
+      "api_name": "OwnerId",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Owner ID",
+      "nillable": false,
+      "reference_to": [
+        "Group",
+        "User"
+      ],
+      "relationship_name": "Owner",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "PartnerAccountId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Partner Account ID",
+      "nillable": true,
+      "reference_to": [
+        "Account"
+      ],
+      "relationship_name": "PartnerAccount",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "Phone",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Phone",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "PhotoUrl",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Photo URL",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "url",
+      "updateable": false
+    },
+    {
+      "api_name": "PostalCode",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Zip/Postal Code",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "Pronouns",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Pronouns",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Rating",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Rating",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Salutation",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Salutation",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Specialty",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Specialty",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "multipicklist",
+      "updateable": true
+    },
+    {
+      "api_name": "State",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "State/Province",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "Status",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Status",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Street",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Street",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "textarea",
+      "updateable": true
+    },
+    {
+      "api_name": "SystemModstamp",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "System Modstamp",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "Title",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Title",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "Website",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Website",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "url",
+      "updateable": true
+    }
+  ],
+  "name": "Lead"
+}

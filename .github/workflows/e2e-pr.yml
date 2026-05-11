@@ -11,6 +11,15 @@ name: E2E PR Checks (Tier 1a + 1b)
 #   repository secrets are needed for Tier 1a or 1b; if secrets ever become
 #   required for a new step, they must NOT be added to this workflow for fork
 #   PRs. See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+#
+# Topology (SFBL-335 structural refactor):
+#   build-images   ── builds backend + frontend once, uploads tarballs
+#       │
+#       ├─► e2e-tier-1a  ── downloads images, runs Tier 1a (org-free)
+#       └─► e2e-tier-1b  ── downloads images, runs Tier 1b (fixture-mode)
+#
+#   Each tier job pulls the pre-built images via `docker load`, skipping
+#   its own build step. Tier 1a + 1b run in parallel after the build.
 
 on:
   pull_request:
@@ -26,12 +35,79 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # build-images — runs once per workflow; both tier jobs depend on it.
+  # Saves the two images as workflow artefacts so the tier jobs can `docker
+  # load` them without re-building. Cuts overall wall-clock roughly in half
+  # vs. each tier rebuilding independently (per SFBL-335).
+  # ---------------------------------------------------------------------------
+  build-images:
+    name: Build backend + frontend images
+    runs-on: ubuntu-latest
+    # 15 min headroom for the worst-case PyPI flake (e.g. multidict
+    # ReadTimeoutError forcing pip retries — observed on PR #88).
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Explicit `scope=` on the GHA cache directives is critical (SFBL-335
+      # follow-up): without it, docker/build-push-action derives a scope key
+      # from the workflow + job name + some internals, and we observed two
+      # consecutive PR pushes writing *different* cache manifests rather than
+      # the second hitting the first's cache (PR #88 runs 25672963085 /
+      # 25673555777 / 25674253813 each took ~6-10 min from cold).  Pinning the
+      # scope to a stable string per image (`backend` / `frontend`) gives
+      # subsequent pushes on the same PR a deterministic key to hit.
+      - name: Build backend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          load: true
+          tags: sfbl-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build frontend image (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          load: true
+          tags: sfbl-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Export images to tarballs
+        # docker save uncompressed; the upload-artifact step zstds on the way
+        # up so a separate gzip here would be redundant.
+        run: |
+          mkdir -p /tmp/images
+          docker save sfbl-backend:ci  -o /tmp/images/sfbl-backend.tar
+          docker save sfbl-frontend:ci -o /tmp/images/sfbl-frontend.tar
+          ls -lh /tmp/images
+
+      - name: Upload image artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-pr-images
+          path: /tmp/images/
+          retention-days: 1
+          compression-level: 1
+
+  # ---------------------------------------------------------------------------
   # Tier 1a — org-free flows: file pane, plan list, RBAC nav, settings, login
-  # Runs on every PR. Target: under ~2 minutes.
+  # Runs on every PR.
   # ---------------------------------------------------------------------------
   e2e-tier-1a:
     name: E2E Tier 1a (org-free)
     runs-on: ubuntu-latest
+    needs: [build-images]
+    # 10 min — actual Playwright work is sub-minute; covers image download +
+    # docker load + stack-up + npm/playwright deps.
     timeout-minutes: 10
 
     steps:
@@ -44,9 +120,6 @@ jobs:
           cache: 'npm'
           # D7/D13: lockfile lives at tests/e2e/, not the repo root
           cache-dependency-path: 'tests/e2e/package-lock.json'
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Create data directories
         # data/db and data/output are mounted as writable volumes; chmod 777 so
@@ -63,30 +136,21 @@ jobs:
         run: |
           echo 'APP_DISTRIBUTION=desktop' > .env
 
-      - name: Build backend image (with layer cache)
-        uses: docker/build-push-action@v6
+      - name: Download pre-built images
+        uses: actions/download-artifact@v4
         with:
-          context: backend
-          push: false
-          load: true
-          tags: sfbl-backend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: e2e-pr-images
+          path: /tmp/images
 
-      - name: Build frontend image (with layer cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: frontend/Dockerfile
-          push: false
-          load: true
-          tags: sfbl-frontend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Load images into local Docker daemon
+        run: |
+          docker load -i /tmp/images/sfbl-backend.tar
+          docker load -i /tmp/images/sfbl-frontend.tar
+          docker image ls --filter reference=sfbl-*
 
       - name: Bring up stack
         # docker-compose.ci.yml overrides build: → image: so compose uses the
-        # pre-built images above rather than rebuilding. --wait blocks until
+        # pre-loaded images above rather than rebuilding. --wait blocks until
         # the backend healthcheck passes (curl /api/health/ready).
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --timeout 120
 
@@ -134,19 +198,14 @@ jobs:
   # ---------------------------------------------------------------------------
   # Tier 1b — metadata-reading flows using captured describe fixtures
   # (field-mapping panel, object combobox, SOQL validator)
-  #
-  # GATED OFF until SFBL-320 (fixture-mode backend support) + SFBL-321
-  # (describe fixture files) + SFBL-322 (Tier 1b canary spec) all land.
-  # SFBL-322 is the gate-keeper: it flips this `if: false` to a real
-  # condition (or removes it entirely) once the Tier 1b infrastructure
-  # is ready to run.
   # ---------------------------------------------------------------------------
   e2e-tier-1b:
     name: E2E Tier 1b (fixture-mode)
     runs-on: ubuntu-latest
+    needs: [build-images]
+    # 10 min — actual Playwright work is sub-minute; covers image download +
+    # docker load + stack-up + npm/playwright deps.
     timeout-minutes: 10
-    # SFBL-322 flips this on when SFBL-320 + SFBL-321 + SFBL-322 are complete
-    if: false
 
     steps:
       - uses: actions/checkout@v4
@@ -158,45 +217,44 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'tests/e2e/package-lock.json'
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Create data directories
         run: |
           mkdir -p data/input data/output data/db
           chmod 777 data/db data/output
 
       - name: Create CI env file (fixture mode)
-        # SF_DESCRIBE_FIXTURES_DIR: app overlay searched first, sf baseline as
-        # fallback (D5 ordered-lookup contract). This keeps the backend from
-        # attempting live Salesforce calls during Tier 1b.
+        # SF_DESCRIBE_FIXTURES_DIR points at IN-CONTAINER paths — see the
+        # docker-compose.e2e-tier-1b.yml overlay below that bind-mounts the
+        # host fixture directories to /data/e2e-fixtures/{app,sf}. Without
+        # the overlay these paths don't exist in the container and the
+        # backend silently falls back to live mode (Codex P1, PR #88).
+        # App overlay first, sf baseline as fallback (D5 ordered-lookup).
         run: |
           echo 'APP_DISTRIBUTION=desktop' > .env
-          echo 'SF_DESCRIBE_FIXTURES_DIR=tests/e2e/app/fixtures/describe:tests/e2e/sf/fixtures/describe' >> .env
+          echo 'SF_DESCRIBE_FIXTURES_DIR=/data/e2e-fixtures/app:/data/e2e-fixtures/sf' >> .env
 
-      - name: Build backend image (with layer cache)
-        uses: docker/build-push-action@v6
+      - name: Download pre-built images
+        uses: actions/download-artifact@v4
         with:
-          context: backend
-          push: false
-          load: true
-          tags: sfbl-backend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: e2e-pr-images
+          path: /tmp/images
 
-      - name: Build frontend image (with layer cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: frontend/Dockerfile
-          push: false
-          load: true
-          tags: sfbl-frontend:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Load images into local Docker daemon
+        run: |
+          docker load -i /tmp/images/sfbl-backend.tar
+          docker load -i /tmp/images/sfbl-frontend.tar
+          docker image ls --filter reference=sfbl-*
 
       - name: Bring up stack (fixture mode)
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --timeout 120
+        # docker-compose.e2e-tier-1b.yml appends the fixture-dir bind-mounts
+        # to the backend service so the SF_DESCRIBE_FIXTURES_DIR paths set
+        # in the .env above resolve to real files inside the container.
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            -f docker-compose.e2e-tier-1b.yml \
+            up -d --wait --timeout 120
 
       - name: Verify stack is reachable
         run: |
@@ -231,8 +289,18 @@ jobs:
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            -f docker-compose.e2e-tier-1b.yml \
+            logs
 
       - name: Bring down stack
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            -f docker-compose.e2e-tier-1b.yml \
+            down -v

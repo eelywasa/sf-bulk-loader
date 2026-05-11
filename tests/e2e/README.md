@@ -28,6 +28,29 @@ APP_DISTRIBUTION=desktop docker compose up -d
 
 The frontend is served at `http://localhost:5173` by default (overrideable via `E2E_BASE_URL`).
 
+### Tier 1b: fast local-feedback loop
+
+For iterating on a failing Tier 1b spec without waiting ~10 min per push for CI, use the helper script. It mirrors the CI topology exactly (same three compose files, same env vars, same fixture mounts) so a green local run is a very strong signal that CI will also pass:
+
+```bash
+# Headless (matches CI)
+./tests/e2e/scripts/run-tier-1b-local.sh
+
+# Watch the browser
+./tests/e2e/scripts/run-tier-1b-local.sh --headed
+
+# Playwright UI mode — single best option for spec debugging
+./tests/e2e/scripts/run-tier-1b-local.sh --ui
+
+# Skip the docker build (if you know nothing image-relevant changed)
+./tests/e2e/scripts/run-tier-1b-local.sh --no-rebuild
+
+# Leave the stack up for follow-up runs
+./tests/e2e/scripts/run-tier-1b-local.sh --keep-up --no-rebuild
+```
+
+The script backs up any existing `.env` at the repo root before writing the fixture-mode one, and restores it on exit. First run is slow (full image build); subsequent runs hit the local Docker layer cache and complete in well under a minute.
+
 ## Directory layout
 
 ```

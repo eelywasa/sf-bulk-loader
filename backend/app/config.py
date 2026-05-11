@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     db_pool_size: int = 20
     db_pool_max_overflow: int = 10
 
+    # Salesforce describe fixture mode (SFBL-320).
+    # PATH-like: colon-separated list of directories searched left-to-right.
+    # When set, the backend serves metadata from captured JSON fixtures instead
+    # of calling the live Salesforce REST API.  Read ONCE at startup; the
+    # resolved mode (fixture | live) is immutable for the process lifetime.
+    # When unset (default), normal live behaviour applies.
+    sf_describe_fixtures_dir: str | None = None
+
     # Salesforce defaults — migrated to DB-backed settings (SFBL-156).
     # These fields are retained for backward compatibility only (fallback when
     # SettingsService is not yet initialised, e.g. during tests). The live
