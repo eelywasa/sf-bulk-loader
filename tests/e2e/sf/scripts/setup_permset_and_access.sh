@@ -49,7 +49,7 @@ echo "[setup_permset_and_access] assigning SfblE2EPermSet ..." >&2
 PERMSET_ASSIGN_OUT="$(sf org assign permset \
   --name SfblE2EPermSet \
   --target-org "${E2E_SCRATCH_ORG}" 2>&1)" || {
-  if echo "$PERMSET_ASSIGN_OUT" | grep -qE "Permission set.*already assigned|duplicate value found"; then
+  if echo "$PERMSET_ASSIGN_OUT" | grep -qiE "duplicate permissionsetassignment|permission set.*already assigned|duplicate value found"; then
     echo "[setup_permset_and_access] permission set already assigned — continuing." >&2
   else
     echo "$PERMSET_ASSIGN_OUT" >&2
