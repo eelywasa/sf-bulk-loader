@@ -1,26 +1,21 @@
-name: E2E Tier 2 — PR label opt-in
+name: E2E Tier 2 — nightly
 
 # SECURITY POLICY (D8):
 # - Uses `pull_request`, NOT `pull_request_target` — secrets are never available to fork PR code.
 # - Same-repo PRs only (head.repo.fork == false guard on the job).
 # - See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
 #
-# This workflow fires when a maintainer adds the `tier-2` label to a same-repo PR,
-# or when a same-repo PR with that label is synchronised or reopened.
+# Dedicated nightly cron run of the Tier 2 scratch-org suite.
+# Failures automatically open a GitHub issue so the team is notified
+# without requiring Slack integration.
 #
-# Nightly cron → .github/workflows/e2e-tier-2-nightly.yml
+# PR label opt-in  → .github/workflows/e2e-tier-2.yml
 # Release-tag gate → .github/workflows/release.yml (tier-2-e2e job)
-#
-# Fork PRs: skipped entirely (would not receive secrets even if they ran).
-# Maintainer-curated manual runs via workflow_dispatch are the path for fork
-# PRs needing Tier 2 verification after a diff review.
 
 on:
-  pull_request:
-    # `labeled` MUST be listed explicitly — the default set
-    # [opened, synchronize, reopened] does NOT include it, so the workflow
-    # would never fire when the label is first added (review-pass finding M2).
-    types: [labeled, synchronize, reopened]
+  schedule:
+    # Nightly at 02:00 UTC — catches drift in dependencies and Salesforce APIs.
+    - cron: '0 2 * * *'
 
   # Ad-hoc manual firing from the Actions UI.  Inputs let the operator override
   # the scratch-org alias (handy when validating against a long-lived shape) and
@@ -38,40 +33,29 @@ on:
         required: false
         default: false
 
-# Minimum permissions — contents: read for checkout, pull-requests: read
-# to check labels on pull_request events.
+# Minimum permissions — contents: read for checkout; issues: write to open
+# failure-notification issues.
 permissions:
   contents: read
-  pull-requests: read
+  issues: write
 
-# Only one Tier 2 run at a time per ref to avoid scratch-org quota exhaustion.
+# Only one nightly run at a time (schedule fires concurrently only in edge
+# cases, but cap it to 1 to be safe).
 concurrency:
-  group: e2e-tier-2-${{ github.ref }}
-  cancel-in-progress: true
+  group: e2e-tier-2-nightly
+  cancel-in-progress: false
 
 jobs:
   tier-2-e2e:
-    name: E2E Tier 2 — scratch org
+    name: E2E Tier 2 — nightly scratch org
     runs-on: ubuntu-latest
     # Wall-clock target: under 15 min including scratch-org spin-up (D8).
     timeout-minutes: 30
 
-    # Gate: only run when:
-    #   (a) the `tier-2` label is present, AND
-    #   (b) the PR is from the same repo (not a fork) — secrets policy (D8).
-    # workflow_dispatch bypasses the PR check entirely (no PR context exists).
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.fork == false &&
-        contains(github.event.pull_request.labels.*.name, 'tier-2')
-      )
-
     env:
       # Scratch org alias scoped to this workflow run to avoid clashes.
       # workflow_dispatch can override this via the scratch_org_alias input.
-      E2E_SCRATCH_ORG: ${{ inputs.scratch_org_alias != '' && inputs.scratch_org_alias || format('e2e-tier2-{0}', github.run_id) }}
+      E2E_SCRATCH_ORG: ${{ inputs.scratch_org_alias != '' && inputs.scratch_org_alias || format('e2e-tier2-nightly-{0}', github.run_id) }}
       # E2E_ORG_SHAPE defaults to "default" (no org shape) unless overridden
       # in the repo's Actions variables. Set to a 15- or 18-char org ID to
       # enable org-shape mode (see scratch_create.sh for full details).
@@ -108,7 +92,7 @@ jobs:
       # -----------------------------------------------------------------------
       # 4. JWT login to Dev Hub (D6)
       #
-      # Secrets required (never exposed on fork PRs — see security note above):
+      # Secrets required:
       #   SFDX_DEVHUB_JWT_KEY      — PEM private key contents
       #   SFDX_DEVHUB_CONSUMER_KEY — OAuth consumer key (client ID)
       #   SFDX_DEVHUB_USERNAME     — Dev Hub org username
@@ -253,3 +237,55 @@ jobs:
         run: |
           echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
           echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."
+
+      # -----------------------------------------------------------------------
+      # 10. Open GitHub issue on nightly failure
+      #
+      # Uses actions/github-script@v7 (pinned) to call the GitHub Issues API.
+      # Only fires on schedule events (not workflow_dispatch manual runs) so
+      # engineers don't get noisy issues from intentional reruns.
+      #
+      # The issue title is deduplicated by date — if multiple steps fail in
+      # one night, a single issue is opened (exact duplicates are suppressed
+      # by the repo's existing issue titles).
+      # -----------------------------------------------------------------------
+      - name: Open issue on nightly failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const today = new Date().toISOString().slice(0, 10);
+            const title = `[E2E Tier 2] Nightly run failed — ${today}`;
+
+            // Check for an existing open issue with the same title to avoid duplicates.
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'e2e-failure',
+              per_page: 20,
+            });
+            const duplicate = issues.find(i => i.title === title);
+            if (duplicate) {
+              core.info(`Duplicate issue found (#${duplicate.number}), skipping creation.`);
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['e2e-failure'],
+              body: [
+                '## E2E Tier 2 nightly run failed',
+                '',
+                `**Date:** ${today}`,
+                `**Run:** ${runUrl}`,
+                '',
+                'Check the workflow run linked above for the failing step and logs.',
+                '',
+                '> This issue was opened automatically by the nightly E2E Tier 2 workflow.',
+                '> Close it once the root cause has been investigated and resolved.',
+              ].join('\n'),
+            });

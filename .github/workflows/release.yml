@@ -10,6 +10,118 @@ permissions:
   packages: write
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Tier 2 E2E gate (D8) — must pass before any artifacts are published.
+  #
+  # SECURITY POLICY (D8):
+  # - Uses `pull_request`, NOT `pull_request_target` — secrets are never available to fork PR code.
+  # - Same-repo PRs only (head.repo.fork == false guard on the job).
+  # - See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+  #
+  # This job runs the full Tier 2 scratch-org suite against the tagged commit
+  # before any Docker images or Electron installers are pushed/attached.
+  # docker-merge and electron-release both declare `needs: [tier-2-e2e]` so
+  # a Tier 2 failure prevents artifact publication entirely.
+  # ---------------------------------------------------------------------------
+  tier-2-e2e:
+    name: E2E Tier 2 — release gate
+    runs-on: ubuntu-latest
+    # Wall-clock target: under 15 min including scratch-org spin-up (D8).
+    timeout-minutes: 30
+
+    env:
+      E2E_SCRATCH_ORG: ${{ format('e2e-tier2-release-{0}', github.run_id) }}
+      E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      - name: Authenticate to Dev Hub via JWT
+        env:
+          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
+          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
+          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
+        run: |
+          printf '%s' "${SFDX_DEVHUB_JWT_KEY}" > /tmp/key.pem
+          chmod 600 /tmp/key.pem
+          sf org login jwt \
+            -i "${SFDX_DEVHUB_CONSUMER_KEY}" \
+            --jwt-key-file /tmp/key.pem \
+            --username "${SFDX_DEVHUB_USERNAME}" \
+            --set-default-dev-hub
+          rm -f /tmp/key.pem
+          echo "INFO: Dev Hub authentication complete (username: ${SFDX_DEVHUB_USERNAME})"
+
+      - name: Create scratch org
+        run: bash tests/e2e/sf/scripts/scratch_create.sh
+
+      - name: Deploy SFDX project to scratch org
+        run: |
+          cd tests/e2e/sf/sfdx
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+
+      - name: Assign permission set and create SetupEntityAccess link
+        run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
+
+      - name: Discover ECA consumer key
+        run: |
+          CONSUMER_KEY="$(bash tests/e2e/sf/scripts/discover_eca_consumer_key.sh)"
+          echo "E2E_BULK_LOADER_CONSUMER_KEY=${CONSUMER_KEY}" >> "$GITHUB_ENV"
+
+      - name: JWT smoke test — bulk-loader auth path
+        env:
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          bash tests/e2e/sf/scripts/jwt_smoke_test.sh
+          ORG_JSON="$(sf org display --target-org "${E2E_SCRATCH_ORG}" --json)"
+          INSTANCE_URL="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['instanceUrl'].rstrip('/'))
+          ")"
+          ADMIN_USERNAME="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['username'])
+          ")"
+          {
+            echo "E2E_SCRATCH_ORG_INSTANCE_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_LOGIN_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_USERNAME=${ADMIN_USERNAME}"
+          } >> "$GITHUB_ENV"
+
+      - name: Run Tier 2 Playwright specs
+        env:
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+          E2E_RUN_ID: ${{ github.run_id }}
+        run: |
+          echo "PLACEHOLDER: Playwright Tier 2 run — to be implemented by SFBL-328."
+          echo "  Will run: npm run e2e:2 (working-directory: tests/e2e)"
+          echo "  Env vars available for setup_connection.ts:"
+          echo "    E2E_SCRATCH_ORG_INSTANCE_URL=${E2E_SCRATCH_ORG_INSTANCE_URL}"
+          echo "    E2E_SCRATCH_ORG_USERNAME=${E2E_SCRATCH_ORG_USERNAME}"
+          echo "    E2E_BULK_LOADER_CONSUMER_KEY=<set, redacted>"
+
+      - name: Destroy scratch org
+        if: always()
+        run: bash tests/e2e/sf/scripts/scratch_destroy.sh
+
   # Build each image natively on its target architecture, then merge into a
   # multi-platform manifest. This avoids QEMU emulation (10-20x slower) by
   # running arm64 builds on GitHub's native ubuntu-24.04-arm runners.
@@ -86,7 +198,7 @@ jobs:
 
   docker-merge:
     name: Docker — merge multi-platform manifests
-    needs: docker-build
+    needs: [docker-build, tier-2-e2e]
     runs-on: ubuntu-latest
 
     steps:
@@ -124,6 +236,7 @@ jobs:
   electron-release:
     name: Build Electron — ${{ matrix.artifact_suffix }}
     runs-on: ${{ matrix.os }}
+    needs: [tier-2-e2e]
     strategy:
       fail-fast: false
       matrix:
