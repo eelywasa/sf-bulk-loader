@@ -146,33 +146,116 @@ jobs:
         run: bash tests/e2e/sf/scripts/scratch_create.sh
 
       # -----------------------------------------------------------------------
-      # 6. Deploy SFDX project (placeholder — SFBL-323/328 will fill this in)
+      # 6. Deploy SFDX project to scratch org
+      #
+      # Deploys both SFDX projects:
+      #   - tests/e2e/sf/sfdx       — Salesforce ECA + certificate + permission set
+      #   - tests/e2e/app/sfdx      — App-specific SfblE2ETest__c custom object
       # -----------------------------------------------------------------------
       - name: Deploy SFDX project to scratch org
-        # SFBL-325 TODO: Replace this placeholder with real sf project deploy
-        # invocations once SFBL-323 (SFDX project skeleton) is merged.
         run: |
-          echo "PLACEHOLDER: SFDX deploy step — to be implemented by SFBL-323/328."
-          echo "  Will run: sf project deploy start --target-org '${E2E_SCRATCH_ORG}'"
+          cd tests/e2e/sf/sfdx
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
 
       # -----------------------------------------------------------------------
-      # 7. JWT smoke test for bulk-loader against scratch org (placeholder — SFBL-328)
+      # 7a. Assign permission set + create SetupEntityAccess link (SFBL-327)
+      #
+      # Assigns SfblE2EPermSet to the scratch admin user and creates the
+      # SetupEntityAccess record linking the permission set to the ECA.
+      # WITHOUT this step AdminApprovedPreAuthorized is not activated and
+      # the JWT bearer grant fails with a 400 auth error.
       # -----------------------------------------------------------------------
-      - name: Bulk-loader JWT smoke test
-        # SFBL-325 TODO: Replace with real JWT setup once SFBL-328
-        # (ECA / Connected App in scratch org) is merged.
+      - name: Assign permission set and create SetupEntityAccess link
+        run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
+
+      # -----------------------------------------------------------------------
+      # 7b. Discover ECA consumer key (SFBL-327)
+      #
+      # Retrieves ExtlClntAppGlobalOauthSettings:SfblE2E from the scratch org
+      # and parses the <consumerKey> element from the XML.  Exports the key
+      # to GITHUB_ENV so downstream steps can reference it as
+      # $E2E_BULK_LOADER_CONSUMER_KEY.
+      #
+      # WHY not ClientId__c on ExternalClientApplication:
+      #   That field does not carry the consumer key.  The only programmatic
+      #   path is the metadata retrieve confirmed by the SFBL-332 spike.
+      # -----------------------------------------------------------------------
+      - name: Discover ECA consumer key
         run: |
-          echo "PLACEHOLDER: Bulk-loader JWT smoke test — to be implemented by SFBL-328."
+          CONSUMER_KEY="$(bash tests/e2e/sf/scripts/discover_eca_consumer_key.sh)"
+          echo "E2E_BULK_LOADER_CONSUMER_KEY=${CONSUMER_KEY}" >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # 7c. JWT smoke test — bulk-loader auth path (SFBL-327)
+      #
+      # Performs a direct JWT bearer grant against
+      # <instance_url>/services/oauth2/token using the private key PEM from
+      # the SFBL_E2E_BULK_LOADER_JWT_KEY secret.  This mirrors EXACTLY the
+      # auth path used by backend/app/services/salesforce_auth.py.
+      #
+      # A failure here exits the workflow before any Playwright spec runs,
+      # with a clear ECA-setup error message instead of confusing downstream
+      # spec failures.
+      #
+      # Secrets consumed:
+      #   SFBL_E2E_BULK_LOADER_JWT_KEY  — PEM private key contents (not a path)
+      # Env vars set by previous steps:
+      #   E2E_SCRATCH_ORG              — scratch org alias
+      #   E2E_BULK_LOADER_CONSUMER_KEY — ECA consumer key (from step 7b)
+      #
+      # Also exports the scratch org instance URL and admin username to
+      # GITHUB_ENV for the Playwright test setup (setup_connection.ts).
+      # -----------------------------------------------------------------------
+      - name: JWT smoke test — bulk-loader auth path
+        env:
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          bash tests/e2e/sf/scripts/jwt_smoke_test.sh
+
+          # Export org details for setup_connection.ts (used by Playwright specs).
+          ORG_JSON="$(sf org display --target-org "${E2E_SCRATCH_ORG}" --json)"
+          INSTANCE_URL="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['instanceUrl'].rstrip('/'))
+          ")"
+          ADMIN_USERNAME="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['username'])
+          ")"
+          {
+            echo "E2E_SCRATCH_ORG_INSTANCE_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_LOGIN_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_USERNAME=${ADMIN_USERNAME}"
+          } >> "$GITHUB_ENV"
 
       # -----------------------------------------------------------------------
       # 8. Run Tier 2 Playwright specs (placeholder — SFBL-329)
+      #
+      # SFBL-327: The SFBL_E2E_BULK_LOADER_JWT_KEY secret and the org-detail
+      # env vars (E2E_SCRATCH_ORG_INSTANCE_URL, E2E_SCRATCH_ORG_LOGIN_URL,
+      # E2E_SCRATCH_ORG_USERNAME, E2E_BULK_LOADER_CONSUMER_KEY) are wired here
+      # so setup_connection.ts can read them when SFBL-329 replaces the
+      # placeholder with the real Playwright invocation.
       # -----------------------------------------------------------------------
       - name: Run Tier 2 Playwright specs
-        # SFBL-325 TODO: Replace with real Playwright invocation once SFBL-329
-        # wires the three D8 triggers and the actual Tier 2 specs exist.
+        env:
+          # PEM key for setup_connection.ts (reads from env, not a temp file).
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+          # Org-detail vars are already in GITHUB_ENV (set by step 7b/7c).
+          # Listing them here as documentation; the env: map inherits GITHUB_ENV.
+          E2E_RUN_ID: ${{ github.run_id }}
+        # SFBL-327: E2E secrets and org-detail env vars are wired above.
+        # SFBL-329 TODO: Replace the placeholder body with the real Playwright
+        # invocation: npm run e2e:2 (working-directory: tests/e2e).
         run: |
           echo "PLACEHOLDER: Playwright Tier 2 run — to be implemented by SFBL-329."
           echo "  Will run: npm run e2e:2 (working-directory: tests/e2e)"
+          echo "  Env vars available for setup_connection.ts:"
+          echo "    E2E_SCRATCH_ORG_INSTANCE_URL=${E2E_SCRATCH_ORG_INSTANCE_URL}"
+          echo "    E2E_SCRATCH_ORG_USERNAME=${E2E_SCRATCH_ORG_USERNAME}"
+          echo "    E2E_BULK_LOADER_CONSUMER_KEY=<set, redacted>"
 
       # -----------------------------------------------------------------------
       # 9. Destroy scratch org — ALWAYS runs to prevent org leaks (D3)

@@ -1,0 +1,19 @@
+# wipe-targets.yml — SObjects targeted by wipe_test_records.py
+#
+# Each entry is a Salesforce SObject API name.  The wiper issues a
+# LIKE '${prefix}%' query against the Name field of each SObject listed here.
+#
+# Ordering: child objects first to avoid FK constraint violations on delete
+# (Salesforce's Bulk API handles cascades, but explicit ordering avoids
+# partial-delete ambiguity in the standard REST delete path).
+#
+# Add an entry here when a new Tier 2 spec writes records to a new SObject.
+# Remove an entry ONLY if you are certain no Tier 2 spec touches that object.
+
+sobjects:
+  # App-specific custom SObject from SFBL-324 (SfblE2ETest__c)
+  - SfblE2ETest__c
+  # Standard SObjects used in bulk-load scenarios
+  - Opportunity
+  - Contact
+  - Account
