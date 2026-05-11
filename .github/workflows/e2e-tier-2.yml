@@ -23,17 +23,23 @@ on:
     types: [labeled, synchronize, reopened]
 
   # Ad-hoc manual firing from the Actions UI.  Inputs let the operator override
-  # the scratch-org alias (handy when validating against a long-lived shape) and
-  # skip the destroy step for post-mortem inspection on a failed run.
+  # the scratch-org alias, skip teardown for post-mortem inspection, or reuse
+  # a long-lived scratch to iterate on Playwright specs without burning daily
+  # Dev Hub quota.
   workflow_dispatch:
     inputs:
       scratch_org_alias:
-        description: 'Override E2E_SCRATCH_ORG (default: workflow-generated unique alias)'
+        description: 'Override E2E_SCRATCH_ORG (default: workflow-generated unique alias). Ignored when reuse_shared_scratch=true.'
         type: string
         required: false
         default: ''
       skip_destroy:
         description: 'Skip scratch-org destroy at the end (for post-mortem inspection — REMEMBER TO DELETE MANUALLY)'
+        type: boolean
+        required: false
+        default: false
+      reuse_shared_scratch:
+        description: 'Reuse the long-lived scratch in secret TIER2_REUSE_AUTH_URL. Skips create/permset/destroy; only re-deploys SFDX (idempotent), re-discovers consumer key, smoke-tests, and runs Playwright. Zero daily-quota cost per iteration.'
         type: boolean
         required: false
         default: false
@@ -69,13 +75,21 @@ jobs:
       )
 
     env:
-      # Scratch org alias scoped to this workflow run to avoid clashes.
-      # workflow_dispatch can override this via the scratch_org_alias input.
-      E2E_SCRATCH_ORG: ${{ inputs.scratch_org_alias != '' && inputs.scratch_org_alias || format('e2e-tier2-{0}', github.run_id) }}
+      # Scratch org alias selection (precedence):
+      #   1. reuse_shared_scratch=true → fixed alias 'tier2-shared' (the
+      #      long-lived scratch authed via TIER2_REUSE_AUTH_URL secret)
+      #   2. scratch_org_alias input set → use that
+      #   3. otherwise → unique per-run alias e2e-tier2-<run_id>
+      E2E_SCRATCH_ORG: ${{ inputs.reuse_shared_scratch && 'tier2-shared' || (inputs.scratch_org_alias != '' && inputs.scratch_org_alias) || format('e2e-tier2-{0}', github.run_id) }}
       # E2E_ORG_SHAPE defaults to "default" (no org shape) unless overridden
       # in the repo's Actions variables. Set to a 15- or 18-char org ID to
       # enable org-shape mode (see scratch_create.sh for full details).
       E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+      # Disable sf CLI colour output (PR #89 run 25694848427: sf data query
+      # --json emitted ANSI codes mid-JSON, breaking JSON.parse on consumers).
+      # The helper also strips ANSI defensively; NO_COLOR is the cleaner fix.
+      NO_COLOR: '1'
+      FORCE_COLOR: '0'
 
     steps:
       # -----------------------------------------------------------------------
@@ -110,21 +124,34 @@ jobs:
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
           SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+          TIER2_REUSE_AUTH_URL: ${{ secrets.TIER2_REUSE_AUTH_URL }}
+          REUSE_SHARED_SCRATCH: ${{ inputs.reuse_shared_scratch }}
         run: |
           MISSING=()
-          [ -z "${SFDX_AUTH_URL}" ]                && MISSING+=("SFDX_AUTH_URL")
+          # SFDX_AUTH_URL (Dev Hub) is only needed when we're CREATING a scratch.
+          # When reusing an existing scratch we don't need Dev Hub access at all.
+          if [ "${REUSE_SHARED_SCRATCH}" != "true" ]; then
+            [ -z "${SFDX_AUTH_URL}" ]              && MISSING+=("SFDX_AUTH_URL")
+          fi
           [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
+          if [ "${REUSE_SHARED_SCRATCH}" = "true" ] && [ -z "${TIER2_REUSE_AUTH_URL}" ]; then
+            MISSING+=("TIER2_REUSE_AUTH_URL (required when reuse_shared_scratch=true)")
+          fi
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Tier 2 cannot run — missing GitHub secret(s): ${MISSING[*]}"
             echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
             exit 1
           fi
-          if ! [[ "${SFDX_AUTH_URL}" =~ ^force://.+ ]]; then
+          if [ "${REUSE_SHARED_SCRATCH}" != "true" ] && ! [[ "${SFDX_AUTH_URL}" =~ ^force://.+ ]]; then
             echo "::error::SFDX_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
             echo "::error::Generate via: sf org display --target-org <devhub-alias> --verbose --json | jq -r '.result.sfdxAuthUrl'"
             exit 1
           fi
-          echo "All required Tier 2 secrets are present."
+          if [ "${REUSE_SHARED_SCRATCH}" = "true" ] && ! [[ "${TIER2_REUSE_AUTH_URL}" =~ ^force://.+ ]]; then
+            echo "::error::TIER2_REUSE_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
+            exit 1
+          fi
+          echo "All required Tier 2 secrets are present (reuse_shared_scratch=${REUSE_SHARED_SCRATCH})."
 
       # -----------------------------------------------------------------------
       # 3b. Install JWT signing dependency (Codex P2 on PR #89)
@@ -195,7 +222,29 @@ jobs:
       #   - 15/18-char org ID normalisation (L2 third-pass).
       #   - Active-shape prerequisite check (L1 + M1 fourth-pass).
       # -----------------------------------------------------------------------
+      # When reuse_shared_scratch=true: log into the long-lived scratch
+      # directly via its sfdxAuthUrl (from TIER2_REUSE_AUTH_URL secret).  No
+      # quota cost.  Skips the Dev Hub session entirely — we don't need it
+      # for spec execution against an already-provisioned scratch.
+      - name: Authenticate to shared scratch (reuse mode)
+        if: inputs.reuse_shared_scratch
+        env:
+          TIER2_REUSE_AUTH_URL: ${{ secrets.TIER2_REUSE_AUTH_URL }}
+        run: |
+          AUTH_FILE="$(mktemp)"
+          trap 'rm -f "$AUTH_FILE"' EXIT
+          printf '%s' "$TIER2_REUSE_AUTH_URL" > "$AUTH_FILE"
+          chmod 600 "$AUTH_FILE"
+          sf org login sfdx-url \
+            --sfdx-url-file "$AUTH_FILE" \
+            --alias tier2-shared \
+            --set-default
+          USERNAME="$(sf org display --target-org tier2-shared --json | jq -r '.result.username')"
+          INSTANCE="$(sf org display --target-org tier2-shared --json | jq -r '.result.instanceUrl')"
+          echo "INFO: Reusing scratch (username: ${USERNAME}, instance: ${INSTANCE}) — skipping create/permset/destroy"
+
       - name: Create scratch org
+        if: '!inputs.reuse_shared_scratch'
         run: bash tests/e2e/sf/scripts/scratch_create.sh
 
       # -----------------------------------------------------------------------
@@ -220,7 +269,11 @@ jobs:
       # WITHOUT this step AdminApprovedPreAuthorized is not activated and
       # the JWT bearer grant fails with a 400 auth error.
       # -----------------------------------------------------------------------
+      # Permset assignment + SetupEntityAccess linking are one-time per scratch.
+      # When reusing the shared scratch, they were already done at the first
+      # provisioning; re-running would fail on duplicate-assignment errors.
       - name: Assign permission set and create SetupEntityAccess link
+        if: '!inputs.reuse_shared_scratch'
         run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
 
       # -----------------------------------------------------------------------
@@ -351,12 +404,24 @@ jobs:
       # leave the org up for post-mortem inspection.  The dispatch input
       # description warns the operator that they must delete it manually.
       # -----------------------------------------------------------------------
+      # Destroy gated on three conditions:
+      #   - the run must have actually created a scratch (skip when reusing)
+      #   - the operator must not have opted into skip_destroy via dispatch
+      #   - always() so this fires even on earlier failures (cleanup hygiene)
       - name: Destroy scratch org
-        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.skip_destroy)
+        if: always() && !inputs.reuse_shared_scratch && !(github.event_name == 'workflow_dispatch' && inputs.skip_destroy)
         run: bash tests/e2e/sf/scripts/scratch_destroy.sh
 
       - name: Skip scratch-org destroy (workflow_dispatch with skip_destroy=true)
-        if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
         run: |
           echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
           echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."
+          echo "::warning::To capture its sfdxAuthUrl for reuse:"
+          echo "::warning::  sf org display --target-org ${E2E_SCRATCH_ORG} --verbose --json | jq -r '.result.sfdxAuthUrl' | gh secret set TIER2_REUSE_AUTH_URL"
+
+      - name: Reuse mode — scratch left intact
+        if: inputs.reuse_shared_scratch
+        run: |
+          echo "::notice::Reuse mode — shared scratch '${E2E_SCRATCH_ORG}' was not modified destructively (no create/permset/destroy)."
+          echo "::notice::Re-fire workflow_dispatch with reuse_shared_scratch=true to iterate Playwright against this scratch at zero daily-quota cost."

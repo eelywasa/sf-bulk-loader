@@ -81,12 +81,18 @@ export function sfQuery(
 
   let parsed: SfQueryResult;
   try {
-    // Tolerant parse: sf CLI versions have been observed to emit a leading
-    // "You acknowledge and agree that the CLI..." banner or other non-JSON
-    // text before the `--json` body when stderr+stdout get muxed in CI logs.
-    // Strip everything before the first `{` to keep the parse robust.
-    const firstBrace = stdout.indexOf("{");
-    const jsonPortion = firstBrace > 0 ? stdout.slice(firstBrace) : stdout;
+    // Tolerant parse:
+    //   1. Strip ANSI escape codes — sf CLI v2.x has been observed emitting
+    //      colour codes into `--json` output in non-TTY contexts (PR #89 run
+    //      25694848427: stdout started with \x1b[97m{ ...).  --json should
+    //      produce clean JSON regardless of terminal; we defend in helper.
+    //   2. Strip everything before the first `{` to skip any leading banner
+    //      ("You acknowledge and agree that the CLI..." has been observed in
+    //      first-run scenarios).
+    // eslint-disable-next-line no-control-regex
+    const ansiStripped = stdout.replace(/\x1b\[[0-9;]*[mGKHJ]/g, "");
+    const firstBrace = ansiStripped.indexOf("{");
+    const jsonPortion = firstBrace > 0 ? ansiStripped.slice(firstBrace) : ansiStripped;
     parsed = JSON.parse(jsonPortion) as SfQueryResult;
   } catch (parseErr) {
     // Diagnostic-rich error: include byte length, hex of first/last 32 bytes,

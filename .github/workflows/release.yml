@@ -32,6 +32,8 @@ jobs:
     env:
       E2E_SCRATCH_ORG: ${{ format('e2e-tier2-release-{0}', github.run_id) }}
       E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+      NO_COLOR: '1'
+      FORCE_COLOR: '0'
 
     steps:
       - name: Checkout

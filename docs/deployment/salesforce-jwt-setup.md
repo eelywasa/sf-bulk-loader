@@ -289,6 +289,97 @@ IDs to 15 chars automatically.
 
 ---
 
+## Iterating on Tier 2 with a shared scratch (reuse mode)
+
+Tier 2 CI runs cost 1 daily scratch-org signup per run against the Dev Hub.
+Free Dev Hubs cap at 3-6 daily; debugging a flaky Tier 2 spec via repeated
+CI cycles will exhaust the quota in a single afternoon. The
+`reuse_shared_scratch` workflow_dispatch input enables zero-quota iteration
+against a long-lived scratch.
+
+### Setup (one-time per scratch — every ~7 days)
+
+1. Fire `e2e-tier-2.yml` via workflow_dispatch with `skip_destroy: true`
+   (and `reuse_shared_scratch: false`):
+   ```bash
+   gh workflow run e2e-tier-2.yml \
+     --ref feat/your-branch \
+     -f skip_destroy=true
+   ```
+   This creates a scratch normally (1 quota), runs your specs, and leaves
+   the scratch alive at the end. The workflow logs the alias and a hint at
+   how to capture its sfdxAuthUrl.
+
+2. Locally, authenticate to the leaked scratch and capture its auth URL:
+   ```bash
+   # Find the alias in the workflow logs (form: e2e-tier2-<run_id>) and log in:
+   sf org login web --instance-url <scratch-instance-url> --alias tier2-shared
+   # Then export the URL into the GH secret:
+   sf org display --target-org tier2-shared --verbose --json \
+     | jq -r '.result.sfdxAuthUrl' \
+     | gh secret set TIER2_REUSE_AUTH_URL
+   ```
+
+### Iteration cycle (zero quota cost)
+
+Once `TIER2_REUSE_AUTH_URL` is set, all subsequent debugging fires can reuse
+the same scratch:
+
+```bash
+gh workflow run e2e-tier-2.yml \
+  --ref feat/your-branch \
+  -f reuse_shared_scratch=true
+```
+
+When `reuse_shared_scratch=true`, the workflow:
+
+- **Skips** scratch-create (no quota cost)
+- **Skips** permset assignment and SetupEntityAccess setup (already done)
+- **Skips** scratch destroy (operator owns the scratch's lifecycle)
+- **Still re-runs**: SFDX deploy (idempotent — handles any schema drift),
+  consumer-key discovery, JWT smoke test, Playwright specs
+
+The deploy step is fast and idempotent: schema-state matches whatever's on
+your branch each time, so iteration on SFDX changes still works correctly.
+
+### Resetting accumulated records
+
+Each spec cleans up its own records in `afterEach` via `wipe_test_records.py`
+(unique per-run prefix prevents cross-test pollution). But if a previous run
+failed mid-test and left cruft behind, or you just want a known-clean state:
+
+```bash
+# Locally, after authenticating to tier2-shared:
+bash tests/e2e/sf/scripts/reset_shared_scratch.sh tier2-shared
+```
+
+This wipes every record with an `E2E-` prefix across all SObjects in
+`tests/e2e/sf/scripts/wipe-targets.yml`. Safe — the `wipe_test_records.py`
+validator rejects any prefix containing SOQL wildcards or quote chars before
+issuing SOQL.
+
+### When to fully re-provision
+
+Three scenarios force a fresh scratch:
+
+| Trigger | Mitigation |
+|---|---|
+| Scratch hit its 30-day max lifetime | Salesforce auto-deletes; JWT smoke test will fail-fast with a clear error. Repeat the **Setup** steps above. |
+| Schema diverged too far (rare — SFDX deploy handles most drift) | `sf org delete scratch --target-org tier2-shared --no-prompt`; repeat **Setup**. |
+| `TIER2_REUSE_AUTH_URL` was rotated or revoked | Re-extract sfdxAuthUrl, re-set the secret. |
+
+### Quota check (sanity)
+
+```bash
+sf org list limits --target-org <devhub-alias> --json \
+  | jq '.result[] | select(.name | test("Scratch"; "i"))'
+```
+
+Shows `DailyScratchOrgs.remaining` — useful before deciding whether to fire
+a fresh-create run or reuse the shared one.
+
+---
+
 ## Related
 
 - [Docker deployment guide](docker.md) — environment variable reference for
@@ -299,3 +390,5 @@ IDs to 15 chars automatically.
   and D3 (scratch-org lifecycle).
 - `tests/e2e/sf/scripts/scratch_create.sh` — the CI script that consumes the
   Dev Hub secrets and handles org shape ID normalisation.
+- `tests/e2e/sf/scripts/reset_shared_scratch.sh` — operator script to clean
+  E2E-prefixed records from a long-lived shared scratch.

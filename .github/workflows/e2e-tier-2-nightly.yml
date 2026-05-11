@@ -60,6 +60,8 @@ jobs:
       # in the repo's Actions variables. Set to a 15- or 18-char org ID to
       # enable org-shape mode (see scratch_create.sh for full details).
       E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+      NO_COLOR: '1'
+      FORCE_COLOR: '0'
 
     steps:
       # -----------------------------------------------------------------------
