@@ -70,7 +70,13 @@ export class StepEditorModal {
     await this.objectInput.fill(objectName);
     // The ComboInput renders options as <li> elements in a dropdown listbox.
     // Wait for the option and click it.
-    const option = this.page.getByRole("option", { name: objectName });
+    //
+    // `exact: true` is critical: the captured fixture contains 38 objects
+    // whose names start with "Account" (AccountBrand, AccountContactRelation,
+    // AccountAccountRelationFeed, …).  Without exact matching, Playwright's
+    // strict-mode locator resolution fails with a 38-element match list
+    // (observed on PR #88 CI run 25672963085 / job 75364478654).
+    const option = this.page.getByRole("option", { name: objectName, exact: true });
     await option.waitFor({ state: "visible", timeout: 10_000 });
     await option.click();
   }
