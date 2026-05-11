@@ -59,9 +59,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# NOTE: docker-compose.ci.yml is intentionally NOT included.  That overlay
+# replaces `build:` with `image: sfbl-backend:ci` (which CI then `docker
+# load`s from a tarball).  Locally we want the base file's build directives
+# so `docker compose build` actually produces images.  The Tier 1b overlay
+# only adds the fixture-dir bind mounts, so we get the right semantics.
 COMPOSE_FILES=(
   -f docker-compose.yml
-  -f docker-compose.ci.yml
   -f docker-compose.e2e-tier-1b.yml
 )
 
