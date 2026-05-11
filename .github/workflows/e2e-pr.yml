@@ -167,12 +167,15 @@ jobs:
           chmod 777 data/db data/output
 
       - name: Create CI env file (fixture mode)
-        # SF_DESCRIBE_FIXTURES_DIR: app overlay searched first, sf baseline as
-        # fallback (D5 ordered-lookup contract). This keeps the backend from
-        # attempting live Salesforce calls during Tier 1b.
+        # SF_DESCRIBE_FIXTURES_DIR points at IN-CONTAINER paths — see the
+        # docker-compose.e2e-tier-1b.yml overlay below that bind-mounts the
+        # host fixture directories to /data/e2e-fixtures/{app,sf}. Without
+        # the overlay these paths don't exist in the container and the
+        # backend silently falls back to live mode (Codex P1, PR #88).
+        # App overlay first, sf baseline as fallback (D5 ordered-lookup).
         run: |
           echo 'APP_DISTRIBUTION=desktop' > .env
-          echo 'SF_DESCRIBE_FIXTURES_DIR=tests/e2e/app/fixtures/describe:tests/e2e/sf/fixtures/describe' >> .env
+          echo 'SF_DESCRIBE_FIXTURES_DIR=/data/e2e-fixtures/app:/data/e2e-fixtures/sf' >> .env
 
       - name: Build backend image (with layer cache)
         uses: docker/build-push-action@v6
@@ -196,7 +199,15 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Bring up stack (fixture mode)
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --wait --timeout 120
+        # docker-compose.e2e-tier-1b.yml appends the fixture-dir bind-mounts
+        # to the backend service so the SF_DESCRIBE_FIXTURES_DIR paths set
+        # in the .env above resolve to real files inside the container.
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            -f docker-compose.e2e-tier-1b.yml \
+            up -d --wait --timeout 120
 
       - name: Verify stack is reachable
         run: |
@@ -231,8 +242,18 @@ jobs:
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            -f docker-compose.e2e-tier-1b.yml \
+            logs
 
       - name: Bring down stack
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            -f docker-compose.e2e-tier-1b.yml \
+            down -v

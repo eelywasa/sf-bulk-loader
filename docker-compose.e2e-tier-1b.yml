@@ -1,0 +1,29 @@
+# Tier 1b fixture-mount overlay (SFBL-322 / Codex P1 fix).
+#
+# Mounts the captured describe fixtures into the backend container so that
+# SF_DESCRIBE_FIXTURES_DIR can point at in-container paths and the backend's
+# fixture-mode resolver (SFBL-320) actually finds them. Without this overlay,
+# SF_DESCRIBE_FIXTURES_DIR=tests/e2e/... resolves to missing paths inside the
+# container, FixtureMode._resolve_dirs() warns and skips them, and the backend
+# silently falls back to live-Salesforce mode — defeating Tier 1b's whole
+# purpose.
+#
+# Usage (CI):
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.ci.yml \
+#                  -f docker-compose.e2e-tier-1b.yml \
+#                  up -d --wait
+#
+# And set:
+#   SF_DESCRIBE_FIXTURES_DIR=/data/e2e-fixtures/app:/data/e2e-fixtures/sf
+#
+# Compose merges the `volumes` lists from all -f files, so this appends to the
+# base mounts in docker-compose.yml rather than replacing them.
+
+services:
+  backend:
+    volumes:
+      # App overlay searched first (PATH-like), sf baseline as fallback — per
+      # spec D5 ordered-lookup contract.
+      - ./tests/e2e/app/fixtures/describe:/data/e2e-fixtures/app:ro
+      - ./tests/e2e/sf/fixtures/describe:/data/e2e-fixtures/sf:ro

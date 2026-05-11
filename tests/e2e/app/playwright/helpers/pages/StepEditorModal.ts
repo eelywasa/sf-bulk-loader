@@ -75,6 +75,29 @@ export class StepEditorModal {
   }
 
   /**
+   * Open the object combobox's options dropdown.
+   *
+   * The underlying `ComboInput` (see `frontend/src/components/ui/ComboInput.tsx`)
+   * opens its listbox on:
+   *   - a non-empty `onChange` (typing into the input),
+   *   - the `ArrowDown` key while the input is focused, or
+   *   - a click on the "Show options" chevron button.
+   *
+   * It does NOT open on `focus` alone, so a bare `objectInput.click()` won't
+   * reveal the dropdown.  This helper uses the chevron button — it's the most
+   * intent-clear option and doesn't rely on filtering through a search term
+   * that the spec doesn't really need.
+   */
+  async openObjectOptions(): Promise<void> {
+    await this.objectInput.click();
+    await this.dialog
+      .getByRole("button", { name: "Show options" })
+      .first()
+      .click();
+    await this.objectDropdown.waitFor({ state: "visible", timeout: 15_000 });
+  }
+
+  /**
    * Focused option locator within the object dropdown suggestion list.
    * Matches option elements by text so callers can assert visibility.
    */

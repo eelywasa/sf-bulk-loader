@@ -133,18 +133,14 @@ test.describe("Step editor — object combobox fixture loop", () => {
       const modal = new StepEditorModal(page);
       await modal.openAddStep();
 
-      // ── 4. Interact with the object combobox to reveal suggestions ────────
+      // ── 4. Open the object combobox dropdown ──────────────────────────────
       //
-      // ComboInput shows suggestions when the user focuses/types in the input.
-      // Clicking the input and then clearing it (or typing a space that we
-      // remove) reveals the full list.  We type nothing and just focus+wait
-      // for the listbox to populate; if no suggestions appear on focus alone,
-      // sending a single character that matches many objects is the fallback.
-      //
-      // Strategy: click the input to focus; the ComboInput renders the list
-      // once the field has focus.  Wait up to 15 s for the fixture-backed
-      // response (network round-trip to the Docker stack).
-      await modal.objectInput.click();
+      // ComboInput only opens its listbox on a typed change, ArrowDown, or
+      // a click on the "Show options" chevron — focus alone does NOT open
+      // it (see frontend/src/components/ui/ComboInput.tsx).  The page-object
+      // helper uses the chevron path; this is intent-clear and avoids
+      // filtering the dropdown through an arbitrary search term.
+      await modal.openObjectOptions();
 
       // Assert a representative subset of fixture objects is present.
       // These must come from _object_list.json via the fixture-mode backend.
