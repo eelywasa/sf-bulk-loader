@@ -38,6 +38,24 @@ on:
   pull_request:
     types: [labeled, synchronize, reopened]
 
+  # Ad-hoc manual firing from the Actions UI.  Use this to validate workflow
+  # plumbing or to re-run after a transient failure without waiting for the
+  # nightly cron / a tag / a PR label.  Inputs let the operator override the
+  # scratch-org alias (handy when validating against a long-lived shape) and
+  # skip the destroy step for post-mortem inspection on a failed run.
+  workflow_dispatch:
+    inputs:
+      scratch_org_alias:
+        description: 'Override E2E_SCRATCH_ORG (default: workflow-generated unique alias)'
+        type: string
+        required: false
+        default: ''
+      skip_destroy:
+        description: 'Skip scratch-org destroy at the end (for post-mortem inspection — REMEMBER TO DELETE MANUALLY)'
+        type: boolean
+        required: false
+        default: false
+
 # Minimum permissions — contents: read for checkout, pull-requests: read
 # to check labels on pull_request events.
 permissions:
@@ -59,10 +77,11 @@ jobs:
     # Gate: for pull_request events, only run when:
     #   (a) the `tier-2` label is present, AND
     #   (b) the PR is from the same repo (not a fork) — secrets policy (D8).
-    # For push (tag) and schedule events, always run.
+    # For push (tag), schedule, and workflow_dispatch events, always run.
     if: >
       github.event_name == 'push' ||
       github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.fork == false &&
@@ -71,7 +90,8 @@ jobs:
 
     env:
       # Scratch org alias scoped to this workflow run to avoid clashes.
-      E2E_SCRATCH_ORG: e2e-tier2-${{ github.run_id }}
+      # workflow_dispatch can override this via the scratch_org_alias input.
+      E2E_SCRATCH_ORG: ${{ inputs.scratch_org_alias != '' && inputs.scratch_org_alias || format('e2e-tier2-{0}', github.run_id) }}
       # E2E_ORG_SHAPE defaults to "default" (no org shape) unless overridden
       # in the repo's Actions variables. Set to a 15- or 18-char org ID to
       # enable org-shape mode (see scratch_create.sh for full details).
@@ -259,7 +279,17 @@ jobs:
 
       # -----------------------------------------------------------------------
       # 9. Destroy scratch org — ALWAYS runs to prevent org leaks (D3)
+      #
+      # Exception: when invoked via workflow_dispatch with skip_destroy=true,
+      # leave the org up for post-mortem inspection.  The dispatch input
+      # description warns the operator that they must delete it manually.
       # -----------------------------------------------------------------------
       - name: Destroy scratch org
-        if: always()
+        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.skip_destroy)
         run: bash tests/e2e/sf/scripts/scratch_destroy.sh
+
+      - name: Skip scratch-org destroy (workflow_dispatch with skip_destroy=true)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy
+        run: |
+          echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
+          echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."
