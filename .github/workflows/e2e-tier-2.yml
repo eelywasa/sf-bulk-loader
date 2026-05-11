@@ -100,7 +100,19 @@ jobs:
           python-version: '3.12'
 
       # -----------------------------------------------------------------------
-      # 3. Install Salesforce CLI
+      # 3a. Install JWT signing dependency (Codex P2 on PR #89)
+      #
+      # jwt_smoke_test.sh's Python helper signs the JWT bearer assertion;
+      # it prefers `cryptography` and falls back to PyJWT.  Neither is on
+      # the GHA ubuntu-latest base image, so install explicitly here — the
+      # smoke test would otherwise ImportError before validating the org
+      # and the operator would see a confusing failure mode.
+      # -----------------------------------------------------------------------
+      - name: Install JWT signing dependency (cryptography)
+        run: pip install --no-input cryptography
+
+      # -----------------------------------------------------------------------
+      # 3b. Install Salesforce CLI
       # -----------------------------------------------------------------------
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli@latest
@@ -218,24 +230,78 @@ jobs:
           } >> "$GITHUB_ENV"
 
       # -----------------------------------------------------------------------
-      # 8. Run Tier 2 Playwright specs
+      # 8. Run Tier 2 Playwright specs (Codex P1 on PR #89 — replaces the
+      # previous placeholder echo which would have let release artifacts
+      # ship even when the actual specs failed).
       #
-      # SFBL_E2E_BULK_LOADER_JWT_KEY and the org-detail env vars
-      # (E2E_SCRATCH_ORG_INSTANCE_URL, E2E_SCRATCH_ORG_LOGIN_URL,
-      # E2E_SCRATCH_ORG_USERNAME, E2E_BULK_LOADER_CONSUMER_KEY) are wired
-      # here for setup_connection.ts.
+      # Steps:
+      #   a. Create writable data dirs for the backend volumes.
+      #   b. Write a minimal .env (APP_DISTRIBUTION=desktop disables the
+      #      login wall so Playwright can drive the UI directly; the
+      #      bulk loader still talks to Salesforce via the per-spec
+      #      Connection row that setup_connection.ts creates).
+      #   c. Bring up the stack with --build (no shared build-images job
+      #      yet — TODO: SFBL-340 to factor into a reusable workflow that
+      #      can share image builds with e2e-pr.yml's pattern).
+      #   d. Install Playwright deps.
+      #   e. Run `npm run e2e:2` with the env vars wired through.
+      #   f. Upload Playwright report on failure for diagnosis.
+      #   g. Dump container logs on failure.
+      #   h. Bring the stack down (always — stack tear-down precedes the
+      #      scratch-org destroy to release ports before SF auth cleanup).
       # -----------------------------------------------------------------------
+      - name: Create data directories
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
+
+      - name: Create stack env file (no fixture mode — Tier 2 hits real SF)
+        run: |
+          echo 'APP_DISTRIBUTION=desktop' > .env
+
+      - name: Bring up app stack
+        run: docker compose -f docker-compose.yml up -d --build --wait --timeout 600
+
+      - name: Verify stack is reachable
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Install Playwright deps
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: Run Tier 2 Playwright specs
+        working-directory: tests/e2e
         env:
+          CI: 'true'
+          E2E_BASE_URL: 'http://localhost'
           SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
           E2E_RUN_ID: ${{ github.run_id }}
-        run: |
-          echo "PLACEHOLDER: Playwright Tier 2 run — to be implemented by SFBL-328."
-          echo "  Will run: npm run e2e:2 (working-directory: tests/e2e)"
-          echo "  Env vars available for setup_connection.ts:"
-          echo "    E2E_SCRATCH_ORG_INSTANCE_URL=${E2E_SCRATCH_ORG_INSTANCE_URL}"
-          echo "    E2E_SCRATCH_ORG_USERNAME=${E2E_SCRATCH_ORG_USERNAME}"
-          echo "    E2E_BULK_LOADER_CONSUMER_KEY=<set, redacted>"
+        run: npm run e2e:2
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-tier-2-${{ github.run_id }}
+          path: tests/e2e/playwright-report/
+          retention-days: 14
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs
+
+      - name: Bring down app stack
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
 
       # -----------------------------------------------------------------------
       # 9. Destroy scratch org — ALWAYS runs to prevent org leaks (D3)
