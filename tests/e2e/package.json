@@ -1,0 +1,28 @@
+{
+  "name": "sf-bulk-loader-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Playwright end-to-end test suite for sf-bulk-loader (D7/D13)",
+  "scripts": {
+    "e2e:1a": "playwright test --project=tier-1a",
+    "e2e:1b": "playwright test --project=tier-1b",
+    "e2e:2": "playwright test --project=tier-2",
+    "e2e:scratch:create": "bash sf/scripts/scratch_create.sh",
+    "e2e:scratch:destroy": "bash sf/scripts/scratch_destroy.sh",
+    "lint": "eslint . --ext .ts",
+    "lint:boundaries": "eslint . --ext .ts --rule '{\"boundaries/element-types\": \"error\"}'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^25.6.2",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-boundaries": "^4.2.0",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
