@@ -145,8 +145,8 @@ jobs:
     name: E2E Tier 1b (fixture-mode)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # SFBL-322 flips this on when SFBL-320 + SFBL-321 + SFBL-322 are complete
-    if: false
+    # Gate lifted by SFBL-322 — SFBL-320 (fixture-mode backend), SFBL-321
+    # (describe fixture files) and SFBL-322 (canary spec) are all complete.
 
     steps:
       - uses: actions/checkout@v4

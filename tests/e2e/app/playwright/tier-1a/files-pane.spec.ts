@@ -28,6 +28,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { test, expect } from "@playwright/test";
 import { FilesPage } from "../helpers/pages/FilesPage";
+import { fetchAuthMode, loginViaUi } from "../helpers/auth";
 
 // ── Seed CSV definition ───────────────────────────────────────────────────────
 
@@ -67,44 +68,6 @@ function resolveInputDir(): string {
   // tests/e2e/app/playwright/tier-1a/ → tests/e2e/ → tests/ → repo root
   const repoRoot = path.resolve(__dirname, "../../../../..");
   return path.join(repoRoot, "data", "input");
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Fetch the backend's runtime config (`/api/runtime`) to discover the active
- * auth mode. Unauthenticated endpoint — safe to call before any login.
- */
-async function fetchAuthMode(
-  request: import("@playwright/test").APIRequestContext,
-): Promise<string> {
-  const response = await request.get("/api/runtime");
-  if (!response.ok()) {
-    throw new Error(
-      `GET /api/runtime returned HTTP ${response.status()}; cannot determine auth mode`,
-    );
-  }
-  const body = (await response.json()) as { auth_mode?: string };
-  return body.auth_mode ?? "";
-}
-
-/**
- * Log in via the UI login form.
- * Returns after the browser has navigated away from /login.
- */
-async function loginViaUi(
-  page: import("@playwright/test").Page,
-  email: string,
-  password: string,
-): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByTestId("login-submit").click();
-  // Wait until we leave /login (redirect to the requested page)
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), {
-    timeout: 15_000,
-  });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
