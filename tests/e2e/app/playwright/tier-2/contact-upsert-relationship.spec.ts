@@ -84,15 +84,21 @@ const TERMINAL_STATUSES = new Set([
 
 // ── Path resolution ────────────────────────────────────────────────────────────
 
+// From tier-2/<spec>.ts the repo root is five levels up:
+//   tier-2 → playwright → app → e2e → tests → repo root
+// (Note: "tests/e2e" is two directories, not one — an earlier six-level
+// traversal here pointed at the parent of the repo, so the seeded CSV
+// landed outside the docker-compose bind mount and the backend's
+// discover_files glob silently returned 0 matches.)
 function resolveInputDir(): string {
   if (process.env["E2E_INPUT_DIR"]) return process.env["E2E_INPUT_DIR"];
-  const repoRoot = path.resolve(__dirname, "../../../../../..");
+  const repoRoot = path.resolve(__dirname, "../../../../..");
   return path.join(repoRoot, "data", "input");
 }
 
 function resolveOutputDir(): string {
   if (process.env["E2E_OUTPUT_DIR"]) return process.env["E2E_OUTPUT_DIR"];
-  const repoRoot = path.resolve(__dirname, "../../../../../..");
+  const repoRoot = path.resolve(__dirname, "../../../../..");
   return path.join(repoRoot, "data", "output");
 }
 

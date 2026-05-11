@@ -70,8 +70,12 @@ function resolveInputDir(): string {
     return process.env["E2E_INPUT_DIR"];
   }
   // Default: ./data/input relative to repo root.
-  // tier-2/account-insert.spec.ts → tier-2 → playwright → app → tests/e2e → tests → repo root
-  const repoRoot = path.resolve(__dirname, "../../../../../..");
+  // From tier-2/account-insert.spec.ts, the repo root is five levels up:
+  //   tier-2 → playwright → app → e2e → tests → repo root
+  // (Note: "tests/e2e" is two directories, not one — an earlier six-level
+  // traversal here pointed at the parent of the repo and caused the backend
+  // to never see the seeded CSV, so the run completed with 0 jobs.)
+  const repoRoot = path.resolve(__dirname, "../../../../..");
   return path.join(repoRoot, "data", "input");
 }
 
