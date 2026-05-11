@@ -61,30 +61,62 @@ You now have two files:
 
 ---
 
-## Step 2 — Create (or update) the Connected App in Salesforce
+## Step 2 — Create the External Client App (ECA) in Salesforce
 
-1. Log in to the target Salesforce org (or Dev Hub) as an administrator.
-2. Go to **Setup → App Manager → New Connected App**.
-3. Fill in the basic information:
-   - **Connected App Name**: `SFBulkLoader` (or `SFBulkLoaderDevHub` for the CI Dev Hub app).
-   - **API Name**: auto-generated; note it for your records.
+> **Spring '26 constraint**: Salesforce no longer permits creating new
+> *Connected Apps* in any org. The replacement is the **External Client App
+> (ECA)** — same JWT primitive, newer metadata shape. Existing Connected Apps
+> continue to work, but new orgs (including newly-created Dev Hubs and all
+> scratch orgs) must use ECAs. The Bulk Loader's E2E suite uses ECAs end-to-end:
+> the scratch-org bulk-loader app is deployed via SFDX (see SFBL-324), and the
+> Dev Hub CI app is set up via the UI below.
+
+1. Log in to the target Salesforce org (or Dev Hub) as an administrator:
+   `sf org open --target-org <alias>`.
+2. Go to **Setup → Quick Find: "External Client App" → External Client App
+   Manager**.
+3. **New External Client App**:
+   - **Name**: `SFBulkLoader` (or `SFBulkLoaderDevHubCI` for the Dev Hub).
+   - **API Name**: auto-fills; note it.
    - **Contact Email**: your operator email.
+   - **Distribution State**: `Local` (NOT `Packaged` — `Packaged` cannot be
+     installed in scratch orgs or in the Dev Hub without a managed-package
+     pipeline; `Local` works everywhere).
 4. Enable **OAuth Settings**:
    - **Callback URL**: `http://localhost` (required but not used in JWT flow).
    - **Selected OAuth Scopes**: add `api`, `refresh_token`, and `offline_access`.
-   - Enable **Use Digital Signatures**.
+   - **Enable JWT Bearer Flow**: ✓
    - Upload `server.crt` (the public certificate from Step 1).
-5. Save. Salesforce generates a **Consumer Key** (client ID) — note it.
-6. After saving, click **Manage → Edit Policies**:
+5. Save. Salesforce generates a **Consumer Key** — note it.
+6. After saving, open **Policies → Edit**:
    - Set **IP Relaxation** to *Relax IP Restrictions* (required for CI runners).
-   - Set **Permitted Users** to *Admin approved users are pre-authorized*.
-7. Under **Manage → Profiles** (or **Permission Sets**), add the profile or
-   permission set of the user that will be impersonated by the JWT.
+   - Set **Permitted Users** to *Admin Pre-Authorized Users*.
+7. Pre-authorise the user that will be impersonated by the JWT:
+   - Easiest path: add the user's **Profile** to the ECA's permitted profiles
+     in the UI.
+   - Cleaner path (recommended for the Dev Hub if the org has multiple admins):
+     create a Permission Set granting `ExternalClientApplicationAccess` on the
+     ECA, then assign that Permission Set to the user **and** link it via a
+     `SetupEntityAccess` record. The CI scratch-org flow uses this Permission
+     Set + SetupEntityAccess pattern — see
+     `tests/e2e/sf/scripts/setup_permset_and_access.sh` for the
+     SFDX-deployed example.
 
-> **Note on "Admin approved users"**: the JWT flow bypasses the OAuth consent
-> screen entirely, so the acting user must be pre-authorised on the Connected
-> App. The setting above enables this. Any user not in the approved list will
-> receive an `invalid_grant` error at auth time.
+> **Note on "Admin Pre-Authorized Users"**: the JWT flow bypasses the OAuth
+> consent screen entirely, so the acting user must be pre-authorised on the
+> ECA. Any user not in the approved list will receive an `invalid_grant`
+> error at auth time.
+
+### Alternative — SFDX deploy of ECA metadata
+
+For reproducible Dev Hub setup (e.g. if you maintain multiple Dev Hubs or want
+to version-control the ECA configuration), deploy the same 5-type ECA pattern
+SFBL-324 uses for the bulk-loader, with a different `ExternalClientApplication`
+name (`SFBulkLoaderDevHubCI`). The metadata files live under a new SFDX
+project, and `sf project deploy start --target-org <devhub-alias>` registers
+the ECA. The spike report (`tests/e2e/sf/sfdx/SPIKE_REPORT.md`) documents the
+metadata shape. Use this path when the UI setup needs to be repeated across
+environments.
 
 ---
 
