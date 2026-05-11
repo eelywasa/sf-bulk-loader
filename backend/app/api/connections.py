@@ -32,6 +32,8 @@ from app.schemas.connection import (
     ConnectionTestResponse,
     ConnectionUpdate,
 )
+import app.services.fixture_mode as _fixture_mode_module
+from app.services.fixture_mode import OBJECT_LIST_FIXTURE
 from app.services.salesforce_auth import AuthError, decrypt_private_key, encrypt_private_key, get_access_token
 
 logger = logging.getLogger(__name__)
@@ -177,8 +179,42 @@ async def list_connection_objects(
     db: AsyncSession = Depends(get_db),
     _view: User = Depends(_require_view),
 ) -> List[str]:
-    """Return sorted SObject API names that can be used as load targets."""
+    """Return sorted SObject API names that can be used as load targets.
+
+    In **fixture mode** (``SF_DESCRIBE_FIXTURES_DIR`` set at startup) the
+    response is built from ``_object_list.json`` files under the configured
+    fixture directories using list-union semantics across overlays.  When no
+    fixture file is found in any directory, an empty list is returned (the
+    operator is expected to provide the file).
+
+    In **live mode** (default), the Salesforce ``/sobjects/`` endpoint is
+    called and filtered to createable/updateable/deletable objects.
+
+    .. note::
+        Fixture mode for the describe endpoint
+        ``/api/connections/{id}/objects/{sobject}/describe`` is intentionally
+        left as a hook here for SFBL-306.  When that endpoint is implemented
+        it should call ``fixture_mode.resolve_fixture(f"{sobject}.json")`` in
+        fixture mode instead of hitting Salesforce.
+    """
     conn = await _get_or_404(connection_id, db)
+
+    # ── Fixture mode (SFBL-320) ────────────────────────────────────────────────
+    # Access via module reference so tests can substitute the singleton without
+    # patching at the import level.
+    _fm = _fixture_mode_module.fixture_mode
+    if _fm.is_fixture_mode():
+        names = _fm.list_union_for(OBJECT_LIST_FIXTURE)
+        if names is None:
+            logger.warning(
+                "list_connection_objects: fixture mode active but no %s found "
+                "in any fixture dir — returning empty list",
+                OBJECT_LIST_FIXTURE,
+            )
+            return []
+        return names
+
+    # ── Live mode ─────────────────────────────────────────────────────────────
     try:
         token = await get_access_token(db, conn)
         url = f"{conn.instance_url.rstrip('/')}/services/data/{settings.sf_api_version}/sobjects/"

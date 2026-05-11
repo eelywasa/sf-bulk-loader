@@ -447,7 +447,14 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
     """Return application health: DB connectivity and basic config.
 
     Kept for backward compatibility. Prefer /api/health/ready for readiness checks.
+
+    Includes ``describe_fixtures_mode`` (``"fixture"`` | ``"live"``) to allow
+    diagnostic tooling (and Playwright E2E fixtures) to confirm the backend is
+    running in the expected mode.  The value is resolved at startup and is
+    immutable for the process lifetime.
     """
+    from app.services.fixture_mode import fixture_mode as _fixture_mode
+
     db_status = "ok"
     try:
         await db.execute(text("SELECT 1"))
@@ -460,6 +467,7 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
         "env": settings.app_env,
         "database": db_status,
         "sf_api_version": settings.sf_api_version,
+        "describe_fixtures_mode": _fixture_mode.mode,
     }
 
 
