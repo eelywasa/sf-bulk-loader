@@ -245,6 +245,12 @@ jobs:
 
       - name: Create scratch org
         if: '!inputs.reuse_shared_scratch'
+        env:
+          # Long-lived scratch (7 days) when the operator is using
+          # workflow_dispatch + skip_destroy to set up a reusable target.
+          # Ephemeral (1 day) for normal CI runs — auto-expires, no manual
+          # cleanup needed.  30 is the Salesforce-side max if we ever need it.
+          SCRATCH_DURATION_DAYS: ${{ (github.event_name == 'workflow_dispatch' && inputs.skip_destroy) && '7' || '1' }}
         run: bash tests/e2e/sf/scripts/scratch_create.sh
 
       # -----------------------------------------------------------------------

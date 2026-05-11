@@ -160,13 +160,20 @@ fi
 
 # ---------------------------------------------------------------------------
 # Create the scratch org
+#
+# Duration is env-var driven so the CI workflow can request a longer-lived
+# scratch when setting up a reusable target (workflow_dispatch with
+# skip_destroy=true).  Default is 1 day for ephemeral per-run scratches —
+# minimal cost on the Dev Hub's quota counter once they auto-expire.  Set
+# SCRATCH_DURATION_DAYS=7 (or up to 30) for long-lived reuse targets.
 # ---------------------------------------------------------------------------
-echo "INFO: Creating scratch org alias='${E2E_SCRATCH_ORG}' from def='${SCRATCH_DEF}'"
+SCRATCH_DURATION_DAYS="${SCRATCH_DURATION_DAYS:-1}"
+echo "INFO: Creating scratch org alias='${E2E_SCRATCH_ORG}' from def='${SCRATCH_DEF}' duration=${SCRATCH_DURATION_DAYS}d"
 
 sf org create scratch \
   -f "${SCRATCH_DEF}" \
   --alias "${E2E_SCRATCH_ORG}" \
   --set-default \
-  --duration-days 1
+  --duration-days "${SCRATCH_DURATION_DAYS}"
 
 echo "INFO: Scratch org '${E2E_SCRATCH_ORG}' created successfully."
