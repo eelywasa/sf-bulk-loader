@@ -23,11 +23,20 @@ export class StepEditorModal {
 
   /**
    * Click the "Add Step" button on the PlanEditor page to open the modal.
-   * StepList renders an "Add Step" button via onAddStep — the StepList's empty
-   * state also includes one; both map to the same button text.
+   *
+   * `StepList` renders TWO "Add Step" buttons when the plan has no steps yet:
+   * one in the Card's action slot (header) and a duplicate in the empty-state
+   * panel inside the card body (see `frontend/src/components/StepList.tsx`).
+   * Both call the same `onAddStep` callback, so either opens the same modal.
+   * Use `.first()` to disambiguate Playwright's strict-mode locator without
+   * binding the test to which button happens to render first — the canary
+   * doesn't care which one it clicks.
    */
   async openAddStep(): Promise<void> {
-    await this.page.getByRole("button", { name: "Add Step" }).click();
+    await this.page
+      .getByRole("button", { name: "Add Step" })
+      .first()
+      .click();
     // Wait until the modal heading is visible
     await this.page
       .getByRole("heading", { name: "Add Step" })
