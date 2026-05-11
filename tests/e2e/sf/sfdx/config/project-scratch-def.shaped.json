@@ -1,0 +1,11 @@
+{
+  "edition": "Developer",
+  "features": ["EnableSetPasswordInApi"],
+  "settings": {
+    "externalClientAppSettings": {
+      "enableConsumerSecretApiAccess": true
+    }
+  },
+  "sourceOrg": "REPLACE_WITH_SOURCE_ORG_ID",
+  "description": "Org Shape variant — uses an existing org's shape for faster scratch-org creation. The sourceOrg ID must be an org that has an active Org Shape record (sf org list shape). SFBL-325's helper validates availability before selecting this def."
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Throwaway custom object for SF Bulk Loader E2E tests. Exercises insert/upsert/delete load flows end-to-end without polluting standard objects in ways that might affect org behaviour. Safe to truncate or delete between test runs.</description>
+    <label>Sfbl E2E Test</label>
+    <nameField>
+        <label>Name</label>
+        <type>Text</type>
+    </nameField>
+    <pluralLabel>Sfbl E2E Tests</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+</CustomObject>
