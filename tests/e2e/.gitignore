@@ -1,0 +1,4 @@
+node_modules/
+.tsbuild/
+playwright-report/
+test-results/

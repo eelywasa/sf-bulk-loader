@@ -1,0 +1,75 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "project": "./tsconfig.json"
+  },
+  "plugins": ["@typescript-eslint", "boundaries"],
+  "extends": [
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "settings": {
+    "boundaries/elements": [
+      {
+        "type": "sf",
+        "pattern": "sf/**"
+      },
+      {
+        "type": "app",
+        "pattern": "app/**"
+      }
+    ],
+    "import/resolver": {
+      "node": {
+        "extensions": [".ts", ".tsx", ".js"]
+      }
+    }
+  },
+  "rules": {
+    "boundaries/element-types": [
+      "error",
+      {
+        "default": "disallow",
+        "rules": [
+          {
+            "from": "sf",
+            "allow": ["sf"]
+          },
+          {
+            "from": "app",
+            "allow": ["sf", "app"]
+          }
+        ]
+      }
+    ],
+    "boundaries/no-unknown-files": "off",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-explicit-any": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["sf/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/app/**", "../app/**", "../../app/**", "../../../app/**"],
+                "message": "sf/ must not import from app/ — import direction is one-way (app→sf only). See D13 in docs/specs/e2e-testing-spec.md."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules/",
+    ".tsbuild/",
+    "playwright-report/",
+    "test-results/"
+  ]
+}
