@@ -280,11 +280,12 @@ jobs:
       # WITHOUT this step AdminApprovedPreAuthorized is not activated and
       # the JWT bearer grant fails with a 400 auth error.
       # -----------------------------------------------------------------------
-      # Permset assignment + SetupEntityAccess linking are one-time per scratch.
-      # When reusing the shared scratch, they were already done at the first
-      # provisioning; re-running would fail on duplicate-assignment errors.
+      # Runs on every invocation, including reuse mode: the script is
+      # idempotent (tolerates "permset already assigned", checks for an
+      # existing SetupEntityAccess before inserting a new one) and reuse
+      # runs need it because `sf project deploy --ignore-conflicts` can
+      # rotate the ECA's internal Id, leaving the prior SEA link stale.
       - name: Assign permission set and create SetupEntityAccess link
-        if: '!inputs.reuse_shared_scratch'
         run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
 
       # -----------------------------------------------------------------------

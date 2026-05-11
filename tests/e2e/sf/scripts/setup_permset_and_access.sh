@@ -43,9 +43,19 @@ echo "[setup_permset_and_access] target org: ${E2E_SCRATCH_ORG}" >&2
 #     PR #89 run 25693622361 surfaced "No such column 'External_Id__c' on
 #     entity 'Account'" during a sf data query after a successful deploy.
 echo "[setup_permset_and_access] assigning SfblE2EPermSet ..." >&2
-sf org assign permset \
+# Tolerate "Permission set already assigned" so reuse-mode runs (where the
+# permset was assigned by a prior workflow invocation) succeed without
+# masking real failures. Any other failure still aborts the script.
+PERMSET_ASSIGN_OUT="$(sf org assign permset \
   --name SfblE2EPermSet \
-  --target-org "${E2E_SCRATCH_ORG}"
+  --target-org "${E2E_SCRATCH_ORG}" 2>&1)" || {
+  if echo "$PERMSET_ASSIGN_OUT" | grep -qE "Permission set.*already assigned|duplicate value found"; then
+    echo "[setup_permset_and_access] permission set already assigned — continuing." >&2
+  else
+    echo "$PERMSET_ASSIGN_OUT" >&2
+    exit 1
+  fi
+}
 
 echo "[setup_permset_and_access] permission set assigned." >&2
 
@@ -88,11 +98,28 @@ echo "[setup_permset_and_access] PermSet Id : ${PERMSET_ID}" >&2
 # the ECA (SetupEntityId) is explicitly linked to the permission set (ParentId).
 # Without this record the JWT bearer grant returns an auth error even after the
 # permission set is assigned to the user.
-echo "[setup_permset_and_access] creating SetupEntityAccess record ..." >&2
-sf data create record \
-  --sobject SetupEntityAccess \
-  --values "SetupEntityId=${ECA_ID} ParentId=${PERMSET_ID}" \
-  --target-org "${E2E_SCRATCH_ORG}"
+#
+# IDEMPOTENCE: in reuse-mode runs, an SEA already links the same permset to
+# *some* ECA Id, but `sf project deploy --ignore-conflicts` may have rotated
+# the ECA's internal Id, leaving the previous link stale.  Look up first and
+# only create a new SEA if one for this exact (ECA, permset) pair is missing.
+EXISTING_SEA_ID="$(sf data query \
+  --query "SELECT Id FROM SetupEntityAccess WHERE SetupEntityId='${ECA_ID}' AND ParentId='${PERMSET_ID}' LIMIT 1" \
+  --target-org "${E2E_SCRATCH_ORG}" \
+  --json | python3 -c "
+import sys, json
+records = json.load(sys.stdin).get('result', {}).get('records', [])
+print(records[0]['Id'] if records else '')
+")"
 
-echo "[setup_permset_and_access] SetupEntityAccess record created." >&2
+if [[ -n "$EXISTING_SEA_ID" ]]; then
+  echo "[setup_permset_and_access] SetupEntityAccess already exists (Id=${EXISTING_SEA_ID}) — skipping create." >&2
+else
+  echo "[setup_permset_and_access] creating SetupEntityAccess record ..." >&2
+  sf data create record \
+    --sobject SetupEntityAccess \
+    --values "SetupEntityId=${ECA_ID} ParentId=${PERMSET_ID}" \
+    --target-org "${E2E_SCRATCH_ORG}"
+  echo "[setup_permset_and_access] SetupEntityAccess record created." >&2
+fi
 echo "[setup_permset_and_access] done — JWT bearer auth should now be active." >&2
