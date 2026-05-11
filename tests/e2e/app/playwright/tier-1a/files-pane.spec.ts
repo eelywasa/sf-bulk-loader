@@ -3,7 +3,6 @@
  *
  * What this proves:
  *   - The Playwright scaffold reaches a running stack.
- *   - Login via the UI works end-to-end.
  *   - A CSV seeded directly into the backend's input directory appears in the
  *     Files page list (no upload UI exists; the Files page is browse-only).
  *   - Selecting the file opens a preview pane rendering the expected header row.
@@ -14,9 +13,15 @@
  *   1. E2E_INPUT_DIR env var (set by docker-compose / CI harness).
  *   2. ./data/input relative to the repo root (default docker-compose mount).
  *
- * Login uses the UI (a Tier 1a-eligible flow in its own right). Credentials
- * are read from E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD, falling back to the
- * docker-compose dev defaults seeded by ADMIN_EMAIL / ADMIN_PASSWORD.
+ * Auth mode handling — the spec is mode-aware:
+ *   - In `auth_mode=none` (CI's `APP_DISTRIBUTION=desktop` profile), there is
+ *     no login wall and no admin user is seeded; the spec navigates directly
+ *     to /files.
+ *   - In `auth_mode=local`, the spec performs UI login first. Credentials are
+ *     read from E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD, falling back to the
+ *     stack's seeded ADMIN_EMAIL / ADMIN_PASSWORD env vars.
+ *   - Mode is detected at test time via the unauthenticated `/api/runtime`
+ *     endpoint, so the same spec runs in both configurations.
  */
 
 import * as fs from "fs";
@@ -65,6 +70,23 @@ function resolveInputDir(): string {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch the backend's runtime config (`/api/runtime`) to discover the active
+ * auth mode. Unauthenticated endpoint — safe to call before any login.
+ */
+async function fetchAuthMode(
+  request: import("@playwright/test").APIRequestContext,
+): Promise<string> {
+  const response = await request.get("/api/runtime");
+  if (!response.ok()) {
+    throw new Error(
+      `GET /api/runtime returned HTTP ${response.status()}; cannot determine auth mode`,
+    );
+  }
+  const body = (await response.json()) as { auth_mode?: string };
+  return body.auth_mode ?? "";
+}
 
 /**
  * Log in via the UI login form.
@@ -118,9 +140,20 @@ test.describe("Files pane — filesystem-seed flow", () => {
 
   test("seeded CSV appears in the file list and preview renders header row", async ({
     page,
+    request,
   }) => {
-    // 1. Log in via the UI
-    await loginViaUi(page, email, password);
+    // 1. Discover the stack's auth mode and only log in when one is enforced.
+    //    In CI the stack runs with APP_DISTRIBUTION=desktop → auth_mode=none,
+    //    which skips admin seeding and has no login wall; calling the login
+    //    form there would post fallback credentials that don't exist in the
+    //    fresh desktop DB and time out the wait. Mode is detected dynamically
+    //    so the same spec also works against an auth-enabled stack (where
+    //    the operator has seeded a fixture admin user via ADMIN_EMAIL /
+    //    ADMIN_PASSWORD).
+    const authMode = await fetchAuthMode(request);
+    if (authMode !== "none") {
+      await loginViaUi(page, email, password);
+    }
 
     // 2. Navigate to /files
     const filesPage = new FilesPage(page);
