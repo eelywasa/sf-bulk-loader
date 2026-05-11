@@ -83,14 +83,18 @@ You now have two files:
      installed in scratch orgs or in the Dev Hub without a managed-package
      pipeline; `Local` works everywhere).
 4. Enable **OAuth Settings**:
-   - **Callback URL**: `https://login.salesforce.com/services/oauth2/success`
-     (the field is required but never used in JWT flow; this is the
-     canonical "placeholder for JWT-only flows" value Salesforce
-     documentation recommends. Plain `http://localhost` is no longer
-     accepted — Salesforce rejects scratch-org creation requests from
-     ECAs whose callback URL fails the modern validation rules, with a
+   - **Callback URL**: `http://localhost:1717/OauthRedirect`
+     (the field is required but never used in JWT flow; this is the sf
+     CLI's documented default OAuth redirect URI and is what the
+     SFDX-deployed bulk-loader ECA also uses — see
+     `tests/e2e/sf/sfdx/force-app/main/default/extlClntAppGlobalOauthSets/SfblE2E.ecaGlblOauth-meta.xml`.
+     Other plausible values are silently rejected by Salesforce with a
      misleading "INVALID_INPUT: The callback URL provided is not valid"
-     error on the *scratch-create* step rather than the ECA save step.)
+     error on the *scratch-create* step rather than at ECA save time.
+     Specifically, both plain `http://localhost` and
+     `https://login.salesforce.com/services/oauth2/success` are rejected
+     when the ECA is used as a Dev Hub JWT auth source. Stick with the
+     sf CLI default unless you have a specific reason to deviate.)
    - **Selected OAuth Scopes**: add `api`, `refresh_token`, and `offline_access`.
    - **Enable JWT Bearer Flow**: ✓
    - Upload `server.crt` (the public certificate from Step 1).
