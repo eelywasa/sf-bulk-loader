@@ -5,17 +5,24 @@
  *
  * 1. **Relationship resolution at the Salesforce boundary** — 200 Contacts are
  *    loaded via a pass-through CSV whose parent-relationship column header is
- *    `Account__r.External_Id__c`.  After the load, all 200 Contacts are linked
- *    to the correct Account records.  This proves the non-polymorphic dot-
- *    separator form (H1 finding from SFBL-301) is accepted by the real Bulk
- *    API 2.0 and resolves correctly to AccountId.
+ *    `ParentAccount__r.External_Id__c`.  After the load, all 200 Contacts are
+ *    linked to the correct Account records via the custom ParentAccount__c
+ *    lookup.  This proves the non-polymorphic dot-separator `__r` form (H1
+ *    finding from SFBL-301) is accepted by the real Bulk API 2.0 and resolves
+ *    correctly to AccountId.
+ *
+ *    The custom ParentAccount__c lookup (deployed by app/sfdx) stands in for a
+ *    "real" custom relationship.  Salesforce reserves the relationshipName
+ *    `Account` for Contact.AccountId, so we cannot create a custom field whose
+ *    `__r` form would be exactly `Account__r`; `ParentAccount__r` keeps the
+ *    H1 byte-shape (`<rel>__r.External_Id__c`) under test.
  *
  * 2. **H1 byte-exact header lock-in at the orchestrator→Salesforce boundary** —
  *    The submitted job's CSV header is read from the output-dir artefact that
  *    the orchestrator writes when it partitions the CSV.  The header is asserted
- *    to be byte-exact `Account__r.External_Id__c`.  This is the Tier 2 half of
- *    the split lock-in: SFBL-313 covers UI persistence (Tier 1b), SFBL-328
- *    covers what actually reaches Salesforce (Tier 2).
+ *    to be byte-exact `ParentAccount__r.External_Id__c`.  This is the Tier 2
+ *    half of the split lock-in: SFBL-313 covers UI persistence (Tier 1b),
+ *    SFBL-328 covers what actually reaches Salesforce (Tier 2).
  *
  * Spec ref: D2 (Tier 2), D3 (per-test-run prefix), D10 (API setup),
  *           D12 (sfQuery assertion contract).
@@ -71,7 +78,7 @@ const CONTACT_COUNT = 200;
  * relationship-header column in the CSV submitted to the Bulk API.
  * Non-polymorphic dot-separator form — per SFBL-301 finding.
  */
-const H1_RELATIONSHIP_HEADER = "Account__r.External_Id__c";
+const H1_RELATIONSHIP_HEADER = "ParentAccount__r.External_Id__c";
 
 const RUN_COMPLETION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const RUN_POLL_INTERVAL_MS = 5_000;
@@ -400,13 +407,17 @@ test.describe("Tier 2 — Contact UPSERT with Account relationship lookup", () =
         `Expected run to complete successfully but got: ${finalStatus}`,
       ).toMatch(/^completed/);
 
-      // ── Assertion 1: 200 Contacts inserted with correct AccountId resolution ───
+      // ── Assertion 1: 200 Contacts inserted with correct ParentAccount__c resolution ──
       //
-      // Query Contacts linked to Accounts whose External_Id__c matches the prefix.
-      // A non-zero count proves the relationship-header column was correctly
-      // interpreted by the Bulk API as an Account lookup.
+      // Query Contacts whose custom ParentAccount__c lookup has been resolved
+      // to a non-null Account Id.  A non-zero count proves the relationship-
+      // header column (`ParentAccount__r.External_Id__c`) was correctly
+      // interpreted by the Bulk API as a foreign-key lookup against
+      // ParentAccount__c on Contact.  (AccountId, the standard lookup, is
+      // unrelated to this test path — the test deliberately exercises the
+      // custom-lookup `__r` form, not the standard form.)
       const contactRows = sfQuery(
-        `SELECT Id, Contact_External_Id__c, AccountId ` +
+        `SELECT Id, Contact_External_Id__c, ParentAccount__c ` +
           `FROM Contact ` +
           `WHERE Contact_External_Id__c LIKE '${e2ePrefix}%'`,
       );
@@ -415,11 +426,11 @@ test.describe("Tier 2 — Contact UPSERT with Account relationship lookup", () =
         `Expected ${CONTACT_COUNT} Contacts but got ${contactRows.length}`,
       ).toBe(CONTACT_COUNT);
 
-      // All Contacts must have a non-null AccountId (relationship resolved).
-      const unlinked = contactRows.filter((r) => !r["AccountId"]);
+      // All Contacts must have a non-null ParentAccount__c (relationship resolved).
+      const unlinked = contactRows.filter((r) => !r["ParentAccount__c"]);
       expect(
         unlinked.length,
-        `${unlinked.length} Contact(s) have a null AccountId — relationship resolution failed`,
+        `${unlinked.length} Contact(s) have a null ParentAccount__c — relationship resolution failed`,
       ).toBe(0);
 
       // ── Assertion 2: H1 byte-exact header in the submitted CSV artefact ───────

@@ -5,7 +5,7 @@ contacts_upsert_account_lookup.py — Generate 200 Contact rows for a Salesforce
 Produces: contacts_upsert_account_lookup.csv in the same directory as this script (or --out).
 
 Parent relationship format (H1 spec — hard-locked):
-    Account__r.External_Id__c  (non-polymorphic, dot-separator)
+    ParentAccount__r.External_Id__c  (non-polymorphic, dot-separator)
     NOT the polymorphic colon form (Account__r:External_Id__c) — per H1 finding
     in SFBL-301, the non-poly dot-separator is the correct byte shape for the
     Bulk API 2.0 relationship-header.
@@ -53,7 +53,7 @@ _DEFAULT_COUNT = 200
 _DEFAULT_ACCOUNT_COUNT = 50
 
 # H1 (hard-locked): non-polymorphic dot-separator form.
-_ACCOUNT_LOOKUP_FIELD = "Account__r.External_Id__c"
+_ACCOUNT_LOOKUP_FIELD = "ParentAccount__r.External_Id__c"
 
 _CONTACT_FIELDS = [
     "Contact_External_Id__c",

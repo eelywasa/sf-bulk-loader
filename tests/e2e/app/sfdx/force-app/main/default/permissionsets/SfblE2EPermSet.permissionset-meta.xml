@@ -29,7 +29,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <field>Contact.Account__c</field>
+        <field>Contact.ParentAccount__c</field>
         <editable>true</editable>
         <readable>true</readable>
     </fieldPermissions>
