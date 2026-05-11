@@ -1,0 +1,182 @@
+name: E2E Tier 2 (Scratch Org)
+
+# Tier 2 — real Salesforce scratch-org tests.
+# Spec ref: D8 (CI scheduling policy), D3 (scratch-org strategy), D6 (JWT auth).
+#
+# SECURITY NOTE (D8 secrets policy):
+#   This workflow uses `on: pull_request` — NOT `pull_request_target`.
+#   `pull_request_target` runs with the base branch's secrets accessible
+#   to PR code, which is the "pwn-request" footgun GitHub explicitly warns
+#   about. `pull_request` runs the PR's code with the PR's commit, but
+#   secrets are ONLY accessible when head.repo.fork == false (enforced below).
+#   See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+#
+# Triggers (D8):
+#   1. push of a release tag matching `v[0-9]+.[0-9]+` — release-gate.
+#      NOTE (spec D8): The ideal release gate lives INSIDE release.yml as an
+#      upstream job so it can block artifact publishing. This standalone
+#      workflow is a shell/scaffold; SFBL-329 wires the release.yml integration.
+#   2. Daily nightly cron at 02:00 UTC — drift detection.
+#   3. pull_request with `tier-2` label, same-repo PRs only — manual opt-in.
+#
+# SFBL-325 TODO: Wire the release-tag trigger into release.yml as per D8:
+#   add a `tier-2-e2e` job here and add `needs: [tier-2-e2e]` to the
+#   artifact-publishing jobs in release.yml.  The tag filter must match
+#   release.yml's existing `v[0-9]+.[0-9]+` pattern (not the permissive `v*`).
+
+on:
+  push:
+    tags:
+      # Matches the release.yml tag pattern exactly (D8: mismatched filters
+      # would let some tagged releases skip the gate entirely).
+      - 'v[0-9]+.[0-9]+'
+
+  schedule:
+    # Nightly at 02:00 UTC — catches drift in dependencies and Salesforce APIs.
+    - cron: '0 2 * * *'
+
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+# Minimum permissions — contents: read for checkout, pull-requests: read
+# to check labels on pull_request events.
+permissions:
+  contents: read
+  pull-requests: read
+
+# Only one Tier 2 run at a time per ref to avoid scratch-org quota exhaustion.
+concurrency:
+  group: e2e-tier-2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tier-2-e2e:
+    name: E2E Tier 2 — scratch org
+    runs-on: ubuntu-latest
+    # Wall-clock target: under 15 min including scratch-org spin-up (D8).
+    timeout-minutes: 30
+
+    # Gate: for pull_request events, only run when:
+    #   (a) the `tier-2` label is present, AND
+    #   (b) the PR is from the same repo (not a fork) — secrets policy (D8).
+    # For push (tag) and schedule events, always run.
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.fork == false &&
+        contains(github.event.pull_request.labels.*.name, 'tier-2')
+      )
+
+    env:
+      # Scratch org alias scoped to this workflow run to avoid clashes.
+      E2E_SCRATCH_ORG: e2e-tier2-${{ github.run_id }}
+      # E2E_ORG_SHAPE defaults to "default" (no org shape) unless overridden
+      # in the repo's Actions variables. Set to a 15- or 18-char org ID to
+      # enable org-shape mode (see scratch_create.sh for full details).
+      E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Set up runtimes
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # -----------------------------------------------------------------------
+      # 3. Install Salesforce CLI
+      # -----------------------------------------------------------------------
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      # -----------------------------------------------------------------------
+      # 4. JWT login to Dev Hub (D6)
+      #
+      # Secrets required (never exposed on fork PRs — see security note above):
+      #   SFDX_DEVHUB_JWT_KEY      — PEM private key contents
+      #   SFDX_DEVHUB_CONSUMER_KEY — OAuth consumer key (client ID)
+      #   SFDX_DEVHUB_USERNAME     — Dev Hub org username
+      # -----------------------------------------------------------------------
+      - name: Authenticate to Dev Hub via JWT
+        env:
+          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
+          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
+          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
+        run: |
+          # Write the private key PEM to a temp file so the CLI can read it.
+          printf '%s' "${SFDX_DEVHUB_JWT_KEY}" > /tmp/key.pem
+          chmod 600 /tmp/key.pem
+
+          sf org login jwt \
+            -i "${SFDX_DEVHUB_CONSUMER_KEY}" \
+            --jwt-key-file /tmp/key.pem \
+            --username "${SFDX_DEVHUB_USERNAME}" \
+            --set-default-dev-hub
+
+          # Remove the key from disk immediately after auth.
+          rm -f /tmp/key.pem
+
+          echo "INFO: Dev Hub authentication complete (username: ${SFDX_DEVHUB_USERNAME})"
+
+      # -----------------------------------------------------------------------
+      # 5. Create scratch org (D3)
+      #
+      # scratch_create.sh handles:
+      #   - Default vs. org-shape scratch-def selection (E2E_ORG_SHAPE).
+      #   - 15/18-char org ID normalisation (L2 third-pass).
+      #   - Active-shape prerequisite check (L1 + M1 fourth-pass).
+      # -----------------------------------------------------------------------
+      - name: Create scratch org
+        run: bash tests/e2e/sf/scripts/scratch_create.sh
+
+      # -----------------------------------------------------------------------
+      # 6. Deploy SFDX project (placeholder — SFBL-323/328 will fill this in)
+      # -----------------------------------------------------------------------
+      - name: Deploy SFDX project to scratch org
+        # SFBL-325 TODO: Replace this placeholder with real sf project deploy
+        # invocations once SFBL-323 (SFDX project skeleton) is merged.
+        run: |
+          echo "PLACEHOLDER: SFDX deploy step — to be implemented by SFBL-323/328."
+          echo "  Will run: sf project deploy start --target-org '${E2E_SCRATCH_ORG}'"
+
+      # -----------------------------------------------------------------------
+      # 7. JWT smoke test for bulk-loader against scratch org (placeholder — SFBL-328)
+      # -----------------------------------------------------------------------
+      - name: Bulk-loader JWT smoke test
+        # SFBL-325 TODO: Replace with real JWT setup once SFBL-328
+        # (ECA / Connected App in scratch org) is merged.
+        run: |
+          echo "PLACEHOLDER: Bulk-loader JWT smoke test — to be implemented by SFBL-328."
+
+      # -----------------------------------------------------------------------
+      # 8. Run Tier 2 Playwright specs (placeholder — SFBL-329)
+      # -----------------------------------------------------------------------
+      - name: Run Tier 2 Playwright specs
+        # SFBL-325 TODO: Replace with real Playwright invocation once SFBL-329
+        # wires the three D8 triggers and the actual Tier 2 specs exist.
+        run: |
+          echo "PLACEHOLDER: Playwright Tier 2 run — to be implemented by SFBL-329."
+          echo "  Will run: npm run e2e:2 (working-directory: tests/e2e)"
+
+      # -----------------------------------------------------------------------
+      # 9. Destroy scratch org — ALWAYS runs to prevent org leaks (D3)
+      # -----------------------------------------------------------------------
+      - name: Destroy scratch org
+        if: always()
+        run: bash tests/e2e/sf/scripts/scratch_destroy.sh

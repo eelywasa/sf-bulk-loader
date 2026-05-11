@@ -1,0 +1,14 @@
+{
+  "status": 0,
+  "result": [
+    {
+      "orgId": "00D000000000001AAA",
+      "sourceOrg": "00D000000000001AAA",
+      "status": "Active",
+      "edition": "Developer",
+      "createdBy": "test@example.com",
+      "createdDate": "2026-05-01T00:00:00.000Z"
+    }
+  ],
+  "warnings": []
+}
