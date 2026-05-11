@@ -125,8 +125,12 @@ jobs:
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: |
-          printf '%s' "$SFDX_AUTH_URL" | sf org login sfdx-url \
-            --sfdx-url-stdin \
+          AUTH_FILE="$(mktemp)"
+          trap 'rm -f "$AUTH_FILE"' EXIT
+          printf '%s' "$SFDX_AUTH_URL" > "$AUTH_FILE"
+          chmod 600 "$AUTH_FILE"
+          sf org login sfdx-url \
+            --sfdx-url-file "$AUTH_FILE" \
             --alias devhub \
             --set-default-dev-hub
           USERNAME="$(sf org display --target-org devhub --json | jq -r '.result.username')"
