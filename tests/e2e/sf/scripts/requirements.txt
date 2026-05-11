@@ -1,0 +1,9 @@
+# requirements.txt — dependencies for tests/e2e/sf/scripts/
+#
+# httpx is already declared in backend/requirements.txt; listed here so
+# the scripts directory is self-contained and runnable without the backend venv.
+#
+# Install: pip install -r tests/e2e/sf/scripts/requirements.txt
+
+httpx>=0.27.0
+PyYAML>=6.0

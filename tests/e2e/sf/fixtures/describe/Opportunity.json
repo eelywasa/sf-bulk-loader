@@ -1,0 +1,1110 @@
+{
+  "child_relationships": [
+    {
+      "child_sobject": "AccountPartner",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "ActionPlan",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "ActivityHistory",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "AdvAcctForecastSetUse",
+      "field": "ForecastContextId"
+    },
+    {
+      "child_sobject": "AgentWork",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "AgentWorkChangeEvent",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "AIInsightValue",
+      "field": "SobjectLookupValueId"
+    },
+    {
+      "child_sobject": "AIRecordInsight",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "ApplicationForm",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "ApplicationFormChangeEvent",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "ApprovalSubmission",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "ApprovalWorkItem",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AssessmentTaskContentDocument",
+      "field": "ContentContextId"
+    },
+    {
+      "child_sobject": "AttachedContentDocument",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "AttachedContentNote",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "Attachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "AuthFormRequestRecord",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AuthFormRequestRecordChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "CampaignInfluence",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "CollaborationGroupRecord",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "CollaborationGroupRecordChangeEvent",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "CombinedAttachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "ContactRequest",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "ContentDistribution",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "ContentDocumentLink",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "ContentDocumentLinkChangeEvent",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "ContentVersion",
+      "field": "FirstPublishLocationId"
+    },
+    {
+      "child_sobject": "ContentVersionChangeEvent",
+      "field": "FirstPublishLocationId"
+    },
+    {
+      "child_sobject": "Contract",
+      "field": "SourceOpportunityId"
+    },
+    {
+      "child_sobject": "ContractChangeEvent",
+      "field": "SourceOpportunityId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItem",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItemChangeEvent",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "DocumentEnvelope",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "EmailMessage",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "EmailMessageChangeEvent",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "EngagementTopic",
+      "field": "TopicId"
+    },
+    {
+      "child_sobject": "EngagementTopicChangeEvent",
+      "field": "TopicId"
+    },
+    {
+      "child_sobject": "EntitySubscription",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "Event",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "EventChangeEvent",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "EventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "EventRelationChangeEvent",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "FeedComment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "FeedItem",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "FieldChangeSnapshot",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "FlowExecutionErrorEvent",
+      "field": "ContextRecordId"
+    },
+    {
+      "child_sobject": "FlowOrchestrationWorkItem",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "FlowRecordRelation",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "ForecastingFact",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "ForecastingItem__hd",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "GeneratedDocument",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "GenericAsmtTaskContext",
+      "field": "ContextId"
+    },
+    {
+      "child_sobject": "GenericVisitTaskContext",
+      "field": "ContextId"
+    },
+    {
+      "child_sobject": "GenOpPlan",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "GenOpPlanRequest",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequest",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequestChangeEvent",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "InsurancePolicy",
+      "field": "SourceOpportunityId"
+    },
+    {
+      "child_sobject": "InsurancePolicyChangeEvent",
+      "field": "SourceOpportunityId"
+    },
+    {
+      "child_sobject": "Lead",
+      "field": "ConvertedOpportunityId"
+    },
+    {
+      "child_sobject": "LeadChangeEvent",
+      "field": "ConvertedOpportunityId"
+    },
+    {
+      "child_sobject": "ListEmail",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "ListEmailChangeEvent",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "MessagingSession",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "MessagingSessionChangeEvent",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "MultipartyInfoAuthRequest",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "MultipartyInfoAuthRequestChangeEvent",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "NetworkActivityAudit",
+      "field": "ParentEntityId"
+    },
+    {
+      "child_sobject": "NetworkFeedResponseMetric",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "Note",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "NoteAndAttachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "OpenActivity",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "Opportunity__hd",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "OpportunityCompetitor",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityContactRole",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityContactRoleChangeEvent",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityFeed",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "OpportunityFieldHistory",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityHistory",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityLineItem",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityLineItemChangeEvent",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityPartner",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityRelatedDeleteLog",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OpportunityShare",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "OutgoingEmail",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "Partner",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "PendingServiceRouting",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingChangeEvent",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingInteractionInfo",
+      "field": "PrimaryRecordId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingInteractionInfo",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "ProcessInstance",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "ProcessInstanceChangeEvent",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "ProcessInstanceHistory",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "Quote",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "QuoteChangeEvent",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "RecentFieldChange",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "RecordAction",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "RecordActionHistory",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "RecordAlert",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "RecordAlert",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "RecordAlertChangeEvent",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "RecordAlertChangeEvent",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "ResidentialLoanApplication",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "ResidentialLoanApplicationChangeEvent",
+      "field": "OpportunityId"
+    },
+    {
+      "child_sobject": "ServiceAppointment",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "ServiceAppointmentChangeEvent",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "SurveySubject",
+      "field": "SubjectId"
+    },
+    {
+      "child_sobject": "SurveySubjectChangeEvent",
+      "field": "SubjectId"
+    },
+    {
+      "child_sobject": "Swarm",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "SwarmMember",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "Task",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "TaskChangeEvent",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "TaskRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TaskRelationChangeEvent",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TopicAssignment",
+      "field": "EntityId"
+    },
+    {
+      "child_sobject": "UserDefinedLabelAssignment",
+      "field": "ItemId"
+    },
+    {
+      "child_sobject": "UserPrioritizedRecord",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "VideoCall",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VideoCallChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VoiceCall",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VoiceCallChangeEvent",
+      "field": "RelatedRecordId"
+    }
+  ],
+  "fetched_at": "2026-05-11T11:34:17Z",
+  "fields": [
+    {
+      "api_name": "AccountId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Account ID",
+      "nillable": true,
+      "reference_to": [
+        "Account"
+      ],
+      "relationship_name": "Account",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "AgeInDays",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Age",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "int",
+      "updateable": false
+    },
+    {
+      "api_name": "Amount",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Amount",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "currency",
+      "updateable": true
+    },
+    {
+      "api_name": "CampaignId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Campaign ID",
+      "nillable": true,
+      "reference_to": [
+        "Campaign"
+      ],
+      "relationship_name": "Campaign",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "CloseDate",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Close Date",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": true
+    },
+    {
+      "api_name": "ContactId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Contact ID",
+      "nillable": true,
+      "reference_to": [
+        "Contact"
+      ],
+      "relationship_name": null,
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "CreatedById",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Created By ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "CreatedBy",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "CreatedDate",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Created Date",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "CurrencyIsoCode",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Opportunity Currency",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Description",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Description",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "textarea",
+      "updateable": true
+    },
+    {
+      "api_name": "Fiscal",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Fiscal Period",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": false
+    },
+    {
+      "api_name": "FiscalQuarter",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Fiscal Quarter",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "int",
+      "updateable": false
+    },
+    {
+      "api_name": "FiscalYear",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Fiscal Year",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "int",
+      "updateable": false
+    },
+    {
+      "api_name": "ForecastCategory",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Forecast Category",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": false
+    },
+    {
+      "api_name": "ForecastCategoryName",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Forecast Category",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "HasOpenActivity",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Has Open Activity",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "HasOpportunityLineItem",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Has Line Item",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "HasOverdueTask",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Has Overdue Task",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "Id",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": true,
+      "label": "Opportunity ID",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "id",
+      "updateable": false
+    },
+    {
+      "api_name": "IsClosed",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Closed",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsDeleted",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Deleted",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsLocked",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Is Locked",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsPriorityRecord",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Important",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsWon",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Won",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "LastActivityDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Activity",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": false
+    },
+    {
+      "api_name": "LastActivityInDays",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Recent Activity",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "int",
+      "updateable": false
+    },
+    {
+      "api_name": "LastAmountChangedHistoryId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Opportunity History ID",
+      "nillable": true,
+      "reference_to": [
+        "OpportunityHistory"
+      ],
+      "relationship_name": "LastAmountChangedHistory",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "LastCloseDateChangedHistoryId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Opportunity History ID",
+      "nillable": true,
+      "reference_to": [
+        "OpportunityHistory"
+      ],
+      "relationship_name": "LastCloseDateChangedHistory",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "LastModifiedById",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Modified By ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "LastModifiedBy",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "LastModifiedDate",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Modified Date",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastReferencedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Referenced Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastStageChangeDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Stage Change Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastStageChangeInDays",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Days In Stage",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "int",
+      "updateable": false
+    },
+    {
+      "api_name": "LastViewedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Viewed Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LeadSource",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Lead Source",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "MayEdit",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "May Edit",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "Name",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": true,
+      "label": "Name",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "NextStep",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Next Step",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "OwnerId",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Owner ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "Owner",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "Pricebook2Id",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Price Book ID",
+      "nillable": true,
+      "reference_to": [
+        "Pricebook2"
+      ],
+      "relationship_name": "Pricebook2",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "Probability",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Probability (%)",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "percent",
+      "updateable": true
+    },
+    {
+      "api_name": "PushCount",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Push Count",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "int",
+      "updateable": false
+    },
+    {
+      "api_name": "StageName",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Stage",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "SyncedQuoteId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Quote ID",
+      "nillable": true,
+      "reference_to": [
+        "Quote"
+      ],
+      "relationship_name": "SyncedQuote",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "SystemModstamp",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "System Modstamp",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "Type",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Opportunity Type",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    }
+  ],
+  "name": "Opportunity"
+}

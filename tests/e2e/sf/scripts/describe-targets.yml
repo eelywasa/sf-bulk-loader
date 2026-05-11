@@ -1,0 +1,16 @@
+# describe-targets.yml — Configurable SObject list for capture_describes.py
+#
+# Lists the SObjects whose describe fixtures are captured by SFBL-321 and
+# refreshed by the Wave 3 fixture-refresh workflow (SFBL-D9).
+#
+# Adjacent apps can extend this list by adding their custom SObjects here.
+# App-specific custom-field augmentations land in
+#   tests/e2e/app/fixtures/describe/<SObjectName>.json
+# as overlays consumed by SF_DESCRIBE_FIXTURES_DIR (SFBL-320).
+
+sobjects:
+  - Account
+  - Contact
+  - Lead
+  - Opportunity
+  - User

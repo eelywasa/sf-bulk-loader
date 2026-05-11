@@ -1,0 +1,2566 @@
+{
+  "child_relationships": [
+    {
+      "child_sobject": "AcceptedEventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "Account",
+      "field": "PersonContactId"
+    },
+    {
+      "child_sobject": "AccountChangeEvent",
+      "field": "PersonContactId"
+    },
+    {
+      "child_sobject": "AccountContactRelation",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "AccountContactRelationChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "AccountContactRole",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "AccountContactRoleChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "Accreditation",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "AccreditationChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "ActionPlan",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "ActivityHistory",
+      "field": "PrimaryWhoId"
+    },
+    {
+      "child_sobject": "ActivityHistory",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "AdvAcctForecastSetUse",
+      "field": "ForecastContextId"
+    },
+    {
+      "child_sobject": "AgentWork",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "AgentWorkChangeEvent",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "AIInsightValue",
+      "field": "SobjectLookupValueId"
+    },
+    {
+      "child_sobject": "AIRecordInsight",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "Applicant",
+      "field": "BusinessEntityPrimCtctId"
+    },
+    {
+      "child_sobject": "Applicant",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ApplicantChangeEvent",
+      "field": "BusinessEntityPrimCtctId"
+    },
+    {
+      "child_sobject": "ApplicantChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "Application_DB__dlm",
+      "field": "rel_1773252553700_end__c"
+    },
+    {
+      "child_sobject": "Applications__dlm",
+      "field": "rel_1772728572421_end__c"
+    },
+    {
+      "child_sobject": "ApprovalSubmission",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "ApprovalWorkItem",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AssessmentTaskContentDocument",
+      "field": "ContentContextId"
+    },
+    {
+      "child_sobject": "Asset",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "AssetChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "AssetContactParticipant",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "AttachedContentDocument",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "AttachedContentNote",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "Attachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "AuthFormRequestRecord",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AuthFormRequestRecordChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "AuthorizationFormConsent",
+      "field": "ConsentGiverId"
+    },
+    {
+      "child_sobject": "AuthorizationFormConsentChangeEvent",
+      "field": "ConsentGiverId"
+    },
+    {
+      "child_sobject": "AuthorNote",
+      "field": "AuthorId"
+    },
+    {
+      "child_sobject": "AuthorNoteChangeEvent",
+      "field": "AuthorId"
+    },
+    {
+      "child_sobject": "Award",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "AwardChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "BenefitAssignment",
+      "field": "EnrolleeId"
+    },
+    {
+      "child_sobject": "BenefitDisbursement",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "BoardCertification",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "BoardCertificationChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "BusinessLicense",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "BusinessLicenseChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "CampaignInfluence",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "CampaignMember",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "CampaignMember",
+      "field": "LeadOrContactId"
+    },
+    {
+      "child_sobject": "CampaignMemberChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "CarePerformer",
+      "field": "PersonId"
+    },
+    {
+      "child_sobject": "CarePerformerChangeEvent",
+      "field": "PersonId"
+    },
+    {
+      "child_sobject": "CareProgramProvider",
+      "field": "CareProgramContactId"
+    },
+    {
+      "child_sobject": "CareProgramProviderChangeEvent",
+      "field": "CareProgramContactId"
+    },
+    {
+      "child_sobject": "CareProviderAdverseAction",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "CareProviderAdverseActionChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "CareRequest",
+      "field": "GeneralPractitionerId"
+    },
+    {
+      "child_sobject": "CareRequest",
+      "field": "RequestingPractitionerId"
+    },
+    {
+      "child_sobject": "CareRequest",
+      "field": "ServicingPractitionerId"
+    },
+    {
+      "child_sobject": "CareRequestChangeEvent",
+      "field": "GeneralPractitionerId"
+    },
+    {
+      "child_sobject": "CareRequestChangeEvent",
+      "field": "RequestingPractitionerId"
+    },
+    {
+      "child_sobject": "CareRequestChangeEvent",
+      "field": "ServicingPractitionerId"
+    },
+    {
+      "child_sobject": "CareTask",
+      "field": "OwnedById"
+    },
+    {
+      "child_sobject": "CareTask",
+      "field": "RequestedById"
+    },
+    {
+      "child_sobject": "CareTaskChangeEvent",
+      "field": "OwnedById"
+    },
+    {
+      "child_sobject": "CareTaskChangeEvent",
+      "field": "RequestedById"
+    },
+    {
+      "child_sobject": "CareTaskDetail",
+      "field": "DetailRecordId"
+    },
+    {
+      "child_sobject": "CareTaskDetailChangeEvent",
+      "field": "DetailRecordId"
+    },
+    {
+      "child_sobject": "Case",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "CaseChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "CaseContactRole",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "CaseParticipant",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "CaseProceedingParticipant",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "CaseTeamMember",
+      "field": "MemberId"
+    },
+    {
+      "child_sobject": "CaseTeamTemplateMember",
+      "field": "MemberId"
+    },
+    {
+      "child_sobject": "Choice__dlm",
+      "field": "rel_1772790867634_end__c"
+    },
+    {
+      "child_sobject": "ClaimParticipant",
+      "field": "ParticipantContactId"
+    },
+    {
+      "child_sobject": "CollaborationGroupRecord",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "CollaborationGroupRecordChangeEvent",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "CombinedAttachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "CommSubscriptionConsent",
+      "field": "ConsentGiverId"
+    },
+    {
+      "child_sobject": "CommSubscriptionConsentChangeEvent",
+      "field": "ConsentGiverId"
+    },
+    {
+      "child_sobject": "Contact",
+      "field": "ReportsToId"
+    },
+    {
+      "child_sobject": "ContactChangeEvent",
+      "field": "ReportsToId"
+    },
+    {
+      "child_sobject": "ContactCleanInfo",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ContactCleanInfoChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ContactEncounterParticipant",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ContactFeed",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "ContactHistory",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ContactPointAddress",
+      "field": "Contact__c"
+    },
+    {
+      "child_sobject": "ContactPointEmail",
+      "field": "Contact__c"
+    },
+    {
+      "child_sobject": "ContactPointPhone",
+      "field": "Contact__c"
+    },
+    {
+      "child_sobject": "ContactRequest",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "ContactShare",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ContentDistribution",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "ContentDocumentLink",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "ContentDocumentLinkChangeEvent",
+      "field": "LinkedEntityId"
+    },
+    {
+      "child_sobject": "ContentVersion",
+      "field": "FirstPublishLocationId"
+    },
+    {
+      "child_sobject": "ContentVersionChangeEvent",
+      "field": "FirstPublishLocationId"
+    },
+    {
+      "child_sobject": "Contract",
+      "field": "CustomerSignedId"
+    },
+    {
+      "child_sobject": "ContractChangeEvent",
+      "field": "CustomerSignedId"
+    },
+    {
+      "child_sobject": "ContractContactRole",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ConversationParticipant",
+      "field": "ParticipantEntityId"
+    },
+    {
+      "child_sobject": "CreditMemo",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "DeclinedEventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "DiagnosticSummary",
+      "field": "AuthenticatorId"
+    },
+    {
+      "child_sobject": "DiagnosticSummaryChangeEvent",
+      "field": "AuthenticatorId"
+    },
+    {
+      "child_sobject": "DistributorAuthorization",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "DistributorAuthorizationChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItem",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItem",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItemChangeEvent",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "DocumentChecklistItemChangeEvent",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "DocumentEnvelope",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "DocumentRecipient",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "DsarPolicyLog",
+      "field": "DataSubjectId"
+    },
+    {
+      "child_sobject": "DuplicateRecordItem",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "EmailBounceEvent",
+      "field": "BouncedObjectId"
+    },
+    {
+      "child_sobject": "EmailMessage",
+      "field": "FromId"
+    },
+    {
+      "child_sobject": "EmailMessageRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "EmailStatus",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "Employee2",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "EmssnRdctnCommitment",
+      "field": "PrimaryContactId"
+    },
+    {
+      "child_sobject": "EngagementAttendee",
+      "field": "ExternalAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementAttendeeChangeEvent",
+      "field": "ExternalAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementInteraction",
+      "field": "InitiatingAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementInteractionChangeEvent",
+      "field": "InitiatingAttendeeId"
+    },
+    {
+      "child_sobject": "EngagementScore",
+      "field": "BaseId"
+    },
+    {
+      "child_sobject": "EngagementTopic",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "EngagementTopicChangeEvent",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "EntitlementContact",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "EntitySubscription",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "Event",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "EventChangeEvent",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "EventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "EventRelationChangeEvent",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "EventWhoRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "FeedComment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "FeedItem",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "FlowExecutionErrorEvent",
+      "field": "ContextRecordId"
+    },
+    {
+      "child_sobject": "FlowOrchestrationWorkItem",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "FlowRecordRelation",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "FulfillmentOrder",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "FulfillmentOrderChangeEvent",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "GameParticipant",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "GameParticipant",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "GeneratedDocument",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "GenericAsmtTaskContext",
+      "field": "ContextId"
+    },
+    {
+      "child_sobject": "GenericAsmtTaskContext",
+      "field": "GenericTaskRelationId"
+    },
+    {
+      "child_sobject": "GenericAssessmentTask",
+      "field": "GenericTaskRelationId"
+    },
+    {
+      "child_sobject": "GenericVisitTaskContext",
+      "field": "ContextId"
+    },
+    {
+      "child_sobject": "GoalAssignment",
+      "field": "GoalAssigneeId"
+    },
+    {
+      "child_sobject": "GroupCensusMember",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "GroupCensusMemberChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "HealthcareFacilityNetwork",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareFacilityNetworkChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcarePractitionerFacility",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProvider",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProvider",
+      "field": "ReferredByContactId"
+    },
+    {
+      "child_sobject": "HealthcareProviderChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProviderChangeEvent",
+      "field": "ReferredByContactId"
+    },
+    {
+      "child_sobject": "HealthcareProviderNpi",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProviderNpiChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProviderSpecialty",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProviderSpecialtyChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProviderTaxonomy",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "HealthcareProviderTaxonomyChangeEvent",
+      "field": "PractitionerId"
+    },
+    {
+      "child_sobject": "Identifier",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "IdentifierChangeEvent",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "IdentityDocument",
+      "field": "RelatedLegalEntityId"
+    },
+    {
+      "child_sobject": "IdentityDocumentChangeEvent",
+      "field": "RelatedLegalEntityId"
+    },
+    {
+      "child_sobject": "IndividualApplication",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "IndividualApplicationChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequest",
+      "field": "ConsenterId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequest",
+      "field": "PertainsToId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequest",
+      "field": "RequesterId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequest",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequestChangeEvent",
+      "field": "ConsenterId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequestChangeEvent",
+      "field": "PertainsToId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequestChangeEvent",
+      "field": "RequesterId"
+    },
+    {
+      "child_sobject": "InfoAuthorizationRequestChangeEvent",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "InsurancePolicyParticipant",
+      "field": "PrimaryParticipantContactId"
+    },
+    {
+      "child_sobject": "InsurancePolicyParticipant",
+      "field": "RelatedParticipantContactId"
+    },
+    {
+      "child_sobject": "InsurancePolicyParticipantChangeEvent",
+      "field": "PrimaryParticipantContactId"
+    },
+    {
+      "child_sobject": "InsurancePolicyParticipantChangeEvent",
+      "field": "RelatedParticipantContactId"
+    },
+    {
+      "child_sobject": "InsuranceProfile",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "InsuranceProfileChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "Invoice",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "Lead",
+      "field": "ConvertedContactId"
+    },
+    {
+      "child_sobject": "LeadChangeEvent",
+      "field": "ConvertedContactId"
+    },
+    {
+      "child_sobject": "ListEmail",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "ListEmailChangeEvent",
+      "field": "RelatedToId"
+    },
+    {
+      "child_sobject": "ListEmailIndividualRecipient",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "ListEmailSentResult",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "ListEmailSentResultChangeEvent",
+      "field": "RecipientId"
+    },
+    {
+      "child_sobject": "LoanApplicant",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "LoanApplicantChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "LoyaltyPgmGroupMbrRlnsp",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "LoyaltyPgmGroupMbrRlnspChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "LoyaltyProgramMember",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "LoyaltyProgramMemberChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "MaintenancePlan",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "MaintenancePlanChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "MatchingInformation",
+      "field": "SFDCIdId"
+    },
+    {
+      "child_sobject": "MedicationDispense",
+      "field": "CollectedById"
+    },
+    {
+      "child_sobject": "MedicationDispenseChangeEvent",
+      "field": "CollectedById"
+    },
+    {
+      "child_sobject": "MedicationTherapyReview",
+      "field": "SurrogateDecisionMakerId"
+    },
+    {
+      "child_sobject": "MemberBenefit",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "MemberBenefitChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "MessagingEndUser",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "MessagingEndUserChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "MessagingSession",
+      "field": "EndUserContactId"
+    },
+    {
+      "child_sobject": "MessagingSessionChangeEvent",
+      "field": "EndUserContactId"
+    },
+    {
+      "child_sobject": "MultipartyInfoAuthRequest",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "MultipartyInfoAuthRequestChangeEvent",
+      "field": "SourceRecordId"
+    },
+    {
+      "child_sobject": "NetworkActivityAudit",
+      "field": "ParentEntityId"
+    },
+    {
+      "child_sobject": "NetworkFeedResponseMetric",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "Note",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "NoteAndAttachment",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "ObjectRelatedUrl",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "ObjectRelatedUrlChangeEvent",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "OpenActivity",
+      "field": "PrimaryWhoId"
+    },
+    {
+      "child_sobject": "OpenActivity",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "Opportunity",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "OpportunityChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "OpportunityContactRole",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "OpportunityContactRoleChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "Order",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "Order",
+      "field": "CustomerAuthorizedById"
+    },
+    {
+      "child_sobject": "Order",
+      "field": "ShipToContactId"
+    },
+    {
+      "child_sobject": "OrderChangeEvent",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "OrderChangeEvent",
+      "field": "CustomerAuthorizedById"
+    },
+    {
+      "child_sobject": "OrderChangeEvent",
+      "field": "ShipToContactId"
+    },
+    {
+      "child_sobject": "OutgoingEmail",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "OutgoingEmailRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "PartyCreditProfile",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "PartyCreditProfileChangeEvent",
+      "field": "ReferenceObjectId"
+    },
+    {
+      "child_sobject": "PartyExpense",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyExpenseChangeEvent",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyFinancialAsset",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyFinancialAssetChangeEvent",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyFinancialLiability",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PartyFinancialLiability",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyFinancialLiabilityChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PartyFinancialLiabilityChangeEvent",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyFinclAssetAddlOwner",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PartyFinclAssetAddlOwnerChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PartyFinclLiabAddlBrwr",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PartyFinclLiabAddlBrwrChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PartyIncome",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyIncomeChangeEvent",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PartyProfile",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PartyProfileChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PaymentRequest",
+      "field": "ServiceProviderId"
+    },
+    {
+      "child_sobject": "PaymentRequest",
+      "field": "ServiceRecipientId"
+    },
+    {
+      "child_sobject": "PaymentRequestLine",
+      "field": "ServiceProviderId"
+    },
+    {
+      "child_sobject": "PendingOrderSummary",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "PendingOrderSummaryChangeEvent",
+      "field": "BillToContactId"
+    },
+    {
+      "child_sobject": "PendingServiceRouting",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingChangeEvent",
+      "field": "WorkItemId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingInteractionInfo",
+      "field": "PrimaryRecordId"
+    },
+    {
+      "child_sobject": "PendingServiceRoutingInteractionInfo",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "PersonDisability",
+      "field": "IndividualId"
+    },
+    {
+      "child_sobject": "PersonEducation",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PersonEducationChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PersonEmployment",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "PersonEmploymentChangeEvent",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "PersonLanguage",
+      "field": "IndividualId"
+    },
+    {
+      "child_sobject": "PersonLanguageChangeEvent",
+      "field": "IndividualId"
+    },
+    {
+      "child_sobject": "PersonLifeEvent",
+      "field": "PrimaryPersonId"
+    },
+    {
+      "child_sobject": "PersonLifeEvent",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "PersonLifeEventChangeEvent",
+      "field": "PrimaryPersonId"
+    },
+    {
+      "child_sobject": "PersonLifeEventChangeEvent",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "PersonName",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "PersonNameChangeEvent",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "PrivacyHold",
+      "field": "ReferenceRecordId"
+    },
+    {
+      "child_sobject": "ProcessInstance",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "ProcessInstanceChangeEvent",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "ProcessInstanceHistory",
+      "field": "TargetObjectId"
+    },
+    {
+      "child_sobject": "Producer",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ProducerChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ProducerCommission",
+      "field": "ProducerId"
+    },
+    {
+      "child_sobject": "ProducerCommissionChangeEvent",
+      "field": "ProducerId"
+    },
+    {
+      "child_sobject": "PromotionPartyUsage",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PromotionPartyUsage",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "PromotionPartyUsageChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "PromotionPartyUsageChangeEvent",
+      "field": "PartyId"
+    },
+    {
+      "child_sobject": "Quote",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "QuoteChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "RecordAction",
+      "field": "RecordId"
+    },
+    {
+      "child_sobject": "RecordActionHistory",
+      "field": "ParentRecordId"
+    },
+    {
+      "child_sobject": "RecordAlert",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "RecordAlert",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "RecordAlertChangeEvent",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "RecordAlertChangeEvent",
+      "field": "WhatId"
+    },
+    {
+      "child_sobject": "ReturnOrder",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ReturnOrderChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "SavedPaymentMethod",
+      "field": "ReferenceOwnerId"
+    },
+    {
+      "child_sobject": "ServiceAppointment",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ServiceAppointmentAttendee",
+      "field": "AttendeeId"
+    },
+    {
+      "child_sobject": "ServiceAppointmentChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ServiceContract",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "ServiceContractChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "SocialPersona",
+      "field": "ParentId"
+    },
+    {
+      "child_sobject": "SocialPost",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "SocialPostChangeEvent",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "SOSSession",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "SurveyInvitation",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "SurveyInvitation",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "SurveyInvitationChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "SurveyInvitationChangeEvent",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "SurveyResponse",
+      "field": "SubmitterId"
+    },
+    {
+      "child_sobject": "SurveyResponseChangeEvent",
+      "field": "SubmitterId"
+    },
+    {
+      "child_sobject": "SurveySubject",
+      "field": "SubjectId"
+    },
+    {
+      "child_sobject": "SurveySubjectChangeEvent",
+      "field": "SubjectId"
+    },
+    {
+      "child_sobject": "SustainabilityScorecard",
+      "field": "SupplierContactId"
+    },
+    {
+      "child_sobject": "Task",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "TaskChangeEvent",
+      "field": "WhoId"
+    },
+    {
+      "child_sobject": "TaskRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TaskRelationChangeEvent",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TaskWhoRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "TopicAssignment",
+      "field": "EntityId"
+    },
+    {
+      "child_sobject": "TrackedCommunication",
+      "field": "CommunicatorReferenceId"
+    },
+    {
+      "child_sobject": "TrackedCommunication",
+      "field": "RequesterReferenceId"
+    },
+    {
+      "child_sobject": "TrackedCommunication",
+      "field": "SubjectId"
+    },
+    {
+      "child_sobject": "TransactionJournal",
+      "field": "ReferredPartyId"
+    },
+    {
+      "child_sobject": "TransactionJournalChangeEvent",
+      "field": "ReferredPartyId"
+    },
+    {
+      "child_sobject": "UndecidedEventRelation",
+      "field": "RelationId"
+    },
+    {
+      "child_sobject": "User",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "UserChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "UserDefinedLabelAssignment",
+      "field": "ItemId"
+    },
+    {
+      "child_sobject": "UserEmailPreferredPerson",
+      "field": "PersonRecordId"
+    },
+    {
+      "child_sobject": "UserEmailPreferredPersonChangeEvent",
+      "field": "PersonRecordId"
+    },
+    {
+      "child_sobject": "UserPrioritizedRecord",
+      "field": "TargetId"
+    },
+    {
+      "child_sobject": "VideoCall",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VideoCallChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VideoCallParticipant",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "VideoCallParticipantChangeEvent",
+      "field": "RelatedPersonId"
+    },
+    {
+      "child_sobject": "Visit",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "Visit",
+      "field": "VisitorId"
+    },
+    {
+      "child_sobject": "VisitedParty",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "Visitor",
+      "field": "AssigneeId"
+    },
+    {
+      "child_sobject": "VoiceCall",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "VoiceCallChangeEvent",
+      "field": "RelatedRecordId"
+    },
+    {
+      "child_sobject": "Voucher",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "VoucherChangeEvent",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "WaitlistParticipant",
+      "field": "ParticipantId"
+    },
+    {
+      "child_sobject": "WorkOrder",
+      "field": "ContactId"
+    },
+    {
+      "child_sobject": "WorkOrderChangeEvent",
+      "field": "ContactId"
+    }
+  ],
+  "fetched_at": "2026-05-11T11:34:17Z",
+  "fields": [
+    {
+      "api_name": "AccountId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Account ID",
+      "nillable": true,
+      "reference_to": [
+        "Account"
+      ],
+      "relationship_name": "Account",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "AssistantName",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Assistant's Name",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "AssistantPhone",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Asst. Phone",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "Birthdate",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Birthdate",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": true
+    },
+    {
+      "api_name": "BuyerAttributes",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Buyer Attributes",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "multipicklist",
+      "updateable": true
+    },
+    {
+      "api_name": "ContactSource",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Creation Source",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "CreatedById",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Created By ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "CreatedBy",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "CreatedDate",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Created Date",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "CurrencyIsoCode",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Contact Currency",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Current_Personal_ID__c",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Current Personal ID",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "Department",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Department",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "DepartmentGroup",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Department Group",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Description",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Contact Description",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "textarea",
+      "updateable": true
+    },
+    {
+      "api_name": "Email",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": true,
+      "label": "Email",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "email",
+      "updateable": true
+    },
+    {
+      "api_name": "EmailBouncedDate",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Email Bounced Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": true
+    },
+    {
+      "api_name": "EmailBouncedReason",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Email Bounced Reason",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "EngagementScoreId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Behavior Score ID",
+      "nillable": true,
+      "reference_to": [
+        "EngagementScore"
+      ],
+      "relationship_name": "EngagementScore",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "EntryYear__c",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Year of Study",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "double",
+      "updateable": true
+    },
+    {
+      "api_name": "Fax",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Business Fax",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "FirstName",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "First Name",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "GenderIdentity",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Gender Identity",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "HasPrivacyHold",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Privacy Hold",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "HomePhone",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Home Phone",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "HowWeCanHelp__c",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "How we can help",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "Id",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": true,
+      "label": "Contact ID",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "id",
+      "updateable": false
+    },
+    {
+      "api_name": "IndividualId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Individual ID",
+      "nillable": true,
+      "reference_to": [
+        "Individual"
+      ],
+      "relationship_name": "Individual",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "IsDeleted",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Deleted",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsEmailBounced",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Is Email Bounced",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsLocked",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Is Locked",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsPersonAccount",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Is Person Account",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "IsPriorityRecord",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Important",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "Jigsaw",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Data.com Key",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "JigsawContactId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Jigsaw Contact ID",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": "JigsawContact",
+      "type": "string",
+      "updateable": false
+    },
+    {
+      "api_name": "LastActivityDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Activity",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "date",
+      "updateable": false
+    },
+    {
+      "api_name": "LastCURequestDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Stay-in-Touch Request Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastCUUpdateDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Stay-in-Touch Save Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastModifiedById",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Modified By ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "LastModifiedBy",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "LastModifiedDate",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Modified Date",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastName",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Name",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "LastReferencedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Referenced Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LastViewedDate",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Last Viewed Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "LeadSource",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Lead Source",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingAddress",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing Address",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "address",
+      "updateable": false
+    },
+    {
+      "api_name": "MailingCity",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing City",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingCountry",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing Country",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingGeocodeAccuracy",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing Geocode Accuracy",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingLatitude",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing Latitude",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "double",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingLongitude",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing Longitude",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "double",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingPostalCode",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing Zip/Postal Code",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingState",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing State/Province",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "MailingStreet",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mailing Street",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "textarea",
+      "updateable": true
+    },
+    {
+      "api_name": "MasterRecordId",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Master Record ID",
+      "nillable": true,
+      "reference_to": [
+        "Contact"
+      ],
+      "relationship_name": "MasterRecord",
+      "type": "reference",
+      "updateable": false
+    },
+    {
+      "api_name": "MayEdit",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "May Edit",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": false
+    },
+    {
+      "api_name": "MobilePhone",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Mobile Phone",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "Name",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Full Name",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": false
+    },
+    {
+      "api_name": "OnboardingConfirmed__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Onboarding Confirmed",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherAddress",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Address",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "address",
+      "updateable": false
+    },
+    {
+      "api_name": "OtherCity",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other City",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherCountry",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Country",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherGeocodeAccuracy",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Geocode Accuracy",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherLatitude",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Latitude",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "double",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherLongitude",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Longitude",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "double",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherPhone",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Phone",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherPostalCode",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Zip/Postal Code",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherState",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other State/Province",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "OtherStreet",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Other Street",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "textarea",
+      "updateable": true
+    },
+    {
+      "api_name": "OwnerId",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Owner ID",
+      "nillable": false,
+      "reference_to": [
+        "User"
+      ],
+      "relationship_name": "Owner",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "Phone",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Business Phone",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "phone",
+      "updateable": true
+    },
+    {
+      "api_name": "PhotoUrl",
+      "createable": false,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Photo URL",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "url",
+      "updateable": false
+    },
+    {
+      "api_name": "Preferred_Name__c",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Preferred Name",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "RecordTypeId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Record Type ID",
+      "nillable": true,
+      "reference_to": [
+        "RecordType"
+      ],
+      "relationship_name": "RecordType",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "RegisteredTimeStamp__c",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Registration Date",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": true
+    },
+    {
+      "api_name": "ReportsToId",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Reports To ID",
+      "nillable": true,
+      "reference_to": [
+        "Contact"
+      ],
+      "relationship_name": "ReportsTo",
+      "type": "reference",
+      "updateable": true
+    },
+    {
+      "api_name": "Salutation",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Salutation",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "StillAtSchool__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Is still in School / College",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "SystemModstamp",
+      "createable": false,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "System Modstamp",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "datetime",
+      "updateable": false
+    },
+    {
+      "api_name": "Title",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Title",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "TitleType",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Seniority Level",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "picklist",
+      "updateable": true
+    },
+    {
+      "api_name": "UCAS_Account_Id__c",
+      "createable": true,
+      "defaulted_on_create": false,
+      "external_id": true,
+      "id_lookup": true,
+      "label": "UCAS Account Id",
+      "nillable": true,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "string",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_AreCarers__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Carers",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_BeenInCare__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Has Been in Care?",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_DisadvantagedBackgrounds__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Disadvantaged Background",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_EstrangedStudent__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Estranged",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_MentalHealthWellbeing__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Health and Wellbeing",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_ParentResponsibilities__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Parental Responsibilities",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_RefugeeOrAsylum__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Refugee Asylum Seeker Status",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_ServiceChildren__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Service Children",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    },
+    {
+      "api_name": "WP_VeteransAndServiceLeavers__c",
+      "createable": true,
+      "defaulted_on_create": true,
+      "external_id": false,
+      "id_lookup": false,
+      "label": "Service Leavers",
+      "nillable": false,
+      "reference_to": [],
+      "relationship_name": null,
+      "type": "boolean",
+      "updateable": true
+    }
+  ],
+  "name": "Contact"
+}
