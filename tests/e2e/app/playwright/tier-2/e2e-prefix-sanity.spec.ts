@@ -22,6 +22,9 @@
  * block run serially in the same worker, making the shared state safe.
  */
 
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { expect } from "@playwright/test";
 import { test as baseTest, prefixFromTestInfo, toTestSlug, buildE2EPrefix } from "../helpers/e2e_prefix";
 
@@ -122,39 +125,51 @@ baseTest.describe("e2ePrefix fixture", () => {
  * Shared collector: records prefixes across test runs in this worker.
  * Safe under fullyParallel:false (tier-2 is serial).
  */
-const _observedPrefixes: string[] = [];
-
 baseTest.describe("retry prefix mutation", () => {
   // Configure this describe block to retry once so we see retry=0 then retry=1.
   baseTest.describe.configure({ retries: 1 });
 
-  baseTest("collects prefix on each attempt and fails on first to force retry", async ({}, testInfo) => {
-    const prefix = prefixFromTestInfo(testInfo);
-    _observedPrefixes.push(prefix);
+  // Cross-attempt state via filesystem: Playwright re-imports the spec module
+  // on retry, so module-level variables don't survive.  We persist the
+  // observed prefix from attempt 0 to a tempfile keyed by the test's title
+  // hash, then read it back on attempt 1 to verify the prefix mutated as
+  // expected (only the retry segment should have changed).
+  const stateFile = (title: string): string => {
+    const hash = title.replace(/[^A-Za-z0-9]/g, "-").slice(0, 60);
+    return path.join(os.tmpdir(), `e2e-prefix-retry-${hash}.txt`);
+  };
 
-    // On the first attempt (retry=0), fail intentionally to trigger retry.
-    // On the second attempt (retry=1), pass.
+  baseTest("captures prefix across forced retry and asserts only the retry segment mutates", async ({}, testInfo) => {
+    const prefix = prefixFromTestInfo(testInfo);
+    const file = stateFile(testInfo.title);
+
     if (testInfo.retry === 0) {
-      // This intentional failure drives the retry; the second run (retry=1) will pass.
+      // Persist the attempt-0 prefix for the retry to read, then force a fail.
+      fs.writeFileSync(file, prefix);
       throw new Error(
         `Intentional failure on attempt 0 to drive retry. Prefix observed: ${prefix}`
       );
     }
 
-    // retry=1: we've now seen two prefixes — assert they differ.
-    expect(_observedPrefixes.length).toBeGreaterThanOrEqual(2);
-    const [prefixOnRetry0, prefixOnRetry1] = _observedPrefixes;
-    expect(prefixOnRetry0).not.toBe(prefixOnRetry1);
+    // retry=1: read the attempt-0 prefix from disk and compare to the
+    // attempt-1 prefix.
+    expect(fs.existsSync(file), `Expected attempt-0 state file at ${file}`).toBe(true);
+    const prefixOnRetry0 = fs.readFileSync(file, "utf8");
+    const prefixOnRetry1 = prefix;
 
-    // The only difference should be the retry counter embedded in the prefix.
-    // Strip the retry segment and verify the rest is identical.
+    // Clean up the state file regardless of assertion outcome.
+    try { fs.unlinkSync(file); } catch { /* best-effort */ }
+
+    // Prefixes must differ; the only difference must be the retry counter.
+    expect(prefixOnRetry0).not.toBe(prefixOnRetry1);
     const withoutRetry = (p: string): string =>
       p.replace(/^(E2E-[^-]+-\d+)-\d+-/, "$1-");
     expect(withoutRetry(prefixOnRetry0)).toBe(withoutRetry(prefixOnRetry1));
 
-    // The retry=1 prefix contains "1" at the retry position
-    expect(prefixOnRetry1).toContain("-1-");
-    // The retry=0 prefix contains "0" at the retry position (before the test slug)
-    expect(prefixOnRetry0).toContain("-0-");
+    // attempt-0 prefix has retry-segment 0; attempt-1 has retry-segment 1.
+    // Match against the segment shape ("...-<worker>-0-..." vs "...-<worker>-1-...")
+    // rather than naive substring to avoid false matches with other digits.
+    expect(prefixOnRetry0).toMatch(/^E2E-[^-]+-\d+-0-/);
+    expect(prefixOnRetry1).toMatch(/^E2E-[^-]+-\d+-1-/);
   });
 });

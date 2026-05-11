@@ -105,7 +105,7 @@ function shellQuote(s: string): string {
 function generateAccountsCsv(prefix: string, outPath: string): void {
   const scriptPath = path.resolve(
     __dirname,
-    "../../../fixtures/csv/accounts_insert.py",
+    "../../fixtures/csv/accounts_insert.py",
   );
   child_process.execSync(
     `python3 ${shellQuote(scriptPath)} --prefix ${shellQuote(prefix)} --out ${shellQuote(outPath)}`,
@@ -121,7 +121,7 @@ function generateContactsCsv(
 ): void {
   const scriptPath = path.resolve(
     __dirname,
-    "../../../fixtures/csv/contacts_upsert_account_lookup.py",
+    "../../fixtures/csv/contacts_upsert_account_lookup.py",
   );
   child_process.execSync(
     [

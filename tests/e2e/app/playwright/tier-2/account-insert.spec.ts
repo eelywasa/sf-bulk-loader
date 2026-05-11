@@ -87,7 +87,7 @@ function resolveInputDir(): string {
 function generateAccountsCsv(prefix: string, outPath: string): string {
   const scriptPath = path.resolve(
     __dirname,
-    "../../../fixtures/csv/accounts_insert.py",
+    "../../fixtures/csv/accounts_insert.py",
   );
   child_process.execSync(
     `python3 ${shellQuote(scriptPath)} --prefix ${shellQuote(prefix)} --out ${shellQuote(outPath)}`,
