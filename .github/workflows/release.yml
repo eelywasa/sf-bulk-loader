@@ -79,6 +79,9 @@ jobs:
       - name: Install JWT signing dependency (cryptography)
         run: pip install --no-input cryptography
 
+      - name: Install CSV factory dependencies (Faker)
+        run: pip install --no-input -r tests/e2e/sf/fixtures/csv/requirements.txt
+
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli@latest
 

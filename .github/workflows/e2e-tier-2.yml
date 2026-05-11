@@ -138,6 +138,13 @@ jobs:
       - name: Install JWT signing dependency (cryptography)
         run: pip install --no-input cryptography
 
+      # The Tier 2 specs invoke tests/e2e/app/fixtures/csv/*.py at runtime
+      # (via child_process from Playwright), and those scripts import Faker
+      # through the shared csv_factory.  Install the requirements file
+      # explicitly so the runtime invocation succeeds.
+      - name: Install CSV factory dependencies (Faker)
+        run: pip install --no-input -r tests/e2e/sf/fixtures/csv/requirements.txt
+
       # -----------------------------------------------------------------------
       # 3b. Install Salesforce CLI
       # -----------------------------------------------------------------------

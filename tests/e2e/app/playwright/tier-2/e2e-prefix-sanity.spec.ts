@@ -160,16 +160,23 @@ baseTest.describe("retry prefix mutation", () => {
     // Clean up the state file regardless of assertion outcome.
     try { fs.unlinkSync(file); } catch { /* best-effort */ }
 
-    // Prefixes must differ; the only difference must be the retry counter.
-    expect(prefixOnRetry0).not.toBe(prefixOnRetry1);
-    const withoutRetry = (p: string): string =>
-      p.replace(/^(E2E-[^-]+-\d+)-\d+-/, "$1-");
-    expect(withoutRetry(prefixOnRetry0)).toBe(withoutRetry(prefixOnRetry1));
-
-    // attempt-0 prefix has retry-segment 0; attempt-1 has retry-segment 1.
+    // Both prefixes must encode their respective retry segment correctly.
     // Match against the segment shape ("...-<worker>-0-..." vs "...-<worker>-1-...")
-    // rather than naive substring to avoid false matches with other digits.
+    // rather than substring to avoid false matches with other digits.
+    //
+    // NOTE: workerIndex CAN differ between attempts — Playwright doesn't
+    // guarantee retried tests run on the same worker.  Asserting that the
+    // workerIndex segment is identical across attempts is incorrect (PR #89
+    // run 25685808038 observed worker 2 → worker 4 between attempts).  The
+    // contract we actually want to prove is "the retry counter is encoded
+    // and increments", not "everything but retry is identical".
     expect(prefixOnRetry0).toMatch(/^E2E-[^-]+-\d+-0-/);
     expect(prefixOnRetry1).toMatch(/^E2E-[^-]+-\d+-1-/);
+
+    // The RUN_ID and test-slug segments must be identical across attempts
+    // (those are deterministic functions of the test+workflow, not the worker).
+    const runIdAndSlug = (p: string): string =>
+      p.replace(/^(E2E-[^-]+)-\d+-\d+-(.*)$/, "$1::$2");
+    expect(runIdAndSlug(prefixOnRetry0)).toBe(runIdAndSlug(prefixOnRetry1));
   });
 });
