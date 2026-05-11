@@ -49,6 +49,29 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Preflight — fail fast with a clear pointer if Tier 2 secrets are absent.
+      # Without this, a missing secret produces an opaque CLI auth failure
+      # several steps in, which would block release artifact publication
+      # in a confusing way.
+      - name: Preflight — verify Tier 2 secrets are configured
+        env:
+          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
+          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
+          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          MISSING=()
+          [ -z "${SFDX_DEVHUB_JWT_KEY}" ]          && MISSING+=("SFDX_DEVHUB_JWT_KEY")
+          [ -z "${SFDX_DEVHUB_CONSUMER_KEY}" ]     && MISSING+=("SFDX_DEVHUB_CONSUMER_KEY")
+          [ -z "${SFDX_DEVHUB_USERNAME}" ]         && MISSING+=("SFDX_DEVHUB_USERNAME")
+          [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Release Tier 2 gate cannot run — missing GitHub secret(s): ${MISSING[*]}"
+            echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
+            exit 1
+          fi
+          echo "All required Tier 2 secrets are present."
+
       # Codex P2 on PR #89: jwt_smoke_test.sh's Python helper prefers
       # `cryptography` (falls back to PyJWT); neither is on the GHA
       # ubuntu-latest base image.  Install explicitly to avoid an

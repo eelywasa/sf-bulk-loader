@@ -100,7 +100,34 @@ jobs:
           python-version: '3.12'
 
       # -----------------------------------------------------------------------
-      # 3a. Install JWT signing dependency (Codex P2 on PR #89)
+      # 3a. Preflight — check all required secrets are present.
+      #
+      # Without this step, a missing secret produces an opaque auth failure
+      # several steps in (e.g. "sf org login jwt: error: Invalid JWT").
+      # Fail fast with a clear pointer at the setup runbook instead.
+      # -----------------------------------------------------------------------
+      - name: Preflight — verify Tier 2 secrets are configured
+        env:
+          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
+          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
+          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          MISSING=()
+          [ -z "${SFDX_DEVHUB_JWT_KEY}" ]          && MISSING+=("SFDX_DEVHUB_JWT_KEY")
+          [ -z "${SFDX_DEVHUB_CONSUMER_KEY}" ]     && MISSING+=("SFDX_DEVHUB_CONSUMER_KEY")
+          [ -z "${SFDX_DEVHUB_USERNAME}" ]         && MISSING+=("SFDX_DEVHUB_USERNAME")
+          [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Tier 2 cannot run — missing GitHub secret(s): ${MISSING[*]}"
+            echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
+            echo "::error::Set via: gh secret set <NAME> < /path/to/value  (or Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
+          echo "All required Tier 2 secrets are present."
+
+      # -----------------------------------------------------------------------
+      # 3b. Install JWT signing dependency (Codex P2 on PR #89)
       #
       # jwt_smoke_test.sh's Python helper signs the JWT bearer assertion;
       # it prefers `cryptography` and falls back to PyJWT.  Neither is on
