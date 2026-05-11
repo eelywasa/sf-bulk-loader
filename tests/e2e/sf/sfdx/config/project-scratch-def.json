@@ -1,9 +1,4 @@
 {
   "edition": "Developer",
-  "features": ["EnableSetPasswordInApi"],
-  "settings": {
-    "externalClientAppSettings": {
-      "enableConsumerSecretApiAccess": true
-    }
-  }
+  "features": ["EnableSetPasswordInApi"]
 }
