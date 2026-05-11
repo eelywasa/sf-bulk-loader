@@ -33,11 +33,22 @@ set -euo pipefail
 echo "[disable_duplicate_rules] target org: ${E2E_SCRATCH_ORG}" >&2
 
 # Tooling API query — DuplicateRule lives there, not in the data API.
+# Capture stderr so we see the underlying sf failure if the call returns
+# non-zero (without this the GH step just shows "exit code 1" with no clue).
+set +e
 ACTIVE_RULES_JSON="$(sf data query \
   --query "SELECT Id, DeveloperName FROM DuplicateRule WHERE IsActive = true" \
   --target-org "${E2E_SCRATCH_ORG}" \
   --use-tooling-api \
-  --json)"
+  --json 2>&1)"
+SF_EXIT=$?
+set -e
+if [[ $SF_EXIT -ne 0 ]]; then
+  echo "[disable_duplicate_rules] sf data query failed with exit ${SF_EXIT}" >&2
+  echo "[disable_duplicate_rules] sf output below:" >&2
+  echo "$ACTIVE_RULES_JSON" >&2
+  exit 1
+fi
 
 # Use Python to parse + iterate (avoids jq dependency in the runner).
 python3 - "${E2E_SCRATCH_ORG}" "${ACTIVE_RULES_JSON}" <<'PYEOF'
