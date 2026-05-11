@@ -13,14 +13,17 @@
 #   even when the External_Id__c is unique (the rule doesn't consult it).
 #
 #   Bulk API 2.0 has no header to bypass duplicate detection — the only
-#   ways are (a) disable the rules or (b) grant a profile/permset that
-#   carries the "ManageDuplicateRules" permission and then... no, even
-#   that doesn't bypass.  Disabling the rules in the scratch is the only
-#   reliable path.
+#   reliable path is to flip IsActive=false on the rules.
 #
-# IDEMPOTENT: looks up only IsActive=true rules and flips them off via the
-#   Tooling API.  Already-inactive rules are skipped.  Safe to run on
-#   every reuse-mode invocation.
+# WHY anonymous Apex (not the Tooling API):
+#   `sf data query --use-tooling-api ... DuplicateRule` returns
+#     INVALID_TYPE: sObject type 'DuplicateRule' is not supported.
+#   even though DuplicateRule is queryable in Apex.  Easiest path is
+#   to run a tiny anonymous-Apex block that does the query + DML in
+#   one round-trip.
+#
+# IDEMPOTENT: the Apex script touches only IsActive=true rules. Safe to
+#   run on every reuse-mode invocation.
 #
 # Usage:   ./disable_duplicate_rules.sh
 # Env:     E2E_SCRATCH_ORG — target scratch org alias.
@@ -32,60 +35,64 @@ set -euo pipefail
 
 echo "[disable_duplicate_rules] target org: ${E2E_SCRATCH_ORG}" >&2
 
-# Tooling API query — DuplicateRule lives there, not in the data API.
-# Capture stderr so we see the underlying sf failure if the call returns
-# non-zero (without this the GH step just shows "exit code 1" with no clue).
+APEX_FILE="$(mktemp /tmp/disable-dup-rules-XXXXXX.apex)"
+trap 'rm -f "$APEX_FILE"' EXIT
+
+cat > "$APEX_FILE" <<'APEX'
+List<DuplicateRule> rules = [
+  SELECT Id, DeveloperName, IsActive
+  FROM DuplicateRule
+  WHERE IsActive = true
+];
+if (rules.isEmpty()) {
+  System.debug('[disable_duplicate_rules] no active rules — nothing to do.');
+} else {
+  for (DuplicateRule r : rules) {
+    System.debug('[disable_duplicate_rules] deactivating ' + r.DeveloperName + ' (' + r.Id + ')');
+    r.IsActive = false;
+  }
+  update rules;
+  System.debug('[disable_duplicate_rules] deactivated ' + rules.size() + ' rule(s).');
+}
+APEX
+
 set +e
-ACTIVE_RULES_JSON="$(sf data query \
-  --query "SELECT Id, DeveloperName FROM DuplicateRule WHERE IsActive = true" \
+APEX_OUT="$(sf apex run \
+  --file "$APEX_FILE" \
   --target-org "${E2E_SCRATCH_ORG}" \
-  --use-tooling-api \
   --json 2>&1)"
 SF_EXIT=$?
 set -e
+
 if [[ $SF_EXIT -ne 0 ]]; then
-  echo "[disable_duplicate_rules] sf data query failed with exit ${SF_EXIT}" >&2
+  echo "[disable_duplicate_rules] sf apex run failed with exit ${SF_EXIT}" >&2
   echo "[disable_duplicate_rules] sf output below:" >&2
-  echo "$ACTIVE_RULES_JSON" >&2
+  echo "$APEX_OUT" >&2
   exit 1
 fi
 
-# Use Python to parse + iterate (avoids jq dependency in the runner).
-python3 - "${E2E_SCRATCH_ORG}" "${ACTIVE_RULES_JSON}" <<'PYEOF'
+# Verify success: sf apex run returns JSON with .result.success=true (or
+# .result.compiled=true && .result.success=true) on a clean run.
+echo "$APEX_OUT" | python3 - <<'PYEOF'
 import json
-import subprocess
 import sys
 
-target_org = sys.argv[1]
-raw = sys.argv[2]
-
-try:
-    data = json.loads(raw)
-except json.JSONDecodeError as e:
-    print(f"ERROR: could not parse DuplicateRule query output: {e}", file=sys.stderr)
+raw = sys.stdin.read()
+data = json.loads(raw)
+result = data.get("result", {})
+compiled = result.get("compiled")
+success = result.get("success")
+if not compiled:
+    print(f"[disable_duplicate_rules] apex did not compile: {result.get('compileProblem')}", file=sys.stderr)
     sys.exit(1)
-
-rules = data.get("result", {}).get("records", [])
-if not rules:
-    print("[disable_duplicate_rules] no active rules found — nothing to do.", file=sys.stderr)
-    sys.exit(0)
-
-print(f"[disable_duplicate_rules] deactivating {len(rules)} active rule(s) ...", file=sys.stderr)
-for rule in rules:
-    rule_id = rule["Id"]
-    dev_name = rule.get("DeveloperName", "<unknown>")
-    print(f"[disable_duplicate_rules]   {dev_name} ({rule_id})", file=sys.stderr)
-    subprocess.run(
-        [
-            "sf", "data", "update", "record",
-            "--sobject", "DuplicateRule",
-            "--record-id", rule_id,
-            "--values", "IsActive=false",
-            "--use-tooling-api",
-            "--target-org", target_org,
-        ],
-        check=True,
-    )
-
-print("[disable_duplicate_rules] done.", file=sys.stderr)
+if not success:
+    print(f"[disable_duplicate_rules] apex did not succeed: {result.get('exceptionMessage')}", file=sys.stderr)
+    print(f"[disable_duplicate_rules] stack: {result.get('exceptionStackTrace')}", file=sys.stderr)
+    sys.exit(1)
+# Surface the debug log lines our script emitted (System.debug output).
+for line in (result.get("logs") or "").splitlines():
+    if "[disable_duplicate_rules]" in line:
+        print(line, file=sys.stderr)
 PYEOF
+
+echo "[disable_duplicate_rules] done." >&2
