@@ -306,19 +306,27 @@ against a long-lived scratch.
      --ref feat/your-branch \
      -f skip_destroy=true
    ```
-   This creates a scratch normally (1 quota), runs your specs, and leaves
-   the scratch alive at the end. The workflow logs the alias and a hint at
-   how to capture its sfdxAuthUrl.
+   This creates a scratch (1 quota), runs your specs, leaves the scratch
+   alive, and uploads its sfdxAuthUrl as a GitHub-encrypted artifact
+   named `tier2-scratch-auth-url` (1-day retention).
 
-2. Locally, authenticate to the leaked scratch and capture its auth URL:
+2. Download the artifact and set the GH secret. Either via the Actions UI
+   (run summary → "Artifacts" → `tier2-scratch-auth-url` → Download), or
+   via CLI:
    ```bash
-   # Find the alias in the workflow logs (form: e2e-tier2-<run_id>) and log in:
-   sf org login web --instance-url <scratch-instance-url> --alias tier2-shared
-   # Then export the URL into the GH secret:
-   sf org display --target-org tier2-shared --verbose --json \
-     | jq -r '.result.sfdxAuthUrl' \
-     | gh secret set TIER2_REUSE_AUTH_URL
+   # Find the run ID via `gh run list --workflow=e2e-tier-2.yml --limit 1`
+   gh run download <run-id> --name tier2-scratch-auth-url
+   gh secret set TIER2_REUSE_AUTH_URL < sfdx-auth-url.txt
+   rm sfdx-auth-url.txt   # local copy no longer needed
    ```
+
+   > **Why an artifact and not a local CLI extraction?** The scratch's auth
+   > state (refresh token, instance URL, etc.) lives only on the GH runner
+   > filesystem and is destroyed at runner termination. Salesforce-side
+   > metadata (`ScratchOrgInfo`) exposes username and login URL but not
+   > refresh-token-bearing `sfdxAuthUrl` values. The artifact-upload path is
+   > the only way to get the credential out of CI. The artifact is encrypted
+   > at rest by GitHub and accessible only to repo collaborators.
 
 ### Iteration cycle (zero quota cost)
 
