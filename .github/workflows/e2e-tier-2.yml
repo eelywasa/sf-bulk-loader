@@ -401,6 +401,22 @@ jobs:
           path: tests/e2e/playwright-report/
           retention-days: 14
 
+      # Upload the bulk loader's run artefacts (success / error / unprocessed
+      # CSVs under data/output and the input CSVs the spec seeded under
+      # data/input) so we can see exactly what Salesforce rejected when a
+      # run reports records_failed > 0.  Without this, the diagnostic chain
+      # ends at "X records failed" with no visibility into the error rows.
+      - name: Upload bulk-loader data dirs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bulk-loader-data-tier-2-${{ github.run_id }}
+          path: |
+            data/input/
+            data/output/
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: Dump container logs on failure
         if: failure()
         run: docker compose -f docker-compose.yml logs
