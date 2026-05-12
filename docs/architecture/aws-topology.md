@@ -85,6 +85,95 @@ flowchart TB
 > `backendDomainName` → ALB alias is). See `docs/deployment/aws.md`
 > step 11.
 
+## Test evidence host (SFBL-334)
+
+The test evidence dashboard is a **standalone** CDK app —
+`bin/test-evidence-app.ts` — deployed independently of the per-env
+runtime stacks above. It serves the cross-layer Allure reports
+(Playwright + pytest) and is **pinned to `us-east-1`** because the
+Lambda@Edge OAuth gate can only originate from that region.
+
+### Request path
+
+```mermaid
+flowchart LR
+  user([Browser])
+  cf[CloudFront]
+  edge[Lambda@Edge<br/>viewer-request<br/>GitHub OAuth gate]
+  s3ev[(Evidence S3 bucket<br/>pr-#123;n#125;/, main/, tier-2/#123;run-id#125;/)]
+  gh((GitHub OAuth + API))
+  sm[Secrets Manager<br/>OAuth client +<br/>session signing key]
+
+  user -->|"https://reports.domainName/"| cf
+  cf -->|every request| edge
+  edge -.cold-start fetch.-> sm
+  edge -->|OAuth flow| gh
+  edge -->|"/user/repos?affiliation=collaborator<br/>check authorizedRepo"| gh
+  edge -.signed session cookie.-> user
+  cf -->|"after edge passes through<br/>OAC-only"| s3ev
+```
+
+The Lambda gate runs on every request (cache disabled at the edge for
+correctness). A user is admitted only if they're an explicit
+collaborator on `eelywasa/sf-bulk-loader` — verified via the
+`affiliation=collaborator` filter because the obvious
+`permissions.pull` check would admit anyone with a GitHub account on
+a public repo.
+
+### Stack ownership
+
+```mermaid
+flowchart TB
+  subgraph testEvidence["BulkLoader-TestEvidence (us-east-1)"]
+    s3[(Evidence bucket<br/>lifecycle: pr-#123;n#125;/ 30d,<br/>tier-2/#123;run-id#125;/ 90d,<br/>main/ retained)]
+    oac[OAC]
+    cfDist[CloudFront distribution]
+    edge[Lambda@Edge<br/>OAuth + collaborator check]
+    edgeRole[Lambda@Edge role<br/>Secrets read only]
+    oauthSecret[Secrets Manager<br/>sfbl/test-evidence/oauth]
+    pubRole[Publisher role<br/>GHA OIDC]
+    oidc[GitHub Actions<br/>OIDC provider]
+  end
+
+  github((GitHub Actions))
+
+  cfDist -->|OAC| s3
+  cfDist -->|viewer-request| edge
+  edge -.assumes.-> edgeRole
+  edgeRole -.reads.-> oauthSecret
+  github -.OIDC token.-> oidc
+  oidc -.trusts repo + ref.-> pubRole
+  pubRole -.s3:PutObject + cloudfront:Invalidate.-> s3
+```
+
+### Deploy + access notes
+
+- Deploy via `npm run deploy:test-evidence` (calls
+  `cdk deploy --app 'npx ts-node --prefer-ts-exts bin/test-evidence-app.ts'
+  --all`). Synth runs against `cdk.json` + `cdk.context.json`'s
+  `testEvidence` block.
+- Without `testEvidence.domainName` + `.certificateArn` the OAuth wiring
+  is skipped — useful for early synth smoke checks — and the
+  distribution is **not** authentication-gated. Operator sees a
+  `cdk.Annotations.addWarning` to that effect on synth.
+- ACM certificate for the custom domain must live in `us-east-1`
+  (CloudFront-edge requirement, independent of the Lambda@Edge one).
+- Secrets Manager seeding + GitHub OAuth App registration are tracked
+  separately in SFBL-350 J (`docs/operations/test-evidence-runbook.md`).
+
+### Auto-generated CDK diagram (test-evidence stack)
+
+The construct-level view of just the TestEvidenceStack, regenerated
+separately from the env-based stacks above:
+
+![Test evidence stack — full construct diagram](diagrams/aws-stacks-test-evidence.png)
+
+Regenerate with `cd infrastructure && npm run diagram:test-evidence`.
+The PNG above is generated with the OAuth wiring **skipped** (no
+`testEvidence.domainName` in committed `cdk.json`). When the operator
+deploys with a real domain configured, the Lambda@Edge function +
+version constructs additionally appear in the topology.
+
 ## Auto-generated CDK diagram
 
 The full construct-level diagram, including every secret, log group,
@@ -128,6 +217,10 @@ diagrams in the same PR:
 - Renamed a secret, SSM parameter, or stack output that is referenced
   in the Mermaid labels → update the diagram label so it stays
   greppable.
+- Touched `bin/test-evidence-app.ts` or `lib/test-evidence-stack.ts` →
+  review the *Test evidence host (SFBL-334)* section above; the
+  Lambda@Edge OAuth flow and the IAM trust topology are easy to
+  mis-document silently.
 
 If a PR touches `infrastructure/lib/` but doesn't refresh the diagrams,
 reviewers should flag it. Stale topology diagrams are worse than no
