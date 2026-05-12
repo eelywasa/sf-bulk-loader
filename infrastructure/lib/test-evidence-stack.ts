@@ -1,8 +1,12 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
@@ -72,20 +76,25 @@ export interface TestEvidenceStackProps extends cdk.StackProps {
  * CloudFront edge functions only support that region as origin. Hard-coded
  * in `bin/test-evidence-app.ts`.
  *
- * **Scope of this initial scaffold (commit 1):**
- *   - S3 bucket with lifecycle rules
- *   - CloudFront distribution with OAC
- *   - Secrets Manager shell (no values; SFBL-350 J seeds at deploy time)
- *   - Lambda@Edge role + GHA OIDC publishing role (no Lambda function yet)
+ * **Lambda@Edge OAuth gate:**
+ *   The handler at `lib/lambda-edge-auth/index.js` carries placeholder
+ *   constants (`__AUTHORIZED_REPO__`, `__CALLBACK_URL__`, `__SECRET_NAME__`,
+ *   `__SECRET_REGION__`) that are substituted at synth time into a temp
+ *   directory under the system temp root; that directory is then asset-
+ *   bundled. Lambda@Edge cannot read environment variables, so synth-time
+ *   substitution is the documented approach.
+ *
+ *   The handler is only wired to the distribution when `domainName` AND
+ *   `certificateArn` are both set — without a stable custom domain the OAuth
+ *   callback URL is unknowable at synth time. Without OAuth wiring the stack
+ *   still synths cleanly (useful for early `cdk synth` smoke checks) but the
+ *   distribution will return content unauthenticated; do NOT set
+ *   `AUTHORIZED_REPO`-touching test data in the bucket until OAuth is live.
  *
  * **Out of scope here (lands in next commit):**
- *   - The actual Lambda@Edge OAuth handler code
- *   - Wiring the function as a viewer-request behaviour on the distribution
  *   - Route53 alias record for the custom domain
- *
- * Until the Lambda@Edge handler lands, the distribution is reachable but NOT
- * yet OAuth-gated. The deploy step in SFBL-341's DoD must wait for the
- * second commit before the smoke test cases can pass.
+ *   - CloudFront Function for clean `pr-{n}/` → `pr-{n}/index.html` rewrites
+ *     (currently approximated by error responses)
  */
 export class TestEvidenceStack extends cdk.Stack {
   /** The evidence bucket — CI publishes into per-PR / per-run prefixes. */
@@ -99,6 +108,9 @@ export class TestEvidenceStack extends cdk.Stack {
 
   /** IAM role assumed by GHA via OIDC to publish reports into the bucket. */
   public readonly publisherRole: iam.Role;
+
+  /** Lambda@Edge OAuth handler, or undefined if OAuth wiring was skipped. */
+  public readonly oauthFunction?: lambda.Function;
 
   constructor(scope: Construct, id: string, props: TestEvidenceStackProps) {
     super(scope, id, props);
@@ -162,6 +174,63 @@ export class TestEvidenceStack extends cdk.Stack {
       ],
     });
 
+    // --- Secrets Manager — OAuth shell (created early so the Lambda role can be granted access) ---
+    // SFBL-350 J seeds the actual clientId / clientSecret / sessionSigningKey
+    // values after this stack is deployed. We create the shell here so the
+    // Lambda@Edge IAM role can be granted read access to a known ARN, and so
+    // the Lambda handler can look up the secret by a known name.
+    const oauthSecretName = 'sfbl/test-evidence/oauth';
+    this.oauthSecret = new secretsmanager.Secret(this, 'OAuthSecret', {
+      secretName: oauthSecretName,
+      description: 'GitHub OAuth client + session signing key for the test-evidence Lambda@Edge',
+      // Don't generate a default — SFBL-350 J populates this manually.
+    });
+
+    // --- Lambda@Edge execution role ---
+    // The Lambda needs Secrets Manager read for the OAuth shell. Lambda@Edge
+    // runs in the AWS-managed `edgelambda.amazonaws.com` service alongside
+    // the usual lambda.amazonaws.com trust — both are required.
+    const lambdaEdgeRole = new iam.Role(this, 'LambdaEdgeRole', {
+      assumedBy: new iam.CompositePrincipal(
+        new iam.ServicePrincipal('lambda.amazonaws.com'),
+        new iam.ServicePrincipal('edgelambda.amazonaws.com'),
+      ),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+      description: 'Test evidence Lambda@Edge — runs OAuth + collaborator check',
+    });
+    this.oauthSecret.grantRead(lambdaEdgeRole);
+
+    // --- Lambda@Edge OAuth handler (only when custom domain is configured) ---
+    // Without `domainName` + `certificateArn` the OAuth callback URL is
+    // unknowable at synth time, so we skip the function wiring. The stack
+    // still synthesizes — useful for `cdk synth` smoke checks before a
+    // domain is provisioned — but the distribution won't be OAuth-gated.
+    let edgeLambdaAssociations: cloudfront.EdgeLambda[] = [];
+    if (props.domainName && props.certificateArn) {
+      this.oauthFunction = this.buildOAuthLambda({
+        authorizedRepo: props.authorizedRepo,
+        callbackUrl: `https://${props.domainName}/__/auth/callback`,
+        secretName: oauthSecretName,
+        role: lambdaEdgeRole,
+      });
+      edgeLambdaAssociations = [
+        {
+          functionVersion: this.oauthFunction.currentVersion,
+          eventType: cloudfront.LambdaEdgeEventType.VIEWER_REQUEST,
+          includeBody: false,
+        },
+      ];
+    } else {
+      cdk.Annotations.of(this).addWarning(
+        'TestEvidenceStack: domainName + certificateArn not configured. ' +
+          'Lambda@Edge OAuth gate is NOT wired — the deployed distribution will not be ' +
+          'authentication-gated. Add testEvidence.domainName + .certificateArn to ' +
+          'cdk.context.json and redeploy to enable OAuth.',
+      );
+    }
+
     // --- CloudFront Origin Access Control ---
     // OAC restricts direct S3 access to this distribution only.
     const oac = new cloudfront.S3OriginAccessControl(this, 'OAC', {
@@ -169,11 +238,10 @@ export class TestEvidenceStack extends cdk.Stack {
     });
 
     // --- CloudFront Distribution ---
-    // The Lambda@Edge viewer-request handler wired in the next commit will
-    // intercept every request for OAuth + collaborator check. Until then,
-    // the distribution forwards to the private bucket but has no access gate.
-    // (The bucket is still blocked from public access at the S3 layer; an
-    // un-gated CloudFront would just return signed-OAC responses for any URL.)
+    // The Lambda@Edge viewer-request handler (when wired — see above)
+    // intercepts every request for OAuth + collaborator check. The
+    // distribution is unauthenticated only when the operator opts out via
+    // missing domainName/certificateArn — flagged via cdk Annotation above.
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: 'Salesforce Bulk Loader — test evidence dashboard',
 
@@ -191,9 +259,15 @@ export class TestEvidenceStack extends cdk.Stack {
           // /tier-2/{run-id}/ inside the bucket and the URL path maps 1:1.
         }),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        // TODO (next commit): wire Lambda@Edge OAuth handler here as
-        //   edgeLambdas: [{ functionVersion: ..., eventType: VIEWER_REQUEST }]
+        // Caching disabled at the edge — every request must hit the
+        // Lambda@Edge OAuth check. Once we move the check to
+        // viewer-response or origin-request with cache key signing we can
+        // turn caching back on; for now correctness over latency.
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        // Forward Cookie + Authorization so the Lambda@Edge sees the
+        // session cookie. The default `Managed-AllViewer` strips none.
+        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        edgeLambdas: edgeLambdaAssociations.length > 0 ? edgeLambdaAssociations : undefined,
       },
 
       // The Allure-generated reports are deep-linkable SPAs; we want
@@ -223,33 +297,6 @@ export class TestEvidenceStack extends cdk.Stack {
           }
         : {}),
     });
-
-    // --- Secrets Manager — OAuth shell ---
-    // SFBL-350 J seeds the actual clientId / clientSecret / sessionSigningKey
-    // values after this stack is deployed. We create the shell here so the
-    // Lambda@Edge IAM role can be granted read access to a known ARN.
-    this.oauthSecret = new secretsmanager.Secret(this, 'OAuthSecret', {
-      secretName: 'sfbl/test-evidence/oauth',
-      description: 'GitHub OAuth client + session signing key for the test-evidence Lambda@Edge',
-      // Don't generate a default — SFBL-350 J populates this manually.
-      // Generated random would just need to be overwritten.
-    });
-
-    // --- Lambda@Edge execution role (TODO: actual function in next commit) ---
-    // The Lambda needs Secrets Manager read for the OAuth shell. Lambda@Edge
-    // runs in the AWS-managed `edgelambda.amazonaws.com` service alongside
-    // the usual lambda.amazonaws.com trust — both are required.
-    const lambdaEdgeRole = new iam.Role(this, 'LambdaEdgeRole', {
-      assumedBy: new iam.CompositePrincipal(
-        new iam.ServicePrincipal('lambda.amazonaws.com'),
-        new iam.ServicePrincipal('edgelambda.amazonaws.com'),
-      ),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
-      ],
-      description: 'Test evidence Lambda@Edge — runs OAuth + collaborator check',
-    });
-    this.oauthSecret.grantRead(lambdaEdgeRole);
 
     // --- GitHub Actions OIDC provider ---
     // One provider per account for `token.actions.githubusercontent.com`.
@@ -337,6 +384,72 @@ export class TestEvidenceStack extends cdk.Stack {
       value: this.oauthSecret.secretArn,
       description:
         'Secrets Manager ARN for the OAuth client + session signing key (SFBL-350 J seeds the values)',
+    });
+    new cdk.CfnOutput(this, 'OAuthSecretName', {
+      value: oauthSecretName,
+      description: 'Operator-controlled friendly name for the OAuth secret (used by Lambda@Edge to look up by name).',
+    });
+    if (this.oauthFunction) {
+      new cdk.CfnOutput(this, 'OAuthFunctionArn', {
+        value: this.oauthFunction.functionArn,
+        description: 'Lambda@Edge OAuth handler ARN.',
+      });
+    }
+  }
+
+  /**
+   * Build the Lambda@Edge OAuth function from the placeholder-bearing source
+   * file under `lib/lambda-edge-auth/`. Synth-time substitution writes the
+   * resolved source to a temp directory; the asset is bundled from there so
+   * the per-deploy config (authorizedRepo, callbackUrl, secretName, region)
+   * is baked into the deployable code.
+   *
+   * Lambda@Edge cannot read environment variables at runtime, hence the
+   * synth-time substitution rather than the cleaner env-var pattern.
+   */
+  private buildOAuthLambda(opts: {
+    authorizedRepo: string;
+    callbackUrl: string;
+    secretName: string;
+    role: iam.IRole;
+  }): lambda.Function {
+    const sourceDir = path.join(__dirname, 'lambda-edge-auth');
+    const sourceFile = path.join(sourceDir, 'index.js');
+    const source = fs.readFileSync(sourceFile, 'utf8');
+
+    // String substitution. The placeholders are all-caps + double-underscore-
+    // wrapped so they're greppable and unambiguous in code review.
+    const resolved = source
+      .replace(/__AUTHORIZED_REPO__/g, opts.authorizedRepo)
+      .replace(/__CALLBACK_URL__/g, opts.callbackUrl)
+      .replace(/__SECRET_NAME__/g, opts.secretName)
+      .replace(/__SECRET_REGION__/g, this.region);
+
+    // Sanity check: every placeholder must be substituted, otherwise the
+    // Lambda will throw on first invocation.
+    const remaining = resolved.match(/__[A-Z_]+__/g);
+    if (remaining) {
+      throw new Error(
+        `Lambda@Edge source still carries unsubstituted placeholders: ${remaining.join(', ')}`,
+      );
+    }
+
+    // Staging directory under the system temp root. CDK fingerprints the
+    // contents for asset hash stability, so the absolute path doesn't matter.
+    const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfbl-evidence-lambda-'));
+    fs.writeFileSync(path.join(stagingDir, 'index.js'), resolved);
+
+    return new lambda.Function(this, 'OAuthHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(stagingDir),
+      role: opts.role,
+      // Lambda@Edge viewer-request hard limit is 5s and 128 MB; we cap at the
+      // limit so a slow GitHub API call surfaces as a clear timeout rather
+      // than as an opaque error.
+      timeout: cdk.Duration.seconds(5),
+      memorySize: 128,
+      description: 'SFBL-334 / SFBL-341 — GitHub OAuth gate for the test evidence dashboard',
     });
   }
 }
