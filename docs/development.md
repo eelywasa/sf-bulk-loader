@@ -243,7 +243,7 @@ npm run typecheck   # TypeScript type check
 
 The E2E suite is Playwright-based and lives under `tests/e2e/`. It is separate from
 the backend (`pytest`) and frontend (Vitest) unit-test suites. See
-[`docs/specs/e2e-testing-spec.md`](specs/e2e-testing-spec.md) for the full
+[`docs/specs/implemented/e2e-testing-spec.md`](specs/implemented/e2e-testing-spec.md) for the full
 architecture and rationale.
 
 ### Tier model

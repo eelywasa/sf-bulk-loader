@@ -2,7 +2,7 @@ name: E2E PR Checks (Tier 1a + 1b)
 
 # Runs on every PR — the lightweight, org-free and fixture-based tiers.
 # Tier 2 (real Salesforce scratch org) is NOT triggered here; see D8 in
-# docs/specs/e2e-testing-spec.md for the full trigger policy. Tier 2 lives
+# docs/specs/implemented/e2e-testing-spec.md for the full trigger policy. Tier 2 lives
 # inside release.yml (release-tag gate) and a nightly cron workflow.
 #
 # Security policy (D8 / pull_request_target warning):

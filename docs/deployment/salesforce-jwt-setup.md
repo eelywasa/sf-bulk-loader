@@ -394,7 +394,7 @@ a fresh-create run or reuse the shared one.
   production self-hosted deployments.
 - [AWS-hosted deployment guide](aws.md) — for AWS-specific secret storage
   (Parameter Store / Secrets Manager).
-- [E2E testing spec](../specs/e2e-testing-spec.md) — D6 (Dev Hub JWT strategy)
+- [E2E testing spec](../specs/implemented/e2e-testing-spec.md) — D6 (Dev Hub JWT strategy)
   and D3 (scratch-org lifecycle).
 - `tests/e2e/sf/scripts/scratch_create.sh` — the CI script that consumes the
   Dev Hub secrets and handles org shape ID normalisation.

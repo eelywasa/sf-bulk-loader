@@ -162,7 +162,7 @@ stories include Tier 1a or Tier 1b spec coverage in their acceptance criteria:
   combobox, SOQL validator, bulk-query builder).
 - **Tier 2** (the real-scratch-org tier) is a separate concern not part of standard epic
   DoD; it ships via the enabler's nightly + release-tag schedule (see
-  `docs/specs/e2e-testing-spec.md` § D8).
+  `docs/specs/implemented/e2e-testing-spec.md` § D8).
 
 Specs live under `tests/e2e/app/playwright/tier-{1a,1b}/` per `e2e-testing-spec.md`
 § D7/D13. The retrofitted speculative Tier 1b sections on SFBL-311..315 are the first

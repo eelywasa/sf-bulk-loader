@@ -1,6 +1,6 @@
 # tests/e2e
 
-Playwright end-to-end test suite for sf-bulk-loader. See `docs/specs/e2e-testing-spec.md` for architecture, tier model (D2), and directory layout (D7/D13).
+Playwright end-to-end test suite for sf-bulk-loader. See `docs/specs/implemented/e2e-testing-spec.md` for architecture, tier model (D2), and directory layout (D7/D13).
 
 ## Quick start
 

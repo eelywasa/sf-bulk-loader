@@ -1,6 +1,10 @@
+> **Archived — SFBL-316 (2026-05-12).** This document captured the design at delivery. The Tier 1a/1b/2 harness landed across PRs #87, #88, #89; for current behaviour see [`docs/development.md`](../../development.md) (E2E testing section) and the workflow files under `.github/workflows/e2e-tier-*.yml`. No further edits — historical reference only.
+
+---
+
 # Agent-Authored End-to-End UI Testing
 
-**Status:** Draft spec. Iterate here before opening the epic in Jira.
+**Status:** Implemented (SFBL-316).
 
 ---
 
