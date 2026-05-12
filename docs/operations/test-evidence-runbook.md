@@ -34,6 +34,15 @@ account that owns the `BulkLoader-TestEvidence` stack); confirm with
 
 Done once per environment. Repeat after a full stack teardown.
 
+> **Prerequisite — deploy the stack first.** `SFBL-341`'s CDK stack
+> creates the AWS Secrets Manager entry as an empty shell. The seeding
+> steps below fail with `ResourceNotFoundException` if the stack
+> hasn't been deployed yet. Run
+> `cd infrastructure && npm run deploy:test-evidence` (or have an
+> operator with AWS deploy permissions do so) before proceeding. The
+> OAuth App registration in step 1 can be done in parallel with the
+> deploy — only steps 3+ require the deployed secret shell.
+
 ### 1. Register the GitHub OAuth App
 
 OAuth Apps register against either a personal account or a GitHub
