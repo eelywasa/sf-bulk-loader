@@ -117,6 +117,13 @@ jobs:
       - name: Assign permission set and create SetupEntityAccess link
         run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
 
+      # Disable scratch-org standard duplicate rules so Bulk API inserts
+      # aren't blanket-rejected with DUPLICATES_DETECTED:Duplicate Alert.
+      # Bulk API 2.0 has no bypass header; the script flips IsActive=false
+      # via the Metadata API (idempotent). SFBL-328 / Codex review P1.
+      - name: Deactivate Salesforce standard duplicate rules
+        run: bash tests/e2e/sf/scripts/disable_duplicate_rules.sh
+
       - name: Discover ECA consumer key
         run: |
           CONSUMER_KEY="$(bash tests/e2e/sf/scripts/discover_eca_consumer_key.sh)"

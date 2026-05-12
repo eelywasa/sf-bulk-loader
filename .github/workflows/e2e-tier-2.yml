@@ -191,7 +191,14 @@ jobs:
       # Rotation: indefinite by default; rotate annually or when the
       # operator's SF admin password changes (revokes refresh tokens).
       # See docs/deployment/salesforce-jwt-setup.md § "Dev Hub auth".
+      # Gated on `!reuse_shared_scratch`: when reusing the long-lived scratch
+      # we don't create scratches and therefore don't need a Dev Hub session.
+      # The preflight step matches this — it skips the SFDX_AUTH_URL check
+      # in reuse mode — but the auth step itself still ran with an empty
+      # secret and failed before the workflow reached the shared-scratch
+      # auth.  (Codex review P1 on PR #89.)
       - name: Authenticate to Dev Hub via sfdx-url
+        if: '!inputs.reuse_shared_scratch'
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: |
