@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SFBL-334 / SFBL-341 — TestEvidenceStack CDK app entry.
+ * SFBL-334 / SFBL-341 - TestEvidenceStack CDK app entry.
  *
  * This is a STANDALONE CDK app, separate from `bin/app.ts`. The test-evidence
  * infrastructure is a single global deployment that serves CI evidence for
@@ -44,7 +44,7 @@ if (!authorizedRepo) {
   );
 }
 
-// us-east-1 is mandatory for Lambda@Edge — CloudFront edge functions only
+// us-east-1 is mandatory for Lambda@Edge - CloudFront edge functions only
 // support that region as the origin. Hard-coded rather than pulled from
 // context so a misconfigured cdk.context.json can't break the deployment.
 const awsEnv: cdk.Environment = {

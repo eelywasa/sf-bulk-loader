@@ -29,7 +29,7 @@ export interface TestEvidenceStackProps extends cdk.StackProps {
 
   /**
    * Custom domain for the reports site (e.g. "reports.bulk-loader.example.com").
-   * Optional — if omitted the stack uses the default `*.cloudfront.net` URL.
+   * Optional - if omitted the stack uses the default `*.cloudfront.net` URL.
    */
   domainName?: string;
 
@@ -41,7 +41,7 @@ export interface TestEvidenceStackProps extends cdk.StackProps {
 
   /**
    * Route53 hosted zone that owns `domainName` (e.g. "example.com"). Reserved
-   * for future use — Route53 alias records are not created in this scaffold.
+   * for future use - Route53 alias records are not created in this scaffold.
    */
   hostedZoneDomain?: string;
 
@@ -85,7 +85,7 @@ export interface TestEvidenceStackProps extends cdk.StackProps {
  *   substitution is the documented approach.
  *
  *   The handler is only wired to the distribution when `domainName` AND
- *   `certificateArn` are both set — without a stable custom domain the OAuth
+ *   `certificateArn` are both set - without a stable custom domain the OAuth
  *   callback URL is unknowable at synth time. Without OAuth wiring the stack
  *   still synths cleanly (useful for early `cdk synth` smoke checks) but the
  *   distribution will return content unauthenticated; do NOT set
@@ -97,13 +97,13 @@ export interface TestEvidenceStackProps extends cdk.StackProps {
  *     (currently approximated by error responses)
  */
 export class TestEvidenceStack extends cdk.Stack {
-  /** The evidence bucket — CI publishes into per-PR / per-run prefixes. */
+  /** The evidence bucket - CI publishes into per-PR / per-run prefixes. */
   public readonly bucket: s3.Bucket;
 
   /** CloudFront distribution serving the OAuth-gated reports site. */
   public readonly distribution: cloudfront.Distribution;
 
-  /** Secrets Manager secret shell — seeded by SFBL-350 J after deploy. */
+  /** Secrets Manager secret shell - seeded by SFBL-350 J after deploy. */
   public readonly oauthSecret: secretsmanager.Secret;
 
   /** IAM role assumed by GHA via OIDC to publish reports into the bucket. */
@@ -129,7 +129,7 @@ export class TestEvidenceStack extends cdk.Stack {
       );
     }
 
-    // --- S3 Bucket — evidence storage ---
+    // --- S3 Bucket - evidence storage ---
     // Versioning ON so an accidental overwrite of a report can be rolled back.
     // Lifecycle: pr-*/ trimmed at 30d, tier-2/*/ at 90d, main/ retained.
     // Public access fully blocked; CloudFront accesses via OAC.
@@ -138,7 +138,7 @@ export class TestEvidenceStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       versioned: true,
-      // The bucket survives a stack delete — these are operational artefacts,
+      // The bucket survives a stack delete - these are operational artefacts,
       // not ephemeral test outputs. To wipe, empty the bucket explicitly then
       // re-deploy with removalPolicy flipped.
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -162,7 +162,7 @@ export class TestEvidenceStack extends cdk.Stack {
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
         },
         {
-          // main/ has no expiration — it's the canonical latest-from-main
+          // main/ has no expiration - it's the canonical latest-from-main
           // report. We do keep noncurrent versions bounded so the bucket
           // doesn't grow unboundedly across pushes.
           id: 'limit-main-version-history',
@@ -174,7 +174,7 @@ export class TestEvidenceStack extends cdk.Stack {
       ],
     });
 
-    // --- Secrets Manager — OAuth shell (created early so the Lambda role can be granted access) ---
+    // --- Secrets Manager - OAuth shell (created early so the Lambda role can be granted access) ---
     // SFBL-350 J seeds the actual clientId / clientSecret / sessionSigningKey
     // values after this stack is deployed. We create the shell here so the
     // Lambda@Edge IAM role can be granted read access to a known ARN, and so
@@ -183,13 +183,13 @@ export class TestEvidenceStack extends cdk.Stack {
     this.oauthSecret = new secretsmanager.Secret(this, 'OAuthSecret', {
       secretName: oauthSecretName,
       description: 'GitHub OAuth client + session signing key for the test-evidence Lambda@Edge',
-      // Don't generate a default — SFBL-350 J populates this manually.
+      // Don't generate a default - SFBL-350 J populates this manually.
     });
 
     // --- Lambda@Edge execution role ---
     // The Lambda needs Secrets Manager read for the OAuth shell. Lambda@Edge
     // runs in the AWS-managed `edgelambda.amazonaws.com` service alongside
-    // the usual lambda.amazonaws.com trust — both are required.
+    // the usual lambda.amazonaws.com trust - both are required.
     const lambdaEdgeRole = new iam.Role(this, 'LambdaEdgeRole', {
       assumedBy: new iam.CompositePrincipal(
         new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -198,15 +198,15 @@ export class TestEvidenceStack extends cdk.Stack {
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
-      description: 'Test evidence Lambda@Edge — runs OAuth + collaborator check',
+      description: 'Test evidence Lambda@Edge - runs OAuth + collaborator check',
     });
     this.oauthSecret.grantRead(lambdaEdgeRole);
 
     // --- Lambda@Edge OAuth handler (only when custom domain is configured) ---
     // Without `domainName` + `certificateArn` the OAuth callback URL is
     // unknowable at synth time, so we skip the function wiring. The stack
-    // still synthesizes — useful for `cdk synth` smoke checks before a
-    // domain is provisioned — but the distribution won't be OAuth-gated.
+    // still synthesizes - useful for `cdk synth` smoke checks before a
+    // domain is provisioned - but the distribution won't be OAuth-gated.
     let edgeLambdaAssociations: cloudfront.EdgeLambda[] = [];
     if (props.domainName && props.certificateArn) {
       this.oauthFunction = this.buildOAuthLambda({
@@ -225,7 +225,7 @@ export class TestEvidenceStack extends cdk.Stack {
     } else {
       cdk.Annotations.of(this).addWarning(
         'TestEvidenceStack: domainName + certificateArn not configured. ' +
-          'Lambda@Edge OAuth gate is NOT wired — the deployed distribution will not be ' +
+          'Lambda@Edge OAuth gate is NOT wired - the deployed distribution will not be ' +
           'authentication-gated. Add testEvidence.domainName + .certificateArn to ' +
           'cdk.context.json and redeploy to enable OAuth.',
       );
@@ -234,20 +234,20 @@ export class TestEvidenceStack extends cdk.Stack {
     // --- CloudFront Origin Access Control ---
     // OAC restricts direct S3 access to this distribution only.
     const oac = new cloudfront.S3OriginAccessControl(this, 'OAC', {
-      description: 'Test evidence OAC — Lambda@Edge gates user access via GitHub OAuth',
+      description: 'Test evidence OAC - Lambda@Edge gates user access via GitHub OAuth',
     });
 
     // --- CloudFront Distribution ---
-    // The Lambda@Edge viewer-request handler (when wired — see above)
+    // The Lambda@Edge viewer-request handler (when wired - see above)
     // intercepts every request for OAuth + collaborator check. The
     // distribution is unauthenticated only when the operator opts out via
-    // missing domainName/certificateArn — flagged via cdk Annotation above.
+    // missing domainName/certificateArn - flagged via cdk Annotation above.
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
-      comment: 'Salesforce Bulk Loader — test evidence dashboard',
+      comment: 'Salesforce Bulk Loader - test evidence dashboard',
 
       // Root URL (https://reports.example.com/) maps to main/index.html.
       // Subdir paths (https://reports.example.com/pr-123/) get the
-      // index.html fallback via the errorResponses rewrites below — this is
+      // index.html fallback via the errorResponses rewrites below - this is
       // the standard "directory-default-document" pattern for S3 + CloudFront
       // without a CloudFront Function rewrite.
       defaultRootObject: 'index.html',
@@ -259,7 +259,7 @@ export class TestEvidenceStack extends cdk.Stack {
           // /tier-2/{run-id}/ inside the bucket and the URL path maps 1:1.
         }),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        // Caching disabled at the edge — every request must hit the
+        // Caching disabled at the edge - every request must hit the
         // Lambda@Edge OAuth check. Once we move the check to
         // viewer-response or origin-request with cache key signing we can
         // turn caching back on; for now correctness over latency.
@@ -274,7 +274,7 @@ export class TestEvidenceStack extends cdk.Stack {
       // /pr-123/foo.html to resolve via S3 directly, but /pr-123/ (no
       // trailing object) needs the index.html default. The errorResponses
       // below handle 403 (S3's "key not found" for a directory listing) by
-      // rewriting to /pr-123/index.html — though for true subdir defaults
+      // rewriting to /pr-123/index.html - though for true subdir defaults
       // a CloudFront Function `URI rewrite` is the cleaner approach.
       //
       // TODO (next commit): replace these rewrites with a CloudFront
@@ -348,7 +348,7 @@ export class TestEvidenceStack extends cdk.Stack {
       maxSessionDuration: cdk.Duration.hours(1),
     });
 
-    // Scope publishing permissions to the bucket only — no other AWS access.
+    // Scope publishing permissions to the bucket only - no other AWS access.
     // CloudFront invalidations are required after each publish so the new
     // report shows up immediately.
     this.bucket.grantReadWrite(this.publisherRole);
@@ -373,7 +373,7 @@ export class TestEvidenceStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'DistributionId', {
       value: this.distribution.distributionId,
-      description: 'CloudFront distribution ID — needed for cache invalidation',
+      description: 'CloudFront distribution ID - needed for cache invalidation',
     });
     new cdk.CfnOutput(this, 'PublisherRoleArn', {
       value: this.publisherRole.roleArn,
@@ -449,7 +449,7 @@ export class TestEvidenceStack extends cdk.Stack {
       // than as an opaque error.
       timeout: cdk.Duration.seconds(5),
       memorySize: 128,
-      description: 'SFBL-334 / SFBL-341 — GitHub OAuth gate for the test evidence dashboard',
+      description: 'SFBL-334 / SFBL-341 - GitHub OAuth gate for the test evidence dashboard',
     });
   }
 }
