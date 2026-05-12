@@ -11,12 +11,15 @@
  *      signed into the `state` parameter so the callback can resume it.
  *
  * Authorization model (locked in SFBL-341):
- *   The user is admitted iff they are an explicit collaborator (any role,
- *   including read-only) on the AUTHORIZED_REPO. Verified by paginating
- *   `GET /user/repos?affiliation=collaborator` with the user's access token
- *   and checking for the repo. This is the only API that distinguishes
- *   explicit collaborators from the public on a public repo — the obvious
- *   `permissions.pull` check would admit everyone with a GitHub account.
+ *   The user is admitted iff they are the **owner** of AUTHORIZED_REPO or
+ *   an **explicit collaborator** on it (any role, including read-only).
+ *   Verified by paginating `GET /user/repos?affiliation=owner,collaborator`
+ *   with the user's access token and checking for the repo. This is the
+ *   only API that distinguishes the owner + explicit collaborators from
+ *   the public on a public repo — the obvious `permissions.pull` check
+ *   would admit everyone with a GitHub account. The `owner` affiliation
+ *   is needed because GitHub treats the repo owner separately from
+ *   collaborators (a repo owner cannot add themselves as a collaborator).
  *
  * Constraints:
  *   - Lambda@Edge cannot read environment variables, so per-deploy config
@@ -242,12 +245,12 @@ async function getUsername(token) {
   return JSON.parse(res.body).login;
 }
 
-async function isCollaborator(token, repo) {
+async function isOwnerOrCollaborator(token, repo) {
   const target = repo.toLowerCase();
   for (let page = 1; page <= MAX_REPO_PAGES; page++) {
     const res = await httpsRequest({
       hostname: 'api.github.com',
-      path: `/user/repos?affiliation=collaborator&per_page=100&page=${page}`,
+      path: `/user/repos?affiliation=owner,collaborator&per_page=100&page=${page}`,
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -328,7 +331,7 @@ async function handleCallback(request, config) {
   try {
     const token = await exchangeCodeForToken(code, config);
     const username = await getUsername(token);
-    const ok = await isCollaborator(token, AUTHORIZED_REPO);
+    const ok = await isOwnerOrCollaborator(token, AUTHORIZED_REPO);
     if (!ok) {
       return forbiddenResponse(username);
     }

@@ -27,7 +27,7 @@ account that owns the `BulkLoader-TestEvidence` stack); confirm with
 | **OAuth App** | A registered application on `github.com` that lets users sign in with their GitHub identity. Owns a `clientId` (public) and `clientSecret` (kept private). |
 | **Authorization callback URL** | The URL GitHub redirects the browser back to after a successful OAuth sign-in. For this dashboard: `https://reports.bulkloader.forcetide.net/__/auth/callback`. |
 | **`sessionSigningKey`** | 32-byte random value the Lambda@Edge uses to HMAC-sign session cookies and OAuth `state` parameters. Rotating it instantly invalidates every live session. |
-| **Collaborator** | A GitHub user explicitly added to a repo via Settings → Collaborators. The dashboard admits only collaborators on `eelywasa/sf-bulk-loader`, regardless of role (Read works). |
+| **Collaborator** | A GitHub user explicitly added to a repo via Settings → Collaborators. The dashboard admits the repo owner and any collaborator on `eelywasa/sf-bulk-loader`, regardless of role (Read works). The owner is included because GitHub treats repo owners separately from collaborators — owners cannot add themselves as collaborators, so the Lambda checks the `owner,collaborator` affiliation set to include both. |
 | **`sfbl/test-evidence/oauth`** | The friendly name of the AWS Secrets Manager secret that holds `clientId`, `clientSecret`, and `sessionSigningKey`. Created by SFBL-341's CDK stack as an empty shell; populated by this runbook. |
 
 ## Initial provisioning
@@ -46,8 +46,8 @@ Done once per environment. Repeat after a full stack teardown.
 ### 1. Register the GitHub OAuth App
 
 OAuth Apps register against either a personal account or a GitHub
-organization. The dashboard's allowlist is repo-collaborator-based
-(not org-membership), so either ownership works — pick whichever
+organization. The dashboard's allowlist is repo-owner-or-collaborator-
+based (not org-membership), so either ownership works — pick whichever
 account owns `eelywasa/sf-bulk-loader`.
 
 1. Open https://github.com/settings/developers (personal) or
@@ -236,9 +236,13 @@ GitHub OAuth and re-authenticate cleanly.
 
 ## Granting / revoking dashboard access
 
-The single source of truth is GitHub's Collaborators list on
-`eelywasa/sf-bulk-loader`. There is no separate Secrets-Manager
-allowlist override — adding someone via the GitHub UI is the only path.
+The source of truth is the repo owner + GitHub's Collaborators list on
+`eelywasa/sf-bulk-loader`. The owner is admitted automatically (no
+configuration needed — GitHub doesn't allow owners to add themselves
+as collaborators, so the Lambda includes the `owner` affiliation in
+its allowlist check). There is no separate Secrets-Manager allowlist
+override — adding someone via the GitHub UI is the only path to grant
+additional access.
 
 ### Grant
 
