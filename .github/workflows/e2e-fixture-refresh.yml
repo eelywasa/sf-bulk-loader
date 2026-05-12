@@ -1,0 +1,267 @@
+name: E2E Fixture Refresh
+
+# Fixture-refresh workflow — spins up a real scratch org, runs
+# capture_describes.py, and opens a PR if the fixtures changed.
+# Spec ref: D9 (fixture-refresh scheduling policy).
+#
+# SECURITY NOTE (D9 / M3 review-pass finding):
+#   This workflow uses `on: schedule` and `on: workflow_dispatch` ONLY.
+#   `pull_request_target` is intentionally absent — it would run with base-branch
+#   secrets accessible to PR code (the "pwn-request" footgun). Scheduled and
+#   dispatch workflows can open PRs directly without that trigger.
+#   See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+#
+# Triggers:
+#   1. Weekly cron — Sunday 02:00 UTC (drift detection + PR if changed).
+#   2. workflow_dispatch — ad-hoc manual runs from the Actions UI.
+#
+# Secrets required:
+#   SFDX_DEVHUB_JWT_KEY      — PEM private key for Dev Hub JWT auth (D6)
+#   SFDX_DEVHUB_CONSUMER_KEY — OAuth consumer key for the Dev Hub connected app
+#   SFDX_DEVHUB_USERNAME     — Dev Hub org username
+
+on:
+  schedule:
+    # Weekly on Sunday at 02:00 UTC — low-traffic window.
+    - cron: '0 2 * * 0'
+
+  # Ad-hoc manual firing from the Actions UI.  Useful to:
+  #   - Validate workflow plumbing after infra changes.
+  #   - Force a fixture refresh outside the weekly window.
+  #   - Re-run after a transient failure without waiting for Sunday.
+  workflow_dispatch:
+    inputs:
+      skip_destroy:
+        description: 'Skip scratch-org destroy at end (for post-mortem — REMEMBER TO DELETE MANUALLY)'
+        type: boolean
+        required: false
+        default: false
+
+# Explicit permissions — contents: write for the git commit + branch push,
+# pull-requests: write for gh pr create.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Only one refresh run at a time to avoid scratch-org quota exhaustion.
+concurrency:
+  group: e2e-fixture-refresh
+  cancel-in-progress: true
+
+jobs:
+  fixture-refresh:
+    name: Refresh E2E describe fixtures
+    runs-on: ubuntu-latest
+    # Allow enough time for scratch-org spin-up (~5 min), deploy, capture,
+    # and destroy — wall-clock target well under 30 min.
+    timeout-minutes: 45
+
+    env:
+      # Unique alias per run to avoid clashes with concurrent e2e-tier-2 runs.
+      E2E_SCRATCH_ORG: e2e-fixture-refresh-${{ github.run_id }}
+      # Org-shape setting — inherit from repo Actions variable if set.
+      E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so git diff and git log work correctly.
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # 2. Set up runtimes
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # -----------------------------------------------------------------------
+      # 3. Install Salesforce CLI
+      # -----------------------------------------------------------------------
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      # -----------------------------------------------------------------------
+      # 4. Install Python dependencies for capture_describes.py
+      # -----------------------------------------------------------------------
+      - name: Install Python dependencies
+        run: pip install -r tests/e2e/sf/scripts/requirements.txt
+
+      # -----------------------------------------------------------------------
+      # 5. JWT login to Dev Hub (D6)
+      #
+      # Lifted verbatim from the e2e-tier-2.yml pattern (SFBL-325):
+      #   SFDX_DEVHUB_JWT_KEY      — PEM private key contents
+      #   SFDX_DEVHUB_CONSUMER_KEY — OAuth consumer key (client ID)
+      #   SFDX_DEVHUB_USERNAME     — Dev Hub org username
+      # -----------------------------------------------------------------------
+      - name: Authenticate to Dev Hub via JWT
+        env:
+          SFDX_DEVHUB_JWT_KEY: ${{ secrets.SFDX_DEVHUB_JWT_KEY }}
+          SFDX_DEVHUB_CONSUMER_KEY: ${{ secrets.SFDX_DEVHUB_CONSUMER_KEY }}
+          SFDX_DEVHUB_USERNAME: ${{ secrets.SFDX_DEVHUB_USERNAME }}
+        run: |
+          # Write the private key PEM to a temp file so the CLI can read it.
+          printf '%s' "${SFDX_DEVHUB_JWT_KEY}" > /tmp/key.pem
+          chmod 600 /tmp/key.pem
+
+          sf org login jwt \
+            -i "${SFDX_DEVHUB_CONSUMER_KEY}" \
+            --jwt-key-file /tmp/key.pem \
+            --username "${SFDX_DEVHUB_USERNAME}" \
+            --set-default-dev-hub
+
+          # Remove the key from disk immediately after auth.
+          rm -f /tmp/key.pem
+
+          echo "INFO: Dev Hub authentication complete (username: ${SFDX_DEVHUB_USERNAME})"
+
+      # -----------------------------------------------------------------------
+      # 6. Create scratch org (D3)
+      #
+      # scratch_create.sh handles org-shape selection and prerequisite checks.
+      # -----------------------------------------------------------------------
+      - name: Create scratch org
+        run: bash tests/e2e/sf/scripts/scratch_create.sh
+
+      # -----------------------------------------------------------------------
+      # 7. Deploy SFDX metadata to scratch org
+      #
+      # Deploys both SFDX projects:
+      #   - tests/e2e/sf/sfdx  — ECA + certificate + permission set
+      #   - tests/e2e/app/sfdx — App-specific SfblE2ETest__c custom object
+      # -----------------------------------------------------------------------
+      - name: Deploy SFDX metadata to scratch org
+        run: |
+          cd tests/e2e/sf/sfdx
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+
+      # -----------------------------------------------------------------------
+      # 8. Assign permission set + create SetupEntityAccess link (SFBL-327)
+      #
+      # Required so AdminApprovedPreAuthorized is activated; without this the
+      # JWT bearer grant used by capture_describes.py fails with a 400 error.
+      # -----------------------------------------------------------------------
+      - name: Assign permission set and create SetupEntityAccess link
+        run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
+
+      # -----------------------------------------------------------------------
+      # 9. Capture describe fixtures (SFBL-321)
+      #
+      # Runs capture_describes.py against the scratch org.  The script:
+      #   - Writes sf-layer fixtures to  tests/e2e/sf/fixtures/describe/
+      #   - Writes app-layer fixtures to tests/e2e/app/fixtures/describe/ if
+      #     that directory already exists (overlay mode; created by SFBL-321).
+      #
+      # Output is deterministic (keys sorted, fields sorted by api_name) so
+      # the only diff when nothing changed is the `fetched_at` timestamp.
+      # -----------------------------------------------------------------------
+      - name: Capture describe fixtures
+        run: |
+          python tests/e2e/sf/scripts/capture_describes.py --target-org "${E2E_SCRATCH_ORG}"
+
+      # -----------------------------------------------------------------------
+      # 10. Check for fixture drift and open a PR if changed
+      #
+      # Checks both fixture directories.  If git diff reports any changes:
+      #   a. Create a new branch named fixture-refresh/YYYY-MM-DD.
+      #   b. Stage all fixture changes.
+      #   c. Commit with a conventional prefix.
+      #   d. Push the branch.
+      #   e. Open a PR via gh pr create with a per-SObject diff summary.
+      #
+      # If there is no diff the step exits cleanly — no PR is opened.
+      # -----------------------------------------------------------------------
+      - name: Open PR if fixtures changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SF_FIXTURES_DIR="tests/e2e/sf/fixtures/describe"
+          APP_FIXTURES_DIR="tests/e2e/app/fixtures/describe"
+
+          # Collect changed files across both fixture directories.
+          CHANGED_FILES=""
+          if [ -d "$SF_FIXTURES_DIR" ]; then
+            SF_DIFF=$(git diff --name-only -- "$SF_FIXTURES_DIR")
+            CHANGED_FILES="${CHANGED_FILES}${SF_DIFF}"
+          fi
+          if [ -d "$APP_FIXTURES_DIR" ]; then
+            APP_DIFF=$(git diff --name-only -- "$APP_FIXTURES_DIR")
+            CHANGED_FILES="${CHANGED_FILES}
+          ${APP_DIFF}"
+          fi
+
+          # Strip blank lines and check if anything changed.
+          CHANGED_FILES=$(printf '%s' "$CHANGED_FILES" | sed '/^[[:space:]]*$/d')
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "INFO: No fixture changes detected — fixtures are current."
+            exit 0
+          fi
+
+          echo "INFO: Fixture drift detected. Changed files:"
+          printf '%s\n' "$CHANGED_FILES"
+
+          # Build the branch name and PR title with today's date.
+          DATE_TAG=$(date -u +%Y-%m-%d)
+          BRANCH_NAME="fixture-refresh/${DATE_TAG}"
+          PR_TITLE="chore(e2e): refresh describe fixtures (week of ${DATE_TAG})"
+
+          # Create and push the branch.
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH_NAME"
+          git add "$SF_FIXTURES_DIR"
+          if [ -d "$APP_FIXTURES_DIR" ]; then
+            git add "$APP_FIXTURES_DIR"
+          fi
+          git commit -m "chore(e2e): refresh describe fixtures (week of ${DATE_TAG}) [skip ci]"
+          git push origin "$BRANCH_NAME"
+
+          # Build a per-SObject diff summary for the PR body.
+          DIFF_SUMMARY=""
+          while IFS= read -r FILE; do
+            [ -z "$FILE" ] && continue
+            SOBJECT=$(basename "$FILE" .json)
+            ADDED=$(git diff origin/main -- "$FILE" | grep -c '^+' || true)
+            REMOVED=$(git diff origin/main -- "$FILE" | grep -c '^-' || true)
+            DIFF_SUMMARY="${DIFF_SUMMARY}- **${SOBJECT}**: +${ADDED} / -${REMOVED} lines\n"
+          done <<< "$CHANGED_FILES"
+
+          # Open the PR.
+          gh pr create \
+            --title "$PR_TITLE" \
+            --body "$(printf "## Fixture drift detected\n\nThis PR was opened automatically by the weekly \`e2e-fixture-refresh\` workflow after \`capture_describes.py\` detected schema changes in the scratch org.\n\n## Changed SObjects\n\n${DIFF_SUMMARY}\n\n## How to review\n\nThe describe fixtures are deterministic (fields sorted by \`api_name\`, relationships sorted by \`(child_sobject, field)\`). Diff noise limited to the \`fetched_at\` timestamp is expected — no review needed. Genuine schema additions or field-attribute changes should be confirmed against your Dev Hub org's metadata.\n\n---\n_Generated by \`e2e-fixture-refresh\` run [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})_")" \
+            --base main \
+            --head "$BRANCH_NAME"
+
+      # -----------------------------------------------------------------------
+      # 11. Destroy scratch org — ALWAYS runs to prevent org leaks (D3)
+      #
+      # Exception: when invoked via workflow_dispatch with skip_destroy=true,
+      # leave the org up for post-mortem inspection.  The dispatch input
+      # description warns the operator to delete it manually.
+      # -----------------------------------------------------------------------
+      - name: Destroy scratch org
+        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.skip_destroy)
+        run: bash tests/e2e/sf/scripts/scratch_destroy.sh
+
+      - name: Skip scratch-org destroy (workflow_dispatch with skip_destroy=true)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy
+        run: |
+          echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
+          echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."

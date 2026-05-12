@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>ParentAccount__c</fullName>
+    <description>Custom Account lookup used by Tier 2 E2E specs to exercise the &lt;lookup&gt;__r.External_Id__c (H1 byte-exact) relationship-header upsert path. Not used by production code. Named ParentAccount (not Account) to avoid colliding with the reserved name of the standard Contact.AccountId relationship.</description>
+    <label>E2E Parent Account</label>
+    <referenceTo>Account</referenceTo>
+    <relationshipName>ParentAccount</relationshipName>
+    <relationshipLabel>E2E Contacts</relationshipLabel>
+    <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+    <deleteConstraint>SetNull</deleteConstraint>
+</CustomField>

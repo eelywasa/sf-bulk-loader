@@ -1,0 +1,368 @@
+name: E2E Tier 2 — nightly
+
+# SECURITY POLICY (D8):
+# - Uses `pull_request`, NOT `pull_request_target` — secrets are never available to fork PR code.
+# - Same-repo PRs only (head.repo.fork == false guard on the job).
+# - See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+#
+# Dedicated nightly cron run of the Tier 2 scratch-org suite.
+# Failures automatically open a GitHub issue so the team is notified
+# without requiring Slack integration.
+#
+# PR label opt-in  → .github/workflows/e2e-tier-2.yml
+# Release-tag gate → .github/workflows/release.yml (tier-2-e2e job)
+
+on:
+  schedule:
+    # Nightly at 02:00 UTC — catches drift in dependencies and Salesforce APIs.
+    - cron: '0 2 * * *'
+
+  # Ad-hoc manual firing from the Actions UI.  Inputs let the operator override
+  # the scratch-org alias (handy when validating against a long-lived shape) and
+  # skip the destroy step for post-mortem inspection on a failed run.
+  workflow_dispatch:
+    inputs:
+      scratch_org_alias:
+        description: 'Override E2E_SCRATCH_ORG (default: workflow-generated unique alias)'
+        type: string
+        required: false
+        default: ''
+      skip_destroy:
+        description: 'Skip scratch-org destroy at the end (for post-mortem inspection — REMEMBER TO DELETE MANUALLY)'
+        type: boolean
+        required: false
+        default: false
+
+# Minimum permissions — contents: read for checkout; issues: write to open
+# failure-notification issues.
+permissions:
+  contents: read
+  issues: write
+
+# Only one nightly run at a time (schedule fires concurrently only in edge
+# cases, but cap it to 1 to be safe).
+concurrency:
+  group: e2e-tier-2-nightly
+  cancel-in-progress: false
+
+jobs:
+  tier-2-e2e:
+    name: E2E Tier 2 — nightly scratch org
+    runs-on: ubuntu-latest
+    # Wall-clock target: under 15 min including scratch-org spin-up (D8).
+    timeout-minutes: 30
+
+    env:
+      # Scratch org alias scoped to this workflow run to avoid clashes.
+      # workflow_dispatch can override this via the scratch_org_alias input.
+      E2E_SCRATCH_ORG: ${{ inputs.scratch_org_alias != '' && inputs.scratch_org_alias || format('e2e-tier2-nightly-{0}', github.run_id) }}
+      # E2E_ORG_SHAPE defaults to "default" (no org shape) unless overridden
+      # in the repo's Actions variables. Set to a 15- or 18-char org ID to
+      # enable org-shape mode (see scratch_create.sh for full details).
+      E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+      NO_COLOR: '1'
+      FORCE_COLOR: '0'
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Set up runtimes
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # -----------------------------------------------------------------------
+      # 3a. Preflight — check all required secrets are present.
+      # -----------------------------------------------------------------------
+      - name: Preflight — verify Tier 2 secrets are configured
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          MISSING=()
+          [ -z "${SFDX_AUTH_URL}" ]                && MISSING+=("SFDX_AUTH_URL")
+          [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Tier 2 cannot run — missing GitHub secret(s): ${MISSING[*]}"
+            echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
+            exit 1
+          fi
+          if ! [[ "${SFDX_AUTH_URL}" =~ ^force://.+ ]]; then
+            echo "::error::SFDX_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
+            exit 1
+          fi
+          echo "All required Tier 2 secrets are present."
+
+      # -----------------------------------------------------------------------
+      # 3b. Install JWT signing dependency (Codex P2 on PR #89)
+      # -----------------------------------------------------------------------
+      - name: Install JWT signing dependency (cryptography)
+        run: pip install --no-input cryptography
+
+      - name: Install CSV factory dependencies (Faker)
+        run: pip install --no-input -r tests/e2e/sf/fixtures/csv/requirements.txt
+
+      # -----------------------------------------------------------------------
+      # 3b. Install Salesforce CLI
+      # -----------------------------------------------------------------------
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      # -----------------------------------------------------------------------
+      # 4. Dev Hub auth via sfdx-url — see e2e-tier-2.yml block for the
+      # rationale (JWT-via-ECA Dev Hub auth fails scratch-create with C-1016).
+      # -----------------------------------------------------------------------
+      - name: Authenticate to Dev Hub via sfdx-url
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          AUTH_FILE="$(mktemp)"
+          trap 'rm -f "$AUTH_FILE"' EXIT
+          printf '%s' "$SFDX_AUTH_URL" > "$AUTH_FILE"
+          chmod 600 "$AUTH_FILE"
+          sf org login sfdx-url \
+            --sfdx-url-file "$AUTH_FILE" \
+            --alias devhub \
+            --set-default-dev-hub
+          USERNAME="$(sf org display --target-org devhub --json | jq -r '.result.username')"
+          INSTANCE="$(sf org display --target-org devhub --json | jq -r '.result.instanceUrl')"
+          echo "INFO: Dev Hub authentication via sfdx-url complete (username: ${USERNAME}, instance: ${INSTANCE})"
+
+      # -----------------------------------------------------------------------
+      # 5. Create scratch org (D3)
+      #
+      # scratch_create.sh handles:
+      #   - Default vs. org-shape scratch-def selection (E2E_ORG_SHAPE).
+      #   - 15/18-char org ID normalisation (L2 third-pass).
+      #   - Active-shape prerequisite check (L1 + M1 fourth-pass).
+      # -----------------------------------------------------------------------
+      - name: Create scratch org
+        run: bash tests/e2e/sf/scripts/scratch_create.sh
+
+      # -----------------------------------------------------------------------
+      # 6. Deploy SFDX project to scratch org
+      #
+      # Deploys both SFDX projects:
+      #   - tests/e2e/sf/sfdx       — Salesforce ECA + certificate + permission set
+      #   - tests/e2e/app/sfdx      — App-specific SfblE2ETest__c custom object
+      # -----------------------------------------------------------------------
+      - name: Deploy SFDX project to scratch org
+        run: |
+          cd tests/e2e/sf/sfdx
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+
+      # -----------------------------------------------------------------------
+      # 7a. Assign permission set + create SetupEntityAccess link (SFBL-327)
+      #
+      # Assigns SfblE2EPermSet to the scratch admin user and creates the
+      # SetupEntityAccess record linking the permission set to the ECA.
+      # WITHOUT this step AdminApprovedPreAuthorized is not activated and
+      # the JWT bearer grant fails with a 400 auth error.
+      # -----------------------------------------------------------------------
+      - name: Assign permission set and create SetupEntityAccess link
+        run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
+
+      # -----------------------------------------------------------------------
+      # 7a-2. Deactivate Salesforce standard duplicate rules (SFBL-328)
+      #
+      # Scratch orgs ship with three active "Standard *_Duplicate_Rule"
+      # records (Account, Contact, Lead). They trigger on fuzzy Name
+      # matches and reject Bulk API inserts blanket with
+      #   DUPLICATES_DETECTED:Duplicate Alert:--
+      # Bulk API 2.0 has no per-request bypass — flip IsActive=false via
+      # the Metadata API (script is idempotent; safe to run every time).
+      # PR #89 Codex review P1: keep parity with the PR-label workflow so
+      # the nightly drift detection actually exercises the load path.
+      # -----------------------------------------------------------------------
+      - name: Deactivate Salesforce standard duplicate rules
+        run: bash tests/e2e/sf/scripts/disable_duplicate_rules.sh
+
+      # -----------------------------------------------------------------------
+      # 7b. Discover ECA consumer key (SFBL-327)
+      #
+      # Retrieves ExtlClntAppGlobalOauthSettings:SfblE2E from the scratch org
+      # and parses the <consumerKey> element from the XML.  Exports the key
+      # to GITHUB_ENV so downstream steps can reference it as
+      # $E2E_BULK_LOADER_CONSUMER_KEY.
+      # -----------------------------------------------------------------------
+      - name: Discover ECA consumer key
+        run: |
+          CONSUMER_KEY="$(bash tests/e2e/sf/scripts/discover_eca_consumer_key.sh)"
+          echo "E2E_BULK_LOADER_CONSUMER_KEY=${CONSUMER_KEY}" >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # 7c. JWT smoke test — bulk-loader auth path (SFBL-327)
+      #
+      # Performs a direct JWT bearer grant against
+      # <instance_url>/services/oauth2/token using the private key PEM from
+      # the SFBL_E2E_BULK_LOADER_JWT_KEY secret.  This mirrors EXACTLY the
+      # auth path used by backend/app/services/salesforce_auth.py.
+      #
+      # A failure here exits the workflow before any Playwright spec runs,
+      # with a clear ECA-setup error message instead of confusing downstream
+      # spec failures.
+      # -----------------------------------------------------------------------
+      - name: JWT smoke test — bulk-loader auth path
+        env:
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          bash tests/e2e/sf/scripts/jwt_smoke_test.sh
+
+          # Export org details for setup_connection.ts (used by Playwright specs).
+          ORG_JSON="$(sf org display --target-org "${E2E_SCRATCH_ORG}" --json)"
+          INSTANCE_URL="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['instanceUrl'].rstrip('/'))
+          ")"
+          ADMIN_USERNAME="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['username'])
+          ")"
+          {
+            echo "E2E_SCRATCH_ORG_INSTANCE_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_LOGIN_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_USERNAME=${ADMIN_USERNAME}"
+          } >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # 8. Run Tier 2 Playwright specs (Codex P1 on PR #89 — real run, not
+      # a placeholder echo).  Brings up the app stack, installs Playwright,
+      # executes `npm run e2e:2`, tears down the stack.
+      # -----------------------------------------------------------------------
+      - name: Create data directories
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
+
+      - name: Create stack env file (no fixture mode — Tier 2 hits real SF)
+        run: |
+          echo 'APP_DISTRIBUTION=desktop' > .env
+
+      - name: Bring up app stack
+        run: docker compose -f docker-compose.yml up -d --build --wait --timeout 600
+
+      - name: Verify stack is reachable
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Install Playwright deps
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Tier 2 Playwright specs
+        working-directory: tests/e2e
+        env:
+          CI: 'true'
+          E2E_BASE_URL: 'http://localhost'
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+          E2E_RUN_ID: ${{ github.run_id }}
+        run: npm run e2e:2
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-tier-2-nightly-${{ github.run_id }}
+          path: tests/e2e/playwright-report/
+          retention-days: 14
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs
+
+      - name: Bring down app stack
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
+
+      # -----------------------------------------------------------------------
+      # 9. Destroy scratch org — ALWAYS runs to prevent org leaks (D3)
+      #
+      # Exception: when invoked via workflow_dispatch with skip_destroy=true,
+      # leave the org up for post-mortem inspection.  The dispatch input
+      # description warns the operator that they must delete it manually.
+      # -----------------------------------------------------------------------
+      - name: Destroy scratch org
+        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.skip_destroy)
+        run: bash tests/e2e/sf/scripts/scratch_destroy.sh
+
+      - name: Skip scratch-org destroy (workflow_dispatch with skip_destroy=true)
+        if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy
+        run: |
+          echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
+          echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."
+
+      # -----------------------------------------------------------------------
+      # 10. Open GitHub issue on nightly failure
+      #
+      # Uses actions/github-script@v7 (pinned) to call the GitHub Issues API.
+      # Only fires on schedule events (not workflow_dispatch manual runs) so
+      # engineers don't get noisy issues from intentional reruns.
+      #
+      # The issue title is deduplicated by date — if multiple steps fail in
+      # one night, a single issue is opened (exact duplicates are suppressed
+      # by the repo's existing issue titles).
+      # -----------------------------------------------------------------------
+      - name: Open issue on nightly failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const today = new Date().toISOString().slice(0, 10);
+            const title = `[E2E Tier 2] Nightly run failed — ${today}`;
+
+            // Check for an existing open issue with the same title to avoid duplicates.
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'e2e-failure',
+              per_page: 20,
+            });
+            const duplicate = issues.find(i => i.title === title);
+            if (duplicate) {
+              core.info(`Duplicate issue found (#${duplicate.number}), skipping creation.`);
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['e2e-failure'],
+              body: [
+                '## E2E Tier 2 nightly run failed',
+                '',
+                `**Date:** ${today}`,
+                `**Run:** ${runUrl}`,
+                '',
+                'Check the workflow run linked above for the failing step and logs.',
+                '',
+                '> This issue was opened automatically by the nightly E2E Tier 2 workflow.',
+                '> Close it once the root cause has been investigated and resolved.',
+              ].join('\n'),
+            });

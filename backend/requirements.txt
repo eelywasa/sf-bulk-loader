@@ -19,8 +19,16 @@ asyncpg>=0.29.0
 aiofiles>=23.0.0
 websockets>=12.0
 prometheus_client>=0.16.0
-boto3>=1.34.0
-aioboto3>=12.0
+# SFBL-337: exact pins on boto3 family to short-circuit pip resolver
+# backtracking.  aioboto3 transitively pins aiobotocore exactly, which then
+# pins boto3 / botocore in narrow ranges.  Loose pins caused multi-minute
+# resolution thrashing on every CI build (PR #88 and #89).  These exact
+# versions resolve in O(1).  Bump together as a unit when upgrading.
+boto3==1.40.61
+aioboto3==15.5.0
+aiobotocore==2.25.1
+botocore==1.40.61
+s3transfer==0.14.0
 opentelemetry-api>=1.24.0
 opentelemetry-sdk>=1.24.0
 opentelemetry-instrumentation-fastapi>=0.45b0

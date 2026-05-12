@@ -191,7 +191,14 @@ jobs:
       # Rotation: indefinite by default; rotate annually or when the
       # operator's SF admin password changes (revokes refresh tokens).
       # See docs/deployment/salesforce-jwt-setup.md § "Dev Hub auth".
+      # Gated on `!reuse_shared_scratch`: when reusing the long-lived scratch
+      # we don't create scratches and therefore don't need a Dev Hub session.
+      # The preflight step matches this — it skips the SFDX_AUTH_URL check
+      # in reuse mode — but the auth step itself still ran with an empty
+      # secret and failed before the workflow reached the shared-scratch
+      # auth.  (Codex review P1 on PR #89.)
       - name: Authenticate to Dev Hub via sfdx-url
+        if: '!inputs.reuse_shared_scratch'
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: |
@@ -245,6 +252,12 @@ jobs:
 
       - name: Create scratch org
         if: '!inputs.reuse_shared_scratch'
+        env:
+          # Long-lived scratch (7 days) when the operator is using
+          # workflow_dispatch + skip_destroy to set up a reusable target.
+          # Ephemeral (1 day) for normal CI runs — auto-expires, no manual
+          # cleanup needed.  30 is the Salesforce-side max if we ever need it.
+          SCRATCH_DURATION_DAYS: ${{ (github.event_name == 'workflow_dispatch' && inputs.skip_destroy) && '7' || '1' }}
         run: bash tests/e2e/sf/scripts/scratch_create.sh
 
       # -----------------------------------------------------------------------
@@ -255,11 +268,16 @@ jobs:
       #   - tests/e2e/app/sfdx      — App-specific SfblE2ETest__c custom object
       # -----------------------------------------------------------------------
       - name: Deploy SFDX project to scratch org
+        # --ignore-conflicts is safe here: each scratch is a closed
+        # system the workflow owns end-to-end, and on reuse runs the
+        # remote already has the same metadata we're about to deploy.
+        # Without the flag, reuse-mode runs fail with "There are
+        # changes in the org that conflict with the local changes…".
         run: |
           cd tests/e2e/sf/sfdx
-          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --ignore-conflicts --wait 10
           cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
-          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --ignore-conflicts --wait 10
 
       # -----------------------------------------------------------------------
       # 7a. Assign permission set + create SetupEntityAccess link (SFBL-327)
@@ -269,12 +287,30 @@ jobs:
       # WITHOUT this step AdminApprovedPreAuthorized is not activated and
       # the JWT bearer grant fails with a 400 auth error.
       # -----------------------------------------------------------------------
-      # Permset assignment + SetupEntityAccess linking are one-time per scratch.
-      # When reusing the shared scratch, they were already done at the first
-      # provisioning; re-running would fail on duplicate-assignment errors.
+      # Runs on every invocation, including reuse mode: the script is
+      # idempotent (tolerates "permset already assigned", checks for an
+      # existing SetupEntityAccess before inserting a new one) and reuse
+      # runs need it because `sf project deploy --ignore-conflicts` can
+      # rotate the ECA's internal Id, leaving the prior SEA link stale.
       - name: Assign permission set and create SetupEntityAccess link
-        if: '!inputs.reuse_shared_scratch'
         run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
+
+      # -----------------------------------------------------------------------
+      # 7a-2. Deactivate Salesforce's standard duplicate rules
+      #
+      # Scratch orgs ship with three active "Standard *_Duplicate_Rule" records
+      # (Account, Contact, Lead). They trigger on fuzzy Name matches and reject
+      # Bulk API inserts blanket with
+      #   DUPLICATES_DETECTED:Duplicate Alert:--
+      # even when the External_Id__c value is unique (the rule doesn't consult
+      # it). Bulk API 2.0 has no per-request header to bypass — the only
+      # reliable path is to flip IsActive=false via the Tooling API.
+      #
+      # The script is idempotent: only IsActive=true rules are touched, so
+      # reuse-mode runs are no-ops once the first run has disabled them.
+      # -----------------------------------------------------------------------
+      - name: Deactivate Salesforce standard duplicate rules
+        run: bash tests/e2e/sf/scripts/disable_duplicate_rules.sh
 
       # -----------------------------------------------------------------------
       # 7b. Discover ECA consumer key (SFBL-327)
@@ -389,6 +425,22 @@ jobs:
           path: tests/e2e/playwright-report/
           retention-days: 14
 
+      # Upload the bulk loader's run artefacts (success / error / unprocessed
+      # CSVs under data/output and the input CSVs the spec seeded under
+      # data/input) so we can see exactly what Salesforce rejected when a
+      # run reports records_failed > 0.  Without this, the diagnostic chain
+      # ends at "X records failed" with no visibility into the error rows.
+      - name: Upload bulk-loader data dirs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bulk-loader-data-tier-2-${{ github.run_id }}
+          path: |
+            data/input/
+            data/output/
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: Dump container logs on failure
         if: failure()
         run: docker compose -f docker-compose.yml logs
@@ -416,9 +468,39 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
         run: |
           echo "::warning::Scratch org '${E2E_SCRATCH_ORG}' was NOT destroyed (skip_destroy=true)."
-          echo "::warning::Run 'sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt' to clean it up."
-          echo "::warning::To capture its sfdxAuthUrl for reuse:"
-          echo "::warning::  sf org display --target-org ${E2E_SCRATCH_ORG} --verbose --json | jq -r '.result.sfdxAuthUrl' | gh secret set TIER2_REUSE_AUTH_URL"
+          echo "::warning::Cleanup later: sf org delete scratch --target-org ${E2E_SCRATCH_ORG} --no-prompt (from a Dev-Hub-authed CLI)"
+          echo "::notice::sfdxAuthUrl captured as artifact 'tier2-scratch-auth-url' (1-day retention)."
+          echo "::notice::Operator: download the artifact via Actions UI, then:"
+          echo "::notice::  gh secret set TIER2_REUSE_AUTH_URL < tier2-scratch-auth-url/sfdx-auth-url.txt"
+          echo "::notice::Subsequent dispatches with reuse_shared_scratch=true cost 0 daily quota."
+
+      # Capture the scratch's sfdxAuthUrl as a (GitHub-encrypted) artifact.
+      # Without this, the kept-alive scratch can't be reused: the scratch's
+      # auth state lives only on the runner's filesystem (destroyed at runner
+      # termination), and Salesforce-side metadata doesn't expose
+      # refresh-token-bearing auth URLs.  Operator extracts the artifact and
+      # sets the TIER2_REUSE_AUTH_URL secret to enable reuse mode.
+      # 1-day retention keeps the credential blast radius small.
+      - name: Capture sfdxAuthUrl for reuse
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
+        run: |
+          mkdir -p /tmp/tier2-reuse
+          AUTH_URL="$(sf org display --target-org "${E2E_SCRATCH_ORG}" --verbose --json | jq -r '.result.sfdxAuthUrl')"
+          if [ -z "$AUTH_URL" ] || [ "$AUTH_URL" = "null" ]; then
+            echo "::error::Could not extract sfdxAuthUrl from scratch ${E2E_SCRATCH_ORG}"
+            exit 1
+          fi
+          printf '%s' "$AUTH_URL" > /tmp/tier2-reuse/sfdx-auth-url.txt
+          chmod 600 /tmp/tier2-reuse/sfdx-auth-url.txt
+          echo "::notice::Captured sfdxAuthUrl (length=${#AUTH_URL})"
+
+      - name: Upload sfdxAuthUrl artifact
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-scratch-auth-url
+          path: /tmp/tier2-reuse/sfdx-auth-url.txt
+          retention-days: 1
 
       - name: Reuse mode — scratch left intact
         if: inputs.reuse_shared_scratch

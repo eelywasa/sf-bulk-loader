@@ -1,0 +1,9 @@
+# requirements.txt — dependencies for tests/e2e/sf/fixtures/csv/
+#
+# Faker is used by csv_factory.py for deterministic, Salesforce-shaped CSV
+# generation. Pin tight to avoid pip-resolver backtracking (SFBL-337 follow-up
+# will audit the full pin strategy).
+#
+# Install: pip install -r tests/e2e/sf/fixtures/csv/requirements.txt
+
+Faker>=20,<25

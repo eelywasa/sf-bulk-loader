@@ -10,6 +10,207 @@ permissions:
   packages: write
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Tier 2 E2E gate (D8) — must pass before any artifacts are published.
+  #
+  # SECURITY POLICY (D8):
+  # - Uses `pull_request`, NOT `pull_request_target` — secrets are never available to fork PR code.
+  # - Same-repo PRs only (head.repo.fork == false guard on the job).
+  # - See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+  #
+  # This job runs the full Tier 2 scratch-org suite against the tagged commit
+  # before any Docker images or Electron installers are pushed/attached.
+  # docker-merge and electron-release both declare `needs: [tier-2-e2e]` so
+  # a Tier 2 failure prevents artifact publication entirely.
+  # ---------------------------------------------------------------------------
+  tier-2-e2e:
+    name: E2E Tier 2 — release gate
+    runs-on: ubuntu-latest
+    # Wall-clock target: under 15 min including scratch-org spin-up (D8).
+    timeout-minutes: 30
+
+    env:
+      E2E_SCRATCH_ORG: ${{ format('e2e-tier2-release-{0}', github.run_id) }}
+      E2E_ORG_SHAPE: ${{ vars.E2E_ORG_SHAPE || 'default' }}
+      NO_COLOR: '1'
+      FORCE_COLOR: '0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'tests/e2e/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Preflight — fail fast with a clear pointer if Tier 2 secrets are absent.
+      # Without this, a missing secret produces an opaque CLI auth failure
+      # several steps in, which would block release artifact publication
+      # in a confusing way.
+      - name: Preflight — verify Tier 2 secrets are configured
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          MISSING=()
+          [ -z "${SFDX_AUTH_URL}" ]                && MISSING+=("SFDX_AUTH_URL")
+          [ -z "${SFBL_E2E_BULK_LOADER_JWT_KEY}" ] && MISSING+=("SFBL_E2E_BULK_LOADER_JWT_KEY")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Release Tier 2 gate cannot run — missing GitHub secret(s): ${MISSING[*]}"
+            echo "::error::See docs/deployment/salesforce-jwt-setup.md § Step 4 for setup."
+            exit 1
+          fi
+          if ! [[ "${SFDX_AUTH_URL}" =~ ^force://.+ ]]; then
+            echo "::error::SFDX_AUTH_URL doesn't start with 'force://' — does not look like a valid sfdxAuthUrl."
+            exit 1
+          fi
+          echo "All required Tier 2 secrets are present."
+
+      # Codex P2 on PR #89: jwt_smoke_test.sh's Python helper prefers
+      # `cryptography` (falls back to PyJWT); neither is on the GHA
+      # ubuntu-latest base image.  Install explicitly to avoid an
+      # ImportError before the smoke test validates the scratch org.
+      - name: Install JWT signing dependency (cryptography)
+        run: pip install --no-input cryptography
+
+      - name: Install CSV factory dependencies (Faker)
+        run: pip install --no-input -r tests/e2e/sf/fixtures/csv/requirements.txt
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      # Dev Hub auth via sfdx-url — see e2e-tier-2.yml block for the rationale.
+      - name: Authenticate to Dev Hub via sfdx-url
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          AUTH_FILE="$(mktemp)"
+          trap 'rm -f "$AUTH_FILE"' EXIT
+          printf '%s' "$SFDX_AUTH_URL" > "$AUTH_FILE"
+          chmod 600 "$AUTH_FILE"
+          sf org login sfdx-url \
+            --sfdx-url-file "$AUTH_FILE" \
+            --alias devhub \
+            --set-default-dev-hub
+          USERNAME="$(sf org display --target-org devhub --json | jq -r '.result.username')"
+          INSTANCE="$(sf org display --target-org devhub --json | jq -r '.result.instanceUrl')"
+          echo "INFO: Dev Hub authentication via sfdx-url complete (username: ${USERNAME}, instance: ${INSTANCE})"
+
+      - name: Create scratch org
+        run: bash tests/e2e/sf/scripts/scratch_create.sh
+
+      - name: Deploy SFDX project to scratch org
+        run: |
+          cd tests/e2e/sf/sfdx
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+          cd "$GITHUB_WORKSPACE/tests/e2e/app/sfdx"
+          sf project deploy start --target-org "${E2E_SCRATCH_ORG}" --wait 10
+
+      - name: Assign permission set and create SetupEntityAccess link
+        run: bash tests/e2e/sf/scripts/setup_permset_and_access.sh
+
+      # Disable scratch-org standard duplicate rules so Bulk API inserts
+      # aren't blanket-rejected with DUPLICATES_DETECTED:Duplicate Alert.
+      # Bulk API 2.0 has no bypass header; the script flips IsActive=false
+      # via the Metadata API (idempotent). SFBL-328 / Codex review P1.
+      - name: Deactivate Salesforce standard duplicate rules
+        run: bash tests/e2e/sf/scripts/disable_duplicate_rules.sh
+
+      - name: Discover ECA consumer key
+        run: |
+          CONSUMER_KEY="$(bash tests/e2e/sf/scripts/discover_eca_consumer_key.sh)"
+          echo "E2E_BULK_LOADER_CONSUMER_KEY=${CONSUMER_KEY}" >> "$GITHUB_ENV"
+
+      - name: JWT smoke test — bulk-loader auth path
+        env:
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+        run: |
+          bash tests/e2e/sf/scripts/jwt_smoke_test.sh
+          ORG_JSON="$(sf org display --target-org "${E2E_SCRATCH_ORG}" --json)"
+          INSTANCE_URL="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['instanceUrl'].rstrip('/'))
+          ")"
+          ADMIN_USERNAME="$(printf '%s' "${ORG_JSON}" | python3 -c "
+          import sys, json
+          print(json.load(sys.stdin)['result']['username'])
+          ")"
+          {
+            echo "E2E_SCRATCH_ORG_INSTANCE_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_LOGIN_URL=${INSTANCE_URL}"
+            echo "E2E_SCRATCH_ORG_USERNAME=${ADMIN_USERNAME}"
+          } >> "$GITHUB_ENV"
+
+      # Codex P1 on PR #89: this previously echoed a placeholder, which
+      # meant `docker-merge` and `electron-release` could publish artifacts
+      # after scratch setup + JWT smoke succeeded even when the Tier 2
+      # specs would have failed.  Real Playwright run now — release artifacts
+      # are gated on actual spec pass.
+      - name: Create data directories
+        run: |
+          mkdir -p data/input data/output data/db
+          chmod 777 data/db data/output
+
+      - name: Create stack env file (no fixture mode — Tier 2 hits real SF)
+        run: |
+          echo 'APP_DISTRIBUTION=desktop' > .env
+
+      - name: Bring up app stack
+        run: docker compose -f docker-compose.yml up -d --build --wait --timeout 600
+
+      - name: Verify stack is reachable
+        run: |
+          curl -sf http://localhost/api/health \
+            | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d['status'] == 'ok', f'Expected status ok, got: {d}'
+          print('Health check passed:', d)
+          "
+
+      - name: Install Playwright deps
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Tier 2 Playwright specs
+        working-directory: tests/e2e
+        env:
+          CI: 'true'
+          E2E_BASE_URL: 'http://localhost'
+          SFBL_E2E_BULK_LOADER_JWT_KEY: ${{ secrets.SFBL_E2E_BULK_LOADER_JWT_KEY }}
+          E2E_RUN_ID: ${{ github.run_id }}
+        run: npm run e2e:2
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-tier-2-release-${{ github.run_id }}
+          path: tests/e2e/playwright-report/
+          retention-days: 14
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs
+
+      - name: Bring down app stack
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
+
+      - name: Destroy scratch org
+        if: always()
+        run: bash tests/e2e/sf/scripts/scratch_destroy.sh
+
   # Build each image natively on its target architecture, then merge into a
   # multi-platform manifest. This avoids QEMU emulation (10-20x slower) by
   # running arm64 builds on GitHub's native ubuntu-24.04-arm runners.
@@ -86,7 +287,7 @@ jobs:
 
   docker-merge:
     name: Docker — merge multi-platform manifests
-    needs: docker-build
+    needs: [docker-build, tier-2-e2e]
     runs-on: ubuntu-latest
 
     steps:
@@ -124,6 +325,7 @@ jobs:
   electron-release:
     name: Build Electron — ${{ matrix.artifact_suffix }}
     runs-on: ${{ matrix.os }}
+    needs: [tier-2-e2e]
     strategy:
       fail-fast: false
       matrix:

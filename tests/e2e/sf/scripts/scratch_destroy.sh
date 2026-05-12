@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 # scratch_destroy.sh — Tear down the E2E scratch org after Tier 2 tests.
 #
-# TODO (SFBL-321/325/327): Implement scratch-org teardown.
-#   - Run in an always() step so failures don't leak orgs
-#   - Delete the org identified by E2E_SCRATCH_ORG
+# Required env vars:
+#   E2E_SCRATCH_ORG   Alias of the scratch org to delete.
 #
-# This stub exits with a clear error so any premature invocation is visible.
+# Intended to be called in a workflow step with `if: always()` so scratch
+# orgs are cleaned up even if upstream steps fail (per spec D3).
+#
+# Spec refs: D3 (scratch-org always-run teardown).
 
 set -euo pipefail
 
-echo "ERROR: scratch_destroy.sh is not yet implemented." >&2
-echo "  This script will be populated by SFBL-321/325/327 (Wave 3)." >&2
-exit 1
+if [[ -z "${E2E_SCRATCH_ORG:-}" ]]; then
+  echo "WARNING: E2E_SCRATCH_ORG is not set — nothing to destroy." >&2
+  exit 0
+fi
+
+echo "INFO: Deleting scratch org alias='${E2E_SCRATCH_ORG}'"
+
+# --no-prompt suppresses the interactive confirmation prompt in CI.
+sf org delete scratch \
+  --target-org "${E2E_SCRATCH_ORG}" \
+  --no-prompt
+
+echo "INFO: Scratch org '${E2E_SCRATCH_ORG}' deleted successfully."

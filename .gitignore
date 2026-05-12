@@ -56,3 +56,6 @@ runs.html
 
 # Generated PDF artifacts
 *.pdf
+
+# SFDX local source-tracking state
+.sf/
