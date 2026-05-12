@@ -37,7 +37,9 @@
     }
   },
   "testEvidence": {
-    "_doc": "SFBL-334 / SFBL-341 — TestEvidenceStack. Single global deployment in us-east-1 (Lambda@Edge constraint). authorizedRepo + ghaRepoIdentifier are baked into cdk.json (committed); the entries below are the operator-specific ones (custom domain, ACM cert in us-east-1, hosted zone). Leave domainName + certificateArn off until a real domain is provisioned — the stack falls back to the *.cloudfront.net default URL.",
+    "_doc": "SFBL-334 / SFBL-341 — TestEvidenceStack. Single global deployment in us-east-1 (Lambda@Edge constraint). Include ALL keys here, not just the per-environment overrides — CDK loads each context source independently, and even though it happens to deep-merge object context values in current versions, that's undocumented behaviour and could change. Keeping the example self-contained means a copy-paste-then-edit workflow produces a working config regardless of CDK's merge semantics.",
+    "authorizedRepo": "eelywasa/sf-bulk-loader",
+    "ghaRepoIdentifier": "eelywasa/sf-bulk-loader",
     "domainName": "reports.bulk-loader.example.com",
     "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
     "hostedZoneDomain": "bulk-loader.example.com",

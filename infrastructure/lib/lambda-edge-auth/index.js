@@ -296,6 +296,19 @@ exports.handler = async (event) => {
   const sessionCookie = readCookie(headers, COOKIE_NAME);
   const session = verifyPayload(sessionCookie, config.sessionSigningKey, SESSION_TTL_SECONDS);
   if (session) {
+    // Directory-default rewrite: any URI ending with '/' gets 'index.html'
+    // appended so the per-PR / per-Tier-2 dashboard URLs
+    // (https://reports.../pr-123/, https://reports.../tier-2/<run-id>/)
+    // serve THAT prefix's index, not the root /index.html.
+    //
+    // CloudFront's `defaultRootObject: index.html` only handles the bare
+    // `/` URI; subdirectory defaults aren't supported. And the bucket's
+    // `errorResponses` rewrite for 403 -> /index.html sends users to the
+    // ROOT index, not the prefix's. We do the rewrite here at the
+    // viewer-request layer so CloudFront forwards the correct S3 key.
+    if (request.uri.endsWith('/')) {
+      request.uri = request.uri + 'index.html';
+    }
     return request; // pass through to S3 origin
   }
 
