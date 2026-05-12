@@ -35,5 +35,14 @@
       "hostedZoneDomain": "bulk-loader.example.com",
       "ecrImageTag": "stable"
     }
+  },
+  "testEvidence": {
+    "_doc": "SFBL-334 / SFBL-341 — TestEvidenceStack. Single global deployment in us-east-1 (Lambda@Edge constraint). authorizedRepo + ghaRepoIdentifier are baked into cdk.json (committed); the entries below are the operator-specific ones (custom domain, ACM cert in us-east-1, hosted zone). Leave domainName + certificateArn off until a real domain is provisioned — the stack falls back to the *.cloudfront.net default URL.",
+    "domainName": "reports.bulk-loader.example.com",
+    "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+    "hostedZoneDomain": "bulk-loader.example.com",
+    "createOidcProvider": true,
+    "_existingOidcProviderArn_doc": "Set this and flip createOidcProvider to false ONLY if a GitHub Actions OIDC provider already exists in the account (one allowed per account for token.actions.githubusercontent.com). Look it up via `aws iam list-open-id-connect-providers`.",
+    "existingOidcProviderArn": ""
   }
 }

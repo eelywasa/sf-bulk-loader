@@ -68,6 +68,12 @@
       }
     },
     "_environments_doc": "Real environment values for staging/production live in cdk.context.json (gitignored). cdk.json keeps only the tier preset assignment + ecrImageTag default; everything else (domain names, ACM cert ARNs, hosted zone, VPC CIDR, region) is operator-specific and must come from cdk.context.json. The `ci` environment is the exception — it carries safe non-routable placeholders so `cdk synth -c env=ci` works in CI without operator credentials. See docs/deployment/aws.md for the cdk.context.json shape.",
+    "_testEvidence_doc": "Configuration for the standalone TestEvidenceStack (SFBL-334 / SFBL-341). Deployed independently of the per-env stacks via `bin/test-evidence-app.ts`. Real domain + ACM cert + OIDC provider ARN live in cdk.context.json (gitignored). `authorizedRepo` is the GitHub repo whose Collaborators list gates dashboard access; `ghaRepoIdentifier` is the repo trusted by the OIDC publishing role (almost always identical).",
+    "testEvidence": {
+      "authorizedRepo": "eelywasa/sf-bulk-loader",
+      "ghaRepoIdentifier": "eelywasa/sf-bulk-loader",
+      "createOidcProvider": true
+    },
     "environments": {
       "staging": {
         "tier": "bronze",
