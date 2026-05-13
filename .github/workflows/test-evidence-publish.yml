@@ -40,6 +40,9 @@ permissions:
   contents: read
   id-token: write   # OIDC assumption against the SFBL-341 publisher role
   pull-requests: write  # to post the deep-link comment
+  actions: read   # required by actions/download-artifact@v4 with `run-id`
+                  # to fetch artefacts from another workflow run. Without
+                  # it the download silently fails (Codex P1 on PR #91).
 
 env:
   BUCKET: bulkloader-testevidence-evidencebucketfba44255-dul0vrjuirrp
@@ -63,6 +66,10 @@ jobs:
       pr_number: ${{ steps.ctx.outputs.pr_number }}
       prefix: ${{ steps.ctx.outputs.prefix }}
       head_sha: ${{ steps.ctx.outputs.head_sha }}
+      this_run_id: ${{ github.event.workflow_run.id }}
+      this_workflow: ${{ github.event.workflow_run.name }}
+      sibling_run_id: ${{ steps.sibling.outputs.sibling_run_id }}
+      sibling_ready: ${{ steps.sibling.outputs.sibling_ready }}
     steps:
       - id: ctx
         env:
@@ -100,9 +107,74 @@ jobs:
 
           echo "=== Context ==="
           echo "  HEAD_REPO=$HEAD_REPO BASE_REPO=$BASE_REPO"
-          echo "  EVENT_NAME=$EVENT_NAME HEAD_BRANCH=$HEAD_BRANCH"
+          echo "  EVENT_NAME=$EVENT_NAME HEAD_BRANCH=$HEAD_BRANCH HEAD_SHA=$HEAD_SHA"
           echo "  is_fork=$(grep '^is_fork=' $GITHUB_OUTPUT | cut -d= -f2)"
           echo "  prefix=$(grep '^prefix=' $GITHUB_OUTPUT | cut -d= -f2)"
+
+      # ───────────────────────────────────────────────────────────────────────
+      # Sibling-run lookup (Codex P1 on PR #91).
+      #
+      # `workflow_run` fires SEPARATELY for each upstream workflow that
+      # completes. If E2E and Shared Quality both produce artefacts for the
+      # same commit, our publish workflow gets two triggers — and each one
+      # only sees its own trigger's run-id. Downloading from only that one
+      # gets us one layer's allure-results; the publish then syncs to the
+      # prefix with `--delete`, wiping the other layer's prior upload.
+      #
+      # Fix: look up the SIBLING workflow's run for the same head_sha. Only
+      # proceed with publish when both are completed. If the sibling hasn't
+      # finished yet, exit silently — its trigger will fire later and
+      # publish then (with both runs visible).
+      - id: sibling
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          THIS_WORKFLOW: ${{ github.event.workflow_run.name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # Map this workflow's display name to the sibling's filename.
+          case "$THIS_WORKFLOW" in
+            "E2E PR Checks (Tier 1a + 1b)")
+              SIBLING_WORKFLOW="ci-shared.yml"
+              ;;
+            "Shared Quality Checks")
+              SIBLING_WORKFLOW="e2e-pr.yml"
+              ;;
+            *)
+              echo "Unknown upstream workflow: $THIS_WORKFLOW" >&2
+              exit 1
+              ;;
+          esac
+
+          # gh run list lets us filter by workflow + head_sha. Take the
+          # latest (default sort: createdAt desc) — same commit can have
+          # multiple runs from retries / pushes.
+          SIBLING_JSON=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "$SIBLING_WORKFLOW" \
+            --commit "$HEAD_SHA" \
+            --limit 1 \
+            --json databaseId,status,conclusion \
+            2>/dev/null || echo "[]")
+          SIBLING_ID=$(echo "$SIBLING_JSON" | python3 -c "import json,sys; arr=json.load(sys.stdin); print(arr[0]['databaseId']) if arr else print('')")
+          SIBLING_STATUS=$(echo "$SIBLING_JSON" | python3 -c "import json,sys; arr=json.load(sys.stdin); print(arr[0]['status']) if arr else print('none')")
+
+          echo "=== Sibling lookup ==="
+          echo "  this_workflow=$THIS_WORKFLOW (run-id ${{ github.event.workflow_run.id }})"
+          echo "  sibling_workflow=$SIBLING_WORKFLOW"
+          echo "  sibling_run_id=$SIBLING_ID"
+          echo "  sibling_status=$SIBLING_STATUS"
+
+          if [ -z "$SIBLING_ID" ] || [ "$SIBLING_STATUS" != "completed" ]; then
+            echo "Sibling not yet completed; this trigger exits without publishing."
+            echo "When the sibling finishes, its own workflow_run trigger will fire and"
+            echo "find THIS run completed — that's when publish actually runs."
+            echo "sibling_ready=false" >> "$GITHUB_OUTPUT"
+            echo "sibling_run_id=" >> "$GITHUB_OUTPUT"
+          else
+            echo "sibling_ready=true" >> "$GITHUB_OUTPUT"
+            echo "sibling_run_id=$SIBLING_ID" >> "$GITHUB_OUTPUT"
+          fi
 
   # ───────────────────────────────────────────────────────────────────────────
   # Fork PR → skip publish + drop a PR comment with the policy explanation.
@@ -141,9 +213,13 @@ jobs:
     name: Publish to S3 evidence bucket
     needs: [resolve]
     runs-on: ubuntu-latest
+    # Skip when the fork policy applies, the prefix is empty (push to a
+    # non-main branch), or the sibling upstream workflow hasn't finished
+    # yet (the sibling's own workflow_run trigger will retry).
     if: |
       needs.resolve.outputs.is_fork == 'false' &&
-      needs.resolve.outputs.prefix != ''
+      needs.resolve.outputs.prefix != '' &&
+      needs.resolve.outputs.sibling_ready == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -168,21 +244,49 @@ jobs:
           role-to-assume: ${{ env.PUBLISHER_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Download upstream Playwright allure-results
+      # Download from BOTH the triggering run AND its sibling. Without the
+      # sibling download, a publish triggered by E2E only sees Tier 1a/1b
+      # results and the subsequent --delete sync would wipe backend
+      # evidence from the bucket (Codex P1 on PR #91). Each pattern is
+      # mutually exclusive across runs (e2e-pr.yml produces only tier-*,
+      # ci-shared.yml produces only backend-*), but we use the same two
+      # patterns against both runs so the workflow stays symmetric — the
+      # non-matching patterns just produce empty downloads.
+      - name: Download Playwright allure-results from this run
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ needs.resolve.outputs.this_run_id }}
           pattern: "allure-results-tier-*"
           path: ./_inputs/playwright
           merge-multiple: true
         continue-on-error: true
 
-      - name: Download upstream backend allure-results
+      - name: Download Playwright allure-results from sibling run
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ needs.resolve.outputs.sibling_run_id }}
+          pattern: "allure-results-tier-*"
+          path: ./_inputs/playwright
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Download backend allure-results from this run
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.resolve.outputs.this_run_id }}
+          pattern: "allure-results-backend-*"
+          path: ./_inputs/backend
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Download backend allure-results from sibling run
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.resolve.outputs.sibling_run_id }}
           pattern: "allure-results-backend-*"
           path: ./_inputs/backend
           merge-multiple: true
