@@ -76,5 +76,14 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
       },
     },
+    {
+      name: "helpers-unit",
+      // Helper-module unit tests (SFBL-342) — exercise the live Playwright
+      // TestInfo API directly so the production code path is what's
+      // asserted. No browser context needed; the test bodies don't open
+      // pages. Project-level `testMatch` overrides the top-level filter
+      // so .test.ts files outside `app/playwright/` get discovered.
+      testMatch: "sf/playwright/helpers/__tests__/**/*.test.ts",
+    },
   ],
 });

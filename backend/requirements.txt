@@ -36,6 +36,11 @@ opentelemetry-instrumentation-httpx>=0.45b0
 sentry-sdk[fastapi]>=2.0.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+# SFBL-334 / SFBL-342: Allure helpers (backend/tests/_allure_helpers.py).
+# The reporter wiring (--alluredir= in CI pytest invocation) lands in
+# SFBL-344 D; this entry is here from B because the helper module itself
+# imports `allure` and needs the package installed to be testable.
+allure-pytest>=2.13.0
 anyio>=4.3.0
 httpx[http2]>=0.27.0
 moto[ses]>=5.0

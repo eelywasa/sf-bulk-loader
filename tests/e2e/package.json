@@ -7,6 +7,7 @@
     "e2e:1a": "playwright test --project=tier-1a",
     "e2e:1b": "playwright test --project=tier-1b",
     "e2e:2": "playwright test --project=tier-2",
+    "test:helpers": "playwright test --project=helpers-unit",
     "e2e:scratch:create": "bash sf/scripts/scratch_create.sh",
     "e2e:scratch:destroy": "bash sf/scripts/scratch_destroy.sh",
     "lint": "eslint . --ext .ts",
