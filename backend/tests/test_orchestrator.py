@@ -28,6 +28,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests._allure_helpers import label_layer, label_tier
+
+# SFBL-334 / SFBL-344: tag every test in this module so the Allure dashboard
+# shows it under layer=backend, tier=1a. Per-test @link_issue can be added by
+# future authors when a test exists to cover a specific ticket.
+pytestmark = [label_layer("backend"), label_tier("1a")]
+
 from app.models.connection import Connection
 from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan

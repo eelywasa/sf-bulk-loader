@@ -29,6 +29,11 @@ import * as path from "path";
 import { test, expect } from "@playwright/test";
 import { FilesPage } from "../helpers/pages/FilesPage";
 import { fetchAuthMode, loginViaUi } from "../helpers/auth";
+import {
+  labelLayer,
+  labelTier,
+  linkIssue,
+} from "../../../sf/playwright/helpers/allure";
 
 // ── Seed CSV definition ───────────────────────────────────────────────────────
 
@@ -85,7 +90,12 @@ test.describe("Files pane — filesystem-seed flow", () => {
     process.env.ADMIN_PASSWORD ??
     "password";
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({}, testInfo) => {
+    // SFBL-334 Allure annotations — taxonomy: tier=1a, layer=e2e, issue=SFBL-318.
+    linkIssue(testInfo, "SFBL-318");
+    labelTier(testInfo, "1a");
+    labelLayer(testInfo, "e2e");
+
     // Ensure the input directory exists (no-op if already present)
     fs.mkdirSync(inputDir, { recursive: true });
     // Write the seed CSV

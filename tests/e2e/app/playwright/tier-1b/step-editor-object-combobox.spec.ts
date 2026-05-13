@@ -42,6 +42,11 @@ import {
   type LoadPlanRecord,
 } from "../helpers/api";
 import { StepEditorModal } from "../helpers/pages/StepEditorModal";
+import {
+  labelLayer,
+  labelTier,
+  linkIssue,
+} from "../../../sf/playwright/helpers/allure";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +86,13 @@ const ADMIN_PASSWORD =
 test.describe("Step editor — object combobox fixture loop", () => {
   let connection: ConnectionRecord;
   let plan: LoadPlanRecord;
+
+  // SFBL-334 Allure annotations — taxonomy: tier=1b, layer=e2e, issue=SFBL-322.
+  test.beforeEach(async ({}, testInfo) => {
+    linkIssue(testInfo, "SFBL-322");
+    labelTier(testInfo, "1b");
+    labelLayer(testInfo, "e2e");
+  });
 
   // Create the connection + plan once for the whole suite.
   test.beforeAll(async ({ request }) => {

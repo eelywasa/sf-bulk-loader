@@ -35,7 +35,8 @@ pillars:
 - **Operations & developer** — deployment guides
   ([docker](docs/deployment/docker.md) /
   [desktop](docs/deployment/desktop.md) /
-  [aws](docs/deployment/aws.md)), [local development](docs/development.md),
+  [aws](docs/deployment/aws.md)), [local development](docs/development.md)
+  ([test evidence dashboard](docs/development.md#test-evidence)),
   [admin recovery](docs/usage/admin-recovery.md),
   [observability](docs/observability.md),
   [CI](docs/ci.md), [email](docs/email.md).

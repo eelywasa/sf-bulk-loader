@@ -68,7 +68,22 @@ jobs:
           # conftest.py generates a real Fernet key via os.environ.setdefault before any
           # crypto operations, so this value is never used for actual encryption in tests.
           ENCRYPTION_KEY: "dGVzdC1vbmx5LWtleS1ub3QtdXNlZC1pbi1wcm9kdWN0aW9uLS0tLS0="
-        run: pytest -x -q
+        # SFBL-334 / SFBL-344: --alluredir writes per-test result.json into
+        # backend/allure-results/ alongside the existing -q output. The publish
+        # workflow (SFBL-345) collects this dir as a CI artefact.
+        run: pytest -x -q --alluredir=allure-results
+
+      # SFBL-334 / SFBL-345: upload SQLite-leg allure-results so the publish
+      # workflow can merge them with the other backend legs + Playwright's
+      # output. `if: always()` so failed runs still ship the evidence.
+      - name: Upload backend allure-results (SQLite)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-backend-sqlite
+          path: backend/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
 
   # PostgreSQL leg is main-branch only — it validates hosted-profile behaviour
   # and is not needed on every feature-branch PR. Gated on backend changes so
@@ -112,7 +127,19 @@ jobs:
         env:
           ENCRYPTION_KEY: "dGVzdC1vbmx5LWtleS1ub3QtdXNlZC1pbi1wcm9kdWN0aW9uLS0tLS0="
           TEST_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/bulk_loader_test"
-        run: pytest -x -q --ignore=tests/scripts
+        # SFBL-334 / SFBL-344: see SQLite leg above. PG-specific results land
+        # in the same backend/allure-results/ dir; per-leg differentiation is
+        # the job's responsibility on upload, not the reporter's.
+        run: pytest -x -q --ignore=tests/scripts --alluredir=allure-results
+
+      - name: Upload backend allure-results (PostgreSQL)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-backend-postgres
+          path: backend/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
 
   # Migration tests run against their own database so _pg_reset's DROP SCHEMA /
   # CREATE SCHEMA cycle cannot wipe the main suite's seeded rows. Runs in
@@ -156,7 +183,18 @@ jobs:
         env:
           ENCRYPTION_KEY: "dGVzdC1vbmx5LWtleS1ub3QtdXNlZC1pbi1wcm9kdWN0aW9uLS0tLS0="
           MIGRATION_TEST_PG_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/bulk_loader_migration_test"
-        run: pytest -x -q tests/scripts/
+        # SFBL-334 / SFBL-344: migration tests get their own allure-results
+        # dir too. Publish workflow collates.
+        run: pytest -x -q tests/scripts/ --alluredir=allure-results
+
+      - name: Upload backend allure-results (PostgreSQL migration)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-backend-postgres-migration
+          path: backend/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
 
   frontend-build:
     name: Frontend Build

@@ -35,10 +35,21 @@ export default defineConfig({
   // Global timeout per test
   timeout: 60_000,
 
-  // Reporters: list in CI, dot locally (overrideable via PLAYWRIGHT_REPORTER)
+  // Reporters: list in CI, dot locally (overrideable via PLAYWRIGHT_REPORTER).
+  // The `allure-playwright` reporter is additive — it writes JSON + attachments
+  // to ./allure-results which the publish workflow (SFBL-345) post-processes
+  // via `allure generate`. Existing `list` + `html` reporters are untouched.
+  //
+  // GOTCHA — the `--reporter=` CLI flag silently OVERRIDES this array. Don't
+  // pass it on Allure-instrumented runs unless you mean to suppress Allure
+  // output. See docs/development.md → Test evidence → Gotchas for details.
   reporter: process.env.CI
-    ? [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]]
-    : [["list"]],
+    ? [
+        ["list"],
+        ["html", { open: "never", outputFolder: "playwright-report" }],
+        ["allure-playwright", { resultsDir: "allure-results", detail: true, suiteTitle: false }],
+      ]
+    : [["list"], ["allure-playwright", { resultsDir: "allure-results", detail: true, suiteTitle: false }]],
 
   use: {
     baseURL: BASE_URL,
@@ -75,6 +86,15 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
       },
+    },
+    {
+      name: "helpers-unit",
+      // Helper-module unit tests (SFBL-342) — exercise the live Playwright
+      // TestInfo API directly so the production code path is what's
+      // asserted. No browser context needed; the test bodies don't open
+      // pages. Project-level `testMatch` overrides the top-level filter
+      // so .test.ts files outside `app/playwright/` get discovered.
+      testMatch: "sf/playwright/helpers/__tests__/**/*.test.ts",
     },
   ],
 });

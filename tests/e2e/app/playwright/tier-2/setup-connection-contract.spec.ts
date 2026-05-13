@@ -24,6 +24,19 @@
  */
 
 import { test, expect } from "@playwright/test";
+import {
+  labelLayer,
+  labelTier,
+  linkIssue,
+} from "../../../sf/playwright/helpers/allure";
+
+// SFBL-334 Allure annotations — applied to every test in this file via a
+// top-level beforeEach. Taxonomy: tier=2, layer=e2e, issue=SFBL-327.
+test.beforeEach(async ({}, testInfo) => {
+  linkIssue(testInfo, "SFBL-327");
+  labelTier(testInfo, "2");
+  labelLayer(testInfo, "e2e");
+});
 
 // ---------------------------------------------------------------------------
 // 1. Schema contract — missing required field → 422

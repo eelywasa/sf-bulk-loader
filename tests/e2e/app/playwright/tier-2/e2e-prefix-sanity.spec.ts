@@ -27,6 +27,19 @@ import * as os from "os";
 import * as path from "path";
 import { expect } from "@playwright/test";
 import { test as baseTest, prefixFromTestInfo, toTestSlug, buildE2EPrefix } from "../helpers/e2e_prefix";
+import {
+  labelLayer,
+  labelTier,
+  linkIssue,
+} from "../../../sf/playwright/helpers/allure";
+
+// SFBL-334 Allure annotations — applied to every test in this file via a
+// top-level beforeEach. Taxonomy: tier=2, layer=e2e, issue=SFBL-326.
+baseTest.beforeEach(async ({}, testInfo) => {
+  linkIssue(testInfo, "SFBL-326");
+  labelTier(testInfo, "2");
+  labelLayer(testInfo, "e2e");
+});
 
 // ---------------------------------------------------------------------------
 // Unit-level assertions (no browser needed)

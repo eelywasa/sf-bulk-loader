@@ -440,3 +440,155 @@ npm run lint:boundaries  # boundaries rule only
 The guard exists so the Salesforce-shaped layer can be reused across future
 projects without pulling in bulk-loader-specific concerns. Keep new shared
 helpers in `sf/`; keep bulk-loader specifics in `app/`.
+
+---
+
+## Test evidence
+
+The cross-layer test evidence dashboard ([SFBL-334](https://matthew-jenkin.atlassian.net/browse/SFBL-334))
+serves Allure reports from every test suite — Playwright (Tier 1a / 1b /
+Tier 2) and backend pytest — at a single OAuth-gated URL:
+
+**[reports.bulkloader.forcetide.net](https://reports.bulkloader.forcetide.net/)**
+
+The architecture is documented at [`architecture/aws-topology.md`](architecture/aws-topology.md#test-evidence-host-sfbl-334);
+the operator runbook (provisioning, rotation, incident revocation) is at
+[`operations/test-evidence-runbook.md`](operations/test-evidence-runbook.md).
+
+### What's captured per tier
+
+| Tier | Captured | Where it lands |
+| --- | --- | --- |
+| **1a / 1b** (Playwright, every PR) | Allure results — labels, links, attached screenshots on failure, retry traces, test step timings | `pr-{n}/` on per-PR runs, `main/` after merge |
+| **Backend pytest** | Allure results — labels, links, step traces from `with allure.step(...)`, attached fixture artefacts | Same `pr-{n}/` and `main/` prefixes |
+| **Tier 2** (scratch-org runs) | Full Allure results + traces. Detailed capture surface lands with the publish wiring; see [SFBL-349](https://matthew-jenkin.atlassian.net/browse/SFBL-349) | `tier-2/{run-id}/` |
+
+The cross-layer taxonomy (labels, links, categories, URL layout) is
+formalised at [`specs/test-evidence-taxonomy.md`](specs/test-evidence-taxonomy.md).
+Test authors annotate via the shared helpers:
+
+- **Playwright** — `tests/e2e/sf/playwright/helpers/allure.ts` →
+  `linkIssue(testInfo, 'SFBL-XXX')`, `labelTier(testInfo, '1a'|'1b'|'2')`,
+  `labelLayer(testInfo, 'e2e')`, `owner(testInfo, 'github-handle')`
+- **pytest** — `backend/tests/_allure_helpers.py` →
+  `@link_issue('SFBL-XXX')`, `@label_tier('1a')`, `@label_layer('backend')`,
+  `@owner('github-handle')`
+
+Both helper modules emit the same on-the-wire shape; the only differences
+are language idioms (decorators in Python, function calls in TS). The
+taxonomy spec is the source of truth — keep the helpers in sync with it.
+
+### What's redacted
+
+Traces, screenshots, and console output go through a redactor + canary
+scanner pipeline before any artefact reaches the bucket:
+
+- **Trace redactor** ([SFBL-346](https://matthew-jenkin.atlassian.net/browse/SFBL-346),
+  pending) — strips `Authorization` / `Cookie` / `Set-Cookie` headers,
+  PEM-shaped bodies, long base64 chunks; tightens `tracing.start()` to
+  drop sources + element-scope snapshots.
+- **Canary scanner** ([SFBL-347](https://matthew-jenkin.atlassian.net/browse/SFBL-347),
+  pending) — fail-closed CI lane that unpacks every `*.zip` inside the
+  generated report and greps for generic secret shapes (`Bearer `, PEM
+  blocks, JWT, AWS access keys) plus CI-injected canaries. Wraps the
+  publish step so a non-zero scanner blocks `aws s3 sync`.
+
+Until both land, **do not publish Tier 2 evidence to the bucket.** The
+publish workflow's Tier 2 leg (SFBL-348) is explicitly gated on these.
+
+### Where reports live
+
+| Prefix | Content | Retention |
+| --- | --- | --- |
+| `main/` | Latest report from a successful main-branch CI run | indefinite |
+| `pr-{n}/` | Per-PR snapshot, overwritten on each push | 30 days |
+| `tier-2/{run-id}/` | Per Tier-2 scheduled run, immutable | 90 days |
+
+The Lambda@Edge OAuth gate rewrites any URI ending in `/` to
+`{uri}index.html`, so `https://reports.../pr-123/` resolves to
+`pr-123/index.html`. Bucket name: `bulkloader-testevidence-evidencebucketfba44255-dul0vrjuirrp`
+in `us-east-1`.
+
+### How to access
+
+The dashboard is gated by a Lambda@Edge function that runs the GitHub
+OAuth flow + checks the authenticated user against the repo
+collaborators list. Specifically:
+
+1. Visit any URL under `reports.bulkloader.forcetide.net` in a browser
+2. You'll be 302'd to GitHub OAuth (`read:user` + `public_repo` scopes)
+3. On callback, the Lambda calls
+   `GET /user/repos?affiliation=owner,collaborator` and checks for
+   `eelywasa/sf-bulk-loader` in the response
+4. Admitted iff you are the repo owner OR an explicit collaborator (any
+   role, Read works); 403 otherwise
+5. Session cookie issued for 8h; subsequent requests pass straight
+   through
+
+To grant access to a new collaborator: add them on the
+[repo Settings → Collaborators page](https://github.com/eelywasa/sf-bulk-loader/settings/access)
+with at least Read permission. Full procedure (incl. rotation +
+revocation) lives in the [operator runbook](operations/test-evidence-runbook.md).
+
+### Forked-PR policy
+
+PRs opened from forks **do not** publish to the bucket — they have no
+OIDC trust path into the publisher role, and the publish workflow
+explicitly skips the AWS sync step when
+`github.event.pull_request.head.repo.full_name != github.repository`.
+Reviewers see a comment on the PR linking to the existing 7-day GHA
+HTML report artefact as a fallback. Full implementation details land
+with [SFBL-345](https://matthew-jenkin.atlassian.net/browse/SFBL-345).
+
+### Conventions for new test authors
+
+- **One `labelLayer` + one `labelTier`** per test (or module, via
+  `pytestmark = [...]`). These two labels are the basis for every
+  dashboard facet — leaving them off means the test renders in the
+  "uncategorised" bucket.
+- **`linkIssue` when the test was added to cover a ticket.** Bug fixes,
+  acceptance-criteria coverage, regression checks all qualify; trivial
+  unit refactors don't.
+- **`owner` is optional but recommended on Tier 2 + long-lived suites**
+  — the dashboard's owner facet lets you find "who's the pager for
+  this regression" at a glance.
+- See the [taxonomy spec](specs/test-evidence-taxonomy.md) for the full
+  contract + a "what NOT to annotate with" section that prevents common
+  mistakes.
+
+### Gotchas for test authors
+
+Two non-obvious Playwright/Allure interactions surfaced during the SFBL-334
+Phase 1 spike. Both will silently produce wrong results if you don't know
+about them.
+
+- **`--reporter=` on the CLI silently overrides the config-defined reporter
+  array.** If anyone runs `npx playwright test --reporter=list` against an
+  Allure-instrumented suite, the Allure output never gets written — no error,
+  no warning, just no `allure-results/` directory. The fix is to never pass
+  `--reporter=` on Allure runs. CI invocations in `.github/workflows/` should
+  rely on `playwright.config.ts`'s reporter array exclusively.
+- **`test.use({ trace, screenshot })` is forbidden inside a `describe` block.**
+  Playwright requires per-test `use` overrides at file or project level only.
+  If you need different trace/screenshot capture for a subset of tests, put
+  them in a separate spec file (or split into a new project in
+  `playwright.config.ts`). Adding `test.use(...)` inside `test.describe(...)`
+  is rejected at collection time with an "ambiguous worker config" error.
+
+### How to interpret the dashboard
+
+The Allure UI groups results by:
+
+- **Suites** — Playwright projects (`tier-1a` / `tier-1b` / `tier-2`)
+  and pytest modules
+- **Categories** — `infrastructure failures` (broken w/ transport
+  regex), `flaky / retry passed`, `real regression`. The
+  `categories.json` is identical for every layer; see the taxonomy spec.
+- **Behaviors** — feature labels (BDD-style) when applied
+- **Graphs** — duration trend, retry trend, history of pass/fail across
+  the last N runs
+
+Tier 2-specific operator notes (how to diagnose a failed Tier 2
+publish, OAuth issues, scanner false-positives) land with
+[SFBL-349](https://matthew-jenkin.atlassian.net/browse/SFBL-349) when
+the Tier 2 leg goes live.

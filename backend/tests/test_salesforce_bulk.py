@@ -21,6 +21,11 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import httpx
 import pytest
 
+from tests._allure_helpers import label_layer, label_tier
+
+# SFBL-334 / SFBL-344: tag every test in this module — layer=backend, tier=1a.
+pytestmark = [label_layer("backend"), label_tier("1a")]
+
 from app.services.salesforce_bulk import (
     BulkAPIError,
     BulkJobPollTimeout,
