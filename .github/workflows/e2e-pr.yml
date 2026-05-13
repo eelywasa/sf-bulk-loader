@@ -187,6 +187,19 @@ jobs:
           path: tests/e2e/playwright-report/
           retention-days: 7
 
+      # SFBL-334 / SFBL-345: Always upload allure-results so the publish
+      # workflow can fetch them via download-artifact, regardless of the
+      # test outcome. `if: always()` is the load-bearing bit — failing runs
+      # are exactly when we most want the evidence available.
+      - name: Upload Tier 1a allure-results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-tier-1a
+          path: tests/e2e/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Dump container logs on failure
         if: failure()
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
@@ -278,6 +291,16 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: 'http://localhost'
         run: npm run e2e:1b
+
+      # SFBL-334 / SFBL-345: same allure-results upload pattern as Tier 1a.
+      - name: Upload Tier 1b allure-results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-tier-1b
+          path: tests/e2e/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Upload Playwright report on failure
         if: failure()

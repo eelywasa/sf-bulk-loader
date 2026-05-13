@@ -73,6 +73,18 @@ jobs:
         # workflow (SFBL-345) collects this dir as a CI artefact.
         run: pytest -x -q --alluredir=allure-results
 
+      # SFBL-334 / SFBL-345: upload SQLite-leg allure-results so the publish
+      # workflow can merge them with the other backend legs + Playwright's
+      # output. `if: always()` so failed runs still ship the evidence.
+      - name: Upload backend allure-results (SQLite)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-backend-sqlite
+          path: backend/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
+
   # PostgreSQL leg is main-branch only — it validates hosted-profile behaviour
   # and is not needed on every feature-branch PR. Gated on backend changes so
   # docs-only or frontend-only pushes to main skip the ~8-minute PG job.
@@ -120,6 +132,15 @@ jobs:
         # the job's responsibility on upload, not the reporter's.
         run: pytest -x -q --ignore=tests/scripts --alluredir=allure-results
 
+      - name: Upload backend allure-results (PostgreSQL)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-backend-postgres
+          path: backend/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
+
   # Migration tests run against their own database so _pg_reset's DROP SCHEMA /
   # CREATE SCHEMA cycle cannot wipe the main suite's seeded rows. Runs in
   # parallel with backend-test-postgres — neither job depends on the other.
@@ -165,6 +186,15 @@ jobs:
         # SFBL-334 / SFBL-344: migration tests get their own allure-results
         # dir too. Publish workflow collates.
         run: pytest -x -q tests/scripts/ --alluredir=allure-results
+
+      - name: Upload backend allure-results (PostgreSQL migration)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-backend-postgres-migration
+          path: backend/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
 
   frontend-build:
     name: Frontend Build

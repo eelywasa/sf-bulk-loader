@@ -1,0 +1,238 @@
+name: Test evidence publish
+
+# SFBL-334 / SFBL-345. Single workflow that aggregates allure-results from
+# every upstream test workflow and publishes a merged report to the live
+# evidence dashboard at https://reports.bulkloader.forcetide.net.
+#
+# Fires via `workflow_run` AFTER the upstream workflows (e2e-pr.yml +
+# ci-shared.yml) complete — not on push/pull_request directly. This lets the
+# publish wait for ALL test legs to finish without coordinating across
+# workflow boundaries.
+#
+# Concurrency model (locked by Codex review on SFBL-334):
+#   One global concurrency group across every branch and PR.
+#   cancel-in-progress: false → second push queues behind the first so the
+#   history-merge step always sees a consistent state. Without this, two
+#   concurrent publishes can race on the prefix and clobber each other.
+#
+# Forked-PR policy (locked by Codex review on SFBL-334):
+#   Forks do not publish to S3. The workflow_run context for a fork-PR run
+#   carries no repository secrets, so OIDC assumption would fail anyway —
+#   but we surface the policy explicitly and post a PR comment pointing the
+#   reviewer at the GHA HTML artefact fallback.
+
+on:
+  workflow_run:
+    workflows:
+      - "E2E PR Checks (Tier 1a + 1b)"
+      - "Shared Quality Checks"
+    types: [completed]
+
+# Single global concurrency group. cancel-in-progress: false because two
+# pushes in flight against the same PR prefix MUST serialise — the history
+# merge is a read-modify-write on s3://${BUCKET}/${PREFIX}/history/ and
+# concurrent writes would corrupt it.
+concurrency:
+  group: test-evidence-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # OIDC assumption against the SFBL-341 publisher role
+  pull-requests: write  # to post the deep-link comment
+
+env:
+  BUCKET: bulkloader-testevidence-evidencebucketfba44255-dul0vrjuirrp
+  DISTRIBUTION_ID: E25UFH1IGQN249
+  PUBLISHER_ROLE_ARN: arn:aws:iam::628709410721:role/sfbl-test-evidence-publisher
+  AWS_REGION: us-east-1
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Resolve context: PR number, prefix, fork-vs-same-repo classification.
+  # The workflow_run event payload carries the originating workflow's
+  # commit + ref + head_repository; we use those to derive what to do.
+  # ───────────────────────────────────────────────────────────────────────────
+  resolve:
+    name: Resolve publish context
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure'
+    outputs:
+      is_fork: ${{ steps.ctx.outputs.is_fork }}
+      is_pr: ${{ steps.ctx.outputs.is_pr }}
+      pr_number: ${{ steps.ctx.outputs.pr_number }}
+      prefix: ${{ steps.ctx.outputs.prefix }}
+      head_sha: ${{ steps.ctx.outputs.head_sha }}
+    steps:
+      - id: ctx
+        env:
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event.workflow_run.event }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBERS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+        run: |
+          set -euo pipefail
+          # Fork detection: head_repository differs from base.
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "is_fork=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_fork=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # PR vs push classification. workflow_run on a PR carries the
+          # pull_requests array; on a push it's empty.
+          PR_NUM=$(printf '%s' "$PR_NUMBERS" | python3 -c "import json,sys; arr=json.load(sys.stdin); print(arr[0]['number']) if arr else print('')")
+          if [ -n "$PR_NUM" ]; then
+            echo "is_pr=true" >> "$GITHUB_OUTPUT"
+            echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+            echo "prefix=pr-${PR_NUM}" >> "$GITHUB_OUTPUT"
+          elif [ "$HEAD_BRANCH" = "main" ]; then
+            echo "is_pr=false" >> "$GITHUB_OUTPUT"
+            echo "prefix=main" >> "$GITHUB_OUTPUT"
+          else
+            # Push to a non-main branch — nothing to do. Surface via empty prefix.
+            echo "is_pr=false" >> "$GITHUB_OUTPUT"
+            echo "prefix=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+          echo "=== Context ==="
+          echo "  HEAD_REPO=$HEAD_REPO BASE_REPO=$BASE_REPO"
+          echo "  EVENT_NAME=$EVENT_NAME HEAD_BRANCH=$HEAD_BRANCH"
+          echo "  is_fork=$(grep '^is_fork=' $GITHUB_OUTPUT | cut -d= -f2)"
+          echo "  prefix=$(grep '^prefix=' $GITHUB_OUTPUT | cut -d= -f2)"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Fork PR → skip publish + drop a PR comment with the policy explanation.
+  # ───────────────────────────────────────────────────────────────────────────
+  skip-fork:
+    name: Skip publish (fork PR)
+    needs: [resolve]
+    runs-on: ubuntu-latest
+    if: needs.resolve.outputs.is_fork == 'true' && needs.resolve.outputs.is_pr == 'true'
+    steps:
+      - name: Post explanatory PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ needs.resolve.outputs.pr_number }}
+          body: |
+            🚧 Test evidence dashboard publish skipped for this fork PR.
+
+            Per the SFBL-334 forked-PR policy, fork PRs do not publish to the
+            S3 evidence bucket — `workflow_run` triggered from a fork has no
+            access to repository secrets or OIDC trust, and the dashboard's
+            access control assumes same-repo collaborators.
+
+            **Where to find the test artefacts:** the Playwright HTML report
+            for any failed runs is uploaded as a 7-day GHA artefact on the
+            upstream [E2E PR Checks run]({{actions-run-url}}). Click through
+            and download the `playwright-report-tier-*` artefact.
+
+            Once this PR is merged or rebased onto the base repo, the
+            evidence dashboard will resume publishing for it.
+          edit-mode: replace
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Same-repo PR or push to main → publish via the wrapper script.
+  # ───────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish to S3 evidence bucket
+    needs: [resolve]
+    runs-on: ubuntu-latest
+    if: |
+      needs.resolve.outputs.is_fork == 'false' &&
+      needs.resolve.outputs.prefix != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Sparse checkout — we only need the wrapper script + workflows.
+          # The full test source isn't needed because we're working from
+          # downloaded artefacts.
+          sparse-checkout: |
+            tests/e2e/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Node (for allure-commandline)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install allure-commandline
+        run: npm install -g allure-commandline@2
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.PUBLISHER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download upstream Playwright allure-results
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: "allure-results-tier-*"
+          path: ./_inputs/playwright
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Download upstream backend allure-results
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: "allure-results-backend-*"
+          path: ./_inputs/backend
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: List downloaded artefacts
+        run: |
+          echo "=== Playwright ==="
+          ls -la ./_inputs/playwright 2>/dev/null || echo "(empty)"
+          echo "=== Backend ==="
+          ls -la ./_inputs/backend 2>/dev/null || echo "(empty)"
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          # Collect non-empty input dirs. The wrapper tolerates missing
+          # dirs but warns if all are missing — we want to fail loudly
+          # here instead, since "publish ran with no input" probably means
+          # the upstream test workflows didn't produce allure-results.
+          INPUTS=()
+          if [ -d ./_inputs/playwright ] && [ -n "$(ls -A ./_inputs/playwright 2>/dev/null)" ]; then
+            INPUTS+=("./_inputs/playwright")
+          fi
+          if [ -d ./_inputs/backend ] && [ -n "$(ls -A ./_inputs/backend 2>/dev/null)" ]; then
+            INPUTS+=("./_inputs/backend")
+          fi
+          if [ "${#INPUTS[@]}" -eq 0 ]; then
+            echo "ERROR: no allure-results artefacts found in upstream run ${{ github.event.workflow_run.id }}" >&2
+            echo "       Either the upstream workflow ran zero tests, or the artefact upload step is missing." >&2
+            exit 1
+          fi
+
+          tests/e2e/scripts/publish-evidence.sh \
+            "${BUCKET}" \
+            "${DISTRIBUTION_ID}" \
+            "${{ needs.resolve.outputs.prefix }}" \
+            "${INPUTS[@]}"
+
+      - name: Post deep-link PR comment
+        if: needs.resolve.outputs.is_pr == 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ needs.resolve.outputs.pr_number }}
+          body: |
+            📊 **Test evidence dashboard for this PR**:
+            https://reports.bulkloader.forcetide.net/${{ needs.resolve.outputs.prefix }}/
+
+            Auth-gated via GitHub OAuth (same-repo collaborators only — see
+            [test-evidence-runbook.md](https://github.com/eelywasa/sf-bulk-loader/blob/main/docs/operations/test-evidence-runbook.md)).
+            Updates on every push; retained for 30 days after the PR closes.
+
+            (Tier 2 publishing not yet active — SFBL-348.)
+          edit-mode: replace
