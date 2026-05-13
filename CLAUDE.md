@@ -46,6 +46,18 @@ Open PRs normally with `gh pr create` (not `--draft`). CI runs on every push to 
 
 For direct-to-main commits (hotfixes, CI/docs-only changes) a PR is not required — push directly to `main` as normal.
 
+### Commit signing
+
+Every commit must be signed with the configured SSH key. The repo expects
+`commit.gpgsign=true` + `gpg.format=ssh` + an `~/.ssh/id_rsa.pub`-backed
+signing key (already set globally). **Do not** disable signing per-commit
+via `-c commit.gpgsign=false`, `--no-gpg-sign`, or by removing the
+relevant `git config` value. If signing fails (key prompt, missing
+agent, hook timeout), surface the failure and stop — don't bypass it.
+The verified-commit status feeds GitHub's audit trail + branch
+protection signals; unsigned commits show as `N` on `git log --show-signature`
+and `Unverified` in the GitHub UI.
+
 ## Release Workflow
 
 Tags trigger the `Release` workflow, which builds desktop installers and
