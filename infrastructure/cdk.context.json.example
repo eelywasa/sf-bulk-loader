@@ -35,5 +35,16 @@
       "hostedZoneDomain": "bulk-loader.example.com",
       "ecrImageTag": "stable"
     }
+  },
+  "testEvidence": {
+    "_doc": "SFBL-334 / SFBL-341 — TestEvidenceStack. Single global deployment in us-east-1 (Lambda@Edge constraint). Include ALL keys here, not just the per-environment overrides — CDK loads each context source independently, and even though it happens to deep-merge object context values in current versions, that's undocumented behaviour and could change. Keeping the example self-contained means a copy-paste-then-edit workflow produces a working config regardless of CDK's merge semantics.",
+    "authorizedRepo": "eelywasa/sf-bulk-loader",
+    "ghaRepoIdentifier": "eelywasa/sf-bulk-loader",
+    "domainName": "reports.bulk-loader.example.com",
+    "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+    "hostedZoneDomain": "bulk-loader.example.com",
+    "createOidcProvider": true,
+    "_existingOidcProviderArn_doc": "Set this and flip createOidcProvider to false ONLY if a GitHub Actions OIDC provider already exists in the account (one allowed per account for token.actions.githubusercontent.com). Look it up via `aws iam list-open-id-connect-providers`.",
+    "existingOidcProviderArn": ""
   }
 }
