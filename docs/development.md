@@ -481,20 +481,68 @@ taxonomy spec is the source of truth — keep the helpers in sync with it.
 ### What's redacted
 
 Traces, screenshots, and console output go through a redactor + canary
-scanner pipeline before any artefact reaches the bucket:
+scanner pipeline before any artefact reaches the bucket. Both layers
+landed in Wave 3 ([SFBL-346](https://matthew-jenkin.atlassian.net/browse/SFBL-346)
++ [SFBL-347](https://matthew-jenkin.atlassian.net/browse/SFBL-347)):
 
-- **Trace redactor** ([SFBL-346](https://matthew-jenkin.atlassian.net/browse/SFBL-346),
-  pending) — strips `Authorization` / `Cookie` / `Set-Cookie` headers,
-  PEM-shaped bodies, long base64 chunks; tightens `tracing.start()` to
-  drop sources + element-scope snapshots.
-- **Canary scanner** ([SFBL-347](https://matthew-jenkin.atlassian.net/browse/SFBL-347),
-  pending) — fail-closed CI lane that unpacks every `*.zip` inside the
-  generated report and greps for generic secret shapes (`Bearer `, PEM
-  blocks, JWT, AWS access keys) plus CI-injected canaries. Wraps the
-  publish step so a non-zero scanner blocks `aws s3 sync`.
+- **Trace minimization** (config-level, `playwright.config.ts`) — Tier 1a
+  and 1b drop in-trace screenshots + `sources`. Tier 2 keeps screenshots
+  (real-org failure diagnosis needs them) but still drops `sources`.
+- **Trace redactor** (post-process, `tests/e2e/sf/playwright/helpers/trace-redactor.ts`)
+  — registered as `globalTeardown`; walks every `*.zip` under
+  `test-results/` after the suite completes and scrubs
+  `Authorization` / `Cookie` / `Set-Cookie` headers (raw HTTP and the
+  JSON name/value form Playwright traces use), `Bearer <token>`
+  occurrences, PEM blocks → `<REDACTED-PEM>`, and base64 chunks ≥200
+  chars → `<REDACTED-B64>`.
+- **Canary scanner** (`tests/e2e/scripts/scan-evidence.sh`) — invoked
+  inside `publish-evidence.sh` immediately before `aws s3 sync`. Unpacks
+  every `*.zip` inside the generated report and greps for generic secret
+  shapes (`Bearer ` followed by 8+ token chars, PEM blocks, JWT triples,
+  AWS access keys `AKIA…`, Salesforce consumer keys `3MVG9…`) plus any
+  `CANARY_TOKEN` the caller injects. Exit code 1 on any hit; the wrapper
+  aborts before publish.
 
-Until both land, **do not publish Tier 2 evidence to the bucket.** The
-publish workflow's Tier 2 leg (SFBL-348) is explicitly gated on these.
+**Known gap.** PNG screenshot *pixels* are not scanned. The Tier 1a/1b
+minimization removes screenshots from the trace zip entirely; Tier 2
+keeps screenshots, so a UI that renders long-lived secret material on
+screen would still leak via image content. The repo's bulk-loader UI
+does not currently render private keys or session tokens, so this is a
+deferred concern; a future story would add OCR redaction if that ever
+changed.
+
+### Defense in depth: bypass prevention
+
+Three structural layers protect the evidence bucket from a future
+regression that adds a new workflow doing direct S3 writes. Each layer
+is enforced by code, not policy:
+
+1. **Centralised publish wrapper** ([`tests/e2e/scripts/publish-evidence.sh`](../tests/e2e/scripts/publish-evidence.sh)).
+   Every evidence publish — across tiers, layers, branches, PRs — goes
+   through this one script. The script runs the scanner before
+   `aws s3 sync`, so a publish cannot succeed without passing
+   the scanner. *Layer 1 lives in the repo.*
+2. **Workflow-lint guard** ([`.github/workflows/lint-evidence-publish.yml`](../.github/workflows/lint-evidence-publish.yml)).
+   Grep-based CI step that fails the build if any `.github/workflows/*.yml`
+   references `aws s3 sync` against the evidence bucket name, the
+   `s3://bulkloader-testevidence-…` prefix, the `EVIDENCE_BUCKET` env
+   var in a sync line, or the CloudFront distribution ID for direct
+   invalidation. Catches the obvious shape of "engineer copy-pastes the
+   AWS CLI into a new workflow". *Layer 2 lives in the repo's CI.*
+3. **IAM trust policy** ([`infrastructure/lib/test-evidence-stack.ts`](../infrastructure/lib/test-evidence-stack.ts)
+   `PublisherRole`).
+   The OIDC trust policy on `sfbl-test-evidence-publisher` now pins
+   `token.actions.githubusercontent.com:job_workflow_ref` to
+   `eelywasa/sf-bulk-loader/.github/workflows/test-evidence-publish.yml@*`.
+   A new workflow file that attempts to assume the role fails at STS with
+   AccessDenied — there is no PR-level edit that can lift this
+   restriction. *Layer 3 lives in AWS.*
+
+The fail-closed CI lane ([`.github/workflows/canary-evidence-scan.yml`](../.github/workflows/canary-evidence-scan.yml))
+plants a unique canary token, runs the scanner against it, and asserts
+the scanner returns non-zero. Runs on every push to main and weekly on
+Mondays at 06:00 UTC. If the scanner ever silently degrades, this lane
+goes red within one push or one week, whichever comes first.
 
 ### Where reports live
 

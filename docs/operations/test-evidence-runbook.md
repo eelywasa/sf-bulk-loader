@@ -342,11 +342,50 @@ The session cookie is being rejected. Causes:
   bug would affect every user. If only one user is affected, suspect
   cookie issues on their browser.
 
+## Applying the SFBL-347 IAM trust policy tightening
+
+[SFBL-347](https://matthew-jenkin.atlassian.net/browse/SFBL-347) added a
+`job_workflow_ref` condition to the `sfbl-test-evidence-publisher` role's
+trust policy, restricting OIDC role assumption to the specific publish
+workflow file. The CDK source change ships with the SFBL-347 PR; the live
+IAM policy is updated by re-running `cdk deploy` against the stack.
+
+```bash
+# Pre-flight: confirm you're on the right account + region.
+aws sts get-caller-identity        # expect account 628709410721
+echo "$AWS_REGION"                 # expect us-east-1
+
+cd infrastructure
+npm install
+npx cdk diff BulkLoader-TestEvidence
+# Review the diff — should show ONLY a change to PublisherRole's
+# AssumeRolePolicyDocument adding the job_workflow_ref condition.
+
+npx cdk deploy BulkLoader-TestEvidence
+```
+
+**Verifying the constraint took effect:** after deploy, manually
+re-trigger the `test-evidence-publish.yml` workflow via
+`workflow_dispatch`. The workflow should still publish successfully (it
+matches `job_workflow_ref` =
+`eelywasa/sf-bulk-loader/.github/workflows/test-evidence-publish.yml@…`).
+To prove the constraint blocks bypass: temporarily branch a copy of the
+workflow under a different filename and invoke it manually — STS should
+reject the assume-role call with `AccessDenied`.
+
+**Rollback:** revert the CDK source change and `cdk deploy` again. The
+IAM policy is the only stack-level moving part; no other resources are
+affected.
+
 ## See also
 
 - [`docs/architecture/aws-topology.md`](../architecture/aws-topology.md#test-evidence-host-sfbl-334) —
   topology + request-path diagrams for the test-evidence stack.
 - [SFBL-341](https://matthew-jenkin.atlassian.net/browse/SFBL-341) —
   the CDK stack this runbook operates.
+- [SFBL-346](https://matthew-jenkin.atlassian.net/browse/SFBL-346) —
+  trace minimization + redactor (Phase 3 / Wave 3).
+- [SFBL-347](https://matthew-jenkin.atlassian.net/browse/SFBL-347) —
+  canary scanner + fail-closed lane + bypass prevention (Phase 3 / Wave 3).
 - [SFBL-334](https://matthew-jenkin.atlassian.net/browse/SFBL-334) —
   the parent epic for the cross-layer Allure test reporting work.

@@ -130,10 +130,22 @@ if [ "$SIZE_BYTES" -gt "$SIZE_LIMIT_BYTES" ]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 5: Scanner placeholder (SFBL-347 G wires the real call here)
+# Step 5: Canary + secret scanner (SFBL-347 G)
 # ─────────────────────────────────────────────────────────────────────────────
-echo "[publish-evidence] [INFO] Scanner step not yet wired — SFBL-347 G adds the canary scanner here."
-echo "[publish-evidence] [INFO] Until then, do NOT publish Tier 2 evidence through this wrapper."
+# Fail-closed gate. Scanner is the structural backstop behind the redactor
+# (SFBL-346 F): if a credential pattern made it past the post-test redactor
+# into the generated report, this step blocks the publish.
+#
+# CANARY_TOKEN is inherited from the environment when CI is exercising the
+# fail-closed lane (.github/workflows/canary-evidence-scan.yml). For normal
+# publishes the env is unset and only the generic secret patterns apply.
+echo "[publish-evidence] Running canary + secret scanner over $REPORT_DIR"
+SCANNER_PATH="$(dirname "$0")/scan-evidence.sh"
+if [ ! -x "$SCANNER_PATH" ]; then
+  echo "ERROR: scanner script not found or not executable: $SCANNER_PATH" >&2
+  exit 1
+fi
+"$SCANNER_PATH" "$REPORT_DIR"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 6: S3 sync

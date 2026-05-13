@@ -1,0 +1,96 @@
+name: Canary Evidence Scan (fail-closed)
+
+# SFBL-334 / SFBL-347 — proves the canary scanner ALIVE by planting a known
+# canary string and asserting the scanner returns non-zero. If this workflow
+# ever goes green silently, the scanner has degraded and the bucket is
+# trust-only. Runs frequently enough that silent regressions surface fast.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/e2e/scripts/scan-evidence.sh"
+      - "tests/e2e/scripts/publish-evidence.sh"
+      - "tests/e2e/sf/playwright/helpers/trace-redactor.ts"
+      - ".github/workflows/canary-evidence-scan.yml"
+  schedule:
+    # Mondays 06:00 UTC — early enough that an owner sees the red on
+    # Monday morning, late enough that nightly scheduled jobs aren't
+    # competing for runner capacity.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# No global concurrency lock — this lane is fast and stateless; concurrent
+# runs (a push + a cron firing within the same minute) cause no harm.
+
+jobs:
+  assert-fail-closed:
+    name: Plant canary + assert scanner blocks it
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate a unique canary token
+        id: canary
+        # uuidgen ships on ubuntu-latest. The CANARY- prefix matches the
+        # convention in tests/e2e/scripts/scan-evidence.sh + the wrapper
+        # docs. Run-id keeps it traceable from logs back to a workflow run.
+        run: |
+          TOKEN="CANARY-${GITHUB_RUN_ID}-$(uuidgen)"
+          echo "token=${TOKEN}" >> "$GITHUB_OUTPUT"
+          echo "Generated canary: ${TOKEN}"
+
+      - name: Build a fixture report tree containing the canary
+        env:
+          CANARY: ${{ steps.canary.outputs.token }}
+        run: |
+          mkdir -p fixture-report/data/test-results/some-test
+          # The canary is planted inside a zip — the scanner must unpack
+          # nested zips to find it. This exercises the unpack-and-grep
+          # code path, not just a top-level grep.
+          mkdir -p fixture-payload
+          printf 'some innocuous log line\nthe canary is: %s\nmore log\n' "$CANARY" \
+            > fixture-payload/trace.trace
+          (cd fixture-payload && zip -q -r ../fixture-report/data/test-results/some-test/trace.zip .)
+          # Also plant a top-level non-zip file with a generic Bearer
+          # pattern so we're sure the scanner picks BOTH up.
+          printf 'GET /api/foo\nAuthorization: Bearer plantedfaketoken1234567890\n' \
+            > fixture-report/data/raw.log
+
+      - name: Run scanner — assert it returns non-zero (canary detected)
+        env:
+          CANARY_TOKEN: ${{ steps.canary.outputs.token }}
+        # Crucial: we INVERT the exit code. If the scanner returns 0 the
+        # canary survived silently — meaning either the scanner regressed
+        # or someone broke the wiring. That is the failure mode this lane
+        # exists to catch, so we fail this job loudly with a clear message.
+        run: |
+          set +e
+          ./tests/e2e/scripts/scan-evidence.sh fixture-report
+          rc=$?
+          set -e
+          echo "scanner exit code: ${rc}"
+          if [ "${rc}" -eq 0 ]; then
+            echo "::error::Canary survived scanner — scan-evidence.sh has regressed (returned 0 with a planted canary)."
+            exit 1
+          fi
+          if [ "${rc}" -ne 1 ]; then
+            echo "::error::Scanner returned unexpected exit code ${rc} (expected 1 on hit)."
+            exit 1
+          fi
+          echo "OK — scanner correctly returned ${rc} on planted canary."
+
+      - name: Sanity check — clean payload yields scanner exit 0
+        # Second leg of the assertion: a fixture WITHOUT the canary or
+        # any secret-shaped material must pass cleanly. Catches the
+        # symmetric failure where the scanner has become trigger-happy
+        # and false-positives on clean content.
+        run: |
+          mkdir -p clean-report/data
+          printf 'GET /api/health 200 OK in 4ms\n' > clean-report/data/raw.log
+          ./tests/e2e/scripts/scan-evidence.sh clean-report
