@@ -39,6 +39,7 @@ How to run, develop, and operate the app.
 | [observability.md](observability.md) | Event taxonomy, metrics, spans, DoD checklist |
 | [ci.md](ci.md) | CI workflow topology |
 | [email.md](email.md) | Outbound email backend, SMTP credentials, delivery log |
+| [operations/test-evidence-runbook.md](operations/test-evidence-runbook.md) | OAuth App provisioning, Secrets Manager seeding, rotation, incident revocation, access management for the test-evidence dashboard |
 
 ---
 
@@ -68,11 +69,21 @@ Start at [`usage/index.md`](usage/index.md), which lists topics in nav order:
 - [specs/rbac-permission-matrix.md](specs/rbac-permission-matrix.md) +
   `specs/rbac-permission-matrix.yml` — the authoritative permission → route
   map.
+- [specs/test-evidence-taxonomy.md](specs/test-evidence-taxonomy.md) — the
+  cross-layer Allure label / link / category / URL contract every test
+  suite conforms to. Source of truth for the helpers under
+  `tests/e2e/sf/playwright/helpers/allure.ts` and
+  `backend/tests/_allure_helpers.py`.
 
 Historical specs that have been implemented live under
 [`specs/implemented/`](specs/implemented/) for reference; they are **not**
 authoritative about current behaviour — check the code or the relevant pillar
-instead.
+instead. Notable historical artefacts:
+
+- [specs/implemented/sfbl-334-spike-report.md](specs/implemented/sfbl-334-spike-report.md)
+  — the Phase 1 hosting spike that informed (and then was overturned by)
+  the SFBL-334 cross-layer Allure dashboard architecture. Preserved for the
+  size + history-merge numbers, not the verdict.
 
 ---
 
