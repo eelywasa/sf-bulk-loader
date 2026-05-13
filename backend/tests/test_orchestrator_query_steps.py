@@ -25,6 +25,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests._allure_helpers import label_layer, label_tier
+
+# SFBL-334 / SFBL-344: tag every test in this module — layer=backend, tier=1a.
+pytestmark = [label_layer("backend"), label_tier("1a")]
+
 from app.models.connection import Connection
 from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan

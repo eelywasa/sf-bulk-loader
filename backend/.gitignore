@@ -1,0 +1,15 @@
+# SFBL-334 / SFBL-344: Allure reporter output. Generated per pytest run via
+# `--alluredir=allure-results` and consumed by the publish workflow.
+allure-results/
+allure-report/
+
+# pytest + coverage local artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+__pycache__/
+*.pyc
+
+# Local test databases
+test_api.db
+test_api.db-*

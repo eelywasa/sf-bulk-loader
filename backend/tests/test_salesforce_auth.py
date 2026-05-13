@@ -20,6 +20,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwt as jose_jwt
 
+from tests._allure_helpers import label_layer, label_tier
+
+# SFBL-334 / SFBL-344: tag every test in this module — layer=backend, tier=1a.
+pytestmark = [label_layer("backend"), label_tier("1a")]
+
 from app.services.salesforce_auth import (
     AuthError,
     _build_jwt,

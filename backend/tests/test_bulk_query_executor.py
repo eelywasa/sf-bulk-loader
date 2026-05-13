@@ -24,6 +24,13 @@ import pytest
 import os
 os.environ.setdefault("SFBL_DISABLE_ENV_FILE", "1")
 
+from tests._allure_helpers import label_layer, label_tier
+
+# SFBL-334 / SFBL-344: tag every test in this module — layer=backend, tier=1a.
+# Includes SFBL-114 bulk query coverage; per-test @link_issue("SFBL-XXX") can
+# be added by future authors as new bulk-query tests land.
+pytestmark = [label_layer("backend"), label_tier("1a")]
+
 from app.services.bulk_query_executor import (
     BulkQueryError,
     BulkQueryJobFailed,
