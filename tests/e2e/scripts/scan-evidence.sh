@@ -70,16 +70,40 @@ trap cleanup EXIT
 mkdir -p "$STAGING_DIR/report"
 cp -R "$REPORT_DIR"/. "$STAGING_DIR/report"/
 
-# Unzip every *.zip inside the mirror. Some Playwright traces are deeply
-# nested; -o overwrites so we can rerun. Suppress unzip stdout (verbose
-# by default).
-while IFS= read -r -d '' zipfile; do
-  out="${zipfile%.zip}.unpacked"
-  mkdir -p "$out"
-  unzip -qq -o "$zipfile" -d "$out" || {
-    echo "WARN: failed to unpack $zipfile — treating raw bytes as scan surface" >&2
-  }
-done < <(find "$STAGING_DIR/report" -type f -name "*.zip" -print0)
+# Unpack every *.zip inside the mirror, then loop until no new zips appear.
+# Playwright trace attachments are sometimes shaped as a `*.zip` containing
+# nested `*.zip` files (Codex review on PR #92 reproduced an outer→inner→
+# secret fixture that single-pass `find` missed). The fix is to rescan
+# after every pass until a pass extracts nothing.
+#
+# Bound the loop at 10 passes as a safety net against an adversarial zip
+# bomb / cycle (a zip referencing itself by hash). 10 levels of nesting is
+# vastly more than any legitimate Playwright payload.
+MAX_UNPACK_PASSES=10
+unpack_pass=0
+while [ "$unpack_pass" -lt "$MAX_UNPACK_PASSES" ]; do
+  unpack_pass=$((unpack_pass + 1))
+  found_any=0
+  while IFS= read -r -d '' zipfile; do
+    out="${zipfile%.zip}.unpacked"
+    if [ -d "$out" ]; then
+      # Already processed in a previous pass — leave alone.
+      continue
+    fi
+    mkdir -p "$out"
+    if unzip -qq -o "$zipfile" -d "$out" 2>/dev/null; then
+      found_any=1
+    else
+      echo "WARN: failed to unpack $zipfile — treating raw bytes as scan surface" >&2
+    fi
+  done < <(find "$STAGING_DIR/report" -type f -name "*.zip" -print0)
+  if [ "$found_any" -eq 0 ]; then
+    break
+  fi
+done
+if [ "$unpack_pass" -ge "$MAX_UNPACK_PASSES" ]; then
+  echo "WARN: hit MAX_UNPACK_PASSES=$MAX_UNPACK_PASSES — deeper nested zips not scanned" >&2
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Patterns
@@ -125,16 +149,36 @@ for entry in "${PATTERNS[@]}"; do
   name="${entry%%|*}"
   regex="${entry#*|}"
 
-  # -r recursive; -E extended; -I skip binary; -l list files only first;
-  # exit 0 even on no match so set -e doesn't abort the loop.
-  matches="$(grep -rIEn -- "$regex" "$STAGING_DIR/report" 2>/dev/null | head -10 || true)"
+  # SECURITY (Codex P1, PR #92): we MUST NOT echo the matched line content
+  # into CI logs — the whole point of failing the publish is that the
+  # content is sensitive. Use `grep -l` to capture file paths only, then
+  # report file + line-number (no content). The line number is enough for
+  # an operator to fetch the report artefact from the workflow and triage
+  # offline; the matched text never leaves the runner.
+  #
+  # -r recursive; -E extended; -I skip binary; -l files-with-matches only.
+  # Newline-delimited (not -Z) because command substitution strips NUL
+  # bytes. Test result filenames never contain newlines so this is safe.
+  # `|| true` so set -e doesn't abort the loop on no-match.
+  files="$(grep -rIEl -- "$regex" "$STAGING_DIR/report" 2>/dev/null || true)"
 
-  if [ -n "$matches" ]; then
+  if [ -n "$files" ]; then
     HITS=$((HITS + 1))
+    file_summary=""
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      # Re-grep the matching file to capture line numbers only — never
+      # the matched text. `cut -d: -f1` strips the line content; we keep
+      # just the file:lineno pairs.
+      line_nos="$(grep -nIE -- "$regex" "$f" 2>/dev/null | cut -d: -f1 | head -10 | tr '\n' ',' | sed 's/,$//')"
+      # Path relative to staging root for cleaner output.
+      rel="${f#"$STAGING_DIR/report/"}"
+      file_summary="${file_summary}  ${rel} (lines: ${line_nos})
+"
+    done <<< "$files"
     HIT_LINES="${HIT_LINES}
 === HIT: ${name} ===
-${matches}
-"
+${file_summary}"
   fi
 done
 
@@ -145,6 +189,8 @@ done
 if [ "$HITS" -gt 0 ]; then
   echo "[scan-evidence] SECRET PATTERN(S) DETECTED — publish must abort." >&2
   echo "[scan-evidence] $HITS distinct pattern(s) matched in $REPORT_DIR" >&2
+  echo "[scan-evidence] NOTE: matched line content is suppressed by design." >&2
+  echo "[scan-evidence]       Fetch the report from the workflow run to triage." >&2
   printf '%s\n' "$HIT_LINES" >&2
   exit 1
 fi
