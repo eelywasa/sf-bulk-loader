@@ -556,6 +556,25 @@ with [SFBL-345](https://matthew-jenkin.atlassian.net/browse/SFBL-345).
   contract + a "what NOT to annotate with" section that prevents common
   mistakes.
 
+### Gotchas for test authors
+
+Two non-obvious Playwright/Allure interactions surfaced during the SFBL-334
+Phase 1 spike. Both will silently produce wrong results if you don't know
+about them.
+
+- **`--reporter=` on the CLI silently overrides the config-defined reporter
+  array.** If anyone runs `npx playwright test --reporter=list` against an
+  Allure-instrumented suite, the Allure output never gets written — no error,
+  no warning, just no `allure-results/` directory. The fix is to never pass
+  `--reporter=` on Allure runs. CI invocations in `.github/workflows/` should
+  rely on `playwright.config.ts`'s reporter array exclusively.
+- **`test.use({ trace, screenshot })` is forbidden inside a `describe` block.**
+  Playwright requires per-test `use` overrides at file or project level only.
+  If you need different trace/screenshot capture for a subset of tests, put
+  them in a separate spec file (or split into a new project in
+  `playwright.config.ts`). Adding `test.use(...)` inside `test.describe(...)`
+  is rejected at collection time with an "ambiguous worker config" error.
+
 ### How to interpret the dashboard
 
 The Allure UI groups results by:

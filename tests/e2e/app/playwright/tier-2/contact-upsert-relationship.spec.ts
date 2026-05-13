@@ -62,6 +62,11 @@ import { expect } from "@playwright/test";
 import { test as baseTest } from "../helpers/e2e_prefix";
 import { fetchAuthMode, loginViaUi } from "../helpers/auth";
 import {
+  labelLayer,
+  labelTier,
+  linkIssue,
+} from "../../../sf/playwright/helpers/allure";
+import {
   createScratchOrgConnection,
   deleteScratchOrgConnection,
 } from "../helpers/setup_connection";
@@ -247,7 +252,12 @@ test.describe("Tier 2 — Contact UPSERT with Account relationship lookup", () =
     process.env["ADMIN_PASSWORD"] ??
     "password";
 
-  test.beforeEach(async ({ request, e2ePrefix }) => {
+  test.beforeEach(async ({ request, e2ePrefix }, testInfo) => {
+    // SFBL-334 Allure annotations — taxonomy: tier=2, layer=e2e, issue=SFBL-328.
+    linkIssue(testInfo, "SFBL-328");
+    labelTier(testInfo, "2");
+    labelLayer(testInfo, "e2e");
+
     // Use a single connection for both the Account and Contact plans.
     connection = await createScratchOrgConnection(request);
 

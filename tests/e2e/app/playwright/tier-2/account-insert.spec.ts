@@ -44,6 +44,11 @@ import { expect } from "@playwright/test";
 import { test as baseTest } from "../helpers/e2e_prefix";
 import { fetchAuthMode, loginViaUi } from "../helpers/auth";
 import {
+  labelLayer,
+  labelTier,
+  linkIssue,
+} from "../../../sf/playwright/helpers/allure";
+import {
   createScratchOrgConnection,
   deleteScratchOrgConnection,
 } from "../helpers/setup_connection";
@@ -137,7 +142,12 @@ test.describe("Tier 2 — Account INSERT end-to-end", () => {
     process.env["ADMIN_PASSWORD"] ??
     "password";
 
-  test.beforeEach(async ({ request, e2ePrefix }) => {
+  test.beforeEach(async ({ request, e2ePrefix }, testInfo) => {
+    // SFBL-334 Allure annotations — taxonomy: tier=2, layer=e2e, issue=SFBL-328.
+    linkIssue(testInfo, "SFBL-328");
+    labelTier(testInfo, "2");
+    labelLayer(testInfo, "e2e");
+
     // 1. Create a bulk-loader Connection pointing at the scratch org.
     connection = await createScratchOrgConnection(request);
 
