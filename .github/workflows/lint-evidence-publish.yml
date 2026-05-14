@@ -1,0 +1,102 @@
+name: Lint — Evidence Publish Bypass Guard
+
+# SFBL-334 / SFBL-347 — the second of three defense-in-depth layers. The
+# IAM trust policy (CDK) restricts OIDC role assumption to the publish
+# workflow file; this lint job catches the simpler failure mode where a
+# future workflow tries to `aws s3 sync` directly into the evidence bucket
+# without going through the centralised wrapper.
+#
+# The rule:
+#   - `aws s3 sync` referencing the evidence bucket (by name or by env var)
+#     is only allowed inside tests/e2e/scripts/publish-evidence.sh.
+#   - Workflows MAY call publish-evidence.sh; they MUST NOT call `aws s3 sync`
+#     against the bucket directly.
+
+on:
+  pull_request:
+    branches: ["**"]
+    paths:
+      - ".github/workflows/**"
+      - "tests/e2e/scripts/**"
+      - ".github/workflows/lint-evidence-publish.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "tests/e2e/scripts/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check-bypass:
+    name: Forbid direct evidence-bucket access outside the wrapper
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Grep workflows for raw `aws s3 sync` against the evidence bucket
+        # We allow the literal string ONLY inside publish-evidence.sh. Any
+        # *.yml under .github/workflows/ that mentions `aws s3 sync` or
+        # references the evidence bucket name or the documented env var
+        # (EVIDENCE_BUCKET / BULKLOADER_TESTEVIDENCE_BUCKET) fails the build.
+        #
+        # The greps are deliberately conservative — they catch the obvious
+        # bypass shapes (a future engineer copy-pasting `aws s3 sync s3://…`
+        # into a new workflow) without trying to be a full taint analysis.
+        # The third defense layer (IAM trust policy via CDK) backstops
+        # anything more subtle.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # Patterns that indicate direct bucket interaction. Keep narrow
+          # to avoid false-positives on unrelated S3 work (e.g. SFBL-115
+          # output-sink uses).
+          PATTERNS=(
+            'aws[[:space:]]+s3[[:space:]]+sync.*bulkloader-testevidence'
+            's3://bulkloader-testevidence'
+            'aws[[:space:]]+s3[[:space:]]+sync.*EVIDENCE_BUCKET'
+            'aws[[:space:]]+cloudfront[[:space:]]+create-invalidation.*E25UFH1IGQN249'
+          )
+
+          # Skip the lint workflow itself — it has to contain the pattern
+          # strings to grep for them, so it would otherwise self-trip.
+          SELF="$(basename "${BASH_SOURCE[0]:-}")"
+          violations=0
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            case "$(basename "$f")" in
+              lint-evidence-publish.yml|lint-evidence-publish.yaml)
+                continue
+                ;;
+            esac
+            for p in "${PATTERNS[@]}"; do
+              if grep -EqI -- "$p" "$f"; then
+                echo "::error file=$f::Workflow references the evidence bucket directly (pattern: $p). All evidence publishes must go through tests/e2e/scripts/publish-evidence.sh."
+                violations=$((violations + 1))
+              fi
+            done
+          done
+
+          if [ "$violations" -gt 0 ]; then
+            echo ""
+            echo "Bypass detected: $violations rule violation(s)."
+            echo "If you are intentionally adding a new publish path, extend"
+            echo "tests/e2e/scripts/publish-evidence.sh rather than calling"
+            echo "aws CLI directly. See docs/development.md → Test evidence →"
+            echo "Defense in depth for context."
+            exit 1
+          fi
+
+          echo "OK — no workflows bypass the publish wrapper."
+
+      - name: Confirm the wrapper still exists and is executable
+        # If a refactor accidentally removes the wrapper, the lint above
+        # would pass vacuously (no workflows could violate a missing
+        # script). Belt-and-braces.
+        run: |
+          test -x tests/e2e/scripts/publish-evidence.sh
+          test -x tests/e2e/scripts/scan-evidence.sh
+          echo "OK — wrapper + scanner are present and executable."

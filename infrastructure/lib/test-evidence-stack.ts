@@ -326,11 +326,16 @@ export class TestEvidenceStack extends cdk.Stack {
     // --- IAM role for GHA publishing ---
     // Trust policy scoped to:
     //   - repo:eelywasa/sf-bulk-loader (the publishing repo)
-    //   - ref:refs/heads/main OR pull_request workflow runs
-    //   - workflow path constraint added in SFBL-347 G (further tightens to
-    //     the specific publish workflow file). Trust the broad subject here
-    //     and let SFBL-347 layer on the workflow-level constraint via a
-    //     conditions diff once that story lands.
+    //   - ref:refs/heads/main OR pull_request workflow runs (`sub` claim)
+    //   - SFBL-347 G: job_workflow_ref locked to the publish workflow file
+    //     path. The OIDC `job_workflow_ref` claim is set by GitHub to the
+    //     reusable / called workflow path; restricting it here means a
+    //     future workflow trying to assume this role for evidence publish
+    //     fails at the STS layer with AccessDenied. This is layer 3 of the
+    //     defense-in-depth strategy documented in docs/development.md →
+    //     Test evidence → Defense in depth. Layers 1 (centralised wrapper)
+    //     and 2 (workflow-lint) are repo-level; this layer is AWS-side and
+    //     cannot be removed via a PR alone.
     this.publisherRole = new iam.Role(this, 'PublisherRole', {
       roleName: 'sfbl-test-evidence-publisher',
       assumedBy: new iam.WebIdentityPrincipal(oidcProvider.openIdConnectProviderArn, {
@@ -341,6 +346,12 @@ export class TestEvidenceStack extends cdk.Stack {
           'token.actions.githubusercontent.com:sub': [
             `repo:${props.ghaRepoIdentifier}:ref:refs/heads/main`,
             `repo:${props.ghaRepoIdentifier}:pull_request`,
+          ],
+          // job_workflow_ref takes the form `<owner>/<repo>/<path>@<ref>`.
+          // The trailing `@*` allows any branch/tag/sha — pinning the file
+          // path is the structural restriction, not the ref.
+          'token.actions.githubusercontent.com:job_workflow_ref': [
+            `${props.ghaRepoIdentifier}/.github/workflows/test-evidence-publish.yml@*`,
           ],
         },
       }),

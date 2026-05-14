@@ -51,11 +51,20 @@ export default defineConfig({
       ]
     : [["list"], ["allure-playwright", { resultsDir: "allure-results", detail: true, suiteTitle: false }]],
 
+  // SFBL-334 / SFBL-346: post-suite trace redaction. The teardown walks
+  // every *.zip under test-results/ and scrubs Authorization/Cookie headers,
+  // PEM blocks, and long base64 chunks before any CI artefact-upload step
+  // runs. See tests/e2e/sf/playwright/fixtures/redactor-teardown.ts for the
+  // pattern set; trace-redactor.ts for the redaction primitives.
+  globalTeardown: "./sf/playwright/fixtures/redactor-teardown.ts",
+
   use: {
     baseURL: BASE_URL,
-    // Capture traces on retry so failures are diagnosable
-    trace: "on-first-retry",
-    // Screenshot on failure
+    // SFBL-346: trace minimization. Defaults are tightened per-tier in the
+    // projects[] below — Tier 1a/1b drop in-trace screenshots + sources;
+    // Tier 2 keeps screenshots (real-org failure diagnosis needs visual
+    // context) but still drops sources. The post-suite redactor scrubs
+    // what gets through regardless.
     screenshot: "only-on-failure",
   },
 
@@ -66,6 +75,15 @@ export default defineConfig({
       testMatch: "app/playwright/tier-1a/**/*.spec.ts",
       use: {
         ...devices["Desktop Chrome"],
+        // SFBL-346: org-free + desktop profile — no credential material in
+        // the trace. Drop in-trace screenshots (the on-failure top-level
+        // screenshot is enough) and sources to minimise leak surface.
+        trace: {
+          mode: "on-first-retry",
+          screenshots: false,
+          snapshots: true,
+          sources: false,
+        },
       },
     },
     {
@@ -75,6 +93,13 @@ export default defineConfig({
       testMatch: "app/playwright/tier-1b/**/*.spec.ts",
       use: {
         ...devices["Desktop Chrome"],
+        // SFBL-346: fixture-mode — same minimization as 1a.
+        trace: {
+          mode: "on-first-retry",
+          screenshots: false,
+          snapshots: true,
+          sources: false,
+        },
       },
     },
     {
@@ -85,6 +110,17 @@ export default defineConfig({
       fullyParallel: false,
       use: {
         ...devices["Desktop Chrome"],
+        // SFBL-346: real-org tier KEEPS screenshots — a Tier 2 failure
+        // diagnosis without the page state is near-useless. The redactor
+        // strips Auth/Cookie headers and PEM bodies from the trace.network
+        // entries that ride alongside. `sources: false` still applies —
+        // stack frames don't add diagnostic value over the trace itself.
+        trace: {
+          mode: "on-first-retry",
+          screenshots: true,
+          snapshots: true,
+          sources: false,
+        },
       },
     },
     {
