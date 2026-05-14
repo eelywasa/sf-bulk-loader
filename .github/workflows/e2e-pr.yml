@@ -106,9 +106,13 @@ jobs:
     name: E2E Tier 1a (org-free)
     runs-on: ubuntu-latest
     needs: [build-images]
-    # 10 min — actual Playwright work is sub-minute; covers image download +
-    # docker load + stack-up + npm/playwright deps.
-    timeout-minutes: 10
+    # 15 min — actual Playwright work is sub-minute. The dominant cost is
+    # `npx playwright install --with-deps chromium`, which has been
+    # observed taking 9m23s on a slow runner (PR #92 run 25806336447 hit
+    # the previous 10m ceiling with all test steps passing but the job
+    # cancelled during cleanup). 15m leaves ~5m of headroom over the
+    # worst-case observed without papering over a true regression.
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -216,9 +220,9 @@ jobs:
     name: E2E Tier 1b (fixture-mode)
     runs-on: ubuntu-latest
     needs: [build-images]
-    # 10 min — actual Playwright work is sub-minute; covers image download +
-    # docker load + stack-up + npm/playwright deps.
-    timeout-minutes: 10
+    # 15 min — see Tier 1a comment above. `playwright install --with-deps`
+    # is the dominant cost and has been observed at 9m+ on slow runners.
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
