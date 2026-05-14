@@ -461,7 +461,7 @@ the operator runbook (provisioning, rotation, incident revocation) is at
 | --- | --- | --- |
 | **1a / 1b** (Playwright, every PR) | Allure results — labels, links, attached screenshots on failure, retry traces, test step timings | `pr-{n}/` on per-PR runs, `main/` after merge |
 | **Backend pytest** | Allure results — labels, links, step traces from `with allure.step(...)`, attached fixture artefacts | Same `pr-{n}/` and `main/` prefixes |
-| **Tier 2** (scratch-org runs) | Full Allure results + traces. Detailed capture surface lands with the publish wiring; see [SFBL-349](https://matthew-jenkin.atlassian.net/browse/SFBL-349) | `tier-2/{run-id}/` |
+| **Tier 2** (scratch-org runs) | Full Allure results + traces (with screenshots; `sources` off). Same redactor pipeline as Tier 1a/1b — Auth/Cookie headers, PEM blocks, long base64 chunks scrubbed via `globalTeardown`. | `tier-2/{run-id}/` payload + shared `tier-2/history/` trend |
 
 The cross-layer taxonomy (labels, links, categories, URL layout) is
 formalised at [`specs/test-evidence-taxonomy.md`](specs/test-evidence-taxonomy.md).
@@ -551,11 +551,77 @@ goes red within one push or one week, whichever comes first.
 | `main/` | Latest report from a successful main-branch CI run | indefinite |
 | `pr-{n}/` | Per-PR snapshot, overwritten on each push | 30 days |
 | `tier-2/{run-id}/` | Per Tier-2 scheduled run, immutable | 90 days |
+| `tier-2/history/` | Shared Allure history (trend + retry tracking) across every Tier-2 run | retained while any Tier-2 run is live |
 
 The Lambda@Edge OAuth gate rewrites any URI ending in `/` to
 `{uri}index.html`, so `https://reports.../pr-123/` resolves to
 `pr-123/index.html`. Bucket name: `bulkloader-testevidence-evidencebucketfba44255-dul0vrjuirrp`
 in `us-east-1`.
+
+### Tier 2 specifics
+
+Tier 2 hits a real Salesforce scratch org and so has different capture
+and lifecycle properties to Tier 1a/1b. Three workflows produce Tier 2
+results, each uploading the `allure-results-tier-2` artefact that the
+publish workflow consumes via `workflow_run`:
+
+- [`e2e-tier-2-nightly.yml`](../.github/workflows/e2e-tier-2-nightly.yml) — Mondays-through-Sundays cron at 02:00 UTC plus `workflow_dispatch`.
+- [`e2e-tier-2.yml`](../.github/workflows/e2e-tier-2.yml) — maintainer opt-in via the `tier-2` PR label.
+- [`release.yml`](../.github/workflows/release.yml) `tier-2-e2e` job — gates the release tag.
+
+**Capture surface**: full Playwright traces with screenshots kept on
+(real-org failure diagnosis needs them); `sources` off; the post-suite
+redactor scrubs `Authorization`/`Cookie`/`Set-Cookie` headers, PEM
+blocks, `Bearer` tokens, and base64 chunks ≥200 chars — same pipeline
+as Tier 1a/1b ([SFBL-346](https://matthew-jenkin.atlassian.net/browse/SFBL-346)).
+
+**URL layout**: each run lands under `tier-2/{upstream_run_id}/`. The
+upstream run ID is GitHub's stable identifier for the Tier 2 workflow
+run that produced the artefact — `gh run view <id>` resolves it back to
+logs + diff + author.
+
+**History-merge model**: every Tier 2 run pulls and pushes the *shared*
+`tier-2/history/` rather than maintaining per-run history. This is the
+decision documented in
+[`specs/test-evidence-taxonomy.md`](specs/test-evidence-taxonomy.md#history-merge-model):
+the dashboard's value for Tier 2 is the trend across runs, which would
+be impossible if each `tier-2/{run-id}/` had isolated history. The
+publish wrapper supports this via a `HISTORY_PREFIX` env var; it's set
+to `tier-2/history` for Tier 2 publishes only.
+
+### Diagnosing failed Tier 2 publishes
+
+The publish step runs inside `test-evidence-publish.yml`'s `publish`
+job (look for the upstream workflow named "E2E Tier 2 — nightly", "E2E
+Tier 2 — PR label opt-in", or "Release" in the Actions UI). Common
+failure modes:
+
+- **Scanner red** ([SFBL-347](https://matthew-jenkin.atlassian.net/browse/SFBL-347)
+  canary scanner found a secret pattern in the generated report).
+  The publish step stderr lists `file_path (lines: ...)` — never the
+  matched content. Fetch the `allure-results-tier-2` artefact from the
+  upstream Tier 2 workflow run (the `gh run download` command in the
+  job log identifies it) and open the named files to triage. Decide
+  whether it's a real leak (patch the redactor or the upstream test)
+  or a false positive (tighten the scanner regex).
+- **OAuth / 401-403 errors hitting the dashboard URL.** Lambda@Edge
+  logs live in CloudWatch under `us-east-1` log group
+  `/aws/lambda/us-east-1.<oauth-function-name>` (the function ARN is
+  in the stack outputs — `aws cloudformation describe-stacks
+  --stack-name BulkLoader-TestEvidence` will show
+  `OAuthFunctionArn`). 403 on the repo check usually means the
+  authenticated GitHub user isn't on the collaborators list.
+- **"No Tier 2 allure-results in upstream run …".** Expected when a
+  Release run completes without firing its `tier-2-e2e` job (e.g. the
+  release skipped Tier 2). The publish job exits 0 silently. If the
+  Tier 2 job *did* run and you still see this, the `Upload Tier 2
+  allure-results` step in the upstream workflow is broken — check the
+  artefact list on the upstream run.
+- **STS `AccessDenied` on assume-role.** SFBL-347's
+  `job_workflow_ref` trust-policy condition is pinned to
+  `test-evidence-publish.yml@*`; if someone forks the publish workflow
+  to a new filename, OIDC will reject. Revert the rename or extend the
+  trust policy via CDK + redeploy (see operator runbook).
 
 ### How to access
 

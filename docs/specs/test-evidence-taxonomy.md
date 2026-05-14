@@ -96,6 +96,7 @@ every `allure-results/` directory before running `allure generate`.
 | `main/` | Latest report from a successful main-branch CI run | indefinite |
 | `pr-{n}/` | Per-PR snapshot, overwritten on each push | 30 days (S3 lifecycle) |
 | `tier-2/{run-id}/` | Per Tier-2 scheduled run, immutable | 90 days |
+| `tier-2/history/` | Shared Allure history (trend, retry tracking) across every Tier-2 run | retained while any Tier-2 run is live |
 
 Authoritative S3 bucket: `bulkloader-testevidence-evidencebucketfba44255-dul0vrjuirrp`
 in `us-east-1` (live since SFBL-341).
@@ -104,6 +105,28 @@ CloudFront URL: `https://reports.bulkloader.forcetide.net/{prefix}/`.
 The Lambda@Edge OAuth gate rewrites any URI ending in `/` to
 `{uri}index.html`, so `https://reports.../pr-123/` resolves to
 `pr-123/index.html`.
+
+### History-merge model
+
+Allure builds its trend graph by pulling the previous run's `history/`
+directory into the staging dir before `allure generate`. Each prefix
+needs to pick: *per-prefix history* (the simple default — each `pr-{n}/`
+has its own trend across that PR's pushes) or *shared history across runs*
+(the trend spans all runs that belong to one logical track).
+
+| Prefix | History model | Why |
+| --- | --- | --- |
+| `main/` | per-prefix (`main/history/`) | One canonical track — every push to main extends the same trend. |
+| `pr-{n}/` | per-prefix (`pr-{n}/history/`) | Trend is scoped to that PR's iteration; merging with main's history would muddy the signal. |
+| `tier-2/{run-id}/` | **shared** (`tier-2/history/`) | SFBL-348 decision. Each Tier-2 run gets a unique `{run-id}` so per-run history would orphan every report. The dashboard's value for Tier 2 is precisely the trend across runs ("did this regression land yesterday or has it been broken for a fortnight?"), which requires a single shared history surface. |
+
+Implementation: the publish wrapper (`tests/e2e/scripts/publish-evidence.sh`)
+supports an optional `HISTORY_PREFIX` env var. When set, it pulls
+history from `s3://${BUCKET}/${HISTORY_PREFIX}/` instead of
+`${PREFIX}/history/` and pushes the freshly generated `history/`
+subdirectory back to the same path after the main sync. `HISTORY_PREFIX`
+is set to `tier-2/history` for Tier-2 publishes only; everything else
+inherits the default per-prefix behaviour.
 
 ## Conventions for new test authors
 

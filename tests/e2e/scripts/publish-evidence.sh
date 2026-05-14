@@ -66,6 +66,23 @@ if [ -z "$PREFIX" ]; then
   exit 1
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Optional history prefix override (SFBL-348)
+# ─────────────────────────────────────────────────────────────────────────────
+# Tier 2 publishes use a per-run `tier-2/{run-id}/` prefix but want a SHARED
+# trend across runs, so callers can override the history location via the
+# HISTORY_PREFIX env var. Default: `${PREFIX}/history` (unchanged for Tier
+# 1a/1b/backend publishes which all want per-prefix history).
+#
+# When set, the wrapper:
+#   - Pulls prior history from s3://${BUCKET}/${HISTORY_PREFIX}/ (Step 2)
+#   - After Step 6's main sync, additionally pushes the freshly generated
+#     ${REPORT_DIR}/history/ back to the same path so the next run sees it.
+#   - Extends the CloudFront invalidation to /${HISTORY_PREFIX}/* as well.
+HISTORY_PREFIX="${HISTORY_PREFIX:-${PREFIX}/history}"
+HISTORY_PREFIX="${HISTORY_PREFIX#/}"
+HISTORY_PREFIX="${HISTORY_PREFIX%/}"
+
 # Working directory under the system temp root, cleaned up on exit. Using
 # mktemp here so concurrent runs can't collide on the same `./staging/`
 # in CI workspace.
@@ -96,12 +113,13 @@ if ! ls -A "$STAGING_DIR" >/dev/null 2>&1; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 2: Pull prior history
+# Step 2: Pull prior history (from HISTORY_PREFIX — shared for Tier 2, per-
+# prefix for everything else; see env-var block above)
 # ─────────────────────────────────────────────────────────────────────────────
-echo "[publish-evidence] Pulling prior history from s3://${BUCKET}/${PREFIX}/history/"
+echo "[publish-evidence] Pulling prior history from s3://${BUCKET}/${HISTORY_PREFIX}/"
 mkdir -p "$STAGING_DIR/history"
 # `|| true` because the first publish to a fresh prefix has no history yet.
-aws s3 sync "s3://${BUCKET}/${PREFIX}/history/" "$STAGING_DIR/history/" --no-progress || true
+aws s3 sync "s3://${BUCKET}/${HISTORY_PREFIX}/" "$STAGING_DIR/history/" --no-progress || true
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 3: Generate report
@@ -154,14 +172,42 @@ echo "[publish-evidence] Syncing report → s3://${BUCKET}/${PREFIX}/"
 aws s3 sync "$REPORT_DIR"/ "s3://${BUCKET}/${PREFIX}/" --delete --no-progress
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Step 6b: Push history back to HISTORY_PREFIX when it differs from
+# ${PREFIX}/history (i.e. when the caller opted into shared-history mode).
+# Without this, Tier 2's next run pulls an empty history dir and the trend
+# graph never builds.
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "$HISTORY_PREFIX" != "${PREFIX}/history" ]; then
+  if [ -d "$REPORT_DIR/history" ]; then
+    echo "[publish-evidence] Pushing fresh history → s3://${BUCKET}/${HISTORY_PREFIX}/"
+    aws s3 sync "$REPORT_DIR/history/" "s3://${BUCKET}/${HISTORY_PREFIX}/" --delete --no-progress
+  else
+    # Should never happen — `allure generate` always writes history/.
+    # Belt-and-braces in case future Allure versions change layout.
+    echo "[publish-evidence] WARN: report had no history/ subdir; skipping shared-history push" >&2
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Step 7: CloudFront invalidation
 # ─────────────────────────────────────────────────────────────────────────────
-echo "[publish-evidence] Creating CloudFront invalidation for /${PREFIX}/*"
-aws cloudfront create-invalidation \
-  --distribution-id "$DISTRIBUTION_ID" \
-  --paths "/${PREFIX}/*" \
-  --query 'Invalidation.{Id:Id,Status:Status}' \
-  --output table
+# Always invalidate the main prefix. When HISTORY_PREFIX differs (Tier 2),
+# also invalidate that path so the next viewer's browser sees the new trend.
+if [ "$HISTORY_PREFIX" != "${PREFIX}/history" ]; then
+  echo "[publish-evidence] Creating CloudFront invalidation for /${PREFIX}/* + /${HISTORY_PREFIX}/*"
+  aws cloudfront create-invalidation \
+    --distribution-id "$DISTRIBUTION_ID" \
+    --paths "/${PREFIX}/*" "/${HISTORY_PREFIX}/*" \
+    --query 'Invalidation.{Id:Id,Status:Status}' \
+    --output table
+else
+  echo "[publish-evidence] Creating CloudFront invalidation for /${PREFIX}/*"
+  aws cloudfront create-invalidation \
+    --distribution-id "$DISTRIBUTION_ID" \
+    --paths "/${PREFIX}/*" \
+    --query 'Invalidation.{Id:Id,Status:Status}' \
+    --output table
+fi
 
 echo "[publish-evidence] ✓ Published to s3://${BUCKET}/${PREFIX}/"
 echo "[publish-evidence] ✓ URL: https://reports.bulkloader.forcetide.net/${PREFIX}/"
