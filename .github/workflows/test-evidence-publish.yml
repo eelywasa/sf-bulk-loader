@@ -26,6 +26,16 @@ on:
     workflows:
       - "E2E PR Checks (Tier 1a + 1b)"
       - "Shared Quality Checks"
+      # SFBL-348: Tier 2 publishing. Three upstream entry points all upload
+      # `allure-results-tier-2`; each lands as a per-run report at
+      # `tier-2/<upstream_run_id>/` with a SHARED `tier-2/history/` trend.
+      # Release fires only when its tier-2-e2e job ran + uploaded artefacts;
+      # the publish job exits silently otherwise (release tag without Tier 2
+      # is not an error condition — only releases gated on Tier 2 produce a
+      # publish).
+      - "E2E Tier 2 — nightly"
+      - "E2E Tier 2 — PR label opt-in"
+      - "Release"
     types: [completed]
 
 # Single global concurrency group. cancel-in-progress: false because two
@@ -63,6 +73,7 @@ jobs:
     outputs:
       is_fork: ${{ steps.ctx.outputs.is_fork }}
       is_pr: ${{ steps.ctx.outputs.is_pr }}
+      is_tier_2: ${{ steps.ctx.outputs.is_tier_2 }}
       pr_number: ${{ steps.ctx.outputs.pr_number }}
       prefix: ${{ steps.ctx.outputs.prefix }}
       head_sha: ${{ steps.ctx.outputs.head_sha }}
@@ -79,6 +90,8 @@ jobs:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           PR_NUMBERS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+          THIS_WORKFLOW: ${{ github.event.workflow_run.name }}
+          THIS_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           # Fork detection: head_repository differs from base.
@@ -88,10 +101,31 @@ jobs:
             echo "is_fork=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # SFBL-348: Tier 2 classification. Tier 2 upstreams produce a
+          # single allure-results-tier-2 artefact and want a per-run prefix
+          # with shared history. The Release workflow also publishes Tier 2
+          # results when its tier-2-e2e job ran; the publish job will exit
+          # silently if no Tier 2 artefact is present.
+          case "$THIS_WORKFLOW" in
+            "E2E Tier 2 — nightly"|"E2E Tier 2 — PR label opt-in"|"Release")
+              IS_TIER_2=true
+              ;;
+            *)
+              IS_TIER_2=false
+              ;;
+          esac
+          echo "is_tier_2=$IS_TIER_2" >> "$GITHUB_OUTPUT"
+
           # PR vs push classification. workflow_run on a PR carries the
           # pull_requests array; on a push it's empty.
           PR_NUM=$(printf '%s' "$PR_NUMBERS" | python3 -c "import json,sys; arr=json.load(sys.stdin); print(arr[0]['number']) if arr else print('')")
-          if [ -n "$PR_NUM" ]; then
+          if [ "$IS_TIER_2" = "true" ]; then
+            # Tier 2: per-run prefix, never per-PR. Tier 2 isn't tied to a
+            # single PR even when triggered by the label opt-in — the run-id
+            # is the only stable identifier across reruns.
+            echo "is_pr=false" >> "$GITHUB_OUTPUT"
+            echo "prefix=tier-2/${THIS_RUN_ID}" >> "$GITHUB_OUTPUT"
+          elif [ -n "$PR_NUM" ]; then
             echo "is_pr=true" >> "$GITHUB_OUTPUT"
             echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
             echo "prefix=pr-${PR_NUM}" >> "$GITHUB_OUTPUT"
@@ -108,6 +142,7 @@ jobs:
           echo "=== Context ==="
           echo "  HEAD_REPO=$HEAD_REPO BASE_REPO=$BASE_REPO"
           echo "  EVENT_NAME=$EVENT_NAME HEAD_BRANCH=$HEAD_BRANCH HEAD_SHA=$HEAD_SHA"
+          echo "  THIS_WORKFLOW=$THIS_WORKFLOW is_tier_2=$IS_TIER_2"
           echo "  is_fork=$(grep '^is_fork=' $GITHUB_OUTPUT | cut -d= -f2)"
           echo "  prefix=$(grep '^prefix=' $GITHUB_OUTPUT | cut -d= -f2)"
 
@@ -130,8 +165,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           THIS_WORKFLOW: ${{ github.event.workflow_run.name }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          IS_TIER_2: ${{ steps.ctx.outputs.is_tier_2 }}
         run: |
           set -euo pipefail
+          # SFBL-348: Tier 2 runs solo (no companion workflow producing
+          # allure-results for the same head_sha) — short-circuit the
+          # sibling lookup so publish can proceed with just this_run.
+          if [ "$IS_TIER_2" = "true" ]; then
+            echo "Tier 2 upstream — no sibling expected."
+            echo "sibling_ready=true" >> "$GITHUB_OUTPUT"
+            echo "sibling_run_id=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Map this workflow's display name to the sibling's filename.
           case "$THIS_WORKFLOW" in
             "E2E PR Checks (Tier 1a + 1b)")
@@ -292,20 +338,46 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
+      # SFBL-348: Tier 2 download. Tier 2 runs solo — no sibling — so we
+      # only fetch from this_run. The pattern is deliberately specific
+      # (`allure-results-tier-2`) so a Tier 1a/1b publish doesn't accidentally
+      # pull in Tier 2 results from a different upstream run that happens to
+      # share a head_sha.
+      - name: Download Tier 2 allure-results from this run
+        if: needs.resolve.outputs.is_tier_2 == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.resolve.outputs.this_run_id }}
+          pattern: "allure-results-tier-2"
+          path: ./_inputs/tier-2
+          merge-multiple: true
+        continue-on-error: true
+
       - name: List downloaded artefacts
         run: |
           echo "=== Playwright ==="
           ls -la ./_inputs/playwright 2>/dev/null || echo "(empty)"
           echo "=== Backend ==="
           ls -la ./_inputs/backend 2>/dev/null || echo "(empty)"
+          echo "=== Tier 2 ==="
+          ls -la ./_inputs/tier-2 2>/dev/null || echo "(empty)"
 
       - name: Publish
+        env:
+          # SFBL-348: Tier 2 uses a SHARED history prefix so the trend graph
+          # spans every run. For Tier 1a/1b/backend publishes this env is
+          # unset and the wrapper falls back to per-prefix history (existing
+          # behavior).
+          HISTORY_PREFIX: ${{ needs.resolve.outputs.is_tier_2 == 'true' && 'tier-2/history' || '' }}
         run: |
           set -euo pipefail
           # Collect non-empty input dirs. The wrapper tolerates missing
-          # dirs but warns if all are missing — we want to fail loudly
-          # here instead, since "publish ran with no input" probably means
-          # the upstream test workflows didn't produce allure-results.
+          # dirs but warns if all are missing — for Tier 1/backend we fail
+          # loudly because "publish ran with no input" almost always means
+          # an upstream upload step is broken. For Tier 2 specifically we
+          # exit silently: a Release run that didn't run its tier-2-e2e
+          # job (e.g. tier-2 label not set) shouldn't error every publish.
           INPUTS=()
           if [ -d ./_inputs/playwright ] && [ -n "$(ls -A ./_inputs/playwright 2>/dev/null)" ]; then
             INPUTS+=("./_inputs/playwright")
@@ -313,7 +385,14 @@ jobs:
           if [ -d ./_inputs/backend ] && [ -n "$(ls -A ./_inputs/backend 2>/dev/null)" ]; then
             INPUTS+=("./_inputs/backend")
           fi
+          if [ -d ./_inputs/tier-2 ] && [ -n "$(ls -A ./_inputs/tier-2 2>/dev/null)" ]; then
+            INPUTS+=("./_inputs/tier-2")
+          fi
           if [ "${#INPUTS[@]}" -eq 0 ]; then
+            if [ "${{ needs.resolve.outputs.is_tier_2 }}" = "true" ]; then
+              echo "No Tier 2 allure-results in upstream run ${{ github.event.workflow_run.id }} — nothing to publish (e.g. release without tier-2-e2e). Exiting silently."
+              exit 0
+            fi
             echo "ERROR: no allure-results artefacts found in upstream run ${{ github.event.workflow_run.id }}" >&2
             echo "       Either the upstream workflow ran zero tests, or the artefact upload step is missing." >&2
             exit 1
@@ -337,6 +416,4 @@ jobs:
             Auth-gated via GitHub OAuth (same-repo collaborators only — see
             [test-evidence-runbook.md](https://github.com/eelywasa/sf-bulk-loader/blob/main/docs/operations/test-evidence-runbook.md)).
             Updates on every push; retained for 30 days after the PR closes.
-
-            (Tier 2 publishing not yet active — SFBL-348.)
           edit-mode: replace

@@ -290,6 +290,17 @@ jobs:
           path: tests/e2e/playwright-report/
           retention-days: 14
 
+      # SFBL-334 / SFBL-348: always upload Tier 2 allure-results so the
+      # test-evidence publish workflow can fetch them via `workflow_run`.
+      - name: Upload Tier 2 allure-results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-tier-2
+          path: tests/e2e/allure-results/
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Dump container logs on failure
         if: failure()
         run: docker compose -f docker-compose.yml logs
