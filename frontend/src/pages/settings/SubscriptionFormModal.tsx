@@ -131,12 +131,17 @@ export function SubscriptionFormModal({
           >
             <option value="email">Email</option>
             <option value="webhook">Webhook</option>
+            <option value="teams_webhook">Microsoft Teams</option>
           </select>
         </div>
 
         <div>
           <label className={LABEL_CLASS} htmlFor="sub-destination">
-            {channel === 'email' ? 'Email address' : 'Webhook URL'}
+            {channel === 'email'
+              ? 'Email address'
+              : channel === 'teams_webhook'
+                ? 'Teams workflow URL'
+                : 'Webhook URL'}
           </label>
           <input
             id="sub-destination"
@@ -144,7 +149,11 @@ export function SubscriptionFormModal({
             value={destination}
             onChange={(e) => setDestination(e.target.value)}
             placeholder={
-              channel === 'email' ? 'you@example.com' : 'https://hooks.example.com/…'
+              channel === 'email'
+                ? 'you@example.com'
+                : channel === 'teams_webhook'
+                  ? 'https://….powerplatform.com/…/triggers/manual/paths/invoke?…'
+                  : 'https://hooks.example.com/…'
             }
             autoComplete="off"
           />

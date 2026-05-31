@@ -55,7 +55,7 @@ async def test_webhook_2xx_accepted_one_attempt(monkeypatch):
 
 async def test_webhook_retries_on_5xx_then_succeeds(monkeypatch):
     # Remove the jitter sleep to keep the test fast
-    import app.services.notifications.channels.webhook as mod
+    import app.services.notifications.channels._shared as mod
 
     async def _no_sleep(_s):
         return None
@@ -74,7 +74,7 @@ async def test_webhook_retries_on_5xx_then_succeeds(monkeypatch):
 
 
 async def test_webhook_exhausted_5xx_is_failed(monkeypatch):
-    import app.services.notifications.channels.webhook as mod
+    import app.services.notifications.channels._shared as mod
 
     async def _no_sleep(_s):
         return None
@@ -110,7 +110,7 @@ async def test_webhook_4xx_is_terminal_no_retry(monkeypatch):
 
 
 async def test_webhook_429_retries_as_throttled(monkeypatch):
-    import app.services.notifications.channels.webhook as mod
+    import app.services.notifications.channels._shared as mod
 
     async def _no_sleep(_s):
         return None
@@ -135,7 +135,7 @@ async def test_webhook_retry_metric_only_increments_on_actual_retry(monkeypatch)
     retry events (one after attempt 1, one after attempt 2).  The final
     attempt yields the terminal failure and must NOT increment the metric.
     """
-    import app.services.notifications.channels.webhook as mod
+    import app.services.notifications.channels._shared as mod
     from app.observability.metrics import notification_webhook_retry_total
 
     async def _no_sleep(_s):
@@ -158,7 +158,7 @@ async def test_webhook_retry_metric_only_increments_on_actual_retry(monkeypatch)
 
 
 async def test_webhook_network_error_retries_and_exhausts(monkeypatch):
-    import app.services.notifications.channels.webhook as mod
+    import app.services.notifications.channels._shared as mod
 
     async def _no_sleep(_s):
         return None

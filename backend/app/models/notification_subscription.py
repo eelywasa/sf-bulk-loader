@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 class NotificationChannel(str, enum.Enum):
     email = "email"
     webhook = "webhook"
+    teams_webhook = "teams_webhook"
 
 
 class NotificationTrigger(str, enum.Enum):

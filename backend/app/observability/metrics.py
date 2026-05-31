@@ -257,8 +257,9 @@ email_claim_lost_total = Counter(
 
 
 # ── Notification dispatch metrics (SFBL-180) ──────────────────────────────────
-# Cardinality ceiling: 2 (channel) × 3 (status) = 6 series on dispatch_total;
-# 2 × 5 = 10 on dispatch_duration; webhook retry keyed by reason (3 values).
+# Cardinality ceiling: 3 (channel: email/webhook/teams_webhook) × 3 (status) =
+# 9 series on dispatch_total; 3 × 9 buckets on dispatch_duration; webhook retry
+# keyed by reason (3 values), shared by the webhook + teams_webhook channels.
 
 notification_dispatch_total = Counter(
     "sfbl_notification_dispatch_total",
