@@ -64,7 +64,14 @@ async def test_teams_202_accepted_one_attempt():
     assert len(calls) == 1
 
 
-async def test_teams_payload_is_adaptive_card_envelope():
+async def test_teams_payload_is_adaptive_card_envelope(monkeypatch):
+    import app.services.notifications.channels.teams as mod
+
+    async def _abs_url(run_id: str) -> str:
+        return f"https://sfbl.example.com/runs/{run_id}"
+
+    monkeypatch.setattr(mod, "build_run_url", _abs_url)
+
     captured: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -94,10 +101,36 @@ async def test_teams_payload_is_adaptive_card_envelope():
     titles = {f["title"] for f in factset["facts"]}
     assert {"Plan", "Status", "Rows", "Failed"} <= titles
 
-    # Deep link back into the run view.
+    # Deep link back into the run view (absolute URL).
     action = card["actions"][0]
     assert action["type"] == "Action.OpenUrl"
-    assert action["url"].endswith("/runs/r1")
+    assert action["url"] == "https://sfbl.example.com/runs/r1"
+
+
+async def test_teams_omits_action_when_base_url_relative(monkeypatch):
+    """A root-relative run URL (no frontend_base_url) yields no OpenUrl action.
+
+    Teams Action.OpenUrl requires an absolute URL; shipping a relative path
+    produces a dead button, so the action must be omitted entirely.
+    """
+    import app.services.notifications.channels.teams as mod
+
+    async def _relative_url(run_id: str) -> str:
+        return f"/runs/{run_id}"
+
+    monkeypatch.setattr(mod, "build_run_url", _relative_url)
+
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.read())
+        return httpx.Response(202)
+
+    channel = TeamsWebhookChannel(client_factory=_client_factory(handler))
+    await channel.send(_sub(), _context())
+
+    card = captured["body"]["attachments"][0]["content"]
+    assert "actions" not in card
 
 
 async def test_teams_failed_status_renders_attention_banner():

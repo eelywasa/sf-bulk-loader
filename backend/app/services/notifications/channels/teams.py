@@ -123,8 +123,11 @@ async def _build_payload(context: Mapping[str, Any]) -> dict[str, Any]:
         "body": body,
     }
 
+    # Teams Action.OpenUrl requires an absolute URL. build_run_url returns a
+    # root-relative path (e.g. /runs/<id>) when frontend_base_url is unset, which
+    # Teams cannot navigate; omit the button rather than ship a dead deep link.
     run_url = await build_run_url(str(run.get("id") or ""))
-    if run_url:
+    if run_url.startswith(("http://", "https://")):
         card["actions"] = [
             {
                 "type": "Action.OpenUrl",
