@@ -55,6 +55,12 @@ jobs:
         run: npm run build
         working-directory: infrastructure
 
+      - name: CDK unit tests
+        # aws-cdk-lib/assertions checks over the synthesised templates
+        # (removal policies, teardown properties, stack membership, tier fan-out).
+        run: npm test
+        working-directory: infrastructure
+
       - name: Synthesise CloudFormation templates
         # Validates that all four stacks (Network, Data, Backend, Frontend) are
         # structurally sound. Uses the `ci` env in cdk.json which carries safe

@@ -1,12 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ses from 'aws-cdk-lib/aws-ses';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
-import { TierConfig } from './tier-config';
+import { TierConfig, logRetentionFromDays } from './tier-config';
 
 export interface DataStackProps extends cdk.StackProps {
   envName: string;
@@ -14,6 +18,21 @@ export interface DataStackProps extends cdk.StackProps {
   backendServiceSecurityGroup: ec2.SecurityGroup;
   /** Bronze/Silver/Gold tier preset - drives RDS sizing, backups, S3 lifecycle. */
   tier: TierConfig;
+  /**
+   * Whether this environment's data survives `cdk destroy` (SFBL-297). Resolved
+   * in bin/app.ts as `envConfig.persistOnDestroy ?? tier.persistOnDestroy ??
+   * false` - persistence is an environment-lifecycle decision, decoupled from
+   * the tier's sizing, so a small (bronze) environment can still be a real,
+   * persistent one. When true: RDS snapshots on destroy, secrets and the
+   * input/output buckets are retained (with deterministic names so they can be
+   * re-imported on restore). See DECISIONS 028.
+   */
+  persistOnDestroy: boolean;
+  /**
+   * ECR image tag the one-shot migration task runs (SFBL-298). Mirrors the tag
+   * BackendStack's service task uses; defaults to "latest" in bin/app.ts.
+   */
+  ecrImageTag: string;
   /**
    * Route53 hosted zone domain (e.g. "your-domain.example"). Used for both
    * the backend ALB alias record (consumed by BackendStack) and the SES
@@ -69,14 +88,22 @@ export interface DataStackProps extends cdk.StackProps {
  */
 export class DataStack extends cdk.Stack {
   public readonly backendRepository: ecr.Repository;
-  public readonly database: rds.DatabaseInstance;
-  public readonly inputBucket: s3.Bucket;
-  public readonly outputBucket: s3.Bucket;
-  public readonly encryptionKeySecret: secretsmanager.Secret;
-  public readonly jwtSecretKeySecret: secretsmanager.Secret;
-  public readonly databaseUrlSecret: secretsmanager.Secret;
-  public readonly adminEmailSecret: secretsmanager.Secret;
-  public readonly adminPasswordSecret: secretsmanager.Secret;
+  // IDatabaseInstance, not DatabaseInstance: on restore the construct is an
+  // rds.DatabaseInstanceFromSnapshot (SFBL-297), which shares the interface
+  // but is a different concrete class.
+  public readonly database: rds.IDatabaseInstance;
+  // IBucket, not Bucket: on a persist restore these are imported by their
+  // deterministic name (s3.Bucket.fromBucketName) rather than created. See SFBL-297.
+  public readonly inputBucket: s3.IBucket;
+  public readonly outputBucket: s3.IBucket;
+  // ISecret, not Secret: on restore (persistOnDestroy + restoreFromSnapshot)
+  // these are imported by name via Secret.fromSecretNameV2 rather than created
+  // (a retained secret name cannot be recreated). See SFBL-297.
+  public readonly encryptionKeySecret: secretsmanager.ISecret;
+  public readonly jwtSecretKeySecret: secretsmanager.ISecret;
+  public readonly databaseUrlSecret: secretsmanager.ISecret;
+  public readonly adminEmailSecret: secretsmanager.ISecret;
+  public readonly adminPasswordSecret: secretsmanager.ISecret;
   /** SES domain identity ARN. Consumed by BackendStack for IAM scoping of ses:SendEmail. */
   public readonly sesIdentityArn: string;
 
@@ -84,6 +111,19 @@ export class DataStack extends cdk.Stack {
     super(scope, id, props);
 
     const env = props.envName;
+
+    // SFBL-297: persistence controls.
+    // `persist` - this environment opts into snapshot-on-destroy + retained
+    //   secrets/buckets (resolved per-env in bin/app.ts, default from the tier).
+    // `restoreFromSnapshot` - when an operator passes `-c restoreFromSnapshot=<id>`,
+    //   the RDS instance is rebuilt from that snapshot and the retained secrets +
+    //   deterministically-named buckets are imported by name rather than created
+    //   (a retained name can't be recreated). Only meaningful on a persist env;
+    //   see DECISIONS 028.
+    const persist = props.persistOnDestroy;
+    const restoreFromSnapshot = this.node.tryGetContext('restoreFromSnapshot') as
+      | string
+      | undefined;
 
     // --- ECR Repository ---
     // Must exist before BackendStack so the ECS service can pull a real tag.
@@ -94,6 +134,12 @@ export class DataStack extends cdk.Stack {
       removalPolicy: env === 'production'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
+      // SFBL-300: without this, `cdk destroy` on a non-prod tier fails with
+      // "repository ... cannot be deleted because it still contains images"
+      // because the first-deploy runbook pushes the backend image here.
+      // emptyOnDelete only takes effect under RemovalPolicy.DESTROY, so
+      // production (RETAIN) is unaffected and its images are never purged.
+      emptyOnDelete: env !== 'production',
       lifecycleRules: [
         {
           // Retain only the 10 most recent images to control storage costs.
@@ -138,49 +184,83 @@ export class DataStack extends cdk.Stack {
     });
 
     // RDS shape (instance class, Multi-AZ, allocated storage, backup retention)
-    // and the deletion-protection / retention safety controls are all driven
-    // by the tier preset, but they are independent fields:
+    // and the destroy-time data controls are driven by the tier preset.
     //
     //   rdsMultiAz             - HA/cost decision (does the DB span 2 AZs?)
-    //   rdsDeletionProtection  - data-loss guard (block DeleteDBInstance and
-    //                            keep the DB on stack destroy)
+    //   rdsDeletionProtection  - block DeleteDBInstance + RETAIN the DB on destroy
+    //   persistOnDestroy       - SNAPSHOT the DB on destroy (SFBL-297)
     //
-    // Coupling these would mean Silver (single-AZ but real production data)
-    // loses its protection, which would be a regression from the previous
-    // env==='production' check. Bronze opts out for cheap dev teardown.
+    // Removal-policy precedence (see DECISIONS 028):
+    //   persist            -> SNAPSHOT  (final snapshot taken, instance deleted)
+    //   else protected     -> RETAIN    (instance orphaned, never auto-deleted)
+    //   else               -> DESTROY   (instance wiped - disposable bronze)
+    //
+    // A SNAPSHOT removal policy cannot run while RDS deletion protection is on
+    // (it blocks the DeleteDBInstance call), so persist forces deletionProtection
+    // off; the final snapshot + retained secrets are the durability guard there.
+    const dbRemovalPolicy = persist
+      ? cdk.RemovalPolicy.SNAPSHOT
+      : props.tier.rdsDeletionProtection
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY;
+    const dbDeletionProtection = props.tier.rdsDeletionProtection && !persist;
+
     // Strip the leading "db." that operators naturally write in tier presets
     // (matching the form RDS APIs and the AWS console use). ec2.InstanceType
     // expects the bare class+size and CDK adds the "db." prefix itself when
     // synthesising RDS DBInstanceClass — without the strip we'd ship
     // "db.db.t4g.micro" and RDS rejects with InvalidParameter.
     const rdsInstanceClass = props.tier.rdsInstanceClass.replace(/^db\./, '');
-    this.database = new rds.DatabaseInstance(this, 'Database', {
+    // Properties common to both the fresh-create and restore-from-snapshot
+    // construct branches.
+    const commonDbProps = {
       engine: dbEngine,
       parameterGroup: dbParameterGroup,
       instanceType: new ec2.InstanceType(rdsInstanceClass),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [dbSecurityGroup],
-      databaseName: 'bulk_loader',
-      // Credentials auto-generated in Secrets Manager under:
-      //   /rds-db-credentials/cluster-...  (managed by RDS)
-      // The DATABASE_URL secret in /{env}/bulk-loader/database-url must reference this.
-      credentials: rds.Credentials.fromGeneratedSecret('bulk_loader_user', {
-        secretName: `/${env}/bulk-loader/rds-credentials`,
-      }),
-      // Always encrypt storage at rest. CDK defaults to encryption-on for
-      // most engines but we set it explicitly to make the security posture
-      // visible in the synthesised template.
+      // Always encrypt storage at rest. On restore this matches the snapshot's
+      // own (encrypted) storage, so it is consistent rather than a conflict.
       storageEncrypted: true,
+      // SFBL-355: gp3 over the CDK default gp2 - cheaper per GB and a higher
+      // baseline IOPS floor; and apply minor engine patches in the maintenance
+      // window so the instance doesn't drift onto an unpatched Postgres 16.x.
+      storageType: rds.StorageType.GP3,
+      autoMinorVersionUpgrade: true,
       multiAz: props.tier.rdsMultiAz,
       allocatedStorage: props.tier.rdsAllocatedStorage,
       maxAllocatedStorage: Math.max(props.tier.rdsAllocatedStorage * 5, 100),
-      deletionProtection: props.tier.rdsDeletionProtection,
-      removalPolicy: props.tier.rdsDeletionProtection
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
+      deletionProtection: dbDeletionProtection,
+      removalPolicy: dbRemovalPolicy,
       backupRetention: cdk.Duration.days(props.tier.rdsBackupRetentionDays),
-    });
+    };
+
+    if (restoreFromSnapshot) {
+      // SFBL-297 restore: rebuild the instance from the named snapshot. The
+      // master username can't change on restore, so generate a fresh password
+      // (stored in a new Secrets Manager secret) and reset it on the restored
+      // instance. The operator repoints DATABASE_URL at the new endpoint +
+      // password (see aws.md "Restore from snapshot"). NOTE: once restored, the
+      // same snapshotIdentifier must keep being supplied on every later deploy
+      // or CloudFormation recreates the DB empty.
+      this.database = new rds.DatabaseInstanceFromSnapshot(this, 'Database', {
+        ...commonDbProps,
+        snapshotIdentifier: restoreFromSnapshot,
+        credentials: rds.SnapshotCredentials.fromGeneratedSecret('bulk_loader_user'),
+      });
+    } else {
+      this.database = new rds.DatabaseInstance(this, 'Database', {
+        ...commonDbProps,
+        databaseName: 'bulk_loader',
+        // Credentials auto-generated in Secrets Manager under
+        //   /{env}/bulk-loader/rds-credentials
+        // The DATABASE_URL secret must reference this.
+        credentials: rds.Credentials.fromGeneratedSecret('bulk_loader_user', {
+          secretName: `/${env}/bulk-loader/rds-credentials`,
+        }),
+      });
+    }
 
     // --- S3 Buckets ---
     // Lifecycle expiration is driven by the tier preset. A value of 0 means
@@ -206,66 +286,134 @@ export class DataStack extends cdk.Stack {
           ]
         : [];
 
-    // Input + output buckets: production retains data on stack destroy; non-prod
-    // tiers (staging, dev) clean up to avoid orphaned buckets accumulating across
-    // deploy/destroy cycles. Mirrors the frontend bucket and ECR repo policy.
-    const dataBucketRemoval =
-      env === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
-    const dataBucketAutoDelete = env !== 'production';
+    // Input + output buckets: retain data on destroy for production AND any
+    // persistOnDestroy environment (SFBL-297) so previously-uploaded CSVs and
+    // result files survive a teardown/restore cycle; disposable environments
+    // clean up to avoid orphaned buckets accumulating.
+    const dataBucketRetain = persist || env === 'production';
+    const dataBucketRemoval = dataBucketRetain
+      ? cdk.RemovalPolicy.RETAIN
+      : cdk.RemovalPolicy.DESTROY;
+    const dataBucketAutoDelete = !dataBucketRetain;
 
-    // Input bucket: source CSV files uploaded by users or pipelines.
-    this.inputBucket = new s3.Bucket(this, 'InputBucket', {
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      versioned: false,
-      removalPolicy: dataBucketRemoval,
-      autoDeleteObjects: dataBucketAutoDelete,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      enforceSSL: true,
-      lifecycleRules: inputLifecycle,
-    });
+    // When the environment retains its data, the buckets get DETERMINISTIC
+    // names so a snapshot restore can re-import the exact same buckets - with
+    // their retained objects - by name. Without this, CDK's generated names
+    // change on rebuild and the retained CSV/result objects orphan outside the
+    // rebuilt stack (Codex review on PR #97). Disposable environments keep
+    // CDK-generated names for clean, collision-free redeploy cycles.
+    const bucketName = (suffix: string): string | undefined =>
+      dataBucketRetain ? `bulk-loader-${env}-${suffix}` : undefined;
 
-    // Output bucket: Bulk API result files downloaded by the orchestrator.
-    this.outputBucket = new s3.Bucket(this, 'OutputBucket', {
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      versioned: false,
-      removalPolicy: dataBucketRemoval,
-      autoDeleteObjects: dataBucketAutoDelete,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      enforceSSL: true,
-      lifecycleRules: outputLifecycle,
-    });
+    if (restoreFromSnapshot) {
+      // Restore: import the retained, deterministically-named buckets rather
+      // than recreating them. Their lifecycle + access-logging configuration
+      // persists on the real buckets from the original creation, so it does not
+      // need to be re-expressed here. The access-logs bucket is retained
+      // independently and isn't referenced elsewhere, so it isn't re-imported.
+      this.inputBucket = s3.Bucket.fromBucketName(this, 'InputBucket', `bulk-loader-${env}-input`);
+      this.outputBucket = s3.Bucket.fromBucketName(this, 'OutputBucket', `bulk-loader-${env}-output`);
+    } else {
+      // SFBL-355: dedicated access-logs bucket captures who read/wrote which
+      // objects in the input/output buckets - an audit trail they otherwise
+      // lack. It has no access logging of its own (avoiding a delivery loop);
+      // CDK adds the bucket policy that lets the S3 logging service deliver here.
+      const accessLogsBucket = new s3.Bucket(this, 'DataAccessLogsBucket', {
+        bucketName: bucketName('access-logs'),
+        encryption: s3.BucketEncryption.S3_MANAGED,
+        removalPolicy: dataBucketRemoval,
+        autoDeleteObjects: dataBucketAutoDelete,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+      });
+
+      // Input bucket: source CSV files uploaded by users or pipelines.
+      this.inputBucket = new s3.Bucket(this, 'InputBucket', {
+        bucketName: bucketName('input'),
+        encryption: s3.BucketEncryption.S3_MANAGED,
+        versioned: false,
+        removalPolicy: dataBucketRemoval,
+        autoDeleteObjects: dataBucketAutoDelete,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+        serverAccessLogsBucket: accessLogsBucket,
+        serverAccessLogsPrefix: 'input/',
+        lifecycleRules: inputLifecycle,
+      });
+
+      // Output bucket: Bulk API result files downloaded by the orchestrator.
+      this.outputBucket = new s3.Bucket(this, 'OutputBucket', {
+        bucketName: bucketName('output'),
+        encryption: s3.BucketEncryption.S3_MANAGED,
+        versioned: false,
+        removalPolicy: dataBucketRemoval,
+        autoDeleteObjects: dataBucketAutoDelete,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+        serverAccessLogsBucket: accessLogsBucket,
+        serverAccessLogsPrefix: 'output/',
+        lifecycleRules: outputLifecycle,
+      });
+    }
 
     // --- Secrets Manager ---
     // These secrets are empty placeholders created by CDK.
     // Actual values must be provisioned before first ECS task start - see aws.md.
     // The ECS task definition (BackendStack) references these secrets by ARN
     // and injects them as environment variables into the container.
+    //
+    // SFBL-297 persistence: on a persistOnDestroy tier these carry
+    // RemovalPolicy.RETAIN, so they survive `cdk destroy` - critical for the
+    // EncryptionKey, without which a restored DB's Fernet-encrypted columns are
+    // unrecoverable. On restore (`-c restoreFromSnapshot=<id>`) they are imported
+    // by name rather than created, because a retained secret name cannot be
+    // recreated by CloudFormation.
+    const secretRemovalPolicy = persist
+      ? cdk.RemovalPolicy.RETAIN
+      : cdk.RemovalPolicy.DESTROY;
+    const appSecret = (
+      id: string,
+      name: string,
+      description: string,
+    ): secretsmanager.ISecret => {
+      if (restoreFromSnapshot) {
+        return secretsmanager.Secret.fromSecretNameV2(this, id, name);
+      }
+      return new secretsmanager.Secret(this, id, {
+        secretName: name,
+        description,
+        removalPolicy: secretRemovalPolicy,
+      });
+    };
 
-    this.encryptionKeySecret = new secretsmanager.Secret(this, 'EncryptionKeySecret', {
-      secretName: `/${env}/bulk-loader/encryption-key`,
-      description: 'Fernet encryption key for stored Salesforce connection secrets (ENCRYPTION_KEY)',
-    });
-
-    this.jwtSecretKeySecret = new secretsmanager.Secret(this, 'JwtSecretKeySecret', {
-      secretName: `/${env}/bulk-loader/jwt-secret-key`,
-      description: 'JWT signing secret for in-app bearer token authentication (JWT_SECRET_KEY)',
-    });
-
-    this.databaseUrlSecret = new secretsmanager.Secret(this, 'DatabaseUrlSecret', {
-      secretName: `/${env}/bulk-loader/database-url`,
-      description: 'Full PostgreSQL asyncpg connection URL including credentials (DATABASE_URL)',
-      // Format: postgresql+asyncpg://user:password@rds-endpoint:5432/bulk_loader?ssl=require
-    });
-
-    this.adminEmailSecret = new secretsmanager.Secret(this, 'AdminEmailSecret', {
-      secretName: `/${env}/bulk-loader/admin-email`,
-      description: 'Bootstrap admin email / login identifier for first-boot user seeding (ADMIN_EMAIL)',
-    });
-
-    this.adminPasswordSecret = new secretsmanager.Secret(this, 'AdminPasswordSecret', {
-      secretName: `/${env}/bulk-loader/admin-password`,
-      description: 'Bootstrap admin password for first-boot user seeding (ADMIN_PASSWORD)',
-    });
+    this.encryptionKeySecret = appSecret(
+      'EncryptionKeySecret',
+      `/${env}/bulk-loader/encryption-key`,
+      'Fernet encryption key for stored Salesforce connection secrets (ENCRYPTION_KEY)',
+    );
+    this.jwtSecretKeySecret = appSecret(
+      'JwtSecretKeySecret',
+      `/${env}/bulk-loader/jwt-secret-key`,
+      'JWT signing secret for in-app bearer token authentication (JWT_SECRET_KEY)',
+    );
+    // DATABASE_URL embeds the RDS endpoint, which changes on restore - so even
+    // when retained, the operator must rewrite this to the new endpoint +
+    // password after a snapshot restore (see aws.md "Restore from snapshot").
+    this.databaseUrlSecret = appSecret(
+      'DatabaseUrlSecret',
+      `/${env}/bulk-loader/database-url`,
+      'Full PostgreSQL asyncpg connection URL including credentials (DATABASE_URL)',
+    );
+    this.adminEmailSecret = appSecret(
+      'AdminEmailSecret',
+      `/${env}/bulk-loader/admin-email`,
+      'Bootstrap admin email / login identifier for first-boot user seeding (ADMIN_EMAIL)',
+    );
+    this.adminPasswordSecret = appSecret(
+      'AdminPasswordSecret',
+      `/${env}/bulk-loader/admin-password`,
+      'Bootstrap admin password for first-boot user seeding (ADMIN_PASSWORD)',
+    );
 
     // --- SES - domain identity for application-sent email ---
     // The SES backend (app/services/email/backends/ses.py) sends via
@@ -309,6 +457,116 @@ export class DataStack extends cdk.Stack {
     }
     this.sesIdentityArn = sesIdentity.emailIdentityArn;
 
+    // --- SFBL-298: One-shot Alembic migration task definition ---
+    // Relocated here from BackendStack so the migration task exists as soon as
+    // the data layer (RDS + secrets + ECR repo) is up - before BackendStack is
+    // synthesised. This closes the first-deploy chicken-and-egg where the
+    // service task booted against an empty schema, crashlooped in
+    // lifespan()/seed_admin, and hung BackendStack in CREATE_IN_PROGRESS (see
+    // DECISIONS 027, now superseded).
+    //
+    // Fresh-account deploy order:
+    //   1. cdk deploy Network Data   - RDS + secrets + ECR + this task def
+    //   2. push the backend image to ECR
+    //   3. aws ecs run-task <MigrationTaskDefinitionArn>  - schema reaches head
+    //   4. cdk deploy Backend        - service boots against a populated schema
+    //
+    // The task shares the backend image, secrets, and SSM config of the service
+    // task but sets RUN_MIGRATIONS=true and overrides the command to run
+    // `alembic upgrade head` then exit. It is invoked out-of-band via
+    // `aws ecs run-task` against the BackendStack cluster (run-task accepts any
+    // cluster name on the command line, so no cross-stack cluster reference is
+    // needed). An advisory lock in alembic/env.py serialises concurrent callers.
+    // A bare ECS cluster dedicated to the migration task. On a fresh first
+    // deploy BackendStack (which owns the service cluster) does not exist yet -
+    // and that is precisely when the migration must run - so the migration task
+    // needs its own cluster to run on. A Fargate-only cluster has no instance
+    // cost, and because it carries no Fargate capacity-provider association it
+    // is not subject to the teardown race fixed in SFBL-300 (the task is invoked
+    // with `--launch-type FARGATE`, not a capacity-provider strategy).
+    const migrationCluster = new ecs.Cluster(this, 'MigrationCluster', {
+      vpc: props.vpc,
+      clusterName: `bulk-loader-${env}-migration`,
+    });
+
+    const migrationLogGroup = new logs.LogGroup(this, 'MigrationLogGroup', {
+      logGroupName: `/bulk-loader/${env}/migration`,
+      retention: logRetentionFromDays(props.tier.logRetentionDays),
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const migrationTaskRole = new iam.Role(this, 'MigrationTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Bulk Loader one-shot migration task role (${env})`,
+    });
+
+    const migrationTaskDefinition = new ecs.FargateTaskDefinition(this, 'MigrationTaskDef', {
+      memoryLimitMiB: props.tier.ecsTaskMemory,
+      cpu: props.tier.ecsTaskCpu,
+      taskRole: migrationTaskRole,
+    });
+
+    // SSM Parameter Store references for the migration task's config injection.
+    // Imported by name so ECS resolves the live value at task launch. These are
+    // the same parameters the service task (BackendStack) injects - both stacks
+    // import them independently; the import is idempotent.
+    const corsOriginsParam = ssm.StringParameter.fromStringParameterName(
+      this, 'CorsOriginsParam', `/${env}/bulk-loader/cors-origins`,
+    );
+    const logLevelParam = ssm.StringParameter.fromStringParameterName(
+      this, 'LogLevelParam', `/${env}/bulk-loader/log-level`,
+    );
+    const adminUsernameParam = ssm.StringParameter.fromStringParameterName(
+      this, 'AdminUsernameParam', `/${env}/bulk-loader/admin-username`,
+    );
+    const emailFromAddressParam = ssm.StringParameter.fromStringParameterName(
+      this, 'EmailFromAddressParam', `/${env}/bulk-loader/email-from-address`,
+    );
+    const emailSesRegionParam = ssm.StringParameter.fromStringParameterName(
+      this, 'EmailSesRegionParam', `/${env}/bulk-loader/email-ses-region`,
+    );
+
+    migrationTaskDefinition.addContainer('migration', {
+      image: ecs.ContainerImage.fromEcrRepository(this.backendRepository, props.ecrImageTag),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'migration',
+        logGroup: migrationLogGroup,
+      }),
+      // Same secret/SSM injection as the service task - the migration runs the
+      // full app config validator at boot.
+      secrets: {
+        ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(this.encryptionKeySecret),
+        JWT_SECRET_KEY: ecs.Secret.fromSecretsManager(this.jwtSecretKeySecret),
+        DATABASE_URL: ecs.Secret.fromSecretsManager(this.databaseUrlSecret),
+        ADMIN_EMAIL: ecs.Secret.fromSecretsManager(this.adminEmailSecret),
+        ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(this.adminPasswordSecret),
+        CORS_ORIGINS: ecs.Secret.fromSsmParameter(corsOriginsParam),
+        LOG_LEVEL: ecs.Secret.fromSsmParameter(logLevelParam),
+        ADMIN_USERNAME: ecs.Secret.fromSsmParameter(adminUsernameParam),
+        EMAIL_FROM_ADDRESS: ecs.Secret.fromSsmParameter(emailFromAddressParam),
+        EMAIL_SES_REGION: ecs.Secret.fromSsmParameter(emailSesRegionParam),
+      },
+      environment: {
+        APP_DISTRIBUTION: 'aws_hosted',
+        RUN_MIGRATIONS: 'true',
+      },
+      // Override the Dockerfile CMD: run alembic upgrade head then exit cleanly.
+      command: ['sh', '-c', 'alembic upgrade head'],
+    });
+
+    // Grant the migration task's execution role the secret/SSM read access ECS
+    // needs to inject the values above.
+    this.encryptionKeySecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.jwtSecretKeySecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.databaseUrlSecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.adminEmailSecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.adminPasswordSecret.grantRead(migrationTaskDefinition.executionRole!);
+    corsOriginsParam.grantRead(migrationTaskDefinition.executionRole!);
+    logLevelParam.grantRead(migrationTaskDefinition.executionRole!);
+    adminUsernameParam.grantRead(migrationTaskDefinition.executionRole!);
+    emailFromAddressParam.grantRead(migrationTaskDefinition.executionRole!);
+    emailSesRegionParam.grantRead(migrationTaskDefinition.executionRole!);
+
     // --- Outputs ---
     new cdk.CfnOutput(this, 'EcrRepositoryUri', {
       value: this.backendRepository.repositoryUri,
@@ -337,6 +595,21 @@ export class DataStack extends cdk.Stack {
       value: this.sesIdentityArn,
       description: 'SES domain identity ARN (sender identity for application email)',
       exportName: `${this.stackName}-SesIdentityArn`,
+    });
+    // SFBL-298: migration task outputs live here now (relocated from BackendStack)
+    // so `cdk deploy Network Data` already surfaces them before BackendStack exists.
+    new cdk.CfnOutput(this, 'MigrationTaskDefinitionArn', {
+      value: migrationTaskDefinition.taskDefinitionArn,
+      description: 'ARN of the one-shot Alembic migration task - invoke via aws ecs run-task before deploying BackendStack and before each subsequent rollout',
+      exportName: `${this.stackName}-MigrationTaskDefinitionArn`,
+    });
+    new cdk.CfnOutput(this, 'BackendServiceSecurityGroupId', {
+      value: props.backendServiceSecurityGroup.securityGroupId,
+      description: 'Security group ID for ECS tasks - pass to aws ecs run-task --network-configuration',
+    });
+    new cdk.CfnOutput(this, 'MigrationClusterName', {
+      value: migrationCluster.clusterName,
+      description: 'ECS cluster for the one-shot migration task - pass to aws ecs run-task --cluster',
     });
     new cdk.CfnOutput(this, 'SesIdentityDomain', {
       value: sesDomain,

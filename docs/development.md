@@ -237,6 +237,19 @@ npm run test:run    # single run (CI)
 npm run typecheck   # TypeScript type check
 ```
 
+### Infrastructure (CDK)
+
+```bash
+cd infrastructure
+npm run build              # tsc compile check
+npm test                   # jest + aws-cdk-lib/assertions over the synthesised templates
+npx cdk synth -c env=ci    # full synth against the safe-placeholder ci environment
+```
+
+The assertion suite (`infrastructure/test/`) covers removal-policy fan-out,
+clean-teardown properties, migration-task stack membership, per-environment
+persistence, and deterministic bucket naming. It runs in the `cdk-synth` CI job.
+
 ---
 
 ## End-to-end testing

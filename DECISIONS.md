@@ -728,6 +728,16 @@ advisory lock means even doing the steps out of order is recoverable.
 
 ## 027 — First-deploy MigrationTaskDef chicken-and-egg: workaround now, relocate later (SFBL-278 / SFBL-298)
 
+> **Superseded by SFBL-298 (2026-05-31).** The deferred "cleaner
+> architectural fix" below has shipped: `MigrationTaskDefinition` now lives
+> in `DataStack` (with its own bare Fargate `MigrationCluster`, log group,
+> and task role), exposed via the `MigrationTaskDefinitionArn`,
+> `MigrationClusterName`, and `BackendServiceSecurityGroupId` outputs. The
+> first-deploy runbook (`docs/deployment/aws.md` step 8) no longer does the
+> background-deploy + poll + `force-new-deployment` dance — it runs the
+> migration task on the Data-stack cluster, then deploys BackendStack against
+> a populated schema. The historical workaround is retained below for context.
+
 Decision 026 split migrations out into a `MigrationTaskDefinition`
 created by `BackendStack`, alongside the service `TaskDefinition`. That
 works on every deploy **after** the first one, but the first deploy
@@ -781,4 +791,113 @@ explicitly references SFBL-298 so the workaround has a clear sunset.
 truly clean first-deploy hits this manual step. The runbook is explicit
 and the workaround is reliable; subsequent deploys use the standard
 three-step flow from decision 026 unchanged.
+
+## 028 — persistOnDestroy: snapshot the DB and retain secrets/buckets across teardown (SFBL-297)
+
+Bronze `cdk destroy` wipes the RDS instance, regenerates secrets, and
+deletes the input/output buckets — correct for disposable validation
+environments. But an operator who wants to tear an environment down to
+save money and bring it back later with the **same data** needs three
+pieces of state to survive together: the RDS data, the `EncryptionKey`
+secret (without which the Fernet-encrypted Salesforce-credential columns
+are unrecoverable ciphertext), and the DB master password.
+
+**Decision:** add a tier-level `persistOnDestroy` flag (bronze `false`;
+silver/gold `true`). When set:
+
+- **RDS** uses `RemovalPolicy.SNAPSHOT` — a final snapshot is taken on
+  destroy and the instance is deleted. Rebuild with
+  `cdk deploy -c restoreFromSnapshot=<id>`, which switches the construct to
+  `rds.DatabaseInstanceFromSnapshot`.
+- **The five app secrets** (`encryption-key`, `jwt-secret-key`,
+  `database-url`, `admin-email`, `admin-password`) use
+  `RemovalPolicy.RETAIN`. On restore they are **imported by name**
+  (`Secret.fromSecretNameV2`) rather than created, because a retained
+  secret name cannot be recreated by CloudFormation.
+- **Input/output buckets** use `RemovalPolicy.RETAIN`.
+
+**Deletion-protection precedence (deliberate posture change for silver/gold).**
+A `SNAPSHOT` removal policy cannot run on destroy while RDS-level deletion
+protection is on — `DeleteDBInstance` is blocked — so `persistOnDestroy`
+forces `deletionProtection: false` (`rdsDeletionProtection && !persist`).
+Silver/gold previously ran with `rdsDeletionProtection: true` →
+`RemovalPolicy.RETAIN` (instance orphaned, never auto-deleted). They now
+**snapshot-and-delete** on destroy instead. The durability guarantee moves
+from "the instance is undeletable" to "a final snapshot + the retained
+secrets make the environment fully restorable" — which is also far cheaper
+to park (snapshot storage only, no running instance). An operator who wants
+the old undeletable-instance posture for a true-production env can set that
+tier back to `persistOnDestroy: false` + `rdsDeletionProtection: true`
+(the two are mutually exclusive by design).
+
+**Two caveats, documented in the runbook:**
+
+1. **Snapshot rooting.** Once an instance is restored with a
+   `DBSnapshotIdentifier`, that identifier must keep being supplied on every
+   subsequent deploy. If it's dropped, CloudFormation creates a fresh empty
+   instance and deletes the restored one (per the AWS RDS docs).
+2. **DatabaseUrl endpoint.** `DATABASE_URL` embeds the RDS endpoint, which
+   changes on restore, and the master password is reset to a new generated
+   secret by `SnapshotCredentials.fromGeneratedSecret`. Even though the
+   `database-url` secret is retained, the operator must rewrite it to the new
+   endpoint + password after a restore.
+
+**Options considered and rejected:**
+
+| Option | Why rejected |
+|---|---|
+| Keep `RETAIN` (orphan the instance) for silver/gold | Leaves a full running instance accruing cost while "parked"; doesn't give a clean restore story |
+| Cross-account / cross-region snapshot copy | DR scope, out of this ticket |
+| S3 versioning / PITR on the buckets | Out of scope — buckets simply `RETAIN` |
+| Custom resource to re-encrypt columns under a new key | Defeats the purpose; retaining the `EncryptionKey` secret is simpler and correct |
+
+**Amendments (2026-05-31, during PR #97 review):**
+
+1. **Decoupled persistence from the tier.** The original design put
+   `persistOnDestroy` on the *tier* preset, which conflated two orthogonal
+   concerns: a tier is about **sizing/cost**, while persistence is about an
+   **environment's lifecycle**. A small (bronze) environment can still be a
+   real, persistent one (e.g. a low-utilisation `staging` used occasionally by
+   a few admins). `persistOnDestroy` is now resolved per-environment in
+   `bin/app.ts` as `envConfig.persistOnDestroy ?? tier.persistOnDestroy ??
+   false` — the tier value is just the default. Bronze's `rdsBackupRetentionDays`
+   was also raised 1 → 7, since a persistent low-util env warrants a real
+   backup window.
+
+2. **Buckets now actually reattach on restore (Codex P2 on PR #97).** Retaining
+   the input/output buckets with CDK-*generated* names meant a snapshot restore
+   created *new* buckets and orphaned the retained objects — "retained" without
+   recoverability. Fix: when an environment persists, the input/output/access-logs
+   buckets get **deterministic names** (`bulk-loader-{env}-{input,output,access-logs}`)
+   and the restore path **imports them by name** (`s3.Bucket.fromBucketName`),
+   mirroring the secret-import path, so the same objects reattach. Disposable
+   environments keep generated names for clean, collision-free redeploy cycles.
+
+## 029 — CDK hardening quick-wins (SFBL-355)
+
+An AWS IaC MCP (cfn-guard) scan + manual review of the SFBL-275 stacks
+during SFBL-299 planning surfaced four small, non-breaking, CDK-only
+refinements - too minor for the production-scale SFBL-295 effort, shipped
+alongside the SFBL-299 mop-up children:
+
+- **ECS deployment circuit breaker** (`backend-stack.ts`):
+  `circuitBreaker: { rollback: true }` on the Fargate service. A failed
+  image rollout (a task that crashloops on boot) now auto-rolls-back to the
+  last good task set instead of hanging IN_PROGRESS until timeout.
+- **S3 server access logging** (`data-stack.ts`): a dedicated access-logs
+  bucket receives input/output object-access logs under `input/` and
+  `output/` prefixes - an audit trail the data buckets lacked.
+- **RDS gp3 + auto minor version upgrade** (`data-stack.ts`): `gp3` storage
+  (cheaper than the CDK-default gp2, higher baseline IOPS) and
+  `autoMinorVersionUpgrade: true` so the instance receives Postgres 16.x
+  patches in the maintenance window.
+- **VPC flow logs** (`network-stack.ts`, resolving the long-standing TODO):
+  flow logs to CloudWatch, **gated on `tier.containerInsightsEnabled`** so
+  disposable bronze envs don't pay the ingestion cost; silver/gold get them.
+
+Production-grade items the same scan surfaced (RDS Multi-AZ, enhanced
+monitoring, CloudWatch alarms, AWS WAF, ALB access logs) are owned by
+**SFBL-295** and deliberately not in this change. cfn-guard false positives
+(S3 object-lock / replication / public-RW-ACL, the SG egress-port-range
+sentinel rule, the RDS master-user secure-parameter rules) were triaged out.
 

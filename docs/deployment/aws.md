@@ -185,10 +185,13 @@ for hosted distributions.
 > **Read this whole section before starting.** First deploys against a clean
 > account hit several non-obvious gotchas that aren't visible from a single
 > `cdk deploy --all` invocation. The flow below is the one validated against
-> `bulkloader.forcetide.net` during SFBL-278; in particular the
-> *MigrationTaskDef chicken-and-egg* (step 8), the *frontend build flavour*
-> (step 9), and the *Route53 alias for the frontend domain* (step 11) all
-> require manual operator action that the CDK does not currently automate.
+> `bulkloader.forcetide.net`; in particular the *one-shot migration run*
+> (step 8), the *frontend build flavour* (step 9), and the *Route53 alias for
+> the frontend domain* (step 11) require manual operator action that the CDK
+> does not automate. (The old *MigrationTaskDef chicken-and-egg* is gone —
+> SFBL-298 moved the migration task and its own Fargate cluster into DataStack,
+> so it runs cleanly **before** BackendStack exists; step 8 is now an ordered
+> step, not a race.)
 
 ### Common first-deploy gotchas
 
@@ -205,14 +208,16 @@ for hosted distributions.
   `VITE_API_URL=http://127.0.0.1:8000` and a hash router into the bundle
   — fine for Electron, broken on AWS. Always use plain `npm run build`
   before deploying FrontendStack (step 9).
-- **MigrationTaskDef is created by BackendStack but the service starts
-  before migrations run.** `lifespan()` in `app/main.py` queries
-  `profile_permissions` / calls `seed_admin` immediately on task start,
-  which crashes against an empty schema. The service crashloops and
-  BackendStack hangs. Workaround in step 8 below; longer-term fix
-  ([SFBL-298](https://matthew-jenkin.atlassian.net/browse/SFBL-298)
-  proposes relocating MigrationTaskDef to DataStack so it exists before
-  the service ever starts).
+- **Run the database migration before deploying BackendStack.** The
+  service's `lifespan()` in `app/main.py` queries `profile_permissions` /
+  calls `seed_admin` immediately on task start, which crashes against an
+  empty schema. Since [SFBL-298](https://matthew-jenkin.atlassian.net/browse/SFBL-298)
+  the one-shot migration task **and its own Fargate cluster** live in
+  DataStack, so they exist after `cdk deploy Network Data` — run the
+  migration (step 8) to bring the schema to head, then deploy BackendStack
+  and the service boots cleanly. (If you ever deploy BackendStack against an
+  un-migrated DB, the service crashloops and the SFBL-355 deployment circuit
+  breaker rolls the deploy back — a fast, clear failure rather than a hang.)
 - **CloudFront does not auto-create the Route53 alias for the frontend
   domain.** ALB origins for `backendDomainName` are aliased automatically;
   CloudFront aliases for `domainName` are not. Step 11 adds it manually.
@@ -383,35 +388,22 @@ docker buildx build \
 docker push ${ECR_URI}:latest
 ```
 
-### 8. Deploy BackendStack — handle the first-deploy migration race
+### 8. Run the database migration, then deploy BackendStack
 
-This is the trickiest step on a clean account. The MigrationTaskDefinition
-is created **inside** BackendStack, but the ECS service in the same stack
-boots immediately and tries to call `lifespan()` against an empty schema —
-which crashes. The service crashloops, never reaches steady state, and
-BackendStack stalls until the rollback timeout.
-
-The workaround: kick off `cdk deploy` in the background, wait until the
-MigrationTaskDef exists, run the migration manually, force a service
-deployment, then let CDK finish.
+Since SFBL-298 the `MigrationTaskDefinition` and its own Fargate cluster live
+in the **Data** stack, so they already exist after step 4. Run the migration
+to bring the schema to head **before** deploying BackendStack — then the ECS
+service boots against a populated schema and reaches steady state on the first
+try. No background deploy, no polling, no manual `--force-new-deployment`.
 
 ```bash
-# 1. Start the deploy in the background.
-nohup npx cdk deploy BulkLoader-${ENV}-Backend -c env=${ENV} \
-  --require-approval never > /tmp/backend-deploy.log 2>&1 &
-DEPLOY_PID=$!
-
-# 2. Poll until the MigrationTaskDef ARN is available.
-until MIGRATION_ARN=$(aws cloudformation describe-stacks \
-        --stack-name BulkLoader-${ENV}-Backend \
-        --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" \
-        --output text 2>/dev/null) && [ -n "$MIGRATION_ARN" ] && [ "$MIGRATION_ARN" != "None" ]; do
-  sleep 15
-done
-echo "MigrationTaskDef ready: $MIGRATION_ARN"
-
-# 3. Look up the security group + public subnets the service uses.
-SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Backend \
+# 1. Read the migration task, its cluster, the service security group, and the
+#    public subnets - all from the already-deployed Network + Data stacks.
+MIGRATION_ARN=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
+  --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" --output text)
+MIGRATION_CLUSTER=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
+  --query "Stacks[0].Outputs[?OutputKey=='MigrationClusterName'].OutputValue" --output text)
+SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
   --query "Stacks[0].Outputs[?OutputKey=='BackendServiceSecurityGroupId'].OutputValue" --output text)
 VPC_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Network \
   --query "Stacks[0].Outputs[?OutputKey=='VpcId'].OutputValue" --output text)
@@ -419,27 +411,26 @@ SUBNETS=$(aws ec2 describe-subnets \
   --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:aws-cdk:subnet-type,Values=Public" \
   --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
 
-# 4. Run the migration task once and wait for it to exit cleanly.
+# 2. Run the migration task once and wait for it to exit cleanly.
 TASK_ARN=$(aws ecs run-task \
-  --cluster bulk-loader-${ENV} \
+  --cluster "$MIGRATION_CLUSTER" \
   --task-definition "$MIGRATION_ARN" \
   --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
   --query 'tasks[0].taskArn' --output text)
-aws ecs wait tasks-stopped --cluster bulk-loader-${ENV} --tasks "$TASK_ARN"
+aws ecs wait tasks-stopped --cluster "$MIGRATION_CLUSTER" --tasks "$TASK_ARN"
 
-# 5. Force a fresh service deployment now that the schema exists.
-aws ecs update-service \
-  --cluster bulk-loader-${ENV} \
-  --service BulkLoader-${ENV}-Backend-Service \
-  --force-new-deployment
+# 3. Confirm the migration exited 0 before continuing.
+aws ecs describe-tasks --cluster "$MIGRATION_CLUSTER" --tasks "$TASK_ARN" \
+  --query 'tasks[0].containers[0].exitCode'
 
-# 6. Wait for cdk deploy to finish — it will reach CREATE_COMPLETE
-#    once the service hits steady state.
-wait $DEPLOY_PID
+# 4. Now deploy BackendStack - the service comes up against a populated schema.
+npx cdk deploy BulkLoader-${ENV}-Backend -c env=${ENV} --require-approval never
 ```
 
-Save the migration task ARN in case you need to re-run it later.
+Save the migration task ARN in case you need to re-run it later. The same
+`run-task` invocation is used for every subsequent deploy (see "Ongoing
+Deployments").
 
 ### 9. Build the frontend SPA — **plain `npm run build`, not `build:desktop`**
 
@@ -549,21 +540,25 @@ Migrations run as a one-shot job between image push and service rollout:
    docker buildx build --platform linux/amd64 -t $ECR_URI:latest -f backend/Dockerfile backend/
    docker push $ECR_URI:latest
    ```
-2. Run the one-shot migration task and wait for it to complete:
+2. Run the one-shot migration task and wait for it to complete. Since
+   SFBL-298 the migration task, its cluster, and the service security-group
+   output all live in the **Data** stack:
    ```bash
-   MIGRATION_ARN=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Backend \
+   MIGRATION_ARN=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Data \
      --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" --output text)
-   SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Backend \
+   MIGRATION_CLUSTER=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Data \
+     --query "Stacks[0].Outputs[?OutputKey=='MigrationClusterName'].OutputValue" --output text)
+   SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Data \
      --query "Stacks[0].Outputs[?OutputKey=='BackendServiceSecurityGroupId'].OutputValue" --output text)
    SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" \
      "Name=tag:aws-cdk:subnet-type,Values=Public" --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
    aws ecs run-task \
-     --cluster bulk-loader-{env} \
+     --cluster $MIGRATION_CLUSTER \
      --task-definition $MIGRATION_ARN \
      --launch-type FARGATE \
      --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}"
    # Then poll until STOPPED with exit code 0:
-   aws ecs wait tasks-stopped --cluster bulk-loader-{env} --tasks $TASK_ARN
+   aws ecs wait tasks-stopped --cluster $MIGRATION_CLUSTER --tasks $TASK_ARN
    ```
    The migration task acquires a Postgres advisory lock for the duration of
    `alembic upgrade head` (see `backend/alembic/env.py`). Concurrent
@@ -601,6 +596,95 @@ create-invalidation`) is no longer needed.
 1. Edit stacks in `infrastructure/lib/`
 2. `cdk diff -c env={env}` to review changes
 3. `cdk deploy --all -c env={env}` to apply
+
+---
+
+## Teardown
+
+To tear a non-production environment down completely:
+
+```bash
+cdk destroy --all -c env={env}
+```
+
+This completes **without any manual intervention** — no `aws ecr
+batch-delete-image`, no `aws ecs put-cluster-capacity-providers`, no
+`aws s3 rb`. Two CDK properties make that work (SFBL-300):
+
+- The backend **ECR repository** is created with `emptyOnDelete: true` on
+  non-production tiers, so CloudFormation purges the pushed backend image
+  before deleting the repository instead of failing with "repository …
+  cannot be deleted because it still contains images".
+- The **ECS capacity-provider association** is declared as an explicit
+  construct that depends on the cluster, so CloudFormation detaches it
+  before deleting the cluster instead of racing the detach and failing
+  with "The specified capacity provider is in use and cannot be removed".
+
+> **Data loss on a disposable tier.** On a tier with
+> `persistOnDestroy: false` (bronze), `cdk destroy` deletes the RDS
+> instance, the input/output S3 buckets, and regenerates the Secrets
+> Manager entries on the next deploy. Any Salesforce connections, plans, or
+> run history are lost. Use a `persistOnDestroy` tier (below) to keep data.
+
+### Teardown with persistence (`persistOnDestroy` environments)
+
+Persistence is a **per-environment** setting (`envConfig.persistOnDestroy`),
+defaulting to the tier value (bronze `false`, silver/gold `true`) — so a small
+but real environment (e.g. a low-utilisation `staging`) can opt in via
+`persistOnDestroy: true` in its `cdk.context.json` block without changing the
+shared tier preset. On a persisting environment `cdk destroy` is non-destructive:
+
+- **RDS** takes a final snapshot and deletes the instance (removal policy
+  `SNAPSHOT`). The snapshot name looks like
+  `bulkloaderproductiondatabase…-finalsnapshot-…`.
+- The five app **secrets** (`encryption-key`, `jwt-secret-key`,
+  `database-url`, `admin-email`, `admin-password`) are **retained** — the
+  `encryption-key` especially, without which the Fernet-encrypted Salesforce
+  credentials in a restored DB are unrecoverable.
+- The input/output/access-logs **S3 buckets** are retained, and on a persisting
+  environment they carry **deterministic names**
+  (`bulk-loader-{env}-{input,output,access-logs}`) so the restore can re-import
+  the exact same buckets — and their objects — by name.
+
+```bash
+cdk destroy --all -c env={env}
+# RDS final snapshot + retained secrets + retained buckets remain.
+# Parked cost is just snapshot + S3 storage (~$0.10/day), no running instance.
+```
+
+> **Deletion-protection note.** `persistOnDestroy` forces RDS deletion
+> protection **off** (a snapshot-on-destroy can't run while it's on). The
+> snapshot + retained secrets are the durability guard instead. If you want
+> a truly undeletable production instance, set that tier to
+> `persistOnDestroy: false` + `rdsDeletionProtection: true` (mutually
+> exclusive — see DECISIONS 028).
+
+### Restore from snapshot
+
+Bring a parked `persistOnDestroy` environment back with the same data:
+
+```bash
+# 1. Find the most recent snapshot for this environment.
+SNAP_ID=$(aws rds describe-db-snapshots \
+  --query 'DBSnapshots[?starts_with(DBSnapshotIdentifier, `bulkloader{env}`)] | sort_by(@, &SnapshotCreateTime)[-1].DBSnapshotIdentifier' \
+  --output text)
+
+# 2. Deploy with the restore context. The DB is rebuilt from the snapshot;
+#    the retained secrets AND the retained input/output buckets are imported
+#    by name (not recreated), so the same objects reattach.
+cdk deploy --all -c env={env} -c restoreFromSnapshot=$SNAP_ID
+```
+
+Two things the operator must do after a restore:
+
+1. **Keep passing `-c restoreFromSnapshot=$SNAP_ID` on every later deploy**
+   of this environment. If you drop it, CloudFormation creates a fresh empty
+   instance and deletes the restored one.
+2. **Update `DATABASE_URL`.** The restored instance has a new endpoint and a
+   freshly generated master password (in a new `rds-credentials` secret).
+   Rewrite the retained `/{env}/bulk-loader/database-url` secret to the new
+   `postgresql+asyncpg://…@<new-endpoint>:5432/bulk_loader?ssl=require` before
+   running the migration task and deploying BackendStack.
 
 ---
 
@@ -817,9 +901,11 @@ on-demand, USD/month**, post-Free-Tier. Adjust by ~−10% for `us-east-1`, ~+10%
 
 | Component | **Bronze** | **Silver** | **Gold** |
 |---|---|---|---|
-| Use case | 1-2 admins, demo/PoC | Small team (3-10 users), regular use | Customer-facing, audit/compliance |
+| Use case | 2-3 admins, low-utilisation | Small team (3-10 users), regular use | Customer-facing, audit/compliance |
 | RDS instance | db.t4g.micro Single-AZ | db.t4g.small Single-AZ | db.t4g.medium **Multi-AZ** |
-| RDS storage / backups | 20 GB / 1-day | 20 GB / 7-day | 100 GB / 30-day + cross-region snapshot |
+| RDS storage / backups | 20 GB / 7-day | 20 GB / 7-day | 100 GB / 30-day + cross-region snapshot |
+| Persistence default (`persistOnDestroy`) | off — overridable per env | on | on |
+| VPC flow logs | off | on | on |
 | Fargate API tasks | 1× (0.5 vCPU / 1 GB) | 2× (0.5 vCPU / 1 GB) | 2× (1 vCPU / 2 GB) + autoscaling 2-6 |
 | Fargate worker tier | none (orchestrator runs in API task) | none | 2× (1 vCPU / 2 GB) + queue-depth autoscaling |
 | Redis (rate-limit + arq) | none — per-process limiter | none — per-process limiter | ElastiCache cache.t4g.small Multi-AZ |
@@ -902,6 +988,14 @@ Knobs that materially shift cost without a tier change:
 - ALB enforces TLS 1.2+ via `SslPolicy.RECOMMENDED_TLS`
 - HTTP to HTTPS redirect is enforced at the ALB
 - `enforceSSL: true` on all S3 buckets rejects unencrypted requests
+- ECS deployments use a circuit breaker with automatic rollback, so a bad
+  image rollout reverts to the last healthy task set instead of hanging
+- Input/output S3 buckets emit server access logs to a dedicated logs bucket
+  (`input/` and `output/` prefixes) for an object-access audit trail
+- **VPC flow logs** (CloudWatch Logs) capture all traffic for auditing on
+  tiers with `containerInsightsEnabled` (silver/gold). Bronze leaves them
+  **off** to avoid the per-GB ingestion cost on disposable environments;
+  flow-log retention follows the tier's `logRetentionDays`
 
 ---
 

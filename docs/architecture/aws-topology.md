@@ -41,21 +41,24 @@ flowchart TB
     vpc[VPC<br/>public + isolated subnets]
     sgalb[ALB SG]
     sgsvc[Backend service SG]
+    flowlog[VPC flow logs<br/>silver/gold only]
   end
 
   subgraph data["BulkLoader-#123;env#125;-Data"]
     ecr[ECR repo]
-    rds[(RDS PostgreSQL)]
+    rds[(RDS PostgreSQL<br/>gp3, snapshot-on-destroy)]
     s3in[(Input bucket)]
     s3out[(Output bucket)]
+    s3logs[(Access-logs bucket)]
     secrets[Secrets Manager x5]
     sesId[SES identity]
+    migcluster[ECS migration cluster]
+    migtd[Migration TaskDef<br/>RUN_MIGRATIONS=true]
   end
 
   subgraph backend["BulkLoader-#123;env#125;-Backend"]
     cluster[ECS cluster]
     svctd[Service TaskDef<br/>RUN_MIGRATIONS=false]
-    migtd[Migration TaskDef<br/>RUN_MIGRATIONS=true]
     alb[ALB]
     routeApi[Route53 A-ALIAS<br/>backendDomainName]
   end
@@ -68,12 +71,16 @@ flowchart TB
   vpc --> rds
   vpc --> alb
   vpc --> cluster
+  vpc --> migcluster
+  vpc -.flow logs.-> flowlog
+  s3in -.access logs.-> s3logs
+  s3out -.access logs.-> s3logs
   ecr -.image.-> svctd
   ecr -.image.-> migtd
   secrets -.injected.-> svctd
   secrets -.injected.-> migtd
   cluster --> svctd
-  cluster --> migtd
+  migcluster --> migtd
   alb --> svctd
   cfDist --> s3fe
   cfDist -->|"/api/* /ws/*"| alb

@@ -22,11 +22,14 @@ export interface BackendStackProps extends cdk.StackProps {
    * stack is deployed (see SFBL-276 deploy ordering).
    */
   backendRepository: ecr.IRepository;
-  encryptionKeySecret: secretsmanager.Secret;
-  jwtSecretKeySecret: secretsmanager.Secret;
-  databaseUrlSecret: secretsmanager.Secret;
-  adminEmailSecret: secretsmanager.Secret;
-  adminPasswordSecret: secretsmanager.Secret;
+  // ISecret, not Secret: on a SFBL-297 snapshot restore DataStack imports these
+  // by name (Secret.fromSecretNameV2), which yields ISecret. grantRead and
+  // ecs.Secret.fromSecretsManager both accept ISecret.
+  encryptionKeySecret: secretsmanager.ISecret;
+  jwtSecretKeySecret: secretsmanager.ISecret;
+  databaseUrlSecret: secretsmanager.ISecret;
+  adminEmailSecret: secretsmanager.ISecret;
+  adminPasswordSecret: secretsmanager.ISecret;
   /** SES domain identity ARN - IAM ses:SendEmail/SendRawEmail are scoped to this resource. */
   sesIdentityArn: string;
   /** DNS hostname that CloudFront uses as the backend origin (for example api.example.com). */
@@ -116,11 +119,32 @@ export class BackendStack extends cdk.Stack {
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc: props.vpc,
       clusterName: `bulk-loader-${env}`,
-      enableFargateCapacityProviders: true,
       containerInsightsV2: props.tier.containerInsightsEnabled
         ? ecs.ContainerInsights.ENABLED
         : ecs.ContainerInsights.DISABLED,
     });
+
+    // SFBL-300: associate the Fargate capacity providers explicitly instead of
+    // via the `enableFargateCapacityProviders: true` shortcut. The shortcut
+    // references the cluster by its literal name, so CloudFormation sees no
+    // dependency between the cluster and the AWS::ECS::ClusterCapacityProviderAssociations
+    // resource and tears them down in parallel - the cluster delete then races
+    // the association detach and fails with "The specified capacity provider is
+    // in use and cannot be removed." Building the association explicitly and
+    // adding a dependency on the cluster forces CloudFormation to delete (detach)
+    // the association before the cluster, so `cdk destroy` succeeds unattended.
+    const capacityProviderAssociations = new ecs.CfnClusterCapacityProviderAssociations(
+      this,
+      'ClusterCapacityProviders',
+      {
+        cluster: cluster.clusterName,
+        capacityProviders: ['FARGATE', 'FARGATE_SPOT'],
+        // No cluster-level default strategy - the service below sets its own
+        // capacityProviderStrategies, matching the prior shortcut behaviour.
+        defaultCapacityProviderStrategy: [],
+      },
+    );
+    capacityProviderAssociations.node.addDependency(cluster);
 
     // --- IAM Task Role ---
     // Container-side identity for the running task. The application reads S3
@@ -309,6 +333,12 @@ export class BackendStack extends cdk.Stack {
       taskDefinition,
       desiredCount: props.tier.ecsDesiredCount,
       securityGroups: [props.backendServiceSecurityGroup],
+      // SFBL-355: deployment circuit breaker with rollback. Without it, a bad
+      // image rollout (e.g. a task that crashloops on boot) leaves the service
+      // stuck IN_PROGRESS until the deployment times out, with no automatic
+      // recovery. With it, ECS detects the failed rollout and rolls back to the
+      // last known-good task set automatically.
+      circuitBreaker: { rollback: true },
       // Tasks run in public subnets and are assigned public IPs so they can reach
       // the Salesforce API without a NAT Gateway. Inbound traffic is restricted by
       // the security group to the ALB only - no direct public access to port 8000.
@@ -332,6 +362,12 @@ export class BackendStack extends cdk.Stack {
             { capacityProvider: 'FARGATE', weight: 1 },
           ],
     });
+
+    // The service's capacityProviderStrategies require the providers to be
+    // associated with the cluster first. With the explicit association
+    // construct above (SFBL-300) that ordering is no longer implied by the
+    // cluster construct, so declare the dependency directly.
+    service.node.addDependency(capacityProviderAssociations);
 
     // Register ECS service with ALB target group.
     // /api/* and /ws/* are routed to the backend; / is handled by CloudFront → S3.
@@ -383,97 +419,11 @@ export class BackendStack extends cdk.Stack {
       description: 'ECS cluster name',
     });
 
-    // -------------------------------------------------------------------------
-    // SFBL-277: One-shot migration task definition.
-    //
-    // ECS rolling deploys can start two service tasks concurrently. Letting
-    // both run `alembic upgrade head` on startup races on the schema and
-    // (worse) leaves a window where new code runs against a partially-
-    // migrated DB. The fix is to run migrations from exactly one task,
-    // before the service rollout begins.
-    //
-    // This task definition shares the image, execution role, secrets, and
-    // env injection of the main service task, but:
-    //   - sets RUN_MIGRATIONS=true so the Dockerfile CMD runs alembic
-    //   - has no port mappings (it's a one-shot, doesn't accept traffic)
-    //   - has no health check (it runs to completion and exits)
-    //   - a Postgres advisory lock inside alembic/env.py serialises against
-    //     anyone else who happens to call upgrade simultaneously
-    //
-    // Deploy sequence (per docs/deployment/aws.md "Ongoing Deployments"):
-    //   1. docker buildx build && docker push  (new image to ECR)
-    //   2. aws ecs run-task --task-definition <migrationTaskArn>
-    //      --launch-type FARGATE
-    //      --network-configuration 'awsvpcConfiguration=
-    //        {subnets=[...],securityGroups=[<backendSG>],assignPublicIp=ENABLED}'
-    //      and wait for STOPPED with exit code 0
-    //   3. aws ecs update-service --force-new-deployment
-    //
-    // The exported MigrationTaskDefinitionArn output below tells CI which
-    // task to invoke without having to look up the version.
-    // -------------------------------------------------------------------------
-
-    const migrationTaskDefinition = new ecs.FargateTaskDefinition(this, 'MigrationTaskDef', {
-      memoryLimitMiB: props.tier.ecsTaskMemory,
-      cpu: props.tier.ecsTaskCpu,
-      taskRole,
-    });
-
-    migrationTaskDefinition.addContainer('migration', {
-      image: ecs.ContainerImage.fromEcrRepository(repository, props.ecrImageTag),
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'migration',
-        logGroup,
-      }),
-      // Same secret/SSM injection as the service task - the migration runs
-      // the full app config validator at boot.
-      secrets: {
-        ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(props.encryptionKeySecret),
-        JWT_SECRET_KEY: ecs.Secret.fromSecretsManager(props.jwtSecretKeySecret),
-        DATABASE_URL: ecs.Secret.fromSecretsManager(props.databaseUrlSecret),
-        ADMIN_EMAIL: ecs.Secret.fromSecretsManager(props.adminEmailSecret),
-        ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(props.adminPasswordSecret),
-        CORS_ORIGINS: ecs.Secret.fromSsmParameter(corsOriginsParam),
-        LOG_LEVEL: ecs.Secret.fromSsmParameter(logLevelParam),
-        ADMIN_USERNAME: ecs.Secret.fromSsmParameter(adminUsernameParam),
-        EMAIL_FROM_ADDRESS: ecs.Secret.fromSsmParameter(emailFromAddressParam),
-        EMAIL_SES_REGION: ecs.Secret.fromSsmParameter(emailSesRegionParam),
-      },
-      environment: {
-        APP_DISTRIBUTION: 'aws_hosted',
-        // Run the alembic upgrade then exit. The "&& uvicorn ..." in the
-        // Dockerfile CMD will still execute uvicorn after the migration,
-        // which is wasted work but harmless - the task is a one-shot,
-        // ECS exits when the first command returns. We override the
-        // command below to skip uvicorn entirely.
-        RUN_MIGRATIONS: 'true',
-      },
-      // Override the Dockerfile CMD: only run alembic upgrade head, then
-      // exit cleanly. No uvicorn, no service.
-      command: ['sh', '-c', 'alembic upgrade head'],
-    });
-
-    // Grant the migration task's execution role the same secret/SSM access
-    // as the service task's execution role.
-    props.encryptionKeySecret.grantRead(migrationTaskDefinition.executionRole!);
-    props.jwtSecretKeySecret.grantRead(migrationTaskDefinition.executionRole!);
-    props.databaseUrlSecret.grantRead(migrationTaskDefinition.executionRole!);
-    props.adminEmailSecret.grantRead(migrationTaskDefinition.executionRole!);
-    props.adminPasswordSecret.grantRead(migrationTaskDefinition.executionRole!);
-    corsOriginsParam.grantRead(migrationTaskDefinition.executionRole!);
-    logLevelParam.grantRead(migrationTaskDefinition.executionRole!);
-    adminUsernameParam.grantRead(migrationTaskDefinition.executionRole!);
-    emailFromAddressParam.grantRead(migrationTaskDefinition.executionRole!);
-    emailSesRegionParam.grantRead(migrationTaskDefinition.executionRole!);
-
-    new cdk.CfnOutput(this, 'MigrationTaskDefinitionArn', {
-      value: migrationTaskDefinition.taskDefinitionArn,
-      description: 'ARN of the one-shot Alembic migration task - invoke via aws ecs run-task before service rollout',
-      exportName: `${this.stackName}-MigrationTaskDefinitionArn`,
-    });
-    new cdk.CfnOutput(this, 'BackendServiceSecurityGroupId', {
-      value: props.backendServiceSecurityGroup.securityGroupId,
-      description: 'Security group ID for ECS tasks - pass to aws ecs run-task --network-configuration',
-    });
+    // SFBL-298: the one-shot Alembic migration task definition (and its
+    // MigrationTaskDefinitionArn / BackendServiceSecurityGroupId outputs) now
+    // live in DataStack, so they exist after `cdk deploy Network Data` - before
+    // this stack is synthesised. That closes the first-deploy chicken-and-egg
+    // where the service booted against an empty schema. See data-stack.ts and
+    // DECISIONS 027.
   }
 }

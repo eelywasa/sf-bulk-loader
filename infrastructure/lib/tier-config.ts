@@ -37,6 +37,34 @@ export interface TierConfig {
    */
   rdsDeletionProtection: boolean;
 
+  /**
+   * Persist data across `cdk destroy` so an environment can be torn down to
+   * save money and brought back later with the same data (SFBL-297). When true:
+   *
+   *   - RDS uses `RemovalPolicy.SNAPSHOT` (a final snapshot is taken on destroy)
+   *     instead of being wiped. Rebuild with `-c restoreFromSnapshot=<id>`.
+   *   - The five app secrets (encryption-key, jwt-secret-key, database-url,
+   *     admin-email, admin-password) use `RemovalPolicy.RETAIN` so the Fernet
+   *     key that decrypts stored Salesforce credentials survives.
+   *   - Input/output S3 buckets use `RemovalPolicy.RETAIN`.
+   *
+   * Note the deliberate interaction with `rdsDeletionProtection`: a SNAPSHOT
+   * removal policy cannot run on destroy while RDS-level deletion protection is
+   * on (it blocks the DeleteDBInstance call), so `persistOnDestroy` takes
+   * precedence and forces `deletionProtection` off. The snapshot + retained
+   * secrets/buckets are the durability guarantee - fully restorable, and cheap
+   * to park - in place of an undeletable instance. See DECISIONS 028.
+   *
+   * This is only the **default**: persistence is an environment-lifecycle
+   * decision, not a sizing one, so an environment may override it via
+   * `envConfig.persistOnDestroy` (resolved in bin/app.ts). A small/bronze
+   * environment can therefore still be a real, persistent one. The tier
+   * defaults are bronze `false` (also used by the synth-only `ci` env) and
+   * silver/gold `true`; real environments set the per-env override to match
+   * their lifecycle (e.g. a low-utilisation but persistent `staging`).
+   */
+  persistOnDestroy?: boolean;
+
   // ECS - Fargate task shape and replica count
   ecsDesiredCount: number;
   ecsTaskCpu: number;
