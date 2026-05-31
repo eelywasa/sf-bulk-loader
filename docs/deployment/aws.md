@@ -615,11 +615,64 @@ batch-delete-image`, no `aws ecs put-cluster-capacity-providers`, no
   before deleting the cluster instead of racing the detach and failing
   with "The specified capacity provider is in use and cannot be removed".
 
-> **Data loss on non-prod teardown.** Bronze-tier `cdk destroy` deletes the
-> RDS instance, the input/output S3 buckets, and regenerates the Secrets
+> **Data loss on a disposable tier.** On a tier with
+> `persistOnDestroy: false` (bronze), `cdk destroy` deletes the RDS
+> instance, the input/output S3 buckets, and regenerates the Secrets
 > Manager entries on the next deploy. Any Salesforce connections, plans, or
-> run history are lost. Production (and any `rdsDeletionProtection` tier)
-> retains the database, buckets, and ECR repository on destroy.
+> run history are lost. Use a `persistOnDestroy` tier (below) to keep data.
+
+### Teardown with persistence (`persistOnDestroy` tiers)
+
+Silver and gold set `persistOnDestroy: true` (SFBL-297). On these tiers
+`cdk destroy` is non-destructive:
+
+- **RDS** takes a final snapshot and deletes the instance (removal policy
+  `SNAPSHOT`). The snapshot name looks like
+  `bulkloaderproductiondatabase…-finalsnapshot-…`.
+- The five app **secrets** (`encryption-key`, `jwt-secret-key`,
+  `database-url`, `admin-email`, `admin-password`) are **retained** — the
+  `encryption-key` especially, without which the Fernet-encrypted Salesforce
+  credentials in a restored DB are unrecoverable.
+- The input/output **S3 buckets** are retained.
+
+```bash
+cdk destroy --all -c env={env}
+# RDS final snapshot + retained secrets + retained buckets remain.
+# Parked cost is just snapshot + S3 storage (~$0.10/day), no running instance.
+```
+
+> **Deletion-protection note.** `persistOnDestroy` forces RDS deletion
+> protection **off** (a snapshot-on-destroy can't run while it's on). The
+> snapshot + retained secrets are the durability guard instead. If you want
+> a truly undeletable production instance, set that tier to
+> `persistOnDestroy: false` + `rdsDeletionProtection: true` (mutually
+> exclusive — see DECISIONS 028).
+
+### Restore from snapshot
+
+Bring a parked `persistOnDestroy` environment back with the same data:
+
+```bash
+# 1. Find the most recent snapshot for this environment.
+SNAP_ID=$(aws rds describe-db-snapshots \
+  --query 'DBSnapshots[?starts_with(DBSnapshotIdentifier, `bulkloader{env}`)] | sort_by(@, &SnapshotCreateTime)[-1].DBSnapshotIdentifier' \
+  --output text)
+
+# 2. Deploy with the restore context. The DB is rebuilt from the snapshot and
+#    the retained secrets are imported by name (not recreated).
+cdk deploy --all -c env={env} -c restoreFromSnapshot=$SNAP_ID
+```
+
+Two things the operator must do after a restore:
+
+1. **Keep passing `-c restoreFromSnapshot=$SNAP_ID` on every later deploy**
+   of this environment. If you drop it, CloudFormation creates a fresh empty
+   instance and deletes the restored one.
+2. **Update `DATABASE_URL`.** The restored instance has a new endpoint and a
+   freshly generated master password (in a new `rds-credentials` secret).
+   Rewrite the retained `/{env}/bulk-loader/database-url` secret to the new
+   `postgresql+asyncpg://…@<new-endpoint>:5432/bulk_loader?ssl=require` before
+   running the migration task and deploying BackendStack.
 
 ---
 

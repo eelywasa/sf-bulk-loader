@@ -792,3 +792,62 @@ truly clean first-deploy hits this manual step. The runbook is explicit
 and the workaround is reliable; subsequent deploys use the standard
 three-step flow from decision 026 unchanged.
 
+## 028 — persistOnDestroy: snapshot the DB and retain secrets/buckets across teardown (SFBL-297)
+
+Bronze `cdk destroy` wipes the RDS instance, regenerates secrets, and
+deletes the input/output buckets — correct for disposable validation
+environments. But an operator who wants to tear an environment down to
+save money and bring it back later with the **same data** needs three
+pieces of state to survive together: the RDS data, the `EncryptionKey`
+secret (without which the Fernet-encrypted Salesforce-credential columns
+are unrecoverable ciphertext), and the DB master password.
+
+**Decision:** add a tier-level `persistOnDestroy` flag (bronze `false`;
+silver/gold `true`). When set:
+
+- **RDS** uses `RemovalPolicy.SNAPSHOT` — a final snapshot is taken on
+  destroy and the instance is deleted. Rebuild with
+  `cdk deploy -c restoreFromSnapshot=<id>`, which switches the construct to
+  `rds.DatabaseInstanceFromSnapshot`.
+- **The five app secrets** (`encryption-key`, `jwt-secret-key`,
+  `database-url`, `admin-email`, `admin-password`) use
+  `RemovalPolicy.RETAIN`. On restore they are **imported by name**
+  (`Secret.fromSecretNameV2`) rather than created, because a retained
+  secret name cannot be recreated by CloudFormation.
+- **Input/output buckets** use `RemovalPolicy.RETAIN`.
+
+**Deletion-protection precedence (deliberate posture change for silver/gold).**
+A `SNAPSHOT` removal policy cannot run on destroy while RDS-level deletion
+protection is on — `DeleteDBInstance` is blocked — so `persistOnDestroy`
+forces `deletionProtection: false` (`rdsDeletionProtection && !persist`).
+Silver/gold previously ran with `rdsDeletionProtection: true` →
+`RemovalPolicy.RETAIN` (instance orphaned, never auto-deleted). They now
+**snapshot-and-delete** on destroy instead. The durability guarantee moves
+from "the instance is undeletable" to "a final snapshot + the retained
+secrets make the environment fully restorable" — which is also far cheaper
+to park (snapshot storage only, no running instance). An operator who wants
+the old undeletable-instance posture for a true-production env can set that
+tier back to `persistOnDestroy: false` + `rdsDeletionProtection: true`
+(the two are mutually exclusive by design).
+
+**Two caveats, documented in the runbook:**
+
+1. **Snapshot rooting.** Once an instance is restored with a
+   `DBSnapshotIdentifier`, that identifier must keep being supplied on every
+   subsequent deploy. If it's dropped, CloudFormation creates a fresh empty
+   instance and deletes the restored one (per the AWS RDS docs).
+2. **DatabaseUrl endpoint.** `DATABASE_URL` embeds the RDS endpoint, which
+   changes on restore, and the master password is reset to a new generated
+   secret by `SnapshotCredentials.fromGeneratedSecret`. Even though the
+   `database-url` secret is retained, the operator must rewrite it to the new
+   endpoint + password after a restore.
+
+**Options considered and rejected:**
+
+| Option | Why rejected |
+|---|---|
+| Keep `RETAIN` (orphan the instance) for silver/gold | Leaves a full running instance accruing cost while "parked"; doesn't give a clean restore story |
+| Cross-account / cross-region snapshot copy | DR scope, out of this ticket |
+| S3 versioning / PITR on the buckets | Out of scope — buckets simply `RETAIN` |
+| Custom resource to re-encrypt columns under a new key | Defeats the purpose; retaining the `EncryptionKey` secret is simpler and correct |
+

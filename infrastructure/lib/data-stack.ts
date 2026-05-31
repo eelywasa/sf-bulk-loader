@@ -78,14 +78,20 @@ export interface DataStackProps extends cdk.StackProps {
  */
 export class DataStack extends cdk.Stack {
   public readonly backendRepository: ecr.Repository;
-  public readonly database: rds.DatabaseInstance;
+  // IDatabaseInstance, not DatabaseInstance: on restore the construct is an
+  // rds.DatabaseInstanceFromSnapshot (SFBL-297), which shares the interface
+  // but is a different concrete class.
+  public readonly database: rds.IDatabaseInstance;
   public readonly inputBucket: s3.Bucket;
   public readonly outputBucket: s3.Bucket;
-  public readonly encryptionKeySecret: secretsmanager.Secret;
-  public readonly jwtSecretKeySecret: secretsmanager.Secret;
-  public readonly databaseUrlSecret: secretsmanager.Secret;
-  public readonly adminEmailSecret: secretsmanager.Secret;
-  public readonly adminPasswordSecret: secretsmanager.Secret;
+  // ISecret, not Secret: on restore (persistOnDestroy + restoreFromSnapshot)
+  // these are imported by name via Secret.fromSecretNameV2 rather than created
+  // (a retained secret name cannot be recreated). See SFBL-297.
+  public readonly encryptionKeySecret: secretsmanager.ISecret;
+  public readonly jwtSecretKeySecret: secretsmanager.ISecret;
+  public readonly databaseUrlSecret: secretsmanager.ISecret;
+  public readonly adminEmailSecret: secretsmanager.ISecret;
+  public readonly adminPasswordSecret: secretsmanager.ISecret;
   /** SES domain identity ARN. Consumed by BackendStack for IAM scoping of ses:SendEmail. */
   public readonly sesIdentityArn: string;
 
@@ -93,6 +99,17 @@ export class DataStack extends cdk.Stack {
     super(scope, id, props);
 
     const env = props.envName;
+
+    // SFBL-297: persistence controls.
+    // `persist` - tier opts into snapshot-on-destroy + retained secrets/buckets.
+    // `restoreFromSnapshot` - when an operator passes `-c restoreFromSnapshot=<id>`,
+    // the RDS instance is rebuilt from that snapshot and the retained secrets are
+    // imported by name rather than created (a retained secret name can't be
+    // recreated). Only meaningful on a persist tier; see DECISIONS 028.
+    const persist = props.tier.persistOnDestroy ?? false;
+    const restoreFromSnapshot = this.node.tryGetContext('restoreFromSnapshot') as
+      | string
+      | undefined;
 
     // --- ECR Repository ---
     // Must exist before BackendStack so the ECS service can pull a real tag.
@@ -153,49 +170,78 @@ export class DataStack extends cdk.Stack {
     });
 
     // RDS shape (instance class, Multi-AZ, allocated storage, backup retention)
-    // and the deletion-protection / retention safety controls are all driven
-    // by the tier preset, but they are independent fields:
+    // and the destroy-time data controls are driven by the tier preset.
     //
     //   rdsMultiAz             - HA/cost decision (does the DB span 2 AZs?)
-    //   rdsDeletionProtection  - data-loss guard (block DeleteDBInstance and
-    //                            keep the DB on stack destroy)
+    //   rdsDeletionProtection  - block DeleteDBInstance + RETAIN the DB on destroy
+    //   persistOnDestroy       - SNAPSHOT the DB on destroy (SFBL-297)
     //
-    // Coupling these would mean Silver (single-AZ but real production data)
-    // loses its protection, which would be a regression from the previous
-    // env==='production' check. Bronze opts out for cheap dev teardown.
+    // Removal-policy precedence (see DECISIONS 028):
+    //   persist            -> SNAPSHOT  (final snapshot taken, instance deleted)
+    //   else protected     -> RETAIN    (instance orphaned, never auto-deleted)
+    //   else               -> DESTROY   (instance wiped - disposable bronze)
+    //
+    // A SNAPSHOT removal policy cannot run while RDS deletion protection is on
+    // (it blocks the DeleteDBInstance call), so persist forces deletionProtection
+    // off; the final snapshot + retained secrets are the durability guard there.
+    const dbRemovalPolicy = persist
+      ? cdk.RemovalPolicy.SNAPSHOT
+      : props.tier.rdsDeletionProtection
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY;
+    const dbDeletionProtection = props.tier.rdsDeletionProtection && !persist;
+
     // Strip the leading "db." that operators naturally write in tier presets
     // (matching the form RDS APIs and the AWS console use). ec2.InstanceType
     // expects the bare class+size and CDK adds the "db." prefix itself when
     // synthesising RDS DBInstanceClass — without the strip we'd ship
     // "db.db.t4g.micro" and RDS rejects with InvalidParameter.
     const rdsInstanceClass = props.tier.rdsInstanceClass.replace(/^db\./, '');
-    this.database = new rds.DatabaseInstance(this, 'Database', {
+    // Properties common to both the fresh-create and restore-from-snapshot
+    // construct branches.
+    const commonDbProps = {
       engine: dbEngine,
       parameterGroup: dbParameterGroup,
       instanceType: new ec2.InstanceType(rdsInstanceClass),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [dbSecurityGroup],
-      databaseName: 'bulk_loader',
-      // Credentials auto-generated in Secrets Manager under:
-      //   /rds-db-credentials/cluster-...  (managed by RDS)
-      // The DATABASE_URL secret in /{env}/bulk-loader/database-url must reference this.
-      credentials: rds.Credentials.fromGeneratedSecret('bulk_loader_user', {
-        secretName: `/${env}/bulk-loader/rds-credentials`,
-      }),
-      // Always encrypt storage at rest. CDK defaults to encryption-on for
-      // most engines but we set it explicitly to make the security posture
-      // visible in the synthesised template.
+      // Always encrypt storage at rest. On restore this matches the snapshot's
+      // own (encrypted) storage, so it is consistent rather than a conflict.
       storageEncrypted: true,
       multiAz: props.tier.rdsMultiAz,
       allocatedStorage: props.tier.rdsAllocatedStorage,
       maxAllocatedStorage: Math.max(props.tier.rdsAllocatedStorage * 5, 100),
-      deletionProtection: props.tier.rdsDeletionProtection,
-      removalPolicy: props.tier.rdsDeletionProtection
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
+      deletionProtection: dbDeletionProtection,
+      removalPolicy: dbRemovalPolicy,
       backupRetention: cdk.Duration.days(props.tier.rdsBackupRetentionDays),
-    });
+    };
+
+    if (restoreFromSnapshot) {
+      // SFBL-297 restore: rebuild the instance from the named snapshot. The
+      // master username can't change on restore, so generate a fresh password
+      // (stored in a new Secrets Manager secret) and reset it on the restored
+      // instance. The operator repoints DATABASE_URL at the new endpoint +
+      // password (see aws.md "Restore from snapshot"). NOTE: once restored, the
+      // same snapshotIdentifier must keep being supplied on every later deploy
+      // or CloudFormation recreates the DB empty.
+      this.database = new rds.DatabaseInstanceFromSnapshot(this, 'Database', {
+        ...commonDbProps,
+        snapshotIdentifier: restoreFromSnapshot,
+        credentials: rds.SnapshotCredentials.fromGeneratedSecret('bulk_loader_user'),
+      });
+    } else {
+      this.database = new rds.DatabaseInstance(this, 'Database', {
+        ...commonDbProps,
+        databaseName: 'bulk_loader',
+        // Credentials auto-generated in Secrets Manager under
+        //   /{env}/bulk-loader/rds-credentials
+        // The DATABASE_URL secret must reference this.
+        credentials: rds.Credentials.fromGeneratedSecret('bulk_loader_user', {
+          secretName: `/${env}/bulk-loader/rds-credentials`,
+        }),
+      });
+    }
 
     // --- S3 Buckets ---
     // Lifecycle expiration is driven by the tier preset. A value of 0 means
@@ -221,12 +267,15 @@ export class DataStack extends cdk.Stack {
           ]
         : [];
 
-    // Input + output buckets: production retains data on stack destroy; non-prod
-    // tiers (staging, dev) clean up to avoid orphaned buckets accumulating across
-    // deploy/destroy cycles. Mirrors the frontend bucket and ECR repo policy.
-    const dataBucketRemoval =
-      env === 'production' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
-    const dataBucketAutoDelete = env !== 'production';
+    // Input + output buckets: retain data on destroy for production AND any
+    // persistOnDestroy tier (SFBL-297) so previously-uploaded CSVs survive a
+    // teardown/restore cycle; disposable tiers clean up to avoid orphaned
+    // buckets accumulating. Mirrors the frontend bucket and ECR repo policy.
+    const dataBucketRetain = persist || env === 'production';
+    const dataBucketRemoval = dataBucketRetain
+      ? cdk.RemovalPolicy.RETAIN
+      : cdk.RemovalPolicy.DESTROY;
+    const dataBucketAutoDelete = !dataBucketRetain;
 
     // Input bucket: source CSV files uploaded by users or pipelines.
     this.inputBucket = new s3.Bucket(this, 'InputBucket', {
@@ -255,32 +304,59 @@ export class DataStack extends cdk.Stack {
     // Actual values must be provisioned before first ECS task start - see aws.md.
     // The ECS task definition (BackendStack) references these secrets by ARN
     // and injects them as environment variables into the container.
+    //
+    // SFBL-297 persistence: on a persistOnDestroy tier these carry
+    // RemovalPolicy.RETAIN, so they survive `cdk destroy` - critical for the
+    // EncryptionKey, without which a restored DB's Fernet-encrypted columns are
+    // unrecoverable. On restore (`-c restoreFromSnapshot=<id>`) they are imported
+    // by name rather than created, because a retained secret name cannot be
+    // recreated by CloudFormation.
+    const secretRemovalPolicy = persist
+      ? cdk.RemovalPolicy.RETAIN
+      : cdk.RemovalPolicy.DESTROY;
+    const appSecret = (
+      id: string,
+      name: string,
+      description: string,
+    ): secretsmanager.ISecret => {
+      if (restoreFromSnapshot) {
+        return secretsmanager.Secret.fromSecretNameV2(this, id, name);
+      }
+      return new secretsmanager.Secret(this, id, {
+        secretName: name,
+        description,
+        removalPolicy: secretRemovalPolicy,
+      });
+    };
 
-    this.encryptionKeySecret = new secretsmanager.Secret(this, 'EncryptionKeySecret', {
-      secretName: `/${env}/bulk-loader/encryption-key`,
-      description: 'Fernet encryption key for stored Salesforce connection secrets (ENCRYPTION_KEY)',
-    });
-
-    this.jwtSecretKeySecret = new secretsmanager.Secret(this, 'JwtSecretKeySecret', {
-      secretName: `/${env}/bulk-loader/jwt-secret-key`,
-      description: 'JWT signing secret for in-app bearer token authentication (JWT_SECRET_KEY)',
-    });
-
-    this.databaseUrlSecret = new secretsmanager.Secret(this, 'DatabaseUrlSecret', {
-      secretName: `/${env}/bulk-loader/database-url`,
-      description: 'Full PostgreSQL asyncpg connection URL including credentials (DATABASE_URL)',
-      // Format: postgresql+asyncpg://user:password@rds-endpoint:5432/bulk_loader?ssl=require
-    });
-
-    this.adminEmailSecret = new secretsmanager.Secret(this, 'AdminEmailSecret', {
-      secretName: `/${env}/bulk-loader/admin-email`,
-      description: 'Bootstrap admin email / login identifier for first-boot user seeding (ADMIN_EMAIL)',
-    });
-
-    this.adminPasswordSecret = new secretsmanager.Secret(this, 'AdminPasswordSecret', {
-      secretName: `/${env}/bulk-loader/admin-password`,
-      description: 'Bootstrap admin password for first-boot user seeding (ADMIN_PASSWORD)',
-    });
+    this.encryptionKeySecret = appSecret(
+      'EncryptionKeySecret',
+      `/${env}/bulk-loader/encryption-key`,
+      'Fernet encryption key for stored Salesforce connection secrets (ENCRYPTION_KEY)',
+    );
+    this.jwtSecretKeySecret = appSecret(
+      'JwtSecretKeySecret',
+      `/${env}/bulk-loader/jwt-secret-key`,
+      'JWT signing secret for in-app bearer token authentication (JWT_SECRET_KEY)',
+    );
+    // DATABASE_URL embeds the RDS endpoint, which changes on restore - so even
+    // when retained, the operator must rewrite this to the new endpoint +
+    // password after a snapshot restore (see aws.md "Restore from snapshot").
+    this.databaseUrlSecret = appSecret(
+      'DatabaseUrlSecret',
+      `/${env}/bulk-loader/database-url`,
+      'Full PostgreSQL asyncpg connection URL including credentials (DATABASE_URL)',
+    );
+    this.adminEmailSecret = appSecret(
+      'AdminEmailSecret',
+      `/${env}/bulk-loader/admin-email`,
+      'Bootstrap admin email / login identifier for first-boot user seeding (ADMIN_EMAIL)',
+    );
+    this.adminPasswordSecret = appSecret(
+      'AdminPasswordSecret',
+      `/${env}/bulk-loader/admin-password`,
+      'Bootstrap admin password for first-boot user seeding (ADMIN_PASSWORD)',
+    );
 
     // --- SES - domain identity for application-sent email ---
     // The SES backend (app/services/email/backends/ses.py) sends via

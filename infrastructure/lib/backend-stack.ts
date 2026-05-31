@@ -22,11 +22,14 @@ export interface BackendStackProps extends cdk.StackProps {
    * stack is deployed (see SFBL-276 deploy ordering).
    */
   backendRepository: ecr.IRepository;
-  encryptionKeySecret: secretsmanager.Secret;
-  jwtSecretKeySecret: secretsmanager.Secret;
-  databaseUrlSecret: secretsmanager.Secret;
-  adminEmailSecret: secretsmanager.Secret;
-  adminPasswordSecret: secretsmanager.Secret;
+  // ISecret, not Secret: on a SFBL-297 snapshot restore DataStack imports these
+  // by name (Secret.fromSecretNameV2), which yields ISecret. grantRead and
+  // ecs.Secret.fromSecretsManager both accept ISecret.
+  encryptionKeySecret: secretsmanager.ISecret;
+  jwtSecretKeySecret: secretsmanager.ISecret;
+  databaseUrlSecret: secretsmanager.ISecret;
+  adminEmailSecret: secretsmanager.ISecret;
+  adminPasswordSecret: secretsmanager.ISecret;
   /** SES domain identity ARN - IAM ses:SendEmail/SendRawEmail are scoped to this resource. */
   sesIdentityArn: string;
   /** DNS hostname that CloudFront uses as the backend origin (for example api.example.com). */

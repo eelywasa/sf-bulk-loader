@@ -37,6 +37,29 @@ export interface TierConfig {
    */
   rdsDeletionProtection: boolean;
 
+  /**
+   * Persist data across `cdk destroy` so an environment can be torn down to
+   * save money and brought back later with the same data (SFBL-297). When true:
+   *
+   *   - RDS uses `RemovalPolicy.SNAPSHOT` (a final snapshot is taken on destroy)
+   *     instead of being wiped. Rebuild with `-c restoreFromSnapshot=<id>`.
+   *   - The five app secrets (encryption-key, jwt-secret-key, database-url,
+   *     admin-email, admin-password) use `RemovalPolicy.RETAIN` so the Fernet
+   *     key that decrypts stored Salesforce credentials survives.
+   *   - Input/output S3 buckets use `RemovalPolicy.RETAIN`.
+   *
+   * Note the deliberate interaction with `rdsDeletionProtection`: a SNAPSHOT
+   * removal policy cannot run on destroy while RDS-level deletion protection is
+   * on (it blocks the DeleteDBInstance call), so `persistOnDestroy` takes
+   * precedence and forces `deletionProtection` off. The snapshot + retained
+   * secrets are the durability guarantee on these tiers - fully restorable,
+   * and cheap to park - in place of an undeletable instance. See DECISIONS 028.
+   *
+   * Bronze leaves this false (disposable validation envs); silver/gold set it
+   * true (persistent, parkable environments).
+   */
+  persistOnDestroy?: boolean;
+
   // ECS - Fargate task shape and replica count
   ecsDesiredCount: number;
   ecsTaskCpu: number;
