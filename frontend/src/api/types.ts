@@ -493,7 +493,7 @@ export type EmailTestResponse =
 
 // ─── Notification subscriptions (SFBL-182) ───────────────────────────────────
 
-export type NotificationChannel = 'email' | 'webhook'
+export type NotificationChannel = 'email' | 'webhook' | 'teams_webhook'
 export type NotificationTrigger = 'terminal_any' | 'terminal_fail_only'
 
 export interface NotificationSubscription {

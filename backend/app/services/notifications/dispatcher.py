@@ -50,6 +50,7 @@ from app.services.notifications.channels.base import (
     NotificationChannel,
 )
 from app.services.notifications.channels.email import EmailChannel
+from app.services.notifications.channels.teams import TeamsWebhookChannel
 from app.services.notifications.channels.webhook import WebhookChannel
 
 if TYPE_CHECKING:
@@ -310,7 +311,11 @@ class NotificationDispatcher:
                 delivery.last_error = result.error_detail
                 outcome = (
                     OutcomeCode.NOTIFICATION_WEBHOOK_ERROR
-                    if channel_name == SubscriptionChannel.webhook
+                    if channel_name
+                    in (
+                        SubscriptionChannel.webhook,
+                        SubscriptionChannel.teams_webhook,
+                    )
                     else OutcomeCode.FAILED
                 )
                 notification_dispatch_total.labels(
@@ -402,5 +407,6 @@ def build_notification_dispatcher(
         channels={
             SubscriptionChannel.email: EmailChannel(email_service),
             SubscriptionChannel.webhook: WebhookChannel(),
+            SubscriptionChannel.teams_webhook: TeamsWebhookChannel(),
         },
     )

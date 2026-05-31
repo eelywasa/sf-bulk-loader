@@ -24,7 +24,10 @@ def _validate_destination(
         # Full validation still happens server-side before the dispatch.
         if "@" not in destination or destination.startswith("@") or destination.endswith("@"):
             raise ValueError("destination is not a valid email address")
-    elif channel == NotificationChannel.webhook:
+    elif channel in (
+        NotificationChannel.webhook,
+        NotificationChannel.teams_webhook,
+    ):
         if not destination.lower().startswith("https://"):
             raise ValueError("webhook destination must use https://")
     return destination

@@ -36,7 +36,7 @@ function sanitizeUrl(raw: string): string {
 }
 
 function displayDestination(sub: NotificationSubscription): string {
-  return sub.channel === 'webhook' ? sanitizeUrl(sub.destination) : sub.destination
+  return sub.channel === 'email' ? sub.destination : sanitizeUrl(sub.destination)
 }
 
 function triggerLabel(t: NotificationTrigger): string {

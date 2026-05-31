@@ -2,10 +2,10 @@
 title: Notifications
 slug: notifications
 nav_order: 90
-tags: [notifications, email, webhook]
+tags: [notifications, email, webhook, teams]
 summary: >-
-  Subscribe to run-completion events via email or webhook (hosted profiles
-  only).
+  Subscribe to run-completion events via email, webhook, or Microsoft Teams
+  (hosted profiles only).
 ---
 
 # Notifications
@@ -28,6 +28,7 @@ Managing other users' subscriptions is not currently exposed.
 |---|---|
 | **Email** | Plain-text summary rendered from the `notifications/run_complete` template. Subject line includes plan name + terminal status. |
 | **Webhook** | JSON POST to an `https://` URL. Compatible with Slack incoming webhooks. |
+| **Microsoft Teams** | JSON POST of an Adaptive Card to a Power Automate **Workflows** webhook URL. Renders a colour-coded status banner, run-metadata facts, and a deep link to the run. |
 
 ### Webhook payload shape
 
@@ -48,6 +49,27 @@ Managing other users' subscriptions is not currently exposed.
 `http://` URLs are rejected. Webhook delivery retries up to 3 times on 5xx,
 429, or network errors with exponential backoff + jitter. `4xx` responses are
 terminal (no retry).
+
+### Microsoft Teams (Power Automate Workflows)
+
+Microsoft retired the classic Office 365 "Incoming Webhook" connectors in May
+2026. The supported destination is now a Power Automate **Workflows** webhook,
+which the **Microsoft Teams** channel targets. Such webhooks accept an
+Adaptive Card wrapped in a `message` / `attachments` envelope and return
+**HTTP 202** on acceptance — the dispatcher treats any 2xx as success, sharing
+the webhook channel's retry policy (3 attempts; retry on 5xx / 429 / network).
+
+To get a destination URL, in Teams add a **Workflows** app to the target
+channel and create a flow from the *"Post to a channel when a webhook request
+is received"* template. Teams generates an HTTPS URL on the
+`*.powerplatform.com` host; paste that into the subscription's destination
+field. The Slack-style webhook payload above is silently dropped by Teams, so
+this channel emits a purpose-built Adaptive Card instead — there is nothing to
+configure beyond the URL.
+
+> The card uses Adaptive Card schema v1.4 with only widely-supported elements
+> (a status `Container` banner, a `FactSet`, and an `Action.OpenUrl` deep
+> link) so it renders on Teams mobile as well as desktop.
 
 ---
 
@@ -103,6 +125,10 @@ curl -X POST https://hooks.example.com/services/T/B/X \
 ```
 
 If the endpoint returns 2xx, the in-UI **Test** will also succeed.
+
+For a **Microsoft Teams** subscription, skip the raw `curl` above (Teams
+ignores the Slack-shaped body) and use the in-UI **Test** button instead — it
+sends the real Adaptive Card and confirms the card renders in the channel.
 
 ---
 
