@@ -445,3 +445,47 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.release_glob }}
+
+      # SFBL-333: bump the Homebrew cask in the eelywasa/homebrew-sf-bulk-loader
+      # tap on each macOS release. Cross-repo push needs HOMEBREW_TAP_TOKEN
+      # (fine-grained PAT, Contents: read & write on the tap repo). The step is
+      # a no-op until that secret is set, so it never breaks a release.
+      - name: Bump Homebrew cask
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN not set — skipping Homebrew cask bump."
+            exit 0
+          fi
+          set -euo pipefail
+          DMG="$(ls electron/dist/*.dmg | head -1)"
+          SHA="$(shasum -a 256 "${DMG}" | awk '{print $1}')"
+          ASSET="$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --json assets -q '.assets[] | select(.name | endswith(".dmg")) | .name' | head -1)"
+          if [ -z "${ASSET}" ]; then
+            echo "::error::No .dmg asset found on release ${TAG}"; exit 1
+          fi
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ASSET}"
+          echo "Bumping cask -> version=${VERSION} sha256=${SHA} url=${URL}"
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/eelywasa/homebrew-sf-bulk-loader.git" tap
+          cd tap
+          VERSION="${VERSION}" SHA="${SHA}" URL="${URL}" perl -pi -e '
+            s{^(\s*)version .*}{$1 . "version \"$ENV{VERSION}\""}e;
+            s{^(\s*)sha256 .*}{$1 . "sha256 \"$ENV{SHA}\""}e;
+            s{^(\s*)url .*}{$1 . "url \"$ENV{URL}\""}e;
+          ' Casks/sf-bulk-loader.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/sf-bulk-loader.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date for ${VERSION}."; exit 0
+          fi
+          git commit -m "sf-bulk-loader ${VERSION}"
+          git push
