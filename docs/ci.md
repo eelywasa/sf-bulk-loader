@@ -153,10 +153,15 @@ compile and synthesis check only.
 
 ### Job: `cdk-synth`
 
-1. `npm install` in `infrastructure/` (uses `install` not `ci` to handle either lock-file state)
+1. `npm ci` in `infrastructure/`
 2. `npm run build` — TypeScript compile check via `tsc`
-3. `npx cdk synth -c env=staging` — synthesises all four CloudFormation stacks (Network, Data,
-   Backend, Frontend) and validates they are structurally sound
+3. `npm test` — CDK unit tests (`aws-cdk-lib/assertions` over the synthesised
+   templates: removal-policy fan-out, teardown properties, stack membership,
+   per-environment persistence, deterministic bucket names; see
+   `infrastructure/test/`)
+4. `npx cdk synth -c env=ci` — synthesises all four CloudFormation stacks (Network, Data,
+   Backend, Frontend) against the safe-placeholder `ci` environment and validates they are
+   structurally sound
 
 ---
 
@@ -236,8 +241,8 @@ assert settings.auth_mode == 'local' and settings.transport_mode == 'http'
 print('self_hosted: OK')
 "
 
-# CDK synth
-cd infrastructure && npm run build && npx cdk synth -c env=staging
+# CDK build + unit tests + synth (mirrors the cdk-synth job)
+cd infrastructure && npm run build && npm test && npx cdk synth -c env=ci
 ```
 
 ### Inspecting a Docker smoke test locally

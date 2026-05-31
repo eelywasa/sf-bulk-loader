@@ -185,10 +185,13 @@ for hosted distributions.
 > **Read this whole section before starting.** First deploys against a clean
 > account hit several non-obvious gotchas that aren't visible from a single
 > `cdk deploy --all` invocation. The flow below is the one validated against
-> `bulkloader.forcetide.net` during SFBL-278; in particular the
-> *MigrationTaskDef chicken-and-egg* (step 8), the *frontend build flavour*
-> (step 9), and the *Route53 alias for the frontend domain* (step 11) all
-> require manual operator action that the CDK does not currently automate.
+> `bulkloader.forcetide.net`; in particular the *one-shot migration run*
+> (step 8), the *frontend build flavour* (step 9), and the *Route53 alias for
+> the frontend domain* (step 11) require manual operator action that the CDK
+> does not automate. (The old *MigrationTaskDef chicken-and-egg* is gone —
+> SFBL-298 moved the migration task and its own Fargate cluster into DataStack,
+> so it runs cleanly **before** BackendStack exists; step 8 is now an ordered
+> step, not a race.)
 
 ### Common first-deploy gotchas
 
@@ -205,14 +208,16 @@ for hosted distributions.
   `VITE_API_URL=http://127.0.0.1:8000` and a hash router into the bundle
   — fine for Electron, broken on AWS. Always use plain `npm run build`
   before deploying FrontendStack (step 9).
-- **MigrationTaskDef is created by BackendStack but the service starts
-  before migrations run.** `lifespan()` in `app/main.py` queries
-  `profile_permissions` / calls `seed_admin` immediately on task start,
-  which crashes against an empty schema. The service crashloops and
-  BackendStack hangs. Workaround in step 8 below; longer-term fix
-  ([SFBL-298](https://matthew-jenkin.atlassian.net/browse/SFBL-298)
-  proposes relocating MigrationTaskDef to DataStack so it exists before
-  the service ever starts).
+- **Run the database migration before deploying BackendStack.** The
+  service's `lifespan()` in `app/main.py` queries `profile_permissions` /
+  calls `seed_admin` immediately on task start, which crashes against an
+  empty schema. Since [SFBL-298](https://matthew-jenkin.atlassian.net/browse/SFBL-298)
+  the one-shot migration task **and its own Fargate cluster** live in
+  DataStack, so they exist after `cdk deploy Network Data` — run the
+  migration (step 8) to bring the schema to head, then deploy BackendStack
+  and the service boots cleanly. (If you ever deploy BackendStack against an
+  un-migrated DB, the service crashloops and the SFBL-355 deployment circuit
+  breaker rolls the deploy back — a fast, clear failure rather than a hang.)
 - **CloudFront does not auto-create the Route53 alias for the frontend
   domain.** ALB origins for `backendDomainName` are aliased automatically;
   CloudFront aliases for `domainName` are not. Step 11 adds it manually.
@@ -896,9 +901,11 @@ on-demand, USD/month**, post-Free-Tier. Adjust by ~−10% for `us-east-1`, ~+10%
 
 | Component | **Bronze** | **Silver** | **Gold** |
 |---|---|---|---|
-| Use case | 1-2 admins, demo/PoC | Small team (3-10 users), regular use | Customer-facing, audit/compliance |
+| Use case | 2-3 admins, low-utilisation | Small team (3-10 users), regular use | Customer-facing, audit/compliance |
 | RDS instance | db.t4g.micro Single-AZ | db.t4g.small Single-AZ | db.t4g.medium **Multi-AZ** |
-| RDS storage / backups | 20 GB / 1-day | 20 GB / 7-day | 100 GB / 30-day + cross-region snapshot |
+| RDS storage / backups | 20 GB / 7-day | 20 GB / 7-day | 100 GB / 30-day + cross-region snapshot |
+| Persistence default (`persistOnDestroy`) | off — overridable per env | on | on |
+| VPC flow logs | off | on | on |
 | Fargate API tasks | 1× (0.5 vCPU / 1 GB) | 2× (0.5 vCPU / 1 GB) | 2× (1 vCPU / 2 GB) + autoscaling 2-6 |
 | Fargate worker tier | none (orchestrator runs in API task) | none | 2× (1 vCPU / 2 GB) + queue-depth autoscaling |
 | Redis (rate-limit + arq) | none — per-process limiter | none — per-process limiter | ElastiCache cache.t4g.small Multi-AZ |
