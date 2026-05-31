@@ -196,7 +196,7 @@ Builds a platform-native, self-contained Electron package on each runner:
 
 | Runner | Smoke build | Release output |
 |---|---|---|
-| `macos-15` | `--mac dir` | `.zip` containing unsigned `.app` |
+| `macos-15` | `--mac dir` | `.dmg` containing the signed + notarized `.app` |
 | `windows-2025` | `--win dir` | `.exe` NSIS installer |
 | `ubuntu-24.04` | `--linux dir` | `.AppImage` |
 
@@ -261,7 +261,7 @@ The CI smoke test uploads a `sf-bulk-loader-macos-<sha>` artifact (retained 1 da
 
 For a properly self-contained build, download release artifacts from the GitHub Releases page
 (created when a version tag is pushed). Three platform downloads are available per release:
-`mac-arm64` (`.zip`), `windows-x64` (`.exe`), `linux-x64` (`.AppImage`).
+`mac-arm64` (`.dmg`), `windows-x64` (`.exe`), `linux-x64` (`.AppImage`).
 
 ### Creating a release
 
@@ -271,7 +271,7 @@ git push origin v1.2.3
 ```
 
 The `release.yml` workflow fires automatically, pushes Docker images to GHCR, and attaches the
-Electron `.zip` to a GitHub Release. No manual steps required.
+Electron `.dmg` (macOS), `.exe` (Windows), and `.AppImage` (Linux) to a GitHub Release. No manual steps required.
 
 ### PR workflow
 

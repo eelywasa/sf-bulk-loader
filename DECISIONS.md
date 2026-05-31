@@ -901,3 +901,35 @@ monitoring, CloudWatch alarms, AWS WAF, ALB access logs) are owned by
 (S3 object-lock / replication / public-RW-ACL, the SG egress-port-range
 sentinel rule, the RDS master-user secure-parameter rules) were triaged out.
 
+## 030 — Homebrew distribution via a dedicated third-party tap (SFBL-333)
+
+macOS desktop distribution ships through a Homebrew **third-party tap**, not
+the official `homebrew-cask`. This is a constraint, not a preference: the
+official cask has notability/maturity bars (broad usage, stability) the app
+does not yet clear, so self-publishing via a tap is the only viable path
+today. Migrating to the official cask is a *future* option once the app is
+mature/popular enough — the tap can then remain as a fallback.
+
+A Homebrew tap **is** a separate Git repository by convention:
+`brew tap eelywasa/sf-bulk-loader` resolves to a repo literally named
+`eelywasa/homebrew-sf-bulk-loader`. There is no way to host a proper tap
+inside this monorepo, so a dedicated public repo under the `eelywasa`
+account is required.
+
+Consequences:
+- **Artifact format:** the macOS release artifact changes from `.zip` to
+  `.dmg` (the format Cask expects). Changed in both `release.yml`
+  (`--mac dmg`, `*.dmg` glob) and `electron-builder.config.js`
+  (`target: "dmg"`). Signing + notarization were already wired and active,
+  so no signing work was needed.
+- **Cross-repo automation needs an owner-provisioned token:** the tap's
+  auto-bump workflow must push `version`/`sha256` updates to the *separate*
+  tap repo, which the default `GITHUB_TOKEN` cannot do. A least-privilege
+  fine-grained PAT (Contents: read & write on the tap repo only), stored as
+  `HOMEBREW_TAP_TOKEN` in this repo, is required — and only for the
+  auto-update step, not the initial manual cask.
+- **Scope split:** the app-repo changes (artifact format, docs, this entry)
+  ship in the SFBL-333 app PR; the tap repo, its cask, and its bump workflow
+  live in the separate repo and are created after the first `.dmg` release
+  exists to populate the cask `sha256`.
+

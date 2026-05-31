@@ -13,7 +13,7 @@ module.exports = {
   ],
   mac: {
     icon: "build/icon.icns",
-    target: [{ target: "zip", arch: ["arm64"] }],
+    target: [{ target: "dmg", arch: ["arm64"] }],
     category: "public.app-category.developer-tools",
     hardenedRuntime: true,
     entitlements: "entitlements.mac.plist",
