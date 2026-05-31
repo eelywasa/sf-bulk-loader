@@ -55,6 +55,9 @@ class NotificationSubscription(Base):
     plan_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("load_plan.id", ondelete="CASCADE"), nullable=True
     )
+    # Optional human-readable name so opaque webhook/Teams URLs are
+    # identifiable in the list. No uniqueness constraint by design.
+    label: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     channel: Mapped[NotificationChannel] = mapped_column(
         SAEnum(
             NotificationChannel,

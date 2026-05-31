@@ -13,6 +13,21 @@ from app.models.notification_subscription import (
 )
 
 
+LABEL_MAX_LENGTH = 120
+
+
+def _normalize_label(label: Optional[str]) -> Optional[str]:
+    """Trim whitespace, coerce blank to None, enforce max length."""
+    if label is None:
+        return None
+    label = label.strip()
+    if not label:
+        return None
+    if len(label) > LABEL_MAX_LENGTH:
+        raise ValueError(f"label must be at most {LABEL_MAX_LENGTH} characters")
+    return label
+
+
 def _validate_destination(
     destination: str, channel: NotificationChannel
 ) -> str:
@@ -35,9 +50,15 @@ def _validate_destination(
 
 class NotificationSubscriptionBase(BaseModel):
     plan_id: Optional[str] = None
+    label: Optional[str] = None
     channel: NotificationChannel
     destination: str
     trigger: NotificationTrigger
+
+    @field_validator("label")
+    @classmethod
+    def _normalize_label(cls, v: Optional[str]) -> Optional[str]:
+        return _normalize_label(v)
 
 
 class NotificationSubscriptionCreate(NotificationSubscriptionBase):
@@ -52,9 +73,15 @@ class NotificationSubscriptionCreate(NotificationSubscriptionBase):
 
 class NotificationSubscriptionUpdate(BaseModel):
     plan_id: Optional[str] = None
+    label: Optional[str] = None
     channel: Optional[NotificationChannel] = None
     destination: Optional[str] = None
     trigger: Optional[NotificationTrigger] = None
+
+    @field_validator("label")
+    @classmethod
+    def _normalize_label(cls, v: Optional[str]) -> Optional[str]:
+        return _normalize_label(v)
 
 
 class NotificationSubscriptionResponse(NotificationSubscriptionBase):

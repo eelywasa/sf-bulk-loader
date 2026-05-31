@@ -53,6 +53,7 @@ export function SubscriptionFormModal({
 }: SubscriptionFormModalProps) {
   const [channel, setChannel] = useState<NotificationChannel>('email')
   const [destination, setDestination] = useState('')
+  const [label, setLabel] = useState('')
   const [planId, setPlanId] = useState<string | null>(null)
   const [trigger, setTrigger] = useState<NotificationTrigger>('terminal_any')
 
@@ -68,11 +69,13 @@ export function SubscriptionFormModal({
     if (editing) {
       setChannel(editing.channel)
       setDestination(editing.destination)
+      setLabel(editing.label ?? '')
       setPlanId(editing.plan_id)
       setTrigger(editing.trigger)
     } else {
       setChannel('email')
       setDestination('')
+      setLabel('')
       setPlanId(defaultPlanId)
       setTrigger('terminal_any')
     }
@@ -88,6 +91,7 @@ export function SubscriptionFormModal({
     if (!destValid) return
     onSubmit({
       plan_id: planId,
+      label: label.trim() || null,
       channel,
       destination: destination.trim(),
       trigger,
@@ -119,6 +123,25 @@ export function SubscriptionFormModal({
       }
     >
       <form id="subscription-form" onSubmit={handleSave} className="space-y-4">
+        <div>
+          <label className={LABEL_CLASS} htmlFor="sub-label">
+            Label <span className="text-content-muted font-normal">(optional)</span>
+          </label>
+          <input
+            id="sub-label"
+            className={INPUT_CLASS}
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="e.g. Ops Teams channel"
+            maxLength={120}
+            autoComplete="off"
+          />
+          <p className="mt-1 text-xs text-content-muted">
+            A name to identify this subscription in the list. Falls back to the
+            destination when blank.
+          </p>
+        </div>
+
         <div>
           <label className={LABEL_CLASS} htmlFor="sub-channel">
             Channel

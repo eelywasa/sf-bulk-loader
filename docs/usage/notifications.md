@@ -91,9 +91,15 @@ Two entry points:
 
 ### 1. Settings → Notifications (full CRUD)
 
-Pick a channel, destination, plan scope (**specific plan** or **all plans**),
-and trigger. Use **Test** to fire a synthetic payload through the real
-dispatcher without waiting for a run.
+Open from the sidebar **Settings → Notifications**. Pick a channel,
+destination, plan scope (**specific plan** or **all plans**), and trigger.
+Use **Test** to fire a synthetic payload through the real dispatcher without
+waiting for a run.
+
+Optionally give the subscription a **Label** — a short human-readable name
+shown as the primary identifier in the list. This is handy when several
+webhook or Teams destinations share near-identical URLs. The label is
+optional; rows without one fall back to showing the (sanitized) destination.
 
 ### 2. Plan editor → "Notify me" button
 

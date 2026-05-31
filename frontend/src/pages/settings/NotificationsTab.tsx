@@ -167,7 +167,7 @@ export function NotificationsTab() {
             <thead className="bg-surface-sunken text-left text-xs uppercase tracking-wide text-content-muted">
               <tr>
                 <th className="px-4 py-2 w-10" aria-label="Channel" />
-                <th className="px-4 py-2">Destination</th>
+                <th className="px-4 py-2">Name / destination</th>
                 <th className="px-4 py-2">Plan</th>
                 <th className="px-4 py-2">Trigger</th>
                 <th className="px-4 py-2 text-right">Actions</th>
@@ -182,8 +182,19 @@ export function NotificationsTab() {
                       aria-label={sub.channel}
                     />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs break-all text-content-primary">
-                    {displayDestination(sub)}
+                  <td className="px-4 py-3 break-all">
+                    {sub.label ? (
+                      <>
+                        <span className="text-content-primary">{sub.label}</span>
+                        <span className="block font-mono text-xs text-content-muted">
+                          {displayDestination(sub)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-mono text-xs text-content-primary">
+                        {displayDestination(sub)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-content-secondary">
                     {sub.plan_id ? (

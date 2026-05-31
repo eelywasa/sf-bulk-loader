@@ -120,6 +120,7 @@ async def create_subscription(
     sub = NotificationSubscription(
         user_id=user.id,
         plan_id=data.plan_id,
+        label=data.label,
         channel=data.channel,
         destination=data.destination,
         trigger=data.trigger,

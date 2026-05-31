@@ -174,6 +174,82 @@ def test_create_duplicate_returns_409(sub_client):
     assert resp.status_code == 409
 
 
+# ── Label (SFBL-354) ───────────────────────────────────────────────────────────
+
+
+def test_create_with_label_round_trips(sub_client):
+    client, _ = sub_client
+    resp = client.post(
+        "/api/notification-subscriptions",
+        json={
+            "label": "Ops Teams channel",
+            "channel": "email",
+            "destination": "labelled@example.com",
+            "trigger": "terminal_any",
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["label"] == "Ops Teams channel"
+
+
+def test_label_is_trimmed_and_blank_becomes_null(sub_client):
+    client, _ = sub_client
+    # Whitespace-only label coerces to null
+    blank = client.post(
+        "/api/notification-subscriptions",
+        json={
+            "label": "   ",
+            "channel": "email",
+            "destination": "blank-label@example.com",
+            "trigger": "terminal_any",
+        },
+    )
+    assert blank.status_code == 201
+    assert blank.json()["label"] is None
+
+    # Surrounding whitespace is stripped
+    trimmed = client.post(
+        "/api/notification-subscriptions",
+        json={
+            "label": "  Spaced  ",
+            "channel": "email",
+            "destination": "trim-label@example.com",
+            "trigger": "terminal_any",
+        },
+    )
+    assert trimmed.status_code == 201
+    assert trimmed.json()["label"] == "Spaced"
+
+
+def test_label_too_long_returns_422(sub_client):
+    client, _ = sub_client
+    resp = client.post(
+        "/api/notification-subscriptions",
+        json={
+            "label": "x" * 121,
+            "channel": "email",
+            "destination": "long-label@example.com",
+            "trigger": "terminal_any",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_update_label(sub_client):
+    client, _ = sub_client
+    created = client.post(
+        "/api/notification-subscriptions",
+        json={"channel": "email", "destination": "edit-label@x.com", "trigger": "terminal_any"},
+    ).json()
+    assert created["label"] is None
+    resp = client.put(
+        f"/api/notification-subscriptions/{created['id']}",
+        json={"label": "Renamed"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["label"] == "Renamed"
+
+
 # ── List + get ───────────────────────────────────────────────────────────────
 
 
