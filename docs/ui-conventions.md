@@ -893,14 +893,19 @@ instead render their own table + add/edit modal via React Query mutations.
 
 1. Wrap in a plain `<div className="p-6 max-w-4xl">` with an `<h1>` title.
 2. Render the existing list component directly (e.g. `NotificationsTab`).
-3. Register the route with `<ProtectedRoute permission="system.settings">` and
-   add a sidebar entry in `AppShell.tsx`'s `SettingsMenu`, gated by
-   `canSettings`, inside the `authRequired && canSettings` admin block.
+3. Gate the route to match the underlying API's scope, **not** reflexively
+   to `system.settings`. Per-user resources (notification subscriptions are
+   scoped to the current user) use a bare `<ProtectedRoute>` (auth-only) and a
+   sidebar entry gated by `authRequired` alone — so operators and viewers, not
+   just admins, can reach them. Genuinely admin-only CRUD lists use
+   `<ProtectedRoute permission="system.settings">` and live in the
+   `authRequired && canSettings` block.
 
 **Example:** `SettingsNotificationsPage.tsx` (Settings → Notifications) wraps
-`NotificationsTab` this way. Note: the bare `/settings` route is a desktop-only
-Storage page; on hosted profiles it redirects to `/settings/email` since each
-admin area now has its own dedicated page.
+`NotificationsTab` this way. Its route is auth-only and its sidebar entry sits
+beside Profile (per-user), not in the admin block. Note: the bare `/settings`
+route is a desktop-only Storage page; on hosted profiles it redirects to
+`/settings/email` since each admin area now has its own dedicated page.
 
 ---
 

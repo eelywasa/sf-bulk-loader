@@ -119,9 +119,11 @@ const router = createRouter([
         ),
       },
       {
+        // Per-user notification subscriptions — any authenticated user, not
+        // just admins (the notification APIs are scoped to the current user).
         path: '/settings/notifications',
         element: (
-          <ProtectedRoute permission="system.settings">
+          <ProtectedRoute>
             <SettingsNotificationsPage />
           </ProtectedRoute>
         ),
