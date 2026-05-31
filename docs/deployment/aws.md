@@ -383,35 +383,22 @@ docker buildx build \
 docker push ${ECR_URI}:latest
 ```
 
-### 8. Deploy BackendStack — handle the first-deploy migration race
+### 8. Run the database migration, then deploy BackendStack
 
-This is the trickiest step on a clean account. The MigrationTaskDefinition
-is created **inside** BackendStack, but the ECS service in the same stack
-boots immediately and tries to call `lifespan()` against an empty schema —
-which crashes. The service crashloops, never reaches steady state, and
-BackendStack stalls until the rollback timeout.
-
-The workaround: kick off `cdk deploy` in the background, wait until the
-MigrationTaskDef exists, run the migration manually, force a service
-deployment, then let CDK finish.
+Since SFBL-298 the `MigrationTaskDefinition` and its own Fargate cluster live
+in the **Data** stack, so they already exist after step 4. Run the migration
+to bring the schema to head **before** deploying BackendStack — then the ECS
+service boots against a populated schema and reaches steady state on the first
+try. No background deploy, no polling, no manual `--force-new-deployment`.
 
 ```bash
-# 1. Start the deploy in the background.
-nohup npx cdk deploy BulkLoader-${ENV}-Backend -c env=${ENV} \
-  --require-approval never > /tmp/backend-deploy.log 2>&1 &
-DEPLOY_PID=$!
-
-# 2. Poll until the MigrationTaskDef ARN is available.
-until MIGRATION_ARN=$(aws cloudformation describe-stacks \
-        --stack-name BulkLoader-${ENV}-Backend \
-        --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" \
-        --output text 2>/dev/null) && [ -n "$MIGRATION_ARN" ] && [ "$MIGRATION_ARN" != "None" ]; do
-  sleep 15
-done
-echo "MigrationTaskDef ready: $MIGRATION_ARN"
-
-# 3. Look up the security group + public subnets the service uses.
-SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Backend \
+# 1. Read the migration task, its cluster, the service security group, and the
+#    public subnets - all from the already-deployed Network + Data stacks.
+MIGRATION_ARN=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
+  --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" --output text)
+MIGRATION_CLUSTER=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
+  --query "Stacks[0].Outputs[?OutputKey=='MigrationClusterName'].OutputValue" --output text)
+SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Data \
   --query "Stacks[0].Outputs[?OutputKey=='BackendServiceSecurityGroupId'].OutputValue" --output text)
 VPC_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Network \
   --query "Stacks[0].Outputs[?OutputKey=='VpcId'].OutputValue" --output text)
@@ -419,27 +406,26 @@ SUBNETS=$(aws ec2 describe-subnets \
   --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:aws-cdk:subnet-type,Values=Public" \
   --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
 
-# 4. Run the migration task once and wait for it to exit cleanly.
+# 2. Run the migration task once and wait for it to exit cleanly.
 TASK_ARN=$(aws ecs run-task \
-  --cluster bulk-loader-${ENV} \
+  --cluster "$MIGRATION_CLUSTER" \
   --task-definition "$MIGRATION_ARN" \
   --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
   --query 'tasks[0].taskArn' --output text)
-aws ecs wait tasks-stopped --cluster bulk-loader-${ENV} --tasks "$TASK_ARN"
+aws ecs wait tasks-stopped --cluster "$MIGRATION_CLUSTER" --tasks "$TASK_ARN"
 
-# 5. Force a fresh service deployment now that the schema exists.
-aws ecs update-service \
-  --cluster bulk-loader-${ENV} \
-  --service BulkLoader-${ENV}-Backend-Service \
-  --force-new-deployment
+# 3. Confirm the migration exited 0 before continuing.
+aws ecs describe-tasks --cluster "$MIGRATION_CLUSTER" --tasks "$TASK_ARN" \
+  --query 'tasks[0].containers[0].exitCode'
 
-# 6. Wait for cdk deploy to finish — it will reach CREATE_COMPLETE
-#    once the service hits steady state.
-wait $DEPLOY_PID
+# 4. Now deploy BackendStack - the service comes up against a populated schema.
+npx cdk deploy BulkLoader-${ENV}-Backend -c env=${ENV} --require-approval never
 ```
 
-Save the migration task ARN in case you need to re-run it later.
+Save the migration task ARN in case you need to re-run it later. The same
+`run-task` invocation is used for every subsequent deploy (see "Ongoing
+Deployments").
 
 ### 9. Build the frontend SPA — **plain `npm run build`, not `build:desktop`**
 
@@ -549,21 +535,25 @@ Migrations run as a one-shot job between image push and service rollout:
    docker buildx build --platform linux/amd64 -t $ECR_URI:latest -f backend/Dockerfile backend/
    docker push $ECR_URI:latest
    ```
-2. Run the one-shot migration task and wait for it to complete:
+2. Run the one-shot migration task and wait for it to complete. Since
+   SFBL-298 the migration task, its cluster, and the service security-group
+   output all live in the **Data** stack:
    ```bash
-   MIGRATION_ARN=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Backend \
+   MIGRATION_ARN=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Data \
      --query "Stacks[0].Outputs[?OutputKey=='MigrationTaskDefinitionArn'].OutputValue" --output text)
-   SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Backend \
+   MIGRATION_CLUSTER=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Data \
+     --query "Stacks[0].Outputs[?OutputKey=='MigrationClusterName'].OutputValue" --output text)
+   SG_ID=$(aws cloudformation describe-stacks --stack-name BulkLoader-{env}-Data \
      --query "Stacks[0].Outputs[?OutputKey=='BackendServiceSecurityGroupId'].OutputValue" --output text)
    SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" \
      "Name=tag:aws-cdk:subnet-type,Values=Public" --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
    aws ecs run-task \
-     --cluster bulk-loader-{env} \
+     --cluster $MIGRATION_CLUSTER \
      --task-definition $MIGRATION_ARN \
      --launch-type FARGATE \
      --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}"
    # Then poll until STOPPED with exit code 0:
-   aws ecs wait tasks-stopped --cluster bulk-loader-{env} --tasks $TASK_ARN
+   aws ecs wait tasks-stopped --cluster $MIGRATION_CLUSTER --tasks $TASK_ARN
    ```
    The migration task acquires a Postgres advisory lock for the duration of
    `alembic upgrade head` (see `backend/alembic/env.py`). Concurrent

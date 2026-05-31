@@ -728,6 +728,16 @@ advisory lock means even doing the steps out of order is recoverable.
 
 ## 027 — First-deploy MigrationTaskDef chicken-and-egg: workaround now, relocate later (SFBL-278 / SFBL-298)
 
+> **Superseded by SFBL-298 (2026-05-31).** The deferred "cleaner
+> architectural fix" below has shipped: `MigrationTaskDefinition` now lives
+> in `DataStack` (with its own bare Fargate `MigrationCluster`, log group,
+> and task role), exposed via the `MigrationTaskDefinitionArn`,
+> `MigrationClusterName`, and `BackendServiceSecurityGroupId` outputs. The
+> first-deploy runbook (`docs/deployment/aws.md` step 8) no longer does the
+> background-deploy + poll + `force-new-deployment` dance — it runs the
+> migration task on the Data-stack cluster, then deploys BackendStack against
+> a populated schema. The historical workaround is retained below for context.
+
 Decision 026 split migrations out into a `MigrationTaskDefinition`
 created by `BackendStack`, alongside the service `TaskDefinition`. That
 works on every deploy **after** the first one, but the first deploy

@@ -50,12 +50,13 @@ flowchart TB
     s3out[(Output bucket)]
     secrets[Secrets Manager x5]
     sesId[SES identity]
+    migcluster[ECS migration cluster]
+    migtd[Migration TaskDef<br/>RUN_MIGRATIONS=true]
   end
 
   subgraph backend["BulkLoader-#123;env#125;-Backend"]
     cluster[ECS cluster]
     svctd[Service TaskDef<br/>RUN_MIGRATIONS=false]
-    migtd[Migration TaskDef<br/>RUN_MIGRATIONS=true]
     alb[ALB]
     routeApi[Route53 A-ALIAS<br/>backendDomainName]
   end
@@ -68,12 +69,13 @@ flowchart TB
   vpc --> rds
   vpc --> alb
   vpc --> cluster
+  vpc --> migcluster
   ecr -.image.-> svctd
   ecr -.image.-> migtd
   secrets -.injected.-> svctd
   secrets -.injected.-> migtd
   cluster --> svctd
-  cluster --> migtd
+  migcluster --> migtd
   alb --> svctd
   cfDist --> s3fe
   cfDist -->|"/api/* /ws/*"| alb

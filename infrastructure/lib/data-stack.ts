@@ -1,12 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ses from 'aws-cdk-lib/aws-ses';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
-import { TierConfig } from './tier-config';
+import { TierConfig, logRetentionFromDays } from './tier-config';
 
 export interface DataStackProps extends cdk.StackProps {
   envName: string;
@@ -14,6 +18,11 @@ export interface DataStackProps extends cdk.StackProps {
   backendServiceSecurityGroup: ec2.SecurityGroup;
   /** Bronze/Silver/Gold tier preset - drives RDS sizing, backups, S3 lifecycle. */
   tier: TierConfig;
+  /**
+   * ECR image tag the one-shot migration task runs (SFBL-298). Mirrors the tag
+   * BackendStack's service task uses; defaults to "latest" in bin/app.ts.
+   */
+  ecrImageTag: string;
   /**
    * Route53 hosted zone domain (e.g. "your-domain.example"). Used for both
    * the backend ALB alias record (consumed by BackendStack) and the SES
@@ -315,6 +324,116 @@ export class DataStack extends cdk.Stack {
     }
     this.sesIdentityArn = sesIdentity.emailIdentityArn;
 
+    // --- SFBL-298: One-shot Alembic migration task definition ---
+    // Relocated here from BackendStack so the migration task exists as soon as
+    // the data layer (RDS + secrets + ECR repo) is up - before BackendStack is
+    // synthesised. This closes the first-deploy chicken-and-egg where the
+    // service task booted against an empty schema, crashlooped in
+    // lifespan()/seed_admin, and hung BackendStack in CREATE_IN_PROGRESS (see
+    // DECISIONS 027, now superseded).
+    //
+    // Fresh-account deploy order:
+    //   1. cdk deploy Network Data   - RDS + secrets + ECR + this task def
+    //   2. push the backend image to ECR
+    //   3. aws ecs run-task <MigrationTaskDefinitionArn>  - schema reaches head
+    //   4. cdk deploy Backend        - service boots against a populated schema
+    //
+    // The task shares the backend image, secrets, and SSM config of the service
+    // task but sets RUN_MIGRATIONS=true and overrides the command to run
+    // `alembic upgrade head` then exit. It is invoked out-of-band via
+    // `aws ecs run-task` against the BackendStack cluster (run-task accepts any
+    // cluster name on the command line, so no cross-stack cluster reference is
+    // needed). An advisory lock in alembic/env.py serialises concurrent callers.
+    // A bare ECS cluster dedicated to the migration task. On a fresh first
+    // deploy BackendStack (which owns the service cluster) does not exist yet -
+    // and that is precisely when the migration must run - so the migration task
+    // needs its own cluster to run on. A Fargate-only cluster has no instance
+    // cost, and because it carries no Fargate capacity-provider association it
+    // is not subject to the teardown race fixed in SFBL-300 (the task is invoked
+    // with `--launch-type FARGATE`, not a capacity-provider strategy).
+    const migrationCluster = new ecs.Cluster(this, 'MigrationCluster', {
+      vpc: props.vpc,
+      clusterName: `bulk-loader-${env}-migration`,
+    });
+
+    const migrationLogGroup = new logs.LogGroup(this, 'MigrationLogGroup', {
+      logGroupName: `/bulk-loader/${env}/migration`,
+      retention: logRetentionFromDays(props.tier.logRetentionDays),
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const migrationTaskRole = new iam.Role(this, 'MigrationTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Bulk Loader one-shot migration task role (${env})`,
+    });
+
+    const migrationTaskDefinition = new ecs.FargateTaskDefinition(this, 'MigrationTaskDef', {
+      memoryLimitMiB: props.tier.ecsTaskMemory,
+      cpu: props.tier.ecsTaskCpu,
+      taskRole: migrationTaskRole,
+    });
+
+    // SSM Parameter Store references for the migration task's config injection.
+    // Imported by name so ECS resolves the live value at task launch. These are
+    // the same parameters the service task (BackendStack) injects - both stacks
+    // import them independently; the import is idempotent.
+    const corsOriginsParam = ssm.StringParameter.fromStringParameterName(
+      this, 'CorsOriginsParam', `/${env}/bulk-loader/cors-origins`,
+    );
+    const logLevelParam = ssm.StringParameter.fromStringParameterName(
+      this, 'LogLevelParam', `/${env}/bulk-loader/log-level`,
+    );
+    const adminUsernameParam = ssm.StringParameter.fromStringParameterName(
+      this, 'AdminUsernameParam', `/${env}/bulk-loader/admin-username`,
+    );
+    const emailFromAddressParam = ssm.StringParameter.fromStringParameterName(
+      this, 'EmailFromAddressParam', `/${env}/bulk-loader/email-from-address`,
+    );
+    const emailSesRegionParam = ssm.StringParameter.fromStringParameterName(
+      this, 'EmailSesRegionParam', `/${env}/bulk-loader/email-ses-region`,
+    );
+
+    migrationTaskDefinition.addContainer('migration', {
+      image: ecs.ContainerImage.fromEcrRepository(this.backendRepository, props.ecrImageTag),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'migration',
+        logGroup: migrationLogGroup,
+      }),
+      // Same secret/SSM injection as the service task - the migration runs the
+      // full app config validator at boot.
+      secrets: {
+        ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(this.encryptionKeySecret),
+        JWT_SECRET_KEY: ecs.Secret.fromSecretsManager(this.jwtSecretKeySecret),
+        DATABASE_URL: ecs.Secret.fromSecretsManager(this.databaseUrlSecret),
+        ADMIN_EMAIL: ecs.Secret.fromSecretsManager(this.adminEmailSecret),
+        ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(this.adminPasswordSecret),
+        CORS_ORIGINS: ecs.Secret.fromSsmParameter(corsOriginsParam),
+        LOG_LEVEL: ecs.Secret.fromSsmParameter(logLevelParam),
+        ADMIN_USERNAME: ecs.Secret.fromSsmParameter(adminUsernameParam),
+        EMAIL_FROM_ADDRESS: ecs.Secret.fromSsmParameter(emailFromAddressParam),
+        EMAIL_SES_REGION: ecs.Secret.fromSsmParameter(emailSesRegionParam),
+      },
+      environment: {
+        APP_DISTRIBUTION: 'aws_hosted',
+        RUN_MIGRATIONS: 'true',
+      },
+      // Override the Dockerfile CMD: run alembic upgrade head then exit cleanly.
+      command: ['sh', '-c', 'alembic upgrade head'],
+    });
+
+    // Grant the migration task's execution role the secret/SSM read access ECS
+    // needs to inject the values above.
+    this.encryptionKeySecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.jwtSecretKeySecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.databaseUrlSecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.adminEmailSecret.grantRead(migrationTaskDefinition.executionRole!);
+    this.adminPasswordSecret.grantRead(migrationTaskDefinition.executionRole!);
+    corsOriginsParam.grantRead(migrationTaskDefinition.executionRole!);
+    logLevelParam.grantRead(migrationTaskDefinition.executionRole!);
+    adminUsernameParam.grantRead(migrationTaskDefinition.executionRole!);
+    emailFromAddressParam.grantRead(migrationTaskDefinition.executionRole!);
+    emailSesRegionParam.grantRead(migrationTaskDefinition.executionRole!);
+
     // --- Outputs ---
     new cdk.CfnOutput(this, 'EcrRepositoryUri', {
       value: this.backendRepository.repositoryUri,
@@ -343,6 +462,21 @@ export class DataStack extends cdk.Stack {
       value: this.sesIdentityArn,
       description: 'SES domain identity ARN (sender identity for application email)',
       exportName: `${this.stackName}-SesIdentityArn`,
+    });
+    // SFBL-298: migration task outputs live here now (relocated from BackendStack)
+    // so `cdk deploy Network Data` already surfaces them before BackendStack exists.
+    new cdk.CfnOutput(this, 'MigrationTaskDefinitionArn', {
+      value: migrationTaskDefinition.taskDefinitionArn,
+      description: 'ARN of the one-shot Alembic migration task - invoke via aws ecs run-task before deploying BackendStack and before each subsequent rollout',
+      exportName: `${this.stackName}-MigrationTaskDefinitionArn`,
+    });
+    new cdk.CfnOutput(this, 'BackendServiceSecurityGroupId', {
+      value: props.backendServiceSecurityGroup.securityGroupId,
+      description: 'Security group ID for ECS tasks - pass to aws ecs run-task --network-configuration',
+    });
+    new cdk.CfnOutput(this, 'MigrationClusterName', {
+      value: migrationCluster.clusterName,
+      description: 'ECS cluster for the one-shot migration task - pass to aws ecs run-task --cluster',
     });
     new cdk.CfnOutput(this, 'SesIdentityDomain', {
       value: sesDomain,

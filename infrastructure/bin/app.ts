@@ -65,6 +65,7 @@ const dataStack = new DataStack(app, `${prefix}-Data`, {
   vpc: networkStack.vpc,
   backendServiceSecurityGroup: networkStack.backendServiceSecurityGroup,
   tier,
+  ecrImageTag: (envConfig.ecrImageTag as string) ?? 'latest',
   hostedZoneDomain: envConfig.hostedZoneDomain as string,
   sesIdentityDomain: envConfig.sesIdentityDomain as string | undefined,
   sesIdentityAdoptExisting: envConfig.sesIdentityAdoptExisting as boolean | undefined,

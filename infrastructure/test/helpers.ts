@@ -57,6 +57,7 @@ export function synthStacks(opts: SynthOptions = {}) {
     vpc: network.vpc,
     backendServiceSecurityGroup: network.backendServiceSecurityGroup,
     tier,
+    ecrImageTag: 'latest',
     hostedZoneDomain: 'example.invalid',
   });
 
