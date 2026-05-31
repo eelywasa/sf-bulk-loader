@@ -16,6 +16,7 @@ import {
   faFolderOpen,
   faGear,
   faEnvelope,
+  faBell,
   faCloud,
   faTableColumns,
   faShieldHalved,
@@ -149,6 +150,14 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
               >
                 <FontAwesomeIcon icon={faEnvelope} className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
                 <span>Email</span>
+              </button>
+              <button
+                onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/notifications') }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+                role="menuitem"
+              >
+                <FontAwesomeIcon icon={faBell} className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+                <span>Notifications</span>
               </button>
               <button
                 onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/salesforce') }}

@@ -884,6 +884,24 @@ that don't apply. Instead:
 
 **Example:** `SettingsAboutPage.tsx` (Settings → About) follows this pattern.
 
+### CRUD-list settings — no `SettingsPageShell`
+
+Some settings areas manage a **list of records** rather than a fixed set of
+key/value fields (e.g. per-user notification subscriptions). These do not fit
+`SettingsPageShell` (which is built around a DB-backed settings category) and
+instead render their own table + add/edit modal via React Query mutations.
+
+1. Wrap in a plain `<div className="p-6 max-w-4xl">` with an `<h1>` title.
+2. Render the existing list component directly (e.g. `NotificationsTab`).
+3. Register the route with `<ProtectedRoute permission="system.settings">` and
+   add a sidebar entry in `AppShell.tsx`'s `SettingsMenu`, gated by
+   `canSettings`, inside the `authRequired && canSettings` admin block.
+
+**Example:** `SettingsNotificationsPage.tsx` (Settings → Notifications) wraps
+`NotificationsTab` this way. Note: the bare `/settings` route is a desktop-only
+Storage page; on hosted profiles it redirects to `/settings/email` since each
+admin area now has its own dedicated page.
+
 ---
 
 ## Anti-patterns

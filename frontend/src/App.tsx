@@ -17,6 +17,7 @@ import Settings from './pages/Settings'
 import Profile from './pages/Profile'
 import VerifyEmail from './pages/VerifyEmail'
 import SettingsEmailPage from './pages/SettingsEmailPage'
+import SettingsNotificationsPage from './pages/SettingsNotificationsPage'
 import SettingsSalesforcePage from './pages/SettingsSalesforcePage'
 import SettingsPartitioningPage from './pages/SettingsPartitioningPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
@@ -114,6 +115,14 @@ const router = createRouter([
         element: (
           <ProtectedRoute permission="system.settings">
             <SettingsEmailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: '/settings/notifications',
+        element: (
+          <ProtectedRoute permission="system.settings">
+            <SettingsNotificationsPage />
           </ProtectedRoute>
         ),
       },
