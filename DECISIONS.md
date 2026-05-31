@@ -851,6 +851,28 @@ tier back to `persistOnDestroy: false` + `rdsDeletionProtection: true`
 | S3 versioning / PITR on the buckets | Out of scope — buckets simply `RETAIN` |
 | Custom resource to re-encrypt columns under a new key | Defeats the purpose; retaining the `EncryptionKey` secret is simpler and correct |
 
+**Amendments (2026-05-31, during PR #97 review):**
+
+1. **Decoupled persistence from the tier.** The original design put
+   `persistOnDestroy` on the *tier* preset, which conflated two orthogonal
+   concerns: a tier is about **sizing/cost**, while persistence is about an
+   **environment's lifecycle**. A small (bronze) environment can still be a
+   real, persistent one (e.g. a low-utilisation `staging` used occasionally by
+   a few admins). `persistOnDestroy` is now resolved per-environment in
+   `bin/app.ts` as `envConfig.persistOnDestroy ?? tier.persistOnDestroy ??
+   false` — the tier value is just the default. Bronze's `rdsBackupRetentionDays`
+   was also raised 1 → 7, since a persistent low-util env warrants a real
+   backup window.
+
+2. **Buckets now actually reattach on restore (Codex P2 on PR #97).** Retaining
+   the input/output buckets with CDK-*generated* names meant a snapshot restore
+   created *new* buckets and orphaned the retained objects — "retained" without
+   recoverability. Fix: when an environment persists, the input/output/access-logs
+   buckets get **deterministic names** (`bulk-loader-{env}-{input,output,access-logs}`)
+   and the restore path **imports them by name** (`s3.Bucket.fromBucketName`),
+   mirroring the secret-import path, so the same objects reattach. Disposable
+   environments keep generated names for clean, collision-free redeploy cycles.
+
 ## 029 — CDK hardening quick-wins (SFBL-355)
 
 An AWS IaC MCP (cfn-guard) scan + manual review of the SFBL-275 stacks

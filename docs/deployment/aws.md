@@ -621,10 +621,13 @@ batch-delete-image`, no `aws ecs put-cluster-capacity-providers`, no
 > Manager entries on the next deploy. Any Salesforce connections, plans, or
 > run history are lost. Use a `persistOnDestroy` tier (below) to keep data.
 
-### Teardown with persistence (`persistOnDestroy` tiers)
+### Teardown with persistence (`persistOnDestroy` environments)
 
-Silver and gold set `persistOnDestroy: true` (SFBL-297). On these tiers
-`cdk destroy` is non-destructive:
+Persistence is a **per-environment** setting (`envConfig.persistOnDestroy`),
+defaulting to the tier value (bronze `false`, silver/gold `true`) — so a small
+but real environment (e.g. a low-utilisation `staging`) can opt in via
+`persistOnDestroy: true` in its `cdk.context.json` block without changing the
+shared tier preset. On a persisting environment `cdk destroy` is non-destructive:
 
 - **RDS** takes a final snapshot and deletes the instance (removal policy
   `SNAPSHOT`). The snapshot name looks like
@@ -633,7 +636,10 @@ Silver and gold set `persistOnDestroy: true` (SFBL-297). On these tiers
   `database-url`, `admin-email`, `admin-password`) are **retained** — the
   `encryption-key` especially, without which the Fernet-encrypted Salesforce
   credentials in a restored DB are unrecoverable.
-- The input/output **S3 buckets** are retained.
+- The input/output/access-logs **S3 buckets** are retained, and on a persisting
+  environment they carry **deterministic names**
+  (`bulk-loader-{env}-{input,output,access-logs}`) so the restore can re-import
+  the exact same buckets — and their objects — by name.
 
 ```bash
 cdk destroy --all -c env={env}
@@ -658,8 +664,9 @@ SNAP_ID=$(aws rds describe-db-snapshots \
   --query 'DBSnapshots[?starts_with(DBSnapshotIdentifier, `bulkloader{env}`)] | sort_by(@, &SnapshotCreateTime)[-1].DBSnapshotIdentifier' \
   --output text)
 
-# 2. Deploy with the restore context. The DB is rebuilt from the snapshot and
-#    the retained secrets are imported by name (not recreated).
+# 2. Deploy with the restore context. The DB is rebuilt from the snapshot;
+#    the retained secrets AND the retained input/output buckets are imported
+#    by name (not recreated), so the same objects reattach.
 cdk deploy --all -c env={env} -c restoreFromSnapshot=$SNAP_ID
 ```
 

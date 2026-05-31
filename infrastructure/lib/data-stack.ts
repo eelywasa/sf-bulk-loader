@@ -19,6 +19,16 @@ export interface DataStackProps extends cdk.StackProps {
   /** Bronze/Silver/Gold tier preset - drives RDS sizing, backups, S3 lifecycle. */
   tier: TierConfig;
   /**
+   * Whether this environment's data survives `cdk destroy` (SFBL-297). Resolved
+   * in bin/app.ts as `envConfig.persistOnDestroy ?? tier.persistOnDestroy ??
+   * false` - persistence is an environment-lifecycle decision, decoupled from
+   * the tier's sizing, so a small (bronze) environment can still be a real,
+   * persistent one. When true: RDS snapshots on destroy, secrets and the
+   * input/output buckets are retained (with deterministic names so they can be
+   * re-imported on restore). See DECISIONS 028.
+   */
+  persistOnDestroy: boolean;
+  /**
    * ECR image tag the one-shot migration task runs (SFBL-298). Mirrors the tag
    * BackendStack's service task uses; defaults to "latest" in bin/app.ts.
    */
@@ -82,8 +92,10 @@ export class DataStack extends cdk.Stack {
   // rds.DatabaseInstanceFromSnapshot (SFBL-297), which shares the interface
   // but is a different concrete class.
   public readonly database: rds.IDatabaseInstance;
-  public readonly inputBucket: s3.Bucket;
-  public readonly outputBucket: s3.Bucket;
+  // IBucket, not Bucket: on a persist restore these are imported by their
+  // deterministic name (s3.Bucket.fromBucketName) rather than created. See SFBL-297.
+  public readonly inputBucket: s3.IBucket;
+  public readonly outputBucket: s3.IBucket;
   // ISecret, not Secret: on restore (persistOnDestroy + restoreFromSnapshot)
   // these are imported by name via Secret.fromSecretNameV2 rather than created
   // (a retained secret name cannot be recreated). See SFBL-297.
@@ -101,12 +113,14 @@ export class DataStack extends cdk.Stack {
     const env = props.envName;
 
     // SFBL-297: persistence controls.
-    // `persist` - tier opts into snapshot-on-destroy + retained secrets/buckets.
+    // `persist` - this environment opts into snapshot-on-destroy + retained
+    //   secrets/buckets (resolved per-env in bin/app.ts, default from the tier).
     // `restoreFromSnapshot` - when an operator passes `-c restoreFromSnapshot=<id>`,
-    // the RDS instance is rebuilt from that snapshot and the retained secrets are
-    // imported by name rather than created (a retained secret name can't be
-    // recreated). Only meaningful on a persist tier; see DECISIONS 028.
-    const persist = props.tier.persistOnDestroy ?? false;
+    //   the RDS instance is rebuilt from that snapshot and the retained secrets +
+    //   deterministically-named buckets are imported by name rather than created
+    //   (a retained name can't be recreated). Only meaningful on a persist env;
+    //   see DECISIONS 028.
+    const persist = props.persistOnDestroy;
     const restoreFromSnapshot = this.node.tryGetContext('restoreFromSnapshot') as
       | string
       | undefined;
@@ -273,54 +287,74 @@ export class DataStack extends cdk.Stack {
         : [];
 
     // Input + output buckets: retain data on destroy for production AND any
-    // persistOnDestroy tier (SFBL-297) so previously-uploaded CSVs survive a
-    // teardown/restore cycle; disposable tiers clean up to avoid orphaned
-    // buckets accumulating. Mirrors the frontend bucket and ECR repo policy.
+    // persistOnDestroy environment (SFBL-297) so previously-uploaded CSVs and
+    // result files survive a teardown/restore cycle; disposable environments
+    // clean up to avoid orphaned buckets accumulating.
     const dataBucketRetain = persist || env === 'production';
     const dataBucketRemoval = dataBucketRetain
       ? cdk.RemovalPolicy.RETAIN
       : cdk.RemovalPolicy.DESTROY;
     const dataBucketAutoDelete = !dataBucketRetain;
 
-    // SFBL-355: S3 server access logging for the input/output buckets. A
-    // dedicated log bucket captures who read/wrote which objects - an audit
-    // trail the data buckets otherwise lack. It follows the same retention as
-    // the data buckets and has no access logging of its own (avoiding a
-    // delivery loop). CDK adds the bucket policy that lets the S3 logging
-    // service deliver into it.
-    const accessLogsBucket = new s3.Bucket(this, 'DataAccessLogsBucket', {
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      removalPolicy: dataBucketRemoval,
-      autoDeleteObjects: dataBucketAutoDelete,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      enforceSSL: true,
-    });
+    // When the environment retains its data, the buckets get DETERMINISTIC
+    // names so a snapshot restore can re-import the exact same buckets - with
+    // their retained objects - by name. Without this, CDK's generated names
+    // change on rebuild and the retained CSV/result objects orphan outside the
+    // rebuilt stack (Codex review on PR #97). Disposable environments keep
+    // CDK-generated names for clean, collision-free redeploy cycles.
+    const bucketName = (suffix: string): string | undefined =>
+      dataBucketRetain ? `bulk-loader-${env}-${suffix}` : undefined;
 
-    // Input bucket: source CSV files uploaded by users or pipelines.
-    this.inputBucket = new s3.Bucket(this, 'InputBucket', {
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      versioned: false,
-      removalPolicy: dataBucketRemoval,
-      autoDeleteObjects: dataBucketAutoDelete,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      enforceSSL: true,
-      serverAccessLogsBucket: accessLogsBucket,
-      serverAccessLogsPrefix: 'input/',
-      lifecycleRules: inputLifecycle,
-    });
+    if (restoreFromSnapshot) {
+      // Restore: import the retained, deterministically-named buckets rather
+      // than recreating them. Their lifecycle + access-logging configuration
+      // persists on the real buckets from the original creation, so it does not
+      // need to be re-expressed here. The access-logs bucket is retained
+      // independently and isn't referenced elsewhere, so it isn't re-imported.
+      this.inputBucket = s3.Bucket.fromBucketName(this, 'InputBucket', `bulk-loader-${env}-input`);
+      this.outputBucket = s3.Bucket.fromBucketName(this, 'OutputBucket', `bulk-loader-${env}-output`);
+    } else {
+      // SFBL-355: dedicated access-logs bucket captures who read/wrote which
+      // objects in the input/output buckets - an audit trail they otherwise
+      // lack. It has no access logging of its own (avoiding a delivery loop);
+      // CDK adds the bucket policy that lets the S3 logging service deliver here.
+      const accessLogsBucket = new s3.Bucket(this, 'DataAccessLogsBucket', {
+        bucketName: bucketName('access-logs'),
+        encryption: s3.BucketEncryption.S3_MANAGED,
+        removalPolicy: dataBucketRemoval,
+        autoDeleteObjects: dataBucketAutoDelete,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+      });
 
-    // Output bucket: Bulk API result files downloaded by the orchestrator.
-    this.outputBucket = new s3.Bucket(this, 'OutputBucket', {
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      versioned: false,
-      removalPolicy: dataBucketRemoval,
-      autoDeleteObjects: dataBucketAutoDelete,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      enforceSSL: true,
-      serverAccessLogsBucket: accessLogsBucket,
-      serverAccessLogsPrefix: 'output/',
-      lifecycleRules: outputLifecycle,
-    });
+      // Input bucket: source CSV files uploaded by users or pipelines.
+      this.inputBucket = new s3.Bucket(this, 'InputBucket', {
+        bucketName: bucketName('input'),
+        encryption: s3.BucketEncryption.S3_MANAGED,
+        versioned: false,
+        removalPolicy: dataBucketRemoval,
+        autoDeleteObjects: dataBucketAutoDelete,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+        serverAccessLogsBucket: accessLogsBucket,
+        serverAccessLogsPrefix: 'input/',
+        lifecycleRules: inputLifecycle,
+      });
+
+      // Output bucket: Bulk API result files downloaded by the orchestrator.
+      this.outputBucket = new s3.Bucket(this, 'OutputBucket', {
+        bucketName: bucketName('output'),
+        encryption: s3.BucketEncryption.S3_MANAGED,
+        versioned: false,
+        removalPolicy: dataBucketRemoval,
+        autoDeleteObjects: dataBucketAutoDelete,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+        serverAccessLogsBucket: accessLogsBucket,
+        serverAccessLogsPrefix: 'output/',
+        lifecycleRules: outputLifecycle,
+      });
+    }
 
     // --- Secrets Manager ---
     // These secrets are empty placeholders created by CDK.

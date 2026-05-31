@@ -52,11 +52,16 @@ export interface TierConfig {
    * removal policy cannot run on destroy while RDS-level deletion protection is
    * on (it blocks the DeleteDBInstance call), so `persistOnDestroy` takes
    * precedence and forces `deletionProtection` off. The snapshot + retained
-   * secrets are the durability guarantee on these tiers - fully restorable,
-   * and cheap to park - in place of an undeletable instance. See DECISIONS 028.
+   * secrets/buckets are the durability guarantee - fully restorable, and cheap
+   * to park - in place of an undeletable instance. See DECISIONS 028.
    *
-   * Bronze leaves this false (disposable validation envs); silver/gold set it
-   * true (persistent, parkable environments).
+   * This is only the **default**: persistence is an environment-lifecycle
+   * decision, not a sizing one, so an environment may override it via
+   * `envConfig.persistOnDestroy` (resolved in bin/app.ts). A small/bronze
+   * environment can therefore still be a real, persistent one. The tier
+   * defaults are bronze `false` (also used by the synth-only `ci` env) and
+   * silver/gold `true`; real environments set the per-env override to match
+   * their lifecycle (e.g. a low-utilisation but persistent `staging`).
    */
   persistOnDestroy?: boolean;
 

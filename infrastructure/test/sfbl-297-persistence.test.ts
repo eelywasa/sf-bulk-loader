@@ -80,6 +80,18 @@ describe('SFBL-297 persistOnDestroy', () => {
         expect(b.DeletionPolicy).toBe('Retain');
       }
     });
+
+    test('retained buckets get deterministic names so a restore can re-import them', () => {
+      const template = Template.fromStack(data());
+      const names = Object.values(template.findResources('AWS::S3::Bucket'))
+        .map((b) => b.Properties?.BucketName)
+        .sort();
+      expect(names).toEqual([
+        'bulk-loader-staging-access-logs',
+        'bulk-loader-staging-input',
+        'bulk-loader-staging-output',
+      ]);
+    });
   });
 
   describe('restore (-c restoreFromSnapshot=<id>)', () => {
@@ -106,6 +118,14 @@ describe('SFBL-297 persistOnDestroy', () => {
       for (const name of APP_SECRET_NAMES) {
         expect(createdNames).not.toContain(name);
       }
+    });
+
+    test('input/output buckets are imported by name, not recreated (Codex #97)', () => {
+      // On restore the retained, deterministically-named buckets are imported
+      // via s3.Bucket.fromBucketName, so no AWS::S3::Bucket resources are
+      // created - the retained objects reattach instead of orphaning.
+      const template = Template.fromStack(restored());
+      template.resourceCountIs('AWS::S3::Bucket', 0);
     });
   });
 });

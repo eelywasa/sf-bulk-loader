@@ -14,7 +14,7 @@
         "rdsInstanceClass": "db.t4g.micro",
         "rdsMultiAz": false,
         "rdsAllocatedStorage": 20,
-        "rdsBackupRetentionDays": 1,
+        "rdsBackupRetentionDays": 7,
         "rdsDeletionProtection": false,
         "persistOnDestroy": false,
         "ecsDesiredCount": 1,

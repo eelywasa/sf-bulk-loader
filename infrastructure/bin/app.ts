@@ -66,6 +66,14 @@ const dataStack = new DataStack(app, `${prefix}-Data`, {
   vpc: networkStack.vpc,
   backendServiceSecurityGroup: networkStack.backendServiceSecurityGroup,
   tier,
+  // SFBL-297/SFBL-299: persistence is an environment-lifecycle decision,
+  // decoupled from the tier's sizing. An environment may override the tier's
+  // default (e.g. a small/bronze env that is nonetheless a real, persistent
+  // one). Falls back to the tier preset, then to false.
+  persistOnDestroy:
+    (envConfig.persistOnDestroy as boolean | undefined) ??
+    tier.persistOnDestroy ??
+    false,
   ecrImageTag: (envConfig.ecrImageTag as string) ?? 'latest',
   hostedZoneDomain: envConfig.hostedZoneDomain as string,
   sesIdentityDomain: envConfig.sesIdentityDomain as string | undefined,

@@ -35,6 +35,12 @@ export interface SynthOptions {
   envName?: string;
   /** Partial tier overrides merged over BRONZE_TIER. */
   tier?: Partial<TierConfig>;
+  /**
+   * Per-environment persistence override (SFBL-299 decoupling). When set, it
+   * wins over the tier's persistOnDestroy. When unset, falls back to the tier
+   * value, then false - mirroring bin/app.ts.
+   */
+  persistOnDestroy?: boolean;
   /** CDK context (e.g. { restoreFromSnapshot: 'snap-123' }). */
   context?: Record<string, unknown>;
 }
@@ -58,6 +64,7 @@ export function synthStacks(opts: SynthOptions = {}) {
     vpc: network.vpc,
     backendServiceSecurityGroup: network.backendServiceSecurityGroup,
     tier,
+    persistOnDestroy: opts.persistOnDestroy ?? tier.persistOnDestroy ?? false,
     ecrImageTag: 'latest',
     hostedZoneDomain: 'example.invalid',
   });
