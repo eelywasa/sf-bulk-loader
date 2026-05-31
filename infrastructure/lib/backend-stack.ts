@@ -116,11 +116,32 @@ export class BackendStack extends cdk.Stack {
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc: props.vpc,
       clusterName: `bulk-loader-${env}`,
-      enableFargateCapacityProviders: true,
       containerInsightsV2: props.tier.containerInsightsEnabled
         ? ecs.ContainerInsights.ENABLED
         : ecs.ContainerInsights.DISABLED,
     });
+
+    // SFBL-300: associate the Fargate capacity providers explicitly instead of
+    // via the `enableFargateCapacityProviders: true` shortcut. The shortcut
+    // references the cluster by its literal name, so CloudFormation sees no
+    // dependency between the cluster and the AWS::ECS::ClusterCapacityProviderAssociations
+    // resource and tears them down in parallel - the cluster delete then races
+    // the association detach and fails with "The specified capacity provider is
+    // in use and cannot be removed." Building the association explicitly and
+    // adding a dependency on the cluster forces CloudFormation to delete (detach)
+    // the association before the cluster, so `cdk destroy` succeeds unattended.
+    const capacityProviderAssociations = new ecs.CfnClusterCapacityProviderAssociations(
+      this,
+      'ClusterCapacityProviders',
+      {
+        cluster: cluster.clusterName,
+        capacityProviders: ['FARGATE', 'FARGATE_SPOT'],
+        // No cluster-level default strategy - the service below sets its own
+        // capacityProviderStrategies, matching the prior shortcut behaviour.
+        defaultCapacityProviderStrategy: [],
+      },
+    );
+    capacityProviderAssociations.node.addDependency(cluster);
 
     // --- IAM Task Role ---
     // Container-side identity for the running task. The application reads S3
@@ -332,6 +353,12 @@ export class BackendStack extends cdk.Stack {
             { capacityProvider: 'FARGATE', weight: 1 },
           ],
     });
+
+    // The service's capacityProviderStrategies require the providers to be
+    // associated with the cluster first. With the explicit association
+    // construct above (SFBL-300) that ordering is no longer implied by the
+    // cluster construct, so declare the dependency directly.
+    service.node.addDependency(capacityProviderAssociations);
 
     // Register ECS service with ALB target group.
     // /api/* and /ws/* are routed to the backend; / is handled by CloudFront → S3.

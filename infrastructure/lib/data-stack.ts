@@ -94,6 +94,12 @@ export class DataStack extends cdk.Stack {
       removalPolicy: env === 'production'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
+      // SFBL-300: without this, `cdk destroy` on a non-prod tier fails with
+      // "repository ... cannot be deleted because it still contains images"
+      // because the first-deploy runbook pushes the backend image here.
+      // emptyOnDelete only takes effect under RemovalPolicy.DESTROY, so
+      // production (RETAIN) is unaffected and its images are never purged.
+      emptyOnDelete: env !== 'production',
       lifecycleRules: [
         {
           // Retain only the 10 most recent images to control storage costs.

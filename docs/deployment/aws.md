@@ -604,6 +604,35 @@ create-invalidation`) is no longer needed.
 
 ---
 
+## Teardown
+
+To tear a non-production environment down completely:
+
+```bash
+cdk destroy --all -c env={env}
+```
+
+This completes **without any manual intervention** — no `aws ecr
+batch-delete-image`, no `aws ecs put-cluster-capacity-providers`, no
+`aws s3 rb`. Two CDK properties make that work (SFBL-300):
+
+- The backend **ECR repository** is created with `emptyOnDelete: true` on
+  non-production tiers, so CloudFormation purges the pushed backend image
+  before deleting the repository instead of failing with "repository …
+  cannot be deleted because it still contains images".
+- The **ECS capacity-provider association** is declared as an explicit
+  construct that depends on the cluster, so CloudFormation detaches it
+  before deleting the cluster instead of racing the detach and failing
+  with "The specified capacity provider is in use and cannot be removed".
+
+> **Data loss on non-prod teardown.** Bronze-tier `cdk destroy` deletes the
+> RDS instance, the input/output S3 buckets, and regenerates the Secrets
+> Manager entries on the next deploy. Any Salesforce connections, plans, or
+> run history are lost. Production (and any `rdsDeletionProtection` tier)
+> retains the database, buckets, and ECR repository on destroy.
+
+---
+
 ## Database
 
 The `aws_hosted` profile requires a PostgreSQL `DATABASE_URL`. Any standard
