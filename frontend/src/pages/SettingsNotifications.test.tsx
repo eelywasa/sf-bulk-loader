@@ -1,8 +1,10 @@
 /**
- * Tests for the Settings → Notifications tab (SFBL-183).
+ * Tests for the dedicated Notification Settings page (SFBL-183, SFBL-353).
  *
- * Verifies list rendering, add / edit / delete flows, and the test-send
- * button surfacing both success and failure outcomes.
+ * Verifies list rendering, the optional label (SFBL-354), add / edit / delete
+ * flows, and the test-send button surfacing both success and failure outcomes.
+ * The page is now reached at /settings/notifications rather than as a tab on
+ * the legacy /settings page.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -15,7 +17,7 @@ import { AuthProvider } from '../context/AuthContext'
 import { ToastProvider } from '../components/ui/Toast'
 import * as client from '../api/client'
 import * as endpoints from '../api/endpoints'
-import Settings from './Settings'
+import SettingsNotificationsPage from './SettingsNotificationsPage'
 import type {
   NotificationSubscription,
   RuntimeConfig,
@@ -27,13 +29,6 @@ const MOCK_RUNTIME_LOCAL: RuntimeConfig = {
   auth_mode: 'local',
   app_distribution: 'self_hosted',
   transport_mode: 'http',
-  input_storage_mode: 'local',
-}
-
-const MOCK_RUNTIME_DESKTOP: RuntimeConfig = {
-  auth_mode: 'none',
-  app_distribution: 'desktop',
-  transport_mode: 'local',
   input_storage_mode: 'local',
 }
 
@@ -63,6 +58,7 @@ const MOCK_SUB: NotificationSubscription = {
   id: 'sub-1',
   user_id: 'u1',
   plan_id: 'plan-1',
+  label: null,
   channel: 'email',
   destination: 'alice@example.com',
   trigger: 'terminal_any',
@@ -79,7 +75,7 @@ function makeQueryClient() {
   })
 }
 
-function renderSettings() {
+function renderPage() {
   const qc = makeQueryClient()
   return render(
     <ThemeProvider>
@@ -87,7 +83,7 @@ function renderSettings() {
         <QueryClientProvider client={qc}>
           <ToastProvider>
             <MemoryRouter>
-              <Settings />
+              <SettingsNotificationsPage />
             </MemoryRouter>
           </ToastProvider>
         </QueryClientProvider>
@@ -96,7 +92,7 @@ function renderSettings() {
   )
 }
 
-describe('Settings → Notifications tab', () => {
+describe('Notification Settings page', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('auth_token', 'test-token')
@@ -107,6 +103,9 @@ describe('Settings → Notifications tab', () => {
     vi.spyOn(endpoints.notificationSubscriptionsApi, 'delete')
     vi.spyOn(endpoints.notificationSubscriptionsApi, 'test')
     vi.spyOn(endpoints.plansApi, 'list')
+    vi.mocked(client.apiFetch)
+      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
+      .mockResolvedValueOnce(MOCK_USER)
   })
 
   afterEach(() => {
@@ -114,32 +113,13 @@ describe('Settings → Notifications tab', () => {
     vi.restoreAllMocks()
   })
 
-  it('hides Notifications tab on desktop profile', async () => {
-    vi.mocked(client.apiFetch)
-      .mockResolvedValueOnce(MOCK_RUNTIME_DESKTOP)
-      // StorageTab calls getSettingsCategory('storage') — return empty to avoid errors
-      .mockResolvedValue({ data: { category: 'storage', settings: [] }, cacheTtl: 60 })
-
-    renderSettings()
-
-    await waitFor(() => {
-      expect(screen.queryByRole('tab', { name: 'Notifications' })).toBeNull()
-    })
-    expect(screen.queryByRole('tab', { name: 'Email' })).toBeNull()
-  })
-
   it('renders existing subscriptions in a table', async () => {
-    const userEv = userEvent.setup()
-    vi.mocked(client.apiFetch)
-      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
-      .mockResolvedValueOnce(MOCK_USER)
     vi.mocked(endpoints.notificationSubscriptionsApi.list).mockResolvedValue([
       MOCK_SUB,
     ])
     vi.mocked(endpoints.plansApi.list).mockResolvedValue(MOCK_PLANS)
 
-    renderSettings()
-    await userEv.click(await screen.findByRole('tab', { name: 'Notifications' }))
+    renderPage()
 
     await waitFor(() => {
       expect(screen.getByText('alice@example.com')).toBeInTheDocument()
@@ -148,26 +128,45 @@ describe('Settings → Notifications tab', () => {
     expect(screen.getByText('Any terminal')).toBeInTheDocument()
   })
 
-  it('creates a subscription end-to-end', async () => {
+  it('shows the label as primary identifier with destination as secondary', async () => {
+    vi.mocked(endpoints.notificationSubscriptionsApi.list).mockResolvedValue([
+      {
+        ...MOCK_SUB,
+        channel: 'teams_webhook',
+        label: 'Ops Teams channel',
+        destination: 'https://example.powerplatform.com/triggers/manual/x',
+      },
+    ])
+    vi.mocked(endpoints.plansApi.list).mockResolvedValue(MOCK_PLANS)
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Ops Teams channel')).toBeInTheDocument()
+    })
+    // sanitized destination (search stripped) still shown as secondary text
+    expect(
+      screen.getByText('https://example.powerplatform.com/triggers/manual/x'),
+    ).toBeInTheDocument()
+  })
+
+  it('creates a subscription with a label end-to-end', async () => {
     const userEv = userEvent.setup()
-    vi.mocked(client.apiFetch)
-      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
-      .mockResolvedValueOnce(MOCK_USER)
     vi.mocked(endpoints.notificationSubscriptionsApi.list).mockResolvedValue([])
     vi.mocked(endpoints.plansApi.list).mockResolvedValue(MOCK_PLANS)
     vi.mocked(endpoints.notificationSubscriptionsApi.create).mockResolvedValue({
       ...MOCK_SUB,
       id: 'new-id',
       plan_id: null,
+      label: 'Ops inbox',
       destination: 'ops@example.com',
     })
 
-    renderSettings()
-    await userEv.click(await screen.findByRole('tab', { name: 'Notifications' }))
+    renderPage()
     await userEv.click(await screen.findByRole('button', { name: /add subscription/i }))
 
-    const input = await screen.findByLabelText(/email address/i)
-    await userEv.type(input, 'ops@example.com')
+    await userEv.type(await screen.findByLabelText(/label/i), 'Ops inbox')
+    await userEv.type(screen.getByLabelText(/email address/i), 'ops@example.com')
     await userEv.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
@@ -177,13 +176,34 @@ describe('Settings → Notifications tab', () => {
     expect(arg.channel).toBe('email')
     expect(arg.destination).toBe('ops@example.com')
     expect(arg.trigger).toBe('terminal_any')
+    expect(arg.label).toBe('Ops inbox')
+  })
+
+  it('sends a null label when the field is left blank', async () => {
+    const userEv = userEvent.setup()
+    vi.mocked(endpoints.notificationSubscriptionsApi.list).mockResolvedValue([])
+    vi.mocked(endpoints.plansApi.list).mockResolvedValue(MOCK_PLANS)
+    vi.mocked(endpoints.notificationSubscriptionsApi.create).mockResolvedValue({
+      ...MOCK_SUB,
+      id: 'new-id',
+      plan_id: null,
+      destination: 'ops@example.com',
+    })
+
+    renderPage()
+    await userEv.click(await screen.findByRole('button', { name: /add subscription/i }))
+    await userEv.type(await screen.findByLabelText(/email address/i), 'ops@example.com')
+    await userEv.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(endpoints.notificationSubscriptionsApi.create).toHaveBeenCalled()
+    })
+    const arg = vi.mocked(endpoints.notificationSubscriptionsApi.create).mock.calls[0][0]
+    expect(arg.label).toBeNull()
   })
 
   it('deletes a subscription after confirmation', async () => {
     const userEv = userEvent.setup()
-    vi.mocked(client.apiFetch)
-      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
-      .mockResolvedValueOnce(MOCK_USER)
     vi.mocked(endpoints.notificationSubscriptionsApi.list).mockResolvedValue([
       MOCK_SUB,
     ])
@@ -192,8 +212,7 @@ describe('Settings → Notifications tab', () => {
       undefined as unknown as never,
     )
 
-    renderSettings()
-    await userEv.click(await screen.findByRole('tab', { name: 'Notifications' }))
+    renderPage()
     await userEv.click(await screen.findByRole('button', { name: 'Delete' }))
     // confirmation modal
     const confirms = await screen.findAllByRole('button', { name: 'Delete' })
@@ -208,9 +227,6 @@ describe('Settings → Notifications tab', () => {
 
   it('surfaces a success toast when test-send succeeds', async () => {
     const userEv = userEvent.setup()
-    vi.mocked(client.apiFetch)
-      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
-      .mockResolvedValueOnce(MOCK_USER)
     vi.mocked(endpoints.notificationSubscriptionsApi.list).mockResolvedValue([
       MOCK_SUB,
     ])
@@ -223,8 +239,7 @@ describe('Settings → Notifications tab', () => {
       email_delivery_id: 'e1',
     })
 
-    renderSettings()
-    await userEv.click(await screen.findByRole('tab', { name: 'Notifications' }))
+    renderPage()
     await userEv.click(await screen.findByRole('button', { name: 'Test' }))
 
     await waitFor(() => {
@@ -234,9 +249,6 @@ describe('Settings → Notifications tab', () => {
 
   it('surfaces an error toast when the test-send fails', async () => {
     const userEv = userEvent.setup()
-    vi.mocked(client.apiFetch)
-      .mockResolvedValueOnce(MOCK_RUNTIME_LOCAL)
-      .mockResolvedValueOnce(MOCK_USER)
     vi.mocked(endpoints.notificationSubscriptionsApi.list).mockResolvedValue([
       MOCK_SUB,
     ])
@@ -249,8 +261,7 @@ describe('Settings → Notifications tab', () => {
       email_delivery_id: null,
     })
 
-    renderSettings()
-    await userEv.click(await screen.findByRole('tab', { name: 'Notifications' }))
+    renderPage()
     await userEv.click(await screen.findByRole('button', { name: 'Test' }))
 
     await waitFor(() => {

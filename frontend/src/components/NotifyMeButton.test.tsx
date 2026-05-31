@@ -41,6 +41,7 @@ const MOCK_EXISTING: NotificationSubscription = {
   id: 'sub-1',
   user_id: 'u1',
   plan_id: 'plan-1',
+  label: null,
   channel: 'email',
   destination: 'alice@example.com',
   trigger: 'terminal_any',

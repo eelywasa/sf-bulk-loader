@@ -500,6 +500,7 @@ export interface NotificationSubscription {
   id: string
   user_id: string
   plan_id: string | null
+  label: string | null
   channel: NotificationChannel
   destination: string
   trigger: NotificationTrigger
@@ -509,6 +510,7 @@ export interface NotificationSubscription {
 
 export interface NotificationSubscriptionCreate {
   plan_id?: string | null
+  label?: string | null
   channel: NotificationChannel
   destination: string
   trigger: NotificationTrigger
@@ -516,6 +518,7 @@ export interface NotificationSubscriptionCreate {
 
 export interface NotificationSubscriptionUpdate {
   plan_id?: string | null
+  label?: string | null
   channel?: NotificationChannel
   destination?: string
   trigger?: NotificationTrigger
