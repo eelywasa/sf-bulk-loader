@@ -1,10 +1,18 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import { TierConfig, logRetentionFromDays } from './tier-config';
 
 export interface NetworkStackProps extends cdk.StackProps {
   envName: string;
   vpcCidr: string;
+  /**
+   * Tier preset. Used to gate VPC flow logs (SFBL-355): they carry CloudWatch
+   * ingestion cost, so they are enabled only on tiers that opt into enhanced
+   * observability (`containerInsightsEnabled`) - bronze stays off.
+   */
+  tier: TierConfig;
 }
 
 /**
@@ -76,7 +84,21 @@ export class NetworkStack extends cdk.Stack {
     });
     this.backendServiceSecurityGroup.addIngressRule(this.albSecurityGroup, ec2.Port.tcp(8000), 'From ALB');
 
-    // TODO: Add VPC flow logs (CloudWatch Logs) for production traffic auditing.
+    // SFBL-355: VPC flow logs to CloudWatch for traffic auditing, gated on the
+    // observability tier so disposable bronze envs don't pay the ingestion cost.
+    // CDK provisions the log group, the delivery IAM role, and the flow log.
+    if (props.tier.containerInsightsEnabled) {
+      const flowLogGroup = new logs.LogGroup(this, 'VpcFlowLogGroup', {
+        logGroupName: `/bulk-loader/${props.envName}/vpc-flow-logs`,
+        retention: logRetentionFromDays(props.tier.logRetentionDays),
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      });
+      this.vpc.addFlowLog('FlowLog', {
+        destination: ec2.FlowLogDestination.toCloudWatchLogs(flowLogGroup),
+        trafficType: ec2.FlowLogTrafficType.ALL,
+      });
+    }
+
     // TODO: Add Interface Endpoints for ECR, Secrets Manager, and SSM if a
     //       private-subnet architecture is adopted in future (~$21/month each).
 

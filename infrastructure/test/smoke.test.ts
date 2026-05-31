@@ -10,7 +10,8 @@ describe('stack synthesis smoke test', () => {
     const dataTemplate = Template.fromStack(data);
     dataTemplate.resourceCountIs('AWS::ECR::Repository', 1);
     dataTemplate.resourceCountIs('AWS::RDS::DBInstance', 1);
-    dataTemplate.resourceCountIs('AWS::S3::Bucket', 2);
+    // input + output + access-logs (SFBL-355)
+    dataTemplate.resourceCountIs('AWS::S3::Bucket', 3);
 
     const backendTemplate = Template.fromStack(backend);
     backendTemplate.resourceCountIs('AWS::ECS::Cluster', 1);

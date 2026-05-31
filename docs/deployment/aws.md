@@ -974,6 +974,14 @@ Knobs that materially shift cost without a tier change:
 - ALB enforces TLS 1.2+ via `SslPolicy.RECOMMENDED_TLS`
 - HTTP to HTTPS redirect is enforced at the ALB
 - `enforceSSL: true` on all S3 buckets rejects unencrypted requests
+- ECS deployments use a circuit breaker with automatic rollback, so a bad
+  image rollout reverts to the last healthy task set instead of hanging
+- Input/output S3 buckets emit server access logs to a dedicated logs bucket
+  (`input/` and `output/` prefixes) for an object-access audit trail
+- **VPC flow logs** (CloudWatch Logs) capture all traffic for auditing on
+  tiers with `containerInsightsEnabled` (silver/gold). Bronze leaves them
+  **off** to avoid the per-GB ingestion cost on disposable environments;
+  flow-log retention follows the tier's `logRetentionDays`
 
 ---
 

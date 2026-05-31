@@ -851,3 +851,31 @@ tier back to `persistOnDestroy: false` + `rdsDeletionProtection: true`
 | S3 versioning / PITR on the buckets | Out of scope — buckets simply `RETAIN` |
 | Custom resource to re-encrypt columns under a new key | Defeats the purpose; retaining the `EncryptionKey` secret is simpler and correct |
 
+## 029 — CDK hardening quick-wins (SFBL-355)
+
+An AWS IaC MCP (cfn-guard) scan + manual review of the SFBL-275 stacks
+during SFBL-299 planning surfaced four small, non-breaking, CDK-only
+refinements - too minor for the production-scale SFBL-295 effort, shipped
+alongside the SFBL-299 mop-up children:
+
+- **ECS deployment circuit breaker** (`backend-stack.ts`):
+  `circuitBreaker: { rollback: true }` on the Fargate service. A failed
+  image rollout (a task that crashloops on boot) now auto-rolls-back to the
+  last good task set instead of hanging IN_PROGRESS until timeout.
+- **S3 server access logging** (`data-stack.ts`): a dedicated access-logs
+  bucket receives input/output object-access logs under `input/` and
+  `output/` prefixes - an audit trail the data buckets lacked.
+- **RDS gp3 + auto minor version upgrade** (`data-stack.ts`): `gp3` storage
+  (cheaper than the CDK-default gp2, higher baseline IOPS) and
+  `autoMinorVersionUpgrade: true` so the instance receives Postgres 16.x
+  patches in the maintenance window.
+- **VPC flow logs** (`network-stack.ts`, resolving the long-standing TODO):
+  flow logs to CloudWatch, **gated on `tier.containerInsightsEnabled`** so
+  disposable bronze envs don't pay the ingestion cost; silver/gold get them.
+
+Production-grade items the same scan surfaced (RDS Multi-AZ, enhanced
+monitoring, CloudWatch alarms, AWS WAF, ALB access logs) are owned by
+**SFBL-295** and deliberately not in this change. cfn-guard false positives
+(S3 object-lock / replication / public-RW-ACL, the SG egress-port-range
+sentinel rule, the RDS master-user secure-parameter rules) were triaged out.
+

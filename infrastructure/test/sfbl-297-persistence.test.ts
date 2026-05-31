@@ -73,10 +73,9 @@ describe('SFBL-297 persistOnDestroy', () => {
 
     test('data buckets are retained on destroy', () => {
       const template = Template.fromStack(data());
-      // Input + output buckets retain (there are exactly two in DataStack).
-      template.allResourcesProperties('AWS::S3::Bucket', Match.anyValue());
+      // Input + output + access-logs buckets all retain (three in DataStack).
       const buckets = template.findResources('AWS::S3::Bucket');
-      expect(Object.values(buckets).length).toBe(2);
+      expect(Object.values(buckets).length).toBe(3);
       for (const b of Object.values(buckets)) {
         expect(b.DeletionPolicy).toBe('Retain');
       }

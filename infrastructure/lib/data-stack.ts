@@ -209,6 +209,11 @@ export class DataStack extends cdk.Stack {
       // Always encrypt storage at rest. On restore this matches the snapshot's
       // own (encrypted) storage, so it is consistent rather than a conflict.
       storageEncrypted: true,
+      // SFBL-355: gp3 over the CDK default gp2 - cheaper per GB and a higher
+      // baseline IOPS floor; and apply minor engine patches in the maintenance
+      // window so the instance doesn't drift onto an unpatched Postgres 16.x.
+      storageType: rds.StorageType.GP3,
+      autoMinorVersionUpgrade: true,
       multiAz: props.tier.rdsMultiAz,
       allocatedStorage: props.tier.rdsAllocatedStorage,
       maxAllocatedStorage: Math.max(props.tier.rdsAllocatedStorage * 5, 100),
@@ -277,6 +282,20 @@ export class DataStack extends cdk.Stack {
       : cdk.RemovalPolicy.DESTROY;
     const dataBucketAutoDelete = !dataBucketRetain;
 
+    // SFBL-355: S3 server access logging for the input/output buckets. A
+    // dedicated log bucket captures who read/wrote which objects - an audit
+    // trail the data buckets otherwise lack. It follows the same retention as
+    // the data buckets and has no access logging of its own (avoiding a
+    // delivery loop). CDK adds the bucket policy that lets the S3 logging
+    // service deliver into it.
+    const accessLogsBucket = new s3.Bucket(this, 'DataAccessLogsBucket', {
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      removalPolicy: dataBucketRemoval,
+      autoDeleteObjects: dataBucketAutoDelete,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+    });
+
     // Input bucket: source CSV files uploaded by users or pipelines.
     this.inputBucket = new s3.Bucket(this, 'InputBucket', {
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -285,6 +304,8 @@ export class DataStack extends cdk.Stack {
       autoDeleteObjects: dataBucketAutoDelete,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      serverAccessLogsBucket: accessLogsBucket,
+      serverAccessLogsPrefix: 'input/',
       lifecycleRules: inputLifecycle,
     });
 
@@ -296,6 +317,8 @@ export class DataStack extends cdk.Stack {
       autoDeleteObjects: dataBucketAutoDelete,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
+      serverAccessLogsBucket: accessLogsBucket,
+      serverAccessLogsPrefix: 'output/',
       lifecycleRules: outputLifecycle,
     });
 

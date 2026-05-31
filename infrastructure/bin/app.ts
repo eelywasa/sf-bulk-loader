@@ -55,6 +55,7 @@ const networkStack = new NetworkStack(app, `${prefix}-Network`, {
   env: awsEnv,
   envName,
   vpcCidr: envConfig.vpcCidr as string,
+  tier,
   description: `Salesforce Bulk Loader - network layer (${envName})`,
 });
 

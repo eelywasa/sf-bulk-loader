@@ -333,6 +333,12 @@ export class BackendStack extends cdk.Stack {
       taskDefinition,
       desiredCount: props.tier.ecsDesiredCount,
       securityGroups: [props.backendServiceSecurityGroup],
+      // SFBL-355: deployment circuit breaker with rollback. Without it, a bad
+      // image rollout (e.g. a task that crashloops on boot) leaves the service
+      // stuck IN_PROGRESS until the deployment times out, with no automatic
+      // recovery. With it, ECS detects the failed rollout and rolls back to the
+      // last known-good task set automatically.
+      circuitBreaker: { rollback: true },
       // Tasks run in public subnets and are assigned public IPs so they can reach
       // the Salesforce API without a NAT Gateway. Inbound traffic is restricted by
       // the security group to the ALB only - no direct public access to port 8000.

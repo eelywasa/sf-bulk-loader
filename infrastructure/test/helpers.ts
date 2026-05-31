@@ -49,6 +49,7 @@ export function synthStacks(opts: SynthOptions = {}) {
     env,
     envName,
     vpcCidr: '10.0.0.0/16',
+    tier,
   });
 
   const data = new DataStack(app, `BulkLoader-${envName}-Data`, {
