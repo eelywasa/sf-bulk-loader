@@ -345,8 +345,8 @@ jobs:
             platform: mac
             artifact_suffix: mac-arm64
             dir_args: --mac dir
-            release_args: --mac zip
-            release_glob: electron/dist/*.zip
+            release_args: --mac dmg
+            release_glob: electron/dist/*.dmg
           - os: windows-2025
             platform: win
             artifact_suffix: windows-x64
@@ -435,7 +435,8 @@ jobs:
           # Non-mac legs leave CSC_LINK unset so electron-builder skips signing naturally.
           CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          # Notarization (mac only — notarize.js is a no-op when APPLE_ID is unset)
+          # Notarization (mac only) — electron-builder's built-in notarize step runs
+          # when these vars are set; gated in electron-builder.config.js on APPLE_TEAM_ID.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
