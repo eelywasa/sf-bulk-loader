@@ -24,6 +24,9 @@ datas += collect_all('pydantic_settings')[0]
 datas += collect_all('pydantic')[0]
 datas += collect_all('structlog')[0]
 
+# mcp SDK ships data files (e.g. JSON schemas)
+datas += collect_all('mcp')[0]
+
 # ── Hidden imports ────────────────────────────────────────────────────────────
 hiddenimports = [
     # SQLAlchemy — only the SQLite/aiosqlite dialect is needed for desktop
@@ -142,10 +145,32 @@ hiddenimports = [
     # pyotp + segno (2FA TOTP verification + QR rendering — SFBL-244)
     'pyotp',
     'segno',
+
+    # ── MCP server (SFBL-364) ──────────────────────────────────────────────
+    # Lazily imported only when argv == ['mcp'], but PyInstaller needs them
+    # bundled so the frozen binary can import them at run time.
+    'sf_bulk_loader_mcp',
+    'sf_bulk_loader_mcp.server',
+    'sf_bulk_loader_mcp.client',
+    'sf_bulk_loader_mcp.config',
+    'sf_bulk_loader_mcp.discovery',
+    'sf_bulk_loader_mcp.tools',
+    'sf_bulk_loader_mcp.tools.health',
+    'sf_bulk_loader_mcp.tools.connections',
+    'sf_bulk_loader_mcp.tools.plans',
+    'sf_bulk_loader_mcp.tools.runs',
+    'sf_bulk_loader_mcp.tools.results',
+    'mcp',
+    'mcp.server',
+    'mcp.server.stdio',
+    'mcp.types',
 ]
 
 # Collect all uvicorn submodules — its protocol loading is dynamic
 hiddenimports += collect_submodules('uvicorn')
+
+# Collect all mcp submodules — the SDK uses dynamic loading internally
+hiddenimports += collect_submodules('mcp')
 
 # ── Excludes ──────────────────────────────────────────────────────────────────
 excludes = [
@@ -165,7 +190,7 @@ excludes = [
 # ── Analysis ──────────────────────────────────────────────────────────────────
 a = Analysis(
     ['server.py'],
-    pathex=['.'],
+    pathex=['.', '../mcp-server/src'],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,

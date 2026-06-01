@@ -6,6 +6,7 @@ const fs = require('fs')
 const http = require('http')
 const net = require('net')
 const path = require('path')
+const { buildDiscoveryPayload, mergeMcpServerConfig } = require('./mcpRegistration')
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -242,6 +243,94 @@ function waitForBackend(port, maxAttempts = 30) {
   })
 }
 
+// ─── MCP discovery file ───────────────────────────────────────────────────────
+//
+// Writes <userData>/mcp-discovery.json so the MCP server (which runs as a
+// separate stdio process launched by Claude Desktop) can discover the backend
+// URL and port without Electron context.
+//
+// Schema MUST match mcp-server/src/sf_bulk_loader_mcp/discovery.py DiscoveryFile:
+//   { schema_version: 1, base_url: "http://<host>:<port>", port: <int>, pid: <int> }
+//
+// This is best-effort and NON-FATAL: any error is logged but never blocks
+// backend startup or window creation.
+
+function writeDiscoveryFile(dataDir, port, backendPid) {
+  try {
+    const payload = buildDiscoveryPayload(BACKEND_HOST, port, backendPid)
+    const filePath = path.join(dataDir, 'mcp-discovery.json')
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8')
+    console.log(`[electron] mcp-discovery.json written to ${filePath}`)
+  } catch (err) {
+    console.warn('[electron] Failed to write mcp-discovery.json (non-fatal):', err.message)
+  }
+}
+
+// ─── macOS Claude Desktop registration ───────────────────────────────────────
+//
+// On macOS only: merge the sf-bulk-loader entry into
+//   ~/Library/Application Support/Claude/claude_desktop_config.json
+//
+// - Creates the file if it does not exist.
+// - If the file exists, merges under mcpServers preserving all sibling entries.
+// - Backs up the file to <filename>.bak before any write.
+// - Idempotent: repeated calls on relaunch overwrite only the sf-bulk-loader key.
+// - On uninstall there is no Electron before-uninstall hook; document this:
+//   users who uninstall should manually remove the "sf-bulk-loader" key from
+//   claude_desktop_config.json, or run `sf_bulk_loader --unregister-mcp`
+//   (a future enhancement — not implemented in SFBL-364).
+//
+// Best-effort and NON-FATAL on all error paths.
+
+function registerWithClaudeDesktop() {
+  if (process.platform !== 'darwin') return   // darwin-only guard
+
+  try {
+    const binaryPath = findBackendBinary()
+    const entry = { command: binaryPath, args: ['mcp'] }
+
+    const claudeConfigDir = path.join(
+      process.env.HOME || '',
+      'Library',
+      'Application Support',
+      'Claude',
+    )
+    const configPath = path.join(claudeConfigDir, 'claude_desktop_config.json')
+    const backupPath = `${configPath}.bak`
+
+    // Read existing config (or start from empty).
+    let existing = {}
+    if (fs.existsSync(configPath)) {
+      try {
+        const raw = fs.readFileSync(configPath, 'utf8')
+        existing = JSON.parse(raw)
+      } catch (parseErr) {
+        console.warn(
+          '[electron] claude_desktop_config.json could not be parsed; will overwrite (non-fatal):',
+          parseErr.message,
+        )
+        existing = {}
+      }
+      // Back up before any write (best-effort).
+      try {
+        fs.copyFileSync(configPath, backupPath)
+        console.log(`[electron] Backed up claude_desktop_config.json → ${backupPath}`)
+      } catch (backupErr) {
+        console.warn('[electron] Could not back up claude_desktop_config.json (non-fatal):', backupErr.message)
+      }
+    }
+
+    const merged = mergeMcpServerConfig(existing, entry)
+
+    // Ensure parent directory exists (Claude Desktop may not be installed yet).
+    fs.mkdirSync(claudeConfigDir, { recursive: true })
+    fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf8')
+    console.log(`[electron] Registered MCP server in ${configPath}`)
+  } catch (err) {
+    console.warn('[electron] Failed to register with Claude Desktop (non-fatal):', err.message)
+  }
+}
+
 // ─── IPC handlers ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('dialog:openDirectory', async () => {
@@ -283,6 +372,17 @@ async function createWindow() {
     app.quit()
     return
   }
+
+  // Write the MCP discovery file so the MCP server (launched by Claude Desktop)
+  // can find the backend.  Best-effort — never blocks startup.
+  // backendProcess.pid is the PID of the spawned backend; fall back to our own
+  // PID (process.pid) in the rare case the process object has no pid yet
+  // (e.g. dev mode where startBackend is a no-op on the activate path).
+  const backendPid = (backendProcess && backendProcess.pid) ? backendProcess.pid : process.pid
+  writeDiscoveryFile(dataDir, port, backendPid)
+
+  // macOS only: register with Claude Desktop.  Best-effort — never blocks startup.
+  registerWithClaudeDesktop()
 
   const backendUrl = `http://${BACKEND_HOST}:${port}`
 
