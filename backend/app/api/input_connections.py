@@ -1,4 +1,10 @@
-"""Input Connections API — CRUD and S3 connectivity test."""
+"""Input Connections API — CRUD and S3 connectivity test.
+
+Permission matrix (reuses connections.* keys — spec SFBL-374):
+  list / get detail       → connections.view
+  create / update / delete → connections.manage
+  test                    → connections.manage
+"""
 
 import asyncio
 import logging
@@ -10,6 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.permissions import (
+    CONNECTIONS_MANAGE,
+    CONNECTIONS_VIEW,
+    require_permission,
+)
 from app.database import get_db
 from app.models.input_connection import InputConnection
 from app.models.load_plan import LoadPlan
@@ -25,10 +36,15 @@ from app.utils.encryption import decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
 
+# Base auth: all input-connections routes require connections.view at minimum.
+# Mutating routes additionally require connections.manage (enforced per-endpoint).
+_require_view = require_permission(CONNECTIONS_VIEW)
+_require_manage = require_permission(CONNECTIONS_MANAGE)
+
 router = APIRouter(
     prefix="/api/input-connections",
     tags=["input-connections"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(_require_view)],
 )
 
 
@@ -49,6 +65,7 @@ async def _get_or_404(ic_id: str, db: AsyncSession) -> InputConnection:
 async def list_input_connections(
     direction: Optional[str] = Query(default=None, description="Filter by direction. 'in' returns in+both; 'out' returns out+both; other values match exactly."),
     db: AsyncSession = Depends(get_db),
+    _view: None = Depends(_require_view),
 ) -> List[InputConnection]:
     stmt = select(InputConnection).order_by(InputConnection.created_at.desc())
     if direction is not None:
@@ -64,7 +81,9 @@ async def list_input_connections(
 
 @router.post("/", response_model=InputConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_input_connection(
-    data: InputConnectionCreate, db: AsyncSession = Depends(get_db)
+    data: InputConnectionCreate,
+    db: AsyncSession = Depends(get_db),
+    _manage: None = Depends(_require_manage),
 ) -> InputConnection:
     ic = InputConnection(
         name=data.name,
@@ -84,7 +103,11 @@ async def create_input_connection(
 
 
 @router.get("/{ic_id}", response_model=InputConnectionResponse)
-async def get_input_connection(ic_id: str, db: AsyncSession = Depends(get_db)) -> InputConnection:
+async def get_input_connection(
+    ic_id: str,
+    db: AsyncSession = Depends(get_db),
+    _view: None = Depends(_require_view),
+) -> InputConnection:
     return await _get_or_404(ic_id, db)
 
 
@@ -93,6 +116,7 @@ async def update_input_connection(
     ic_id: str,
     data: InputConnectionUpdate,
     db: AsyncSession = Depends(get_db),
+    _manage: None = Depends(_require_manage),
 ) -> InputConnection:
     ic = await _get_or_404(ic_id, db)
     update_data = data.model_dump(exclude_unset=True)
@@ -107,7 +131,11 @@ async def update_input_connection(
 
 
 @router.delete("/{ic_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_input_connection(ic_id: str, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_input_connection(
+    ic_id: str,
+    db: AsyncSession = Depends(get_db),
+    _manage: None = Depends(_require_manage),
+) -> None:
     ic = await _get_or_404(ic_id, db)
 
     # Check if any load plans reference this connection as output_connection_id
@@ -143,7 +171,9 @@ async def delete_input_connection(ic_id: str, db: AsyncSession = Depends(get_db)
 
 @router.post("/{ic_id}/test", response_model=InputConnectionTestResponse)
 async def test_input_connection(
-    ic_id: str, db: AsyncSession = Depends(get_db)
+    ic_id: str,
+    db: AsyncSession = Depends(get_db),
+    _manage: None = Depends(_require_manage),
 ) -> InputConnectionTestResponse:
     """Verify S3 credentials: always checks read access; also checks write access for output connections."""
     ic = await _get_or_404(ic_id, db)
