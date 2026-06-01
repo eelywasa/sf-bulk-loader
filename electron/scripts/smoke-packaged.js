@@ -171,14 +171,30 @@ function resolveUserDataDir(appName) {
  *
  * @param {number} expectedPort - Port the app was launched with (BACKEND_PORT)
  */
+function sleepSync(ms) {
+  // Block the thread without spawning a process (Node 18+).
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function waitForFile(filePath, timeoutMs = 30000, intervalMs = 500) {
+  const deadline = Date.now() + timeoutMs
+  while (!fs.existsSync(filePath) && Date.now() < deadline) {
+    sleepSync(intervalMs)
+  }
+  return fs.existsSync(filePath)
+}
+
 function assertDiscoveryFile(expectedPort) {
   // userData uses app.getName() === packageJson.name ("sf-bulk-loader-desktop"),
   // NOT the electron-builder productName (which only names the .app/.dmg).
   const userDataDir = resolveUserDataDir(packageName)
   const discoveryPath = path.join(userDataDir, 'mcp-discovery.json')
 
-  if (!fs.existsSync(discoveryPath)) {
-    fail(`mcp-discovery.json not found at ${discoveryPath} — app must write it after backend starts`)
+  // The app writes the discovery file only after its own waitForBackend()
+  // resolves, which races the smoke's independent health poll — so poll for the
+  // file (up to 30s) rather than checking exactly once.
+  if (!waitForFile(discoveryPath)) {
+    fail(`mcp-discovery.json not found at ${discoveryPath} after 30s — app must write it after backend starts`)
   }
 
   let discovery
