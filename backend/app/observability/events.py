@@ -189,7 +189,10 @@ class AuthEvent:
     # SFBL-366: personal access token lifecycle
     PAT_ISSUED = "auth.pat_issued"
     PAT_REVOKED = "auth.pat_revoked"
-    # NOTE: PAT_USED belongs to SFBL-367 (auth middleware — not this ticket).
+
+    # SFBL-367: emitted on every successful PAT-authenticated request
+    # (write-throttled — at most once per _LAST_USED_THROTTLE_SECONDS window).
+    PAT_USED = "auth.pat_used"
 
     # SFBL-195: permission enforcement
     PERMISSION_DENIED = "auth.permission_denied"

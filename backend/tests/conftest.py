@@ -182,6 +182,7 @@ def clean_db():
     from app.models.login_attempt import LoginAttempt
     from app.models.notification_delivery import NotificationDelivery
     from app.models.notification_subscription import NotificationSubscription
+    from app.models.personal_access_token import PersonalAccessToken
     from app.models.user import User
     from app.models.user_backup_code import UserBackupCode
     from app.models.user_totp import UserTotp
@@ -199,9 +200,10 @@ def clean_db():
                 LoadPlan,
                 Connection,
                 InputConnection,
-                InvitationToken,  # FK → user; must come before User
-                UserBackupCode,   # FK → user
-                UserTotp,         # FK → user
+                InvitationToken,   # FK → user; must come before User
+                PersonalAccessToken,  # FK → user (CASCADE); must come before User
+                UserBackupCode,    # FK → user
+                UserTotp,          # FK → user
                 User,
             ]:
                 await session.execute(delete(model))
