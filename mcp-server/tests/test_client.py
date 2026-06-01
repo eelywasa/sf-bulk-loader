@@ -138,7 +138,7 @@ class TestBulkLoaderClientErrorHandling:
         transport = httpx.MockTransport(
             lambda request: httpx.Response(
                 200,
-                json={"ready": True},
+                json={"status": "ok"},
                 headers={"content-type": "application/json"},
             )
         )
@@ -146,7 +146,7 @@ class TestBulkLoaderClientErrorHandling:
             client._http = httpx.AsyncClient(transport=transport)
             resp = await client.get("/api/health/ready")
         assert resp.status_code == 200
-        assert resp.json()["ready"] is True
+        assert resp.json()["status"] == "ok"
 
     @pytest.mark.asyncio
     async def test_422_raises_with_detail(
@@ -205,21 +205,25 @@ class TestHealthTool:
 
         mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.json.return_value = {"ready": True, "db": "ok"}
+        # Real /api/health/ready shape: a `status` field ("ok" => ready),
+        # NOT a `ready` boolean (the original mock used the wrong shape, which
+        # is why this test passed while the live tool reported "NOT ready").
+        mock_response.json.return_value = {"status": "ok", "db": "ok"}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         payload = await check_health(mock_client)
         text = format_health_result(payload)
 
-        assert payload["ready"] is True
-        assert "ready" in text.lower()
+        assert payload["status"] == "ok"
+        assert "Backend is ready." in text
+        assert "NOT ready" not in text
         assert "db" in text
 
     @pytest.mark.asyncio
     async def test_health_not_ready(self) -> None:
         from sf_bulk_loader_mcp.tools.health import format_health_result
 
-        payload = {"ready": False, "db": "unavailable"}
+        payload = {"status": "error", "db": "unavailable"}
         text = format_health_result(payload)
         assert "NOT ready" in text
 
@@ -236,5 +240,5 @@ class TestHealthTool:
     def test_format_health_no_extra_fields(self) -> None:
         from sf_bulk_loader_mcp.tools.health import format_health_result
 
-        text = format_health_result({"ready": True})
-        assert text == "Backend is ready."
+        text = format_health_result({"status": "ok"})
+        assert text == "Backend is ready. (status='ok')"
