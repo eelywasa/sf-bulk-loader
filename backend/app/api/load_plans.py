@@ -139,6 +139,12 @@ async def delete_load_plan(
     plan = await db.get(LoadPlan, plan_id)
     if plan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
+    run_exists = await db.scalar(select(LoadRun.id).where(LoadRun.load_plan_id == plan_id).limit(1))
+    if run_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete a plan that has associated runs. Delete the runs first or archive the plan.",
+        )
     await db.delete(plan)
     await db.commit()
 

@@ -154,6 +154,16 @@ def test_delete_plan_cascades_to_steps(auth_client):
     assert auth_client.get(f"/api/load-plans/{plan_id}").status_code == 404
 
 
+def test_delete_plan_with_runs_returns_409(auth_client):
+    conn_id = _create_connection(auth_client)
+    plan_id = _create_plan(auth_client, conn_id)["id"]
+    # Trigger a run so the plan has associated run history
+    auth_client.post(f"/api/load-plans/{plan_id}/run")
+    resp = auth_client.delete(f"/api/load-plans/{plan_id}")
+    assert resp.status_code == 409
+    assert "runs" in resp.json()["detail"].lower()
+
+
 # ── Duplicate ──────────────────────────────────────────────────────────────────
 
 _STEP = {
