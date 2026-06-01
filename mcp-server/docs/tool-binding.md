@@ -42,32 +42,43 @@ See `tools/health.py` for the implementation.
 
 ## Curated tool list (SFBL-360..363)
 
-The table below is the placeholder set.  Each row will be implemented in the
-listed ticket.  When implemented, remove `TODO` from the `status` column and
-add the dispatcher case in `server.py`.
+The table below tracks all curated tools.  Input schemas are hand-written to
+match the backend request/response shapes in `backend/app/schemas/` (connection.py
+and input_connection.py).  Secrets are never echoed — the API's own response
+serialisers omit them, and the tool formatters only pass response payloads
+through.
 
-| Tool name          | Endpoint                          | Ticket    | Status |
-|--------------------|-----------------------------------|-----------|--------|
-| `list_connections` | `GET /api/connections`            | SFBL-360  | TODO   |
-| `get_connection`   | `GET /api/connections/{id}`       | SFBL-360  | TODO   |
-| `create_connection`| `POST /api/connections`           | SFBL-360  | TODO   |
-| `test_connection`  | `POST /api/connections/{id}/test` | SFBL-360  | TODO   |
-| `list_plans`       | `GET /api/plans`                  | SFBL-361  | TODO   |
-| `get_plan`         | `GET /api/plans/{id}`             | SFBL-361  | TODO   |
-| `create_plan`      | `POST /api/plans`                 | SFBL-361  | TODO   |
-| `update_plan`      | `PUT /api/plans/{id}`             | SFBL-361  | TODO   |
-| `list_runs`        | `GET /api/runs`                   | SFBL-362  | TODO   |
-| `get_run`          | `GET /api/runs/{id}`              | SFBL-362  | TODO   |
-| `trigger_run`      | `POST /api/runs`                  | SFBL-362  | TODO   |
-| `abort_run`        | `POST /api/runs/{id}/abort`       | SFBL-362  | TODO   |
-| `list_jobs`        | `GET /api/jobs`                   | SFBL-363  | TODO   |
-| `get_job`          | `GET /api/jobs/{id}`              | SFBL-363  | TODO   |
+### Implemented
 
-### Already implemented
+| Tool name                 | Endpoint                                     | Ticket    | Status      |
+|---------------------------|----------------------------------------------|-----------|-------------|
+| `health`                  | `GET /api/health/ready`                      | SFBL-359  | Implemented |
+| `list_connections`        | `GET /api/connections`                       | SFBL-360  | Implemented |
+| `get_connection`          | `GET /api/connections/{id}`                  | SFBL-360  | Implemented |
+| `create_connection`       | `POST /api/connections`                      | SFBL-360  | Implemented |
+| `update_connection`       | `PUT /api/connections/{id}`                  | SFBL-360  | Implemented |
+| `test_connection`         | `POST /api/connections/{id}/test`            | SFBL-360  | Implemented |
+| `list_sobjects`           | `GET /api/connections/{id}/objects`          | SFBL-360  | Implemented |
+| `list_input_connections`  | `GET /api/input-connections`                 | SFBL-360  | Implemented |
+| `get_input_connection`    | `GET /api/input-connections/{id}`            | SFBL-360  | Implemented |
+| `create_input_connection` | `POST /api/input-connections`                | SFBL-360  | Implemented |
+| `update_input_connection` | `PUT /api/input-connections/{id}`            | SFBL-360  | Implemented |
+| `test_input_connection`   | `POST /api/input-connections/{id}/test`      | SFBL-360  | Implemented |
 
-| Tool name | Endpoint                | Ticket    | Status      |
-|-----------|-------------------------|-----------|-------------|
-| `health`  | `GET /api/health/ready` | SFBL-359  | Implemented |
+### TODO
+
+| Tool name     | Endpoint                    | Ticket    | Status |
+|---------------|-----------------------------|-----------|--------|
+| `list_plans`  | `GET /api/plans`            | SFBL-361  | TODO   |
+| `get_plan`    | `GET /api/plans/{id}`       | SFBL-361  | TODO   |
+| `create_plan` | `POST /api/plans`           | SFBL-361  | TODO   |
+| `update_plan` | `PUT /api/plans/{id}`       | SFBL-361  | TODO   |
+| `list_runs`   | `GET /api/runs`             | SFBL-362  | TODO   |
+| `get_run`     | `GET /api/runs/{id}`        | SFBL-362  | TODO   |
+| `trigger_run` | `POST /api/runs`            | SFBL-362  | TODO   |
+| `abort_run`   | `POST /api/runs/{id}/abort` | SFBL-362  | TODO   |
+| `list_jobs`   | `GET /api/jobs`             | SFBL-363  | TODO   |
+| `get_job`     | `GET /api/jobs/{id}`        | SFBL-363  | TODO   |
 
 ## Error handling contract
 
