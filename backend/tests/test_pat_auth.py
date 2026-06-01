@@ -591,3 +591,178 @@ class TestPatObservabilityEvents:
             and getattr(r, "rejection_reason", None) == "pat_unknown"
             for r in caplog.records
         ), f"Expected TOKEN_REJECTED/pat_unknown; records: {[(r.getMessage(), getattr(r, 'event_name', None)) for r in caplog.records]}"
+
+
+class TestPatQueryParamNotAccepted:
+    """A PAT supplied as a query parameter does NOT authenticate.
+
+    Policy: PATs must be sent via the Authorization: Bearer header only.
+    Query parameters appear in access logs, browser history, and referrer
+    headers — they are unsuitable for credential transport.
+
+    ``get_current_user`` uses ``HTTPBearer(auto_error=False)`` which reads
+    exclusively from the Authorization header. Passing a valid PAT as a query
+    param leaves ``credentials=None``, so the request is rejected with 401
+    before any token lookup occurs.
+
+    Covered query-param forms tested:
+      - ``?token=<valid_pat>``
+      - ``?access_token=<valid_pat>``
+    """
+
+    def test_pat_as_token_query_param_returns_401(self, client):
+        """A valid PAT supplied as ?token=... does NOT authenticate → 401."""
+        user, _ = _seed_user_with_profile("admin")
+        _, plaintext = _issue_pat(user)
+
+        # No Authorization header — PAT in query string only
+        resp = client.get(
+            f"/api/connections/?token={plaintext}",
+        )
+        assert resp.status_code == 401, (
+            f"Expected 401 (query-param PAT must not authenticate) but got {resp.status_code}. "
+            "PATs must be sent via Authorization: Bearer header only."
+        )
+
+    def test_pat_as_access_token_query_param_returns_401(self, client):
+        """A valid PAT supplied as ?access_token=... does NOT authenticate → 401."""
+        user, _ = _seed_user_with_profile("admin")
+        _, plaintext = _issue_pat(user)
+
+        resp = client.get(
+            f"/api/connections/?access_token={plaintext}",
+        )
+        assert resp.status_code == 401, (
+            f"Expected 401 (query-param PAT must not authenticate) but got {resp.status_code}. "
+            "PATs must be sent via Authorization: Bearer header only."
+        )
+
+    def test_header_pat_still_works_as_control(self, client):
+        """Control: the same PAT sent via the Authorization header returns 200."""
+        user, _ = _seed_user_with_profile("admin")
+        _, plaintext = _issue_pat(user)
+
+        resp = client.get(
+            "/api/connections/",
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
+        assert resp.status_code == 200, (
+            "Control case: PAT in Authorization header must authenticate. "
+            f"Got {resp.status_code}."
+        )
+
+
+class TestPatObservabilityEventsIntegration:
+    """Integration confirmation that PAT lifecycle events fire via the live API stack.
+
+    PAT_ISSUED, PAT_REVOKED, and PAT_USED are unit-tested in detail in:
+      - backend/tests/services/test_pat.py  (PAT_ISSUED + PAT_REVOKED — service layer)
+      - TestPatObservabilityEvents above       (PAT_USED + TOKEN_REJECTED — auth middleware)
+
+    These tests confirm the route layer calls the service functions (and therefore
+    that the event emission is not accidentally bypassed by the router).  They use
+    the same dependency-override pattern as test_me_tokens.py: a live TestClient
+    wired to the test DB, with get_current_user and require_session_auth overridden
+    to return a DB-backed user (re-loaded inside the request context to avoid the
+    DetachedInstanceError that occurs when a session-independent User object is
+    passed as a dependency and the route handler then accesses a lazy relationship).
+    """
+
+    def _make_session_user(self, profile_name: str = "admin"):
+        """Seed a user and return a dependency override that re-fetches it per request.
+
+        The override re-fetches the user from the DB inside the request to avoid
+        DetachedInstanceError when the route handler accesses user.profile.
+        """
+        from sqlalchemy import select as _sel
+
+        user, _ = _seed_user_with_profile(profile_name)
+        user_id = user.id
+
+        async def _user_dep():
+            async with _TestSession() as session:
+                result = await session.execute(
+                    _sel(User).where(User.id == user_id)
+                )
+                # Return fresh, session-bound user
+                return result.scalar_one()
+
+        return user, _user_dep
+
+    def test_issue_via_route_emits_pat_issued(self, client, caplog):
+        """POST /api/me/tokens emits AuthEvent.PAT_ISSUED end-to-end."""
+        from app.observability.events import AuthEvent
+        from app.auth.permissions import require_session_auth
+        from app.main import app as main_app
+        from app.services.auth import get_current_user
+
+        _, _dep = self._make_session_user("admin")
+
+        prev_gcu = main_app.dependency_overrides.get(get_current_user)
+        prev_rsa = main_app.dependency_overrides.get(require_session_auth)
+        main_app.dependency_overrides[get_current_user] = _dep
+        main_app.dependency_overrides[require_session_auth] = _dep
+
+        try:
+            with caplog.at_level(logging.INFO, logger="app.services.pat"):
+                resp = client.post(
+                    "/api/me/tokens",
+                    json={"name": "observability-check"},
+                )
+        finally:
+            if prev_gcu is None:
+                main_app.dependency_overrides.pop(get_current_user, None)
+            else:
+                main_app.dependency_overrides[get_current_user] = prev_gcu
+            if prev_rsa is None:
+                main_app.dependency_overrides.pop(require_session_auth, None)
+            else:
+                main_app.dependency_overrides[require_session_auth] = prev_rsa
+
+        assert resp.status_code == 201, resp.text
+        assert any(
+            getattr(r, "event_name", None) == AuthEvent.PAT_ISSUED
+            for r in caplog.records
+        ), (
+            f"Expected PAT_ISSUED from pat service after POST /api/me/tokens. "
+            f"Records: {[(r.getMessage(), getattr(r, 'event_name', None)) for r in caplog.records]}"
+        )
+
+    def test_revoke_via_route_emits_pat_revoked(self, client, caplog):
+        """DELETE /api/me/tokens/{id} emits AuthEvent.PAT_REVOKED end-to-end."""
+        from app.observability.events import AuthEvent
+        from app.auth.permissions import require_session_auth
+        from app.main import app as main_app
+        from app.services.auth import get_current_user
+
+        user, _dep = self._make_session_user("admin")
+
+        # Issue a PAT to revoke via the route
+        pat_row, _ = _issue_pat(user)
+
+        prev_gcu = main_app.dependency_overrides.get(get_current_user)
+        prev_rsa = main_app.dependency_overrides.get(require_session_auth)
+        main_app.dependency_overrides[get_current_user] = _dep
+        main_app.dependency_overrides[require_session_auth] = _dep
+
+        try:
+            with caplog.at_level(logging.INFO, logger="app.services.pat"):
+                resp = client.delete(f"/api/me/tokens/{pat_row.id}")
+        finally:
+            if prev_gcu is None:
+                main_app.dependency_overrides.pop(get_current_user, None)
+            else:
+                main_app.dependency_overrides[get_current_user] = prev_gcu
+            if prev_rsa is None:
+                main_app.dependency_overrides.pop(require_session_auth, None)
+            else:
+                main_app.dependency_overrides[require_session_auth] = prev_rsa
+
+        assert resp.status_code == 204, resp.text
+        assert any(
+            getattr(r, "event_name", None) == AuthEvent.PAT_REVOKED
+            for r in caplog.records
+        ), (
+            f"Expected PAT_REVOKED from pat service after DELETE /api/me/tokens/{{id}}. "
+            f"Records: {[(r.getMessage(), getattr(r, 'event_name', None)) for r in caplog.records]}"
+        )

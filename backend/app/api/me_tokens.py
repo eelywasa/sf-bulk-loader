@@ -72,7 +72,6 @@ async def create_token(
     # the tokens.manage permission check.  We do it here inline so the session
     # check (403 "session_required") fires before the permission check (403
     # "permission_denied"), which gives a clearer error for PAT callers.
-    from app.auth.permissions import require_permission as _rp
     from app.config import settings as _settings
 
     if _settings.auth_mode != "none":
