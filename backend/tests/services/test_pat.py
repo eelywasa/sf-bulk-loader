@@ -60,8 +60,18 @@ def _make_user(user_id: str = "user-test-1234"):
 
 
 def _run(coro):
-    """Run a coroutine synchronously (for tests outside an async framework)."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run a coroutine synchronously (for tests outside an async framework).
+
+    Uses a fresh event loop rather than ``asyncio.get_event_loop()`` — on
+    Python 3.12 the latter raises ``RuntimeError: There is no current event
+    loop`` when no loop has been set in the thread (which is the case when this
+    test runs before any loop-creating test), causing CI-order-dependent flakes.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # ── hash_token determinism ─────────────────────────────────────────────────────

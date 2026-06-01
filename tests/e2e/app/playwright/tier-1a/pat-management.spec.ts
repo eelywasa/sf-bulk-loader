@@ -33,10 +33,10 @@ import {
 } from "../../../sf/playwright/helpers/allure";
 
 test.describe("PAT management — create + revoke flow", () => {
-  test.beforeEach(async ({ page, request }) => {
-    labelLayer("app");
-    labelTier("1a");
-    linkIssue("SFBL-369");
+  test.beforeEach(async ({ page, request }, testInfo) => {
+    linkIssue(testInfo, "SFBL-369");
+    labelTier(testInfo, "1a");
+    labelLayer(testInfo, "e2e");
 
     const authMode = await fetchAuthMode(request);
 
