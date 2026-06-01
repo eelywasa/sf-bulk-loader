@@ -25,9 +25,12 @@ from mcp.types import CallToolResult, TextContent, Tool
 
 from .client import BulkLoaderClient, McpHttpError
 from .config import McpSettings
+from mcp.types import ToolAnnotations
+
 from .tools.health import check_health, format_health_result
 from .tools import connections as _conn
 from .tools import plans as _plans
+from .tools import runs as _runs
 
 
 # ── Curated tool list ─────────────────────────────────────────────────────────
@@ -77,15 +80,20 @@ CURATED_TOOLS: list[dict[str, str]] = [
     {"name": "validate_soql",      "endpoint": "POST /api/load-plans/{plan_id}/validate-soql",           "status": "implemented"},
     {"name": "preview_step",       "endpoint": "POST /api/load-plans/{plan_id}/steps/{step_id}/preview", "status": "implemented"},
 
-    # ── Load Runs (SFBL-362) ─────────────────────────────────────────────────
-    {"name": "list_runs",          "endpoint": "GET /api/load-runs/",                "status": "TODO"},
-    {"name": "get_run",            "endpoint": "GET /api/load-runs/{id}",            "status": "TODO"},
-    {"name": "trigger_run",        "endpoint": "POST /api/load-plans/{id}/run",      "status": "TODO"},
-    {"name": "abort_run",          "endpoint": "POST /api/load-runs/{id}/abort",     "status": "TODO"},
+    # ── Load Runs (SFBL-362) ────────────────────────────────────────────────────
+    # NOTE: real prefix is /api/runs (NOT /api/load-runs as the 359 placeholder guessed).
+    # trigger_run lives on the load-PLANS router (POST /api/load-plans/{plan_id}/run),
+    # not on the load-runs router — verified from backend/app/api/load_plans.py.
+    {"name": "trigger_run",        "endpoint": "POST /api/load-plans/{plan_id}/run",             "status": "implemented"},
+    {"name": "list_runs",          "endpoint": "GET /api/runs/",                                 "status": "implemented"},
+    {"name": "get_run",            "endpoint": "GET /api/runs/{run_id}",                         "status": "implemented"},
+    {"name": "abort_run",          "endpoint": "POST /api/runs/{run_id}/abort",                  "status": "implemented"},
+    {"name": "retry_step",         "endpoint": "POST /api/runs/{run_id}/retry-step/{step_id}",   "status": "implemented"},
+    {"name": "list_jobs",          "endpoint": "GET /api/runs/{run_id}/jobs",                    "status": "implemented"},
+    {"name": "get_job",            "endpoint": "GET /api/jobs/{job_id}",                         "status": "implemented"},
 
-    # ── Job Results (SFBL-363) ───────────────────────────────────────────────
-    {"name": "list_jobs",          "endpoint": "GET /api/jobs/",                     "status": "TODO"},
-    {"name": "get_job",            "endpoint": "GET /api/jobs/{id}",                 "status": "TODO"},
+    # ── Job Results / failure inspection (SFBL-363) ──────────────────────────
+    # Result-file download / preview tools are TODO in SFBL-363; not implemented here.
 
     # ── Health (hand-written — see below) ────────────────────────────────────
     # Not in this list; registered separately because it targets a
@@ -592,7 +600,223 @@ def _register_tools(server: Server, client: BulkLoaderClient) -> None:
                 },
             ),
 
-            # TODO (SFBL-362..363): add run/job tools here as they are implemented.
+            # ── Load Runs (SFBL-362) ──────────────────────────────────────────
+            #
+            # DESTRUCTIVE-ACTION SAFETY
+            # trigger_run, abort_run, and retry_step execute real Bulk API DML
+            # or abort live Salesforce jobs.  They each carry:
+            #   - ToolAnnotations(destructiveHint=True) — signals to MCP clients.
+            #   - A required `confirm: true` boolean in inputSchema — the handler
+            #     refuses with a structured message if confirm is absent or False,
+            #     and makes NO backend call.
+            #
+            # MONITORING (REST polling, NOT WebSocket)
+            # Use get_run / list_jobs for single-shot status reads and poll at your
+            # own cadence.  The WebSocket at /ws/runs/{run_id} is intentionally NOT
+            # used here — it relies on a separate short-lived token (validate_ws_token)
+            # that bypasses get_current_user and is out of scope for the MCP channel.
+            #
+            # Recommended poll cadence:
+            #   - Poll get_run every 5–10 s; apply exponential backoff up to 60 s cap.
+            #   - Terminal statuses: "completed", "failed", "aborted".
+            #   - Hard timeout: ~30 min for production loads (adjust for data volume).
+            #
+            # OBSERVABILITY
+            # MCP adds NO new run/job instrumentation.  All lifecycle events are
+            # already emitted by the backend orchestrator (events.py RunEvent /
+            # JobEvent).  Duplicating them here would cause double-counting.
+            Tool(
+                name="trigger_run",
+                description=(
+                    "Trigger a new load run for a plan.  "
+                    "Creates a LoadRun record and enqueues the plan for background "
+                    "execution by the backend orchestrator.  Returns the new run with "
+                    "its ID and initial 'pending' status.  "
+                    "DESTRUCTIVE: executes real Bulk API DML against Salesforce.  "
+                    "Pass confirm=true to proceed.  "
+                    "Monitor progress with get_run (poll every 5–10 s; terminal "
+                    "statuses: completed/failed/aborted)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {
+                            "type": "string",
+                            "description": "UUID of the load plan to execute.",
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "description": (
+                                "Must be true to proceed.  "
+                                "This tool triggers real Salesforce Bulk API DML.  "
+                                "Pass confirm=true to confirm you intend to run it."
+                            ),
+                        },
+                    },
+                    "required": ["plan_id", "confirm"],
+                },
+                annotations=ToolAnnotations(destructiveHint=True),
+            ),
+            Tool(
+                name="list_runs",
+                description=(
+                    "List load run history, optionally filtered by plan, status, or "
+                    "start-time range.  Returns run summaries (id, status, record counts, "
+                    "timestamps).  Use get_run to fetch full detail including per-job breakdown."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {
+                            "type": "string",
+                            "description": "Filter by load plan UUID.",
+                        },
+                        "run_status": {
+                            "type": "string",
+                            "enum": ["pending", "running", "completed", "failed", "aborted"],
+                            "description": "Filter by run status.",
+                        },
+                        "started_after": {
+                            "type": "string",
+                            "description": "ISO-8601 datetime — only runs started after this time.",
+                        },
+                        "started_before": {
+                            "type": "string",
+                            "description": "ISO-8601 datetime — only runs started before this time.",
+                        },
+                    },
+                    "required": [],
+                },
+            ),
+            Tool(
+                name="get_run",
+                description=(
+                    "Get full details for a single load run, including status, record counts, "
+                    "error summary (auth_error / storage_error / circuit_breaker / "
+                    "preflight_warnings), and the per-job breakdown.  "
+                    "Use this to poll for run completion: terminal statuses are "
+                    "'completed', 'failed', 'aborted'.  "
+                    "Recommended poll cadence: 5–10 s with exponential backoff up to 60 s."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            "type": "string",
+                            "description": "UUID of the load run.",
+                        },
+                    },
+                    "required": ["run_id"],
+                },
+            ),
+            Tool(
+                name="abort_run",
+                description=(
+                    "Abort a pending or running load.  In-progress Bulk API jobs are "
+                    "marked aborted on the Salesforce side.  Returns the updated run.  "
+                    "DESTRUCTIVE: aborts live Salesforce Bulk API jobs.  "
+                    "Pass confirm=true to proceed."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            "type": "string",
+                            "description": "UUID of the load run to abort.",
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "description": (
+                                "Must be true to proceed.  "
+                                "This tool aborts a live Salesforce Bulk API run.  "
+                                "Pass confirm=true to confirm you intend to abort it."
+                            ),
+                        },
+                    },
+                    "required": ["run_id", "confirm"],
+                },
+                annotations=ToolAnnotations(destructiveHint=True),
+            ),
+            Tool(
+                name="retry_step",
+                description=(
+                    "Create a new load run that retries only the failed or aborted jobs "
+                    "of a single step in an existing run.  Returns the new retry run.  "
+                    "DESTRUCTIVE: re-submits Bulk API DML for failed records.  "
+                    "Pass confirm=true to proceed."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            "type": "string",
+                            "description": "UUID of the original load run.",
+                        },
+                        "step_id": {
+                            "type": "string",
+                            "description": "UUID of the load step to retry.",
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "description": (
+                                "Must be true to proceed.  "
+                                "This tool re-submits Bulk API DML for failed records.  "
+                                "Pass confirm=true to confirm you intend to retry it."
+                            ),
+                        },
+                    },
+                    "required": ["run_id", "step_id", "confirm"],
+                },
+                annotations=ToolAnnotations(destructiveHint=True),
+            ),
+            Tool(
+                name="list_jobs",
+                description=(
+                    "List the individual Bulk API job partitions for a load run, "
+                    "optionally filtered by step or job status.  Returns partition index, "
+                    "status, record counts (processed/failed/successful), and any "
+                    "error messages.  Use this for granular per-partition monitoring."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            "type": "string",
+                            "description": "UUID of the load run.",
+                        },
+                        "step_id": {
+                            "type": "string",
+                            "description": "Filter to jobs for a specific load step UUID.",
+                        },
+                        "job_status": {
+                            "type": "string",
+                            "enum": ["pending", "running", "completed", "failed", "aborted"],
+                            "description": "Filter by job status.",
+                        },
+                    },
+                    "required": ["run_id"],
+                },
+            ),
+            Tool(
+                name="get_job",
+                description=(
+                    "Get full details for a single Bulk API job partition, including "
+                    "record counts (processed/failed/successful), Salesforce job ID, "
+                    "instance URL, error message, result file paths, and timestamps."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "job_id": {
+                            "type": "string",
+                            "description": "UUID of the job record.",
+                        },
+                    },
+                    "required": ["job_id"],
+                },
+            ),
+
+            # TODO (SFBL-363): add result-file download/preview tools here.
         ]
 
     @server.call_tool()
@@ -656,7 +880,23 @@ def _register_tools(server: Server, client: BulkLoaderClient) -> None:
         if name == "preview_step":
             return await _handle_preview_step(client, arguments)
 
-        # TODO (SFBL-362..363): dispatch run/job tools here.
+        # ── Load Runs (SFBL-362) ──────────────────────────────────────────────
+        if name == "trigger_run":
+            return await _handle_trigger_run(client, arguments)
+        if name == "list_runs":
+            return await _handle_list_runs(client, arguments)
+        if name == "get_run":
+            return await _handle_get_run(client, arguments)
+        if name == "abort_run":
+            return await _handle_abort_run(client, arguments)
+        if name == "retry_step":
+            return await _handle_retry_step(client, arguments)
+        if name == "list_jobs":
+            return await _handle_list_jobs(client, arguments)
+        if name == "get_job":
+            return await _handle_get_job(client, arguments)
+
+        # TODO (SFBL-363): dispatch result-file download/preview tools here.
         return [TextContent(type="text", text=f"Tool '{name}' is not yet implemented.")]
 
 
@@ -1001,6 +1241,125 @@ async def _handle_preview_step(
         return _safe_text(_plans.format_preview_step(payload))
     except McpHttpError as exc:
         return _validation_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+# ── Run tool handlers ─────────────────────────────────────────────────────────
+# All handlers follow the same pattern as plan/connection handlers above:
+#   1. Extract typed arguments.
+#   2. For destructive tools, call _runs.check_confirm() FIRST — return the
+#      refusal string immediately if confirm is absent/False (NO backend call).
+#   3. Call the corresponding helper in tools/runs.py.
+#   4. Format and return as TextContent.
+#   5. Catch McpHttpError (structured) and bare Exception (network/unexpected)
+#      so no raw stack traces are ever returned to MCP callers.
+
+
+def _run_error(exc: McpHttpError) -> list[TextContent]:
+    return _safe_text(f"Run error: {exc.to_tool_error_text()}")
+
+
+async def _handle_trigger_run(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    refusal = _runs.check_confirm(args)
+    if refusal is not None:
+        return _safe_text(refusal)
+    try:
+        payload = await _runs.trigger_run(client, args["plan_id"])
+        return _safe_text(_runs.format_trigger_run(payload))
+    except McpHttpError as exc:
+        return _run_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_list_runs(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    try:
+        payload = await _runs.list_runs(
+            client,
+            plan_id=args.get("plan_id"),
+            run_status=args.get("run_status"),
+            started_after=args.get("started_after"),
+            started_before=args.get("started_before"),
+        )
+        return _safe_text(_runs.format_list_runs(payload))
+    except McpHttpError as exc:
+        return _run_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_get_run(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    try:
+        payload = await _runs.get_run(client, args["run_id"])
+        return _safe_text(_runs.format_run(payload, include_jobs=True))
+    except McpHttpError as exc:
+        return _run_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_abort_run(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    refusal = _runs.check_confirm(args)
+    if refusal is not None:
+        return _safe_text(refusal)
+    try:
+        payload = await _runs.abort_run(client, args["run_id"])
+        return _safe_text(_runs.format_abort_run(payload))
+    except McpHttpError as exc:
+        return _run_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_retry_step(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    refusal = _runs.check_confirm(args)
+    if refusal is not None:
+        return _safe_text(refusal)
+    try:
+        payload = await _runs.retry_step(client, args["run_id"], args["step_id"])
+        return _safe_text(_runs.format_retry_step(payload))
+    except McpHttpError as exc:
+        return _run_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_list_jobs(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    try:
+        payload = await _runs.list_jobs(
+            client,
+            args["run_id"],
+            step_id=args.get("step_id"),
+            job_status=args.get("job_status"),
+        )
+        return _safe_text(_runs.format_list_jobs(payload))
+    except McpHttpError as exc:
+        return _run_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_get_job(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    try:
+        payload = await _runs.get_job(client, args["job_id"])
+        return _safe_text(_runs.format_job(payload))
+    except McpHttpError as exc:
+        return _run_error(exc)
     except Exception as exc:
         return _unexpected_error(exc)
 

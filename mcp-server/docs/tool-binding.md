@@ -65,20 +65,108 @@ through.
 | `update_input_connection` | `PUT /api/input-connections/{id}`            | SFBL-360  | Implemented |
 | `test_input_connection`   | `POST /api/input-connections/{id}/test`      | SFBL-360  | Implemented |
 
-### TODO
+### Load Plans and Steps (SFBL-361)
 
-| Tool name     | Endpoint                    | Ticket    | Status |
-|---------------|-----------------------------|-----------|--------|
-| `list_plans`  | `GET /api/plans`            | SFBL-361  | TODO   |
-| `get_plan`    | `GET /api/plans/{id}`       | SFBL-361  | TODO   |
-| `create_plan` | `POST /api/plans`           | SFBL-361  | TODO   |
-| `update_plan` | `PUT /api/plans/{id}`       | SFBL-361  | TODO   |
-| `list_runs`   | `GET /api/runs`             | SFBL-362  | TODO   |
-| `get_run`     | `GET /api/runs/{id}`        | SFBL-362  | TODO   |
-| `trigger_run` | `POST /api/runs`            | SFBL-362  | TODO   |
-| `abort_run`   | `POST /api/runs/{id}/abort` | SFBL-362  | TODO   |
-| `list_jobs`   | `GET /api/jobs`             | SFBL-363  | TODO   |
-| `get_job`     | `GET /api/jobs/{id}`        | SFBL-363  | TODO   |
+| Tool name         | Endpoint                                                         | Ticket   | Status      |
+|-------------------|------------------------------------------------------------------|----------|-------------|
+| `list_plans`      | `GET /api/load-plans/`                                           | SFBL-361 | Implemented |
+| `get_plan`        | `GET /api/load-plans/{plan_id}`                                  | SFBL-361 | Implemented |
+| `create_plan`     | `POST /api/load-plans/`                                          | SFBL-361 | Implemented |
+| `update_plan`     | `PUT /api/load-plans/{plan_id}`                                  | SFBL-361 | Implemented |
+| `delete_plan`     | `DELETE /api/load-plans/{plan_id}`                               | SFBL-361 | Implemented |
+| `duplicate_plan`  | `POST /api/load-plans/{plan_id}/duplicate`                       | SFBL-361 | Implemented |
+| `add_step`        | `POST /api/load-plans/{plan_id}/steps`                           | SFBL-361 | Implemented |
+| `update_step`     | `PUT /api/load-plans/{plan_id}/steps/{step_id}`                  | SFBL-361 | Implemented |
+| `delete_step`     | `DELETE /api/load-plans/{plan_id}/steps/{step_id}`               | SFBL-361 | Implemented |
+| `reorder_steps`   | `POST /api/load-plans/{plan_id}/steps/reorder`                   | SFBL-361 | Implemented |
+| `validate_soql`   | `POST /api/load-plans/{plan_id}/validate-soql`                   | SFBL-361 | Implemented |
+| `preview_step`    | `POST /api/load-plans/{plan_id}/steps/{step_id}/preview`         | SFBL-361 | Implemented |
+
+### Load Runs and Jobs (SFBL-362)
+
+**Note on endpoint prefixes:**
+- `trigger_run` lives on the **load-plans** router (prefix `/api/load-plans`), NOT the load-runs router.
+  Verified from `backend/app/api/load_plans.py` at the `start_load_run` route handler.
+- All other run endpoints use the **load-runs** router (prefix `/api/runs`).
+  Verified from `backend/app/api/load_runs.py`.
+- Job list endpoint (`/api/runs/{run_id}/jobs`) and job detail endpoint (`/api/jobs/{job_id}`)
+  are both in the **jobs** router, which has NO prefix — the full path is in the route decorator.
+  Verified from `backend/app/api/jobs.py`.
+
+| Tool name      | Endpoint                                              | Ticket   | Status      | Destructive? |
+|----------------|-------------------------------------------------------|----------|-------------|--------------|
+| `trigger_run`  | `POST /api/load-plans/{plan_id}/run`                  | SFBL-362 | Implemented | Yes          |
+| `list_runs`    | `GET /api/runs/`                                      | SFBL-362 | Implemented | No           |
+| `get_run`      | `GET /api/runs/{run_id}`                              | SFBL-362 | Implemented | No           |
+| `abort_run`    | `POST /api/runs/{run_id}/abort`                       | SFBL-362 | Implemented | Yes          |
+| `retry_step`   | `POST /api/runs/{run_id}/retry-step/{step_id}`        | SFBL-362 | Implemented | Yes          |
+| `list_jobs`    | `GET /api/runs/{run_id}/jobs`                         | SFBL-362 | Implemented | No           |
+| `get_job`      | `GET /api/jobs/{job_id}`                              | SFBL-362 | Implemented | No           |
+
+### Job result-file inspection (SFBL-363)
+
+| Tool name | Endpoint | Ticket | Status |
+|-----------|----------|--------|--------|
+| *(result-file download and preview tools)* | — | SFBL-363 | TODO |
+
+## Destructive-action safety (trigger_run, abort_run, retry_step)
+
+These three tools each carry two safety mechanisms:
+
+1. **`ToolAnnotations(destructiveHint=True)`** — set on the `Tool` definition so
+   MCP clients that inspect tool metadata can surface a confirmation UX.
+
+2. **`confirm: true` required in inputSchema** — the handler calls
+   `_runs.check_confirm(args)` as its *first* action, before making any HTTP
+   request.  If `confirm` is absent or `False`, it returns a structured refusal
+   message and makes **no backend call**.
+
+The refusal message is:
+> "This tool performs a destructive action (real Bulk API DML or live-run mutation).
+>  You must pass confirm=true to proceed.  Re-call this tool with the same
+>  arguments plus `confirm=true` to execute."
+
+## Monitoring: REST polling cadence (no WebSocket)
+
+All run/job tools are single-shot status reads.  The WebSocket at
+`/ws/runs/{run_id}` is intentionally NOT used: the `validate_ws_token` path
+bypasses `get_current_user` (it uses a dedicated short-lived token) and is out
+of scope for the MCP channel.
+
+### Recommended polling loop for agents waiting on terminal status
+
+```
+run_id = trigger_run(plan_id=..., confirm=True)["id"]
+interval = 5          # seconds — start short
+max_interval = 60     # seconds — cap
+deadline = now() + 1800  # 30-minute hard timeout
+terminal = {"completed", "failed", "aborted"}
+
+while now() < deadline:
+    run = get_run(run_id)
+    if run["status"] in terminal:
+        break
+    sleep(interval)
+    interval = min(interval * 2, max_interval)  # exponential backoff
+```
+
+- **Initial interval:** 5 s (matches the backend's `SF_POLL_INTERVAL_INITIAL`).
+- **Max interval:** 60 s (double the backend's `SF_POLL_INTERVAL_MAX` — the
+  backend polls internally, so there is no need to poll faster than its own
+  cycle).
+- **Hard timeout:** 30 minutes is a safe default for most loads; adjust
+  upward for multi-million-record plans.
+- **Terminal statuses:** `completed`, `failed`, `aborted`.
+- **Per-job detail:** call `list_jobs(run_id)` on each poll iteration if
+  you need per-partition error messages (e.g. to surface which step failed).
+
+## Observability
+
+MCP adds NO new run/job instrumentation.  All lifecycle events
+(`RunEvent.STARTED`, `RunEvent.COMPLETED`, `JobEvent.CREATED`, etc.) are
+already emitted by the backend orchestrator via `app/observability/events.py`.
+Duplicating them in the MCP layer would cause double-counting in any metrics
+pipeline.  See `docs/observability.md` for the full event catalogue.
 
 ## Error handling contract
 
