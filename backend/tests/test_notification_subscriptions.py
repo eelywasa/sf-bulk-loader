@@ -17,6 +17,8 @@ from app.models.notification_subscription import (
     NotificationSubscription,
     NotificationTrigger,
 )
+from app.models.profile import Profile
+from app.models.profile_permission import ProfilePermission
 from app.models.user import User
 from app.services.auth import get_current_user
 from app.database import get_db
@@ -68,16 +70,42 @@ def _seed_plan(session_maker, plan_id: str) -> None:
 
 @pytest.fixture
 def sub_client(tmp_path, monkeypatch) -> Iterator[tuple[TestClient, User]]:
-    """TestClient with an authenticated user that is persisted in the DB."""
+    """TestClient with an authenticated user that is persisted in the DB.
+
+    The user is given a profile with ``notifications.manage`` so that the
+    RBAC gate added in SFBL-368 passes in these functional tests.
+
+    The profile is attached AFTER persistence so the DB session never sees the
+    profile object and doesn't try to INSERT it (which would violate the unique
+    name constraint on system profiles).
+    """
     from tests.conftest import _TestSession  # type: ignore
 
+    uid = str(uuid.uuid4())
     user = User(
-        id=str(uuid.uuid4()),
-        email="sub-user@example.com",
+        id=uid,
+        email=f"sub-user-{uid[:8]}@example.com",
         hashed_password="x",
         status="active",
     )
+    # Seed the user to the DB WITHOUT a profile (avoids cascade + unique-name
+    # constraint issues with the profiles table).
     _seed_user(_TestSession, user)
+
+    # Attach a TRANSIENT (never-persisted) profile object so that
+    # require_permission(NOTIFICATIONS_MANAGE) passes.  Building it outside
+    # any session means SQLAlchemy treats `permissions` as an in-memory list
+    # and never tries to lazy-load it — no DetachedInstanceError.
+    _profile = Profile(id=str(uuid.uuid4()), name=f"sub-notif-{uid[:8]}")
+    _profile.permissions = [
+        ProfilePermission(permission_key="notifications.manage"),
+    ]
+    # Assign via __dict__ to bypass the ORM instrumentation that would mark
+    # the user as "pending profile insert".  The override_get_current_user
+    # closure returns this user directly, so require_permission reads
+    # user.profile as already-set without hitting the DB.
+    from sqlalchemy.orm.attributes import set_committed_value
+    set_committed_value(user, "profile", _profile)
 
     async def override_get_db():
         async with _TestSession() as session:

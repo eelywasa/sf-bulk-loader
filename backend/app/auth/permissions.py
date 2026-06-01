@@ -5,6 +5,7 @@ and JSON serialisation. ALL_PERMISSION_KEYS is the authoritative set used by
 the startup check in main.py to catch typos in seed data or hand-edits.
 
 require_permission() is the FastAPI dependency factory for per-route enforcement (SFBL-195).
+require_session_auth() is a dependency that rejects PAT-authenticated requests (SFBL-368).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Awaitable, Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 
 from app.models.user import User
 from app.services.auth import get_current_user
@@ -42,6 +43,12 @@ USERS_MANAGE = "users.manage"
 USERS_RESET_2FA = "admin.users.reset_2fa"
 SYSTEM_SETTINGS = "system.settings"
 
+# Token management (SFBL-368)
+TOKENS_MANAGE = "tokens.manage"
+
+# Notification management (SFBL-368 / SFBL-374)
+NOTIFICATIONS_MANAGE = "notifications.manage"
+
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(
     {
         CONNECTIONS_VIEW,
@@ -57,6 +64,8 @@ ALL_PERMISSION_KEYS: frozenset[str] = frozenset(
         USERS_MANAGE,
         USERS_RESET_2FA,
         SYSTEM_SETTINGS,
+        TOKENS_MANAGE,
+        NOTIFICATIONS_MANAGE,
     }
 )
 
@@ -119,3 +128,43 @@ def require_permission(key: str) -> Callable[..., Awaitable[User]]:
         return current_user
 
     return _dependency
+
+
+async def require_session_auth(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """FastAPI dependency that rejects PAT-authenticated requests.
+
+    A leaked PAT must not be able to mint or revoke other tokens.  This
+    dependency reads ``request.state.auth_method`` (set by SFBL-367's
+    ``get_current_user`` middleware) and raises HTTP 403 when the caller
+    authenticated via a Personal Access Token.
+
+    Usage::
+
+        @router.post("/api/me/tokens")
+        async def create_token(user: User = Depends(require_session_auth)):
+            ...
+
+    Returns the authenticated User on success (session auth).
+    """
+    auth_method = getattr(request.state, "auth_method", None)
+    if auth_method == "pat":
+        _log.warning(
+            "PAT-authenticated request denied on session-only endpoint",
+            extra={
+                "event_name": "auth.session_required",
+                "outcome_code": "permission_denied",
+                "user_id": str(current_user.id),
+                "path": request.url.path,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "session_required",
+                "detail": "This endpoint requires session (cookie/JWT) authentication. PATs are not accepted.",
+            },
+        )
+    return current_user

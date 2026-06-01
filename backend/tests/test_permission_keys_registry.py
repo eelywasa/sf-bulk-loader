@@ -34,6 +34,8 @@ from app.auth.permissions import (
     USERS_MANAGE,
     USERS_RESET_2FA,
     SYSTEM_SETTINGS,
+    TOKENS_MANAGE,
+    NOTIFICATIONS_MANAGE,
     ALL_PERMISSION_KEYS,
 )
 
@@ -56,6 +58,8 @@ _SPEC_KEYS = {
     "users.manage",
     "admin.users.reset_2fa",
     "system.settings",
+    "tokens.manage",
+    "notifications.manage",
 }
 
 
@@ -91,6 +95,8 @@ def test_all_permission_keys_is_frozenset():
         ("users.manage", USERS_MANAGE),
         ("admin.users.reset_2fa", USERS_RESET_2FA),
         ("system.settings", SYSTEM_SETTINGS),
+        ("tokens.manage", TOKENS_MANAGE),
+        ("notifications.manage", NOTIFICATIONS_MANAGE),
     ],
 )
 def test_constant_value_matches_string(key: str, constant: str):

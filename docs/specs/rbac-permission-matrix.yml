@@ -25,6 +25,8 @@ profiles:
       - users.manage
       - admin.users.reset_2fa
       - system.settings
+      - tokens.manage
+      - notifications.manage
 
   operator:
     description: "Day-to-day operations: manage plans, execute runs. Cannot manage users or connection credentials."
@@ -37,6 +39,8 @@ profiles:
       - runs.abort
       - files.view
       - files.view_contents
+      - tokens.manage
+      - notifications.manage
 
   viewer:
     description: "Read-only access. Cannot execute runs or view file contents."
@@ -45,3 +49,5 @@ profiles:
       - plans.view
       - runs.view
       - files.view
+      - tokens.manage
+      - notifications.manage

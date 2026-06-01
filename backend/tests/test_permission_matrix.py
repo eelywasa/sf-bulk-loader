@@ -50,6 +50,8 @@ _ADMIN_PERMISSIONS = frozenset([
     "users.manage",
     "admin.users.reset_2fa",
     "system.settings",
+    "tokens.manage",
+    "notifications.manage",
 ])
 
 _OPERATOR_PERMISSIONS = frozenset([
@@ -61,6 +63,8 @@ _OPERATOR_PERMISSIONS = frozenset([
     "runs.abort",
     "files.view",
     "files.view_contents",
+    "tokens.manage",
+    "notifications.manage",
 ])
 
 _VIEWER_PERMISSIONS = frozenset([
@@ -68,6 +72,8 @@ _VIEWER_PERMISSIONS = frozenset([
     "plans.view",
     "runs.view",
     "files.view",
+    "tokens.manage",
+    "notifications.manage",
 ])
 
 _PROFILE_PERMISSIONS: dict[str, frozenset[str]] = {
