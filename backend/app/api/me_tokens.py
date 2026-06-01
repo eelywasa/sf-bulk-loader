@@ -34,6 +34,24 @@ router = APIRouter(prefix="/api/me/tokens", tags=["me"])
 _log = logging.getLogger(__name__)
 
 
+def _block_desktop_mode() -> None:
+    """PATs are not available in the no-auth desktop distribution.
+
+    In the desktop profile (``auth_mode="none"``) every request authenticates as
+    a virtual ``desktop`` user that has no row in the ``user`` table, so issuing
+    a PAT would violate the ``personal_access_token.user_id`` foreign key and
+    return a 500. Block the whole surface with a clear 403 instead — PATs are a
+    hosted-deployment feature.
+    """
+    from app.config import settings as _settings
+
+    if _settings.auth_mode == "none":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Personal access tokens are not available in this distribution",
+        )
+
+
 @router.get("", response_model=list[PatMetadata])
 async def list_tokens(
     current_user: User = Depends(require_permission(TOKENS_MANAGE)),
@@ -44,6 +62,7 @@ async def list_tokens(
     Returns all tokens for the caller, ordered newest-first.  Revoked tokens
     are included so users can audit their token history.
     """
+    _block_desktop_mode()
     result = await db.execute(
         select(PersonalAccessToken)
         .where(PersonalAccessToken.user_id == current_user.id)
@@ -68,6 +87,7 @@ async def create_token(
 
     Also requires the ``tokens.manage`` permission.
     """
+    _block_desktop_mode()
     # require_session_auth already calls get_current_user, but we still need
     # the tokens.manage permission check.  We do it here inline so the session
     # check (403 "session_required") fires before the permission check (403
@@ -122,6 +142,7 @@ async def revoke_token(
     Requires session (cookie/JWT) authentication and the ``tokens.manage``
     permission.
     """
+    _block_desktop_mode()
     from app.config import settings as _settings
 
     if _settings.auth_mode != "none":

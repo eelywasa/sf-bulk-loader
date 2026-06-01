@@ -8,10 +8,10 @@ Three shapes:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PatCreate(BaseModel):
@@ -30,6 +30,20 @@ class PatCreate(BaseModel):
             "Omit or pass null for a non-expiring token."
         ),
     )
+
+    @field_validator("expires_at")
+    @classmethod
+    def _normalise_expiry_tz(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """Treat a naive expiry as UTC.
+
+        A naive datetime (e.g. ``2026-06-02T12:00:00`` with no offset) would
+        otherwise reach ``pat_service.issue`` and raise a ``ValueError`` that
+        surfaces as a 500 for ordinary bad input. Normalising to UTC keeps the
+        value usable and the auth-path comparison timezone-aware.
+        """
+        if v is not None and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
 
 
 class PatMetadata(BaseModel):

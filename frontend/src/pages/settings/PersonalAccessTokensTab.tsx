@@ -276,7 +276,11 @@ export function PersonalAccessTokensTab() {
     mutationFn: ({ name, expiresAt }: { name: string; expiresAt: string | null }) =>
       patApi.create({
         name,
-        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+        // The picker yields a date-only string (YYYY-MM-DD). Interpreting that
+        // as midnight UTC makes "today" already-expired for most of the day, so
+        // the new token would be rejected immediately. Use end-of-day local time
+        // so any selectable date produces a usable (future) expiry instant.
+        expires_at: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : null,
       }),
     onSuccess: (result) => {
       invalidate()

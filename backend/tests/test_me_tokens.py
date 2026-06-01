@@ -211,6 +211,32 @@ def test_create_token_with_expiry(client, admin_user):
     assert body["expires_at"] is not None
 
 
+def test_create_token_naive_expiry_normalised(client, admin_user):
+    """A naive (no-offset) expires_at is normalised to UTC → 201, not a 500
+    (Codex PR #99: naive datetime reached issue() and raised ValueError → 500)."""
+    resp = _request(
+        client, admin_user, "POST", "/api/me/tokens",
+        auth_method="session",
+        json={"name": "Naive expiry", "expires_at": "2099-12-31T23:59:59"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["expires_at"] is not None
+
+
+def test_create_token_desktop_mode_blocked(client, admin_user, monkeypatch):
+    """Desktop mode (auth_mode=none) blocks PAT creation with 403 — never a 500
+    from inserting a PAT for the non-persisted virtual desktop user (Codex PR #99)."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "auth_mode", "none")
+    resp = _request(
+        client, admin_user, "POST", "/api/me/tokens",
+        auth_method="session",
+        json={"name": "Desktop"},
+    )
+    assert resp.status_code == 403, resp.text
+    assert "not available" in resp.text.lower()
+
+
 # ── Tests: GET /api/me/tokens ─────────────────────────────────────────────────
 
 
