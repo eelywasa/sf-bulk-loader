@@ -1,9 +1,10 @@
 """
 PyInstaller entry point for the desktop binary.
 
-Two modes:
+Three modes:
   sf_bulk_loader            → start uvicorn server (normal operation)
   sf_bulk_loader --migrate  → run alembic upgrade head, then exit
+  sf_bulk_loader mcp        → start the MCP stdio server (for Claude Desktop)
 """
 import os
 import sys
@@ -39,7 +40,21 @@ def _run_server() -> None:
     )
 
 
+def _run_mcp() -> None:
+    """Start the MCP stdio server (for Claude Desktop / other MCP clients).
+
+    The MCP server module is imported lazily here so that normal backend
+    start-up (the ``[]`` branch) never pays the cost of importing the MCP SDK.
+    This keeps the import graph clean and avoids any accidental side-effects on
+    Windows/Linux where the MCP server is never invoked.
+    """
+    from sf_bulk_loader_mcp.server import main as mcp_main  # lazy import — MCP branch only
+    mcp_main()
+
+
 if '--migrate' in sys.argv:
     _run_migrations()
+elif sys.argv[1:] == ['mcp']:
+    _run_mcp()
 else:
     _run_server()

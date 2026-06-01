@@ -42,4 +42,6 @@ class LoadPlan(Base):
     load_steps: Mapped[list["LoadStep"]] = relationship(
         "LoadStep", back_populates="load_plan", cascade="all, delete-orphan", order_by="LoadStep.sequence"
     )
-    load_runs: Mapped[list["LoadRun"]] = relationship("LoadRun", back_populates="load_plan")
+    load_runs: Mapped[list["LoadRun"]] = relationship(
+        "LoadRun", back_populates="load_plan", passive_deletes=True
+    )

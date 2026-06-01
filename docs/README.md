@@ -19,6 +19,8 @@ making architectural changes.
 | [architecture/storage.md](architecture/storage.md) | Input discovery, output sinks, encryption at rest |
 | [architecture/foreign-keys.md](architecture/foreign-keys.md) | FK inventory, cascade/SET NULL intent, SQLite enforcement |
 | [architecture/aws-topology.md](architecture/aws-topology.md) | AWS request path + stack ownership (Mermaid views + auto-generated CDK diagram) |
+| [architecture/mcp-server.md](architecture/mcp-server.md) | MCP server — sidecar architecture, two deployment channels, discovery-file and tool-binding contracts |
+| [architecture/mcp-tool-reference.md](architecture/mcp-tool-reference.md) | Reference table of all 36 MCP tools grouped by area |
 | [ui-conventions.md](ui-conventions.md) | Design tokens, `formStyles.ts`, shared components, theming rules |
 
 ---

@@ -33,6 +33,7 @@ jobs:
               - 'frontend/**'
               - 'backend/**'
               - 'backend/requirements-desktop.txt'
+              - 'mcp-server/**'
               - 'docs/usage/**'
               - '.github/workflows/ci-electron.yml'
 
@@ -63,6 +64,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-desktop.txt pyinstaller
+          # SFBL-364: the desktop binary serves the MCP server via the `mcp`
+          # subcommand, so PyInstaller must bundle sf_bulk_loader_mcp + the mcp
+          # SDK. Install the mcp-server package (pulls in `mcp`) before freezing.
+          pip install ../mcp-server
         working-directory: backend
 
       - name: Cache PyInstaller binary
@@ -70,7 +75,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: backend/dist/sf_bulk_loader
-          key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**', '.github/workflows/ci-electron.yml') }}
+          key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**', 'mcp-server/**', '.github/workflows/ci-electron.yml') }}
 
       - name: Build PyInstaller binary
         if: steps.pyinstaller-cache.outputs.cache-hit != 'true'
@@ -145,6 +150,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-desktop.txt pyinstaller
+          # SFBL-364: the desktop binary serves the MCP server via the `mcp`
+          # subcommand, so PyInstaller must bundle sf_bulk_loader_mcp + the mcp
+          # SDK. Install the mcp-server package (pulls in `mcp`) before freezing.
+          pip install ../mcp-server
         working-directory: backend
 
       - name: Cache PyInstaller binary
@@ -152,7 +161,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: backend/dist/sf_bulk_loader
-          key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**', '.github/workflows/ci-electron.yml') }}
+          key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**', 'mcp-server/**', '.github/workflows/ci-electron.yml') }}
 
       - name: Build PyInstaller binary
         if: steps.pyinstaller-cache.outputs.cache-hit != 'true'
