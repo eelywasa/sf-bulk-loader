@@ -64,7 +64,18 @@ test.describe("PAT management — create + revoke flow", () => {
 
   test("create token shows copy-once modal with plaintext and warning", async ({
     page,
+    request,
   }) => {
+    // PATs are a hosted-only feature: creation is blocked in desktop mode
+    // (auth_mode=none) because the virtual desktop user has no persisted row.
+    // The PR-CI Tier 1a stack runs APP_DISTRIBUTION=desktop, so the full create
+    // flow is exercised only against a hosted (auth_mode=local) stack.
+    const authMode = await fetchAuthMode(request);
+    test.skip(
+      authMode !== "local",
+      "PATs are hosted-only; creation is unavailable in desktop (auth_mode=none).",
+    );
+
     // Open create modal
     await page.getByTestId("pat-new-button").click();
 
@@ -102,7 +113,15 @@ test.describe("PAT management — create + revoke flow", () => {
 
   test("revoke token shows confirmation and marks token Revoked", async ({
     page,
+    request,
   }) => {
+    // Hosted-only — see note on the create test above.
+    const authMode = await fetchAuthMode(request);
+    test.skip(
+      authMode !== "local",
+      "PATs are hosted-only; creation is unavailable in desktop (auth_mode=none).",
+    );
+
     // First create a token to revoke
     await page.getByTestId("pat-new-button").click();
     await page.getByLabel(/token name/i).fill("Token to revoke");
