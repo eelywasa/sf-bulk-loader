@@ -251,6 +251,25 @@ class TestPreviewSuccessCsv:
         assert "Name" in url
 
     @pytest.mark.asyncio
+    async def test_filters_with_reserved_chars_are_url_encoded(self) -> None:
+        # Codex PR #100: reserved chars (&, =, +) in a filter value must be
+        # percent-encoded so the backend receives the full JSON, not a truncated
+        # query param.
+        from urllib.parse import parse_qs
+        import json as _json
+
+        client = _make_client(PREVIEW_PAYLOAD)
+        filters = [{"column": "Account", "value": "Sales & Marketing = A+B"}]
+        await preview_success_csv(client, JOB_ID, filters=filters)
+        url = client.get.call_args[0][0]
+        # Raw reserved chars must NOT appear unescaped in the query string
+        assert "Sales & Marketing" not in url
+        assert "%26" in url  # encoded '&'
+        # And the filters round-trip back to the original structure
+        parsed = parse_qs(url.split("?", 1)[1])
+        assert _json.loads(parsed["filters"][0]) == filters
+
+    @pytest.mark.asyncio
     async def test_column_projection_applied(self) -> None:
         client = _make_client(PREVIEW_PAYLOAD)
         result = await preview_success_csv(client, JOB_ID, columns=["Id"])

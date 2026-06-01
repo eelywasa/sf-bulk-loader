@@ -88,6 +88,7 @@ import zipfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlencode
 
 from ..client import BulkLoaderClient, McpHttpError
 
@@ -196,10 +197,12 @@ def _build_preview_params(
     the backend itself has no column-projection parameter.  ``filters`` is
     serialised as a JSON string and passed as the ``filters`` query param.
     """
-    parts = [f"limit={limit}", f"offset={offset}"]
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
     if filters:
-        parts.append(f"filters={json.dumps(filters)}")
-    return "&".join(parts)
+        # urlencode percent-escapes query-reserved chars (&, =, +, …) in the
+        # JSON filter payload so arbitrary column values survive the round trip.
+        params["filters"] = json.dumps(filters)
+    return urlencode(params)
 
 
 def _project_columns(

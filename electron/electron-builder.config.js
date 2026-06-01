@@ -6,7 +6,7 @@
 module.exports = {
   appId: "org.jenkin.sf-bulk-loader",
   productName: "Salesforce Bulk Loader",
-  files: ["main.js", "preload.js"],
+  files: ["main.js", "preload.js", "mcpRegistration.js"],
   extraResources: [
     { from: "../backend/dist/sf_bulk_loader", to: "backend/sf_bulk_loader" },
     { from: "../frontend/dist", to: "frontend/dist" },

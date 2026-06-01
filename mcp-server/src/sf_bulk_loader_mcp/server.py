@@ -623,7 +623,7 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
             #
             # Recommended poll cadence:
             #   - Poll get_run every 5–10 s; apply exponential backoff up to 60 s cap.
-            #   - Terminal statuses: "completed", "failed", "aborted".
+            #   - Terminal statuses: "completed", "completed_with_errors", "failed", "aborted".
             #   - Hard timeout: ~30 min for production loads (adjust for data volume).
             #
             # OBSERVABILITY
@@ -640,7 +640,7 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                     "DESTRUCTIVE: executes real Bulk API DML against Salesforce.  "
                     "Pass confirm=true to proceed.  "
                     "Monitor progress with get_run (poll every 5–10 s; terminal "
-                    "statuses: completed/failed/aborted)."
+                    "statuses: completed/completed_with_errors/failed/aborted)."
                 ),
                 inputSchema={
                     "type": "object",
@@ -678,7 +678,7 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                         },
                         "run_status": {
                             "type": "string",
-                            "enum": ["pending", "running", "completed", "failed", "aborted"],
+                            "enum": ["pending", "running", "completed", "completed_with_errors", "failed", "aborted"],
                             "description": "Filter by run status.",
                         },
                         "started_after": {
@@ -700,7 +700,7 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                     "error summary (auth_error / storage_error / circuit_breaker / "
                     "preflight_warnings), and the per-job breakdown.  "
                     "Use this to poll for run completion: terminal statuses are "
-                    "'completed', 'failed', 'aborted'.  "
+                    "'completed', 'completed_with_errors', 'failed', 'aborted'.  "
                     "Recommended poll cadence: 5–10 s with exponential backoff up to 60 s."
                 ),
                 inputSchema={
@@ -795,7 +795,7 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                         },
                         "job_status": {
                             "type": "string",
-                            "enum": ["pending", "running", "completed", "failed", "aborted"],
+                            "enum": ["pending", "uploading", "upload_complete", "in_progress", "job_complete", "failed", "aborted"],
                             "description": "Filter by job status.",
                         },
                     },

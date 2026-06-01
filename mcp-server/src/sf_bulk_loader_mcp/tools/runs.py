@@ -33,7 +33,7 @@ dedicated short-lived token) and is out of scope for the MCP channel.
 
   1. Call ``trigger_run`` to start a run; note the returned ``run_id``.
   2. Poll ``get_run(run_id)`` every 5–10 seconds.
-  3. A terminal status is one of: ``completed``, ``failed``, ``aborted``.
+  3. A terminal status is one of: ``completed``, ``completed_with_errors``, ``failed``, ``aborted``.
   4. Apply exponential backoff: start at 5 s, double on each non-terminal
      response, cap at 60 s.  Enforce a hard timeout of ~30 minutes for
      production loads (adjust for expected data volume).
