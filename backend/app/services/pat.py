@@ -214,9 +214,8 @@ async def issue(
     await db.flush()  # populate pat.id without committing
 
     _log.info(
-        "PAT issued for user %s (name=%r)",
+        "PAT issued for user %s",
         user.id,
-        name,
         extra={
             "event_name": AuthEvent.PAT_ISSUED,
             "outcome_code": OutcomeCode.SUCCESS,
@@ -255,10 +254,9 @@ async def revoke(
     await db.flush()
 
     _log.info(
-        "PAT revoked (id=%s, user_id=%s, name=%r)",
+        "PAT revoked (id=%s, user_id=%s)",
         token.id,
         token.user_id,
-        token.name,
         extra={
             "event_name": AuthEvent.PAT_REVOKED,
             "outcome_code": OutcomeCode.SUCCESS,

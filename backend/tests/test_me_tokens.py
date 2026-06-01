@@ -360,3 +360,50 @@ def test_revoke_without_permission_403(client, no_token_user):
         auth_method="session",
     )
     assert resp.status_code == 403, resp.text
+
+
+# ── require_session_auth fail-closed semantics (Codex remediation) ─────────────
+
+
+def _fake_request(auth_method) -> object:
+    """Minimal stand-in for a Starlette Request with .state and .url.path."""
+    from types import SimpleNamespace
+
+    state = SimpleNamespace()
+    if auth_method is not None:
+        state.auth_method = auth_method
+    return SimpleNamespace(state=state, url=SimpleNamespace(path="/api/me/tokens"))
+
+
+@pytest.mark.parametrize(
+    "auth_method, allowed",
+    [
+        ("session", True),   # explicit session auth → allowed
+        ("pat", False),      # PAT → rejected (a token must not mint/revoke tokens)
+        (None, False),       # unset → rejected (FAIL CLOSED)
+        ("weird", False),    # any unrecognised value → rejected (FAIL CLOSED)
+    ],
+)
+def test_require_session_auth_fails_closed(auth_method, allowed):
+    """require_session_auth accepts ONLY auth_method == 'session'.
+
+    Guards the interaction introduced when get_current_user's desktop branch
+    began stamping auth_method='session': the gate now rejects any non-session
+    value, including an unset one, so a future path that forgets to stamp it
+    cannot silently bypass the session-only requirement.
+    """
+    from fastapi import HTTPException
+
+    from app.auth.permissions import require_session_auth
+
+    user = _seed_user_with_profile(["tokens.manage"])
+    request = _fake_request(auth_method)
+
+    if allowed:
+        result = _run_async(require_session_auth(request=request, current_user=user))
+        assert result is user
+    else:
+        with pytest.raises(HTTPException) as exc:
+            _run_async(require_session_auth(request=request, current_user=user))
+        assert exc.value.status_code == 403
+        assert exc.value.detail["error"] == "session_required"

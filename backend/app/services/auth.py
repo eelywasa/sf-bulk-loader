@@ -118,6 +118,10 @@ async def get_current_user(
     request: Request = None,  # FastAPI special-cases Request; None default allows direct calls in tests
 ) -> User:
     if settings.auth_mode == "none":
+        # Desktop is a trusted single-user local session — mark it so that
+        # session-only endpoints (require_session_auth) accept it.
+        if request is not None:
+            request.state.auth_method = "session"
         return _DESKTOP_USER
 
     if credentials is None:

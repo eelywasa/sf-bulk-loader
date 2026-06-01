@@ -150,9 +150,12 @@ async def require_session_auth(
     Returns the authenticated User on success (session auth).
     """
     auth_method = getattr(request.state, "auth_method", None)
-    if auth_method == "pat":
+    # Fail closed: accept ONLY an explicit session auth. A PAT sets "pat"; an
+    # unset/unrecognised value is also rejected so a future code path that
+    # forgets to stamp auth_method cannot silently bypass this gate.
+    if auth_method != "session":
         _log.warning(
-            "PAT-authenticated request denied on session-only endpoint",
+            "Non-session request denied on session-only endpoint",
             extra={
                 "event_name": "auth.session_required",
                 "outcome_code": "permission_denied",
