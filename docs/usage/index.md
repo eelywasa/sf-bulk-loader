@@ -65,6 +65,7 @@ whichever feature you need.
 
 | Order | Topic |
 |---|---|
+| 112 | [Personal access tokens](personal-access-tokens.md) — create, use, and revoke PATs for API access |
 | 115 | [Two-factor authentication](two-factor-auth.md) — enrol, sign in, rotate backup codes |
 | 120 | [Account recovery](account-recovery.md) — forgotten password, locked out |
 

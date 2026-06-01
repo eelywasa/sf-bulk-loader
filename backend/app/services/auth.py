@@ -2,14 +2,16 @@
 
 import base64
 import hashlib
+import hmac
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,12 +104,24 @@ def decode_access_token(token: str) -> dict:
 
 _DESKTOP_USER = User(id="desktop", email="desktop@localhost", status="active", is_admin=True)
 
+# ── PAT authentication constants ──────────────────────────────────────────────
+
+#: Only update ``last_used_at`` if the token has not been used within this window.
+#: This throttles DB writes on high-frequency callers without losing activity
+#: visibility — last_used_at will never be stale by more than this duration.
+_LAST_USED_THROTTLE_SECONDS = 300  # 5 minutes
+
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
+    request: Request = None,  # FastAPI special-cases Request; None default allows direct calls in tests
 ) -> User:
     if settings.auth_mode == "none":
+        # Desktop is a trusted single-user local session — mark it so that
+        # session-only endpoints (require_session_auth) accept it.
+        if request is not None:
+            request.state.auth_method = "session"
         return _DESKTOP_USER
 
     if credentials is None:
@@ -116,6 +130,16 @@ async def get_current_user(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # ── PAT branch: deterministic check BEFORE decode_access_token ───────────
+    # Must be checked before attempting JWT decode so that a PAT bearer value
+    # (which is NOT a valid JWT) does not trigger a JWTError 401 on the JWT path.
+    from app.services.pat import TOKEN_PREFIX, hash_token as _hash_pat  # lazy import to break circular dep
+
+    if credentials.credentials.startswith(TOKEN_PREFIX):
+        return await _authenticate_pat(credentials.credentials, db, request)
+
+    # ── JWT path ──────────────────────────────────────────────────────────────
     payload = decode_access_token(credentials.credentials)
     user_id: Optional[str] = payload.get("sub")
     if not user_id:
@@ -207,6 +231,202 @@ async def get_current_user(
                     detail="Token invalidated by password change — please log in again",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+
+    if request is not None:
+        request.state.auth_method = "session"
+
+    return user
+
+
+async def _authenticate_pat(
+    plaintext: str,
+    db: AsyncSession,
+    request: Optional[Request],
+) -> User:
+    """Validate a PAT bearer token and return its owning User.
+
+    Called from ``get_current_user`` when the bearer value starts with
+    TOKEN_PREFIX.  Performs an indexed hash lookup, constant-time comparison,
+    revocation + expiry gates, owner load with profile eager-loaded (blocker for
+    require_permission), account-status + lockout gates, write-throttled
+    last_used_at update, and observability emission.
+
+    Design notes
+    ~~~~~~~~~~~~
+    - ``password_changed_at`` does NOT revoke PATs — PATs are long-lived
+      credentials intentionally decoupled from interactive sessions.
+    - ``mfa_pending`` does not apply to PATs — PATs are opaque and carry no
+      step-up state.  No action needed here; the gate would be unreachable.
+    - ``last_used_at`` is updated at most once per ``_LAST_USED_THROTTLE_SECONDS``
+      window (last-writer-wins under concurrency — this is acceptable; the column
+      is informational only).
+    - Token material is never logged (honours sanitization.py rules).
+    """
+    from app.models.personal_access_token import PersonalAccessToken
+    from app.services.pat import hash_token as _hash_pat
+
+    # Compute hash and look up by index (O(1) unique-index lookup).
+    token_hash = _hash_pat(plaintext)
+
+    result = await db.execute(
+        select(PersonalAccessToken).where(PersonalAccessToken.token_hash == token_hash)
+    )
+    token_row = result.scalar_one_or_none()
+
+    if token_row is None or not hmac.compare_digest(token_row.token_hash, token_hash):
+        # Unknown token — do not reveal whether the prefix matched a real row.
+        _log.warning(
+            "PAT rejected: token not found",
+            extra={
+                "event_name": AuthEvent.TOKEN_REJECTED,
+                "outcome_code": OutcomeCode.INVALID_TOKEN,
+                "rejection_reason": "pat_unknown",
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if token_row.revoked_at is not None:
+        _log.warning(
+            "PAT rejected: token has been revoked",
+            extra={
+                "event_name": AuthEvent.TOKEN_REJECTED,
+                "outcome_code": OutcomeCode.INVALID_TOKEN,
+                "rejection_reason": "pat_revoked",
+                "pat_id": token_row.id,
+                "user_id": token_row.user_id,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if token_row.expires_at is not None:
+        exp = token_row.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp <= datetime.now(timezone.utc):
+            _log.warning(
+                "PAT rejected: token has expired",
+                extra={
+                    "event_name": AuthEvent.TOKEN_REJECTED,
+                    "outcome_code": OutcomeCode.EXPIRED_TOKEN,
+                    "rejection_reason": "pat_expired",
+                    "pat_id": token_row.id,
+                    "user_id": token_row.user_id,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # Eager-load the owner WITH profile in the same session.
+    # ``db.get`` does NOT selectin-load related objects when the row is already
+    # in the identity map, so we use a fresh select with selectinload(User.profile)
+    # to guarantee the profile (and its permission_keys) are available.
+    # Without this, require_permission() sees profile=None and returns 403.
+    owner_result = await db.execute(
+        select(User).options(selectinload(User.profile)).where(User.id == token_row.user_id)
+    )
+    user = owner_result.scalar_one_or_none()
+
+    if user is None:
+        _log.warning(
+            "PAT rejected: owning user not found",
+            extra={
+                "event_name": AuthEvent.TOKEN_REJECTED,
+                "outcome_code": OutcomeCode.USER_INACTIVE,
+                "rejection_reason": "pat_unknown",
+                "pat_id": token_row.id,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Re-apply the same status + lockout gates as the JWT path.
+    # password_changed_at does NOT revoke PATs (decision — PATs are long-lived
+    # credentials intentionally decoupled from interactive session watermarks).
+    if user.status != "active":
+        _log.warning(
+            "PAT rejected: user status is not active",
+            extra={
+                "event_name": AuthEvent.TOKEN_REJECTED,
+                "outcome_code": OutcomeCode.USER_INACTIVE,
+                "rejection_reason": "pat_user_inactive",
+                "user_id": user.id,
+                "user_status": user.status,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if user.locked_until is not None:
+        lu = user.locked_until
+        if lu.tzinfo is None:
+            lu = lu.replace(tzinfo=timezone.utc)
+        if lu > datetime.now(timezone.utc):
+            _log.warning(
+                "PAT rejected: account under tier-1 lockout",
+                extra={
+                    "event_name": AuthEvent.TOKEN_REJECTED,
+                    "outcome_code": OutcomeCode.USER_INACTIVE,
+                    "rejection_reason": "pat_account_locked",
+                    "user_id": user.id,
+                    "locked_until": lu.isoformat(),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account temporarily locked — please try again later",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # Write-throttled last_used_at update — update only if None or older than
+    # _LAST_USED_THROTTLE_SECONDS.  Last-writer-wins under concurrency is
+    # acceptable; the column is informational, not a security gate.
+    now = datetime.now(timezone.utc)
+    should_update = token_row.last_used_at is None
+    if not should_update and token_row.last_used_at is not None:
+        luat = token_row.last_used_at
+        if luat.tzinfo is None:
+            luat = luat.replace(tzinfo=timezone.utc)
+        should_update = (now - luat) >= timedelta(seconds=_LAST_USED_THROTTLE_SECONDS)
+
+    if should_update:
+        token_row.last_used_at = now
+        db.add(token_row)
+        await db.commit()
+
+    # Observability — emit PAT_USED; never log token material.
+    _log.info(
+        "PAT authenticated (user=%s, pat_id=%s)",
+        user.id,
+        token_row.id,
+        extra={
+            "event_name": AuthEvent.PAT_USED,
+            "outcome_code": OutcomeCode.SUCCESS,
+            "user_id": user.id,
+            "pat_id": token_row.id,
+            # last4 is safe — cannot be used to reconstruct the token.
+            "pat_last4": token_row.last4,
+        },
+    )
+
+    if request is not None:
+        request.state.auth_method = "pat"
 
     return user
 

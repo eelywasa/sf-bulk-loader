@@ -700,6 +700,69 @@ button that is required before dismiss. Do not place backup codes inline on a
 page or in a toast — they must live inside a blocking modal so a user cannot
 accidentally navigate away without saving them.
 
+### Copy-once modal (PAT plaintext, API keys)
+
+**Use this pattern whenever a secret value is returned exactly once by the server and
+cannot be recovered after the response.** First introduced for Personal Access Tokens
+(`/api/me/tokens`, SFBL-369).
+
+Rules:
+
+1. **Blocking modal** (`closeOnBackdropClick={false}`) so the user cannot dismiss it by
+   clicking outside. The only exit is the explicit acknowledgement button.
+2. **`ALERT_WARNING` banner at the top** with a bold first line:
+   _"This token will not be shown again."_ and a follow-up sentence explaining that
+   closing without copying requires revocation. Use `role="alert"` on the banner so
+   screen readers announce it immediately.
+3. **Token in a `<pre>` with `select-all`** using `bg-surface-code text-content-code`
+   (see "Log, code, and SOQL blocks" above). Add `data-testid="pat-plaintext"` for test
+   addressability.
+4. **Copy button** adjacent to the token block, with `aria-label` toggling between
+   "Copy token to clipboard" and "Copied!" for 2 s after a successful copy.
+   Add `data-testid="pat-copy-button"`.
+5. **Acknowledgement button** as the sole footer action: _"Done — I've copied my token"_.
+   Add `data-testid="pat-copy-once-done"`. No cancel option.
+6. **State is local** — the plaintext is held in React `useState` and set to `null` when
+   the modal is dismissed. Never persist or log the value.
+
+```tsx
+// Minimal structure — match this layout for any copy-once surface
+<Modal
+  open={result !== null}
+  onClose={onClose}
+  title="Token created"
+  size="lg"
+  closeOnBackdropClick={false}
+  footer={
+    <Button onClick={onClose} data-testid="pat-copy-once-done">
+      Done — I've copied my token
+    </Button>
+  }
+>
+  <div className="space-y-4">
+    <div className={`${ALERT_WARNING} flex items-start gap-3`} role="alert">
+      <FontAwesomeIcon icon={faTriangleExclamation} className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+      <div>
+        <p className="font-semibold">This token will not be shown again.</p>
+        <p className="text-sm mt-0.5">Copy it now…</p>
+      </div>
+    </div>
+    <div className="flex items-stretch gap-2">
+      <pre className="flex-1 rounded-md bg-surface-code text-content-code px-3 py-2 text-xs font-mono whitespace-pre-wrap break-all select-all" data-testid="pat-plaintext">
+        {result?.token}
+      </pre>
+      <button onClick={handleCopy} aria-label={copied ? 'Copied!' : 'Copy token to clipboard'} data-testid="pat-copy-button" …>
+        <FontAwesomeIcon icon={copied ? faCheck : faCopy} aria-hidden="true" />
+      </button>
+    </div>
+  </div>
+</Modal>
+```
+
+The canonical implementation lives in
+`src/pages/settings/PersonalAccessTokensTab.tsx` — `CopyOnceModal` component.
+Reuse or extend it rather than building a new one-off.
+
 ---
 
 ## Accessibility baseline

@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.permissions import NOTIFICATIONS_MANAGE, require_permission
 from app.config import settings
 from app.database import get_db
 from app.models.load_plan import LoadPlan
@@ -93,7 +94,7 @@ async def _validate_plan_id(plan_id: str | None, db: AsyncSession) -> None:
 @router.get("", response_model=List[NotificationSubscriptionResponse])
 async def list_subscriptions(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> list[NotificationSubscription]:
     _block_desktop_profile()
     result = await db.execute(
@@ -112,7 +113,7 @@ async def list_subscriptions(
 async def create_subscription(
     data: NotificationSubscriptionCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationSubscription:
     _block_desktop_profile()
     await _validate_plan_id(data.plan_id, db)
@@ -142,7 +143,7 @@ async def create_subscription(
 async def get_subscription(
     subscription_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationSubscription:
     _block_desktop_profile()
     return await _get_owned_or_error(subscription_id, db, user)
@@ -153,7 +154,7 @@ async def update_subscription(
     subscription_id: str,
     data: NotificationSubscriptionUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationSubscription:
     _block_desktop_profile()
     sub = await _get_owned_or_error(subscription_id, db, user)
@@ -200,7 +201,7 @@ async def update_subscription(
 async def delete_subscription(
     subscription_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> None:
     _block_desktop_profile()
     sub = await _get_owned_or_error(subscription_id, db, user)
@@ -215,7 +216,7 @@ async def delete_subscription(
 async def test_subscription(
     subscription_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationTestResponse:
     _block_desktop_profile()
     sub = await _get_owned_or_error(subscription_id, db, user)

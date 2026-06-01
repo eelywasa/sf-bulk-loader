@@ -98,6 +98,77 @@ The authenticated dependency [`get_current_user()`](../../backend/app/services/a
 
 ---
 
+## Personal access tokens (PAT authentication)
+
+PATs are long-lived opaque credentials for programmatic clients (scripts, CI pipelines). They are an alternative to session JWTs for callers that cannot complete an interactive login.
+
+### Token format
+
+```
+sfbl_pat_<url-safe-base64(32 random bytes)>
+```
+
+The `sfbl_pat_` prefix is grep-friendly for secret-scanning tools. The entropy portion is 32 bytes (256 bits) from `secrets.token_urlsafe(32)`.
+
+### Hashing and storage
+
+Tokens are never stored in plaintext. The backend uses a deterministic keyed HMAC-SHA256:
+
+```
+token_hash = HMAC-SHA256(
+    key=HKDF(material=ENCRYPTION_KEY, info=b"sfbl-pat-hmac-v1", length=32),
+    msg=plaintext_token
+).hexdigest()
+```
+
+The `token_hash` column has a unique index enabling O(1) lookup. An `hmac.compare_digest` constant-time comparison guards against adversarial DB results after the lookup. Slow per-row KDFs (bcrypt/Argon2) are not used because they are unsuitable for a token authenticated on every API call.
+
+### Authentication flow
+
+`get_current_user()` inspects the `Authorization: Bearer` value before attempting JWT decode:
+
+1. If the bearer value starts with `TOKEN_PREFIX` (`sfbl_pat_`), the PAT branch is entered.
+2. The hash is computed and looked up via the unique index.
+3. Revocation gate: `revoked_at IS NOT NULL` → 401.
+4. Expiry gate: `expires_at IS NOT NULL AND expires_at <= now` → 401.
+5. Owner is fetched with `selectinload(User.profile)` so `require_permission()` can enforce RBAC.
+6. Status gate: `status != 'active'` → 401.
+7. Lockout gate: `locked_until > now` → 401.
+8. `last_used_at` is updated at most once per 5-minute window (throttled write; informational only).
+9. `request.state.auth_method = "pat"` is set.
+
+PAT authentication intentionally does **not** apply the `password_changed_at` watermark that kills JWT sessions on password change — PATs are long-lived credentials explicitly decoupled from interactive session lifecycle.
+
+### Session-only endpoints
+
+POST and DELETE on `/api/me/tokens` (issue and revoke) require `request.state.auth_method == "session"` (enforced by `require_session_auth`). A PAT cannot be used to mint new tokens or revoke existing ones. This limits blast radius if a PAT is leaked.
+
+### Transport requirement
+
+PATs must be sent exclusively via the `Authorization: Bearer` header. Query-parameter transport (`?token=…`, `?access_token=…`) is not supported — `get_current_user` reads only the `HTTPBearer` scheme. This is a security policy: query parameters appear in access logs, browser history, and referrer headers.
+
+### Observability
+
+Three canonical events are emitted (all logged with token material redacted — only `pat_id` and `pat_last4` appear in records):
+
+| Event | When |
+|---|---|
+| `auth.pat_issued` (`AuthEvent.PAT_ISSUED`) | Token successfully created |
+| `auth.pat_used` (`AuthEvent.PAT_USED`) | Successful PAT-authenticated request (write-throttled) |
+| `auth.pat_revoked` (`AuthEvent.PAT_REVOKED`) | Token revoked (first revocation only — idempotent calls are silent) |
+
+### Management API
+
+- `GET /api/me/tokens` — list own PATs (metadata only). Requires `tokens.manage`.
+- `POST /api/me/tokens` — issue a new PAT. Requires `tokens.manage` AND session auth.
+- `DELETE /api/me/tokens/{id}` — revoke a PAT. Requires `tokens.manage` AND session auth.
+
+The plaintext token value is returned exactly once in the `POST` response. It is not stored and cannot be recovered.
+
+For operator-facing documentation, see [`docs/usage/personal-access-tokens.md`](../usage/personal-access-tokens.md).
+
+---
+
 ## RBAC
 
 ### Enforcement primitives

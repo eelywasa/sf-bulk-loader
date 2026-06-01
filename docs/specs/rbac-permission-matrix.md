@@ -1,7 +1,7 @@
 # RBAC Permission Matrix
 
 **Spec:** SFBL-185 / Epic B  
-**Last updated:** 2026-04-21  
+**Last updated:** 2026-06-01  
 **Canonical source:** `docs/specs/rbac-permission-matrix.yml`  
 **Enforcement proof:** `backend/tests/test_permission_matrix.py`
 
@@ -40,6 +40,8 @@ For the full design rationale see `docs/specs/implemented/multi-user-rbac.md` §
 | `users.manage` | ✓ | ✗ | ✗ | Full user management (invite, edit, deactivate) |
 | `admin.users.reset_2fa` | ✓ | ✗ | ✗ | Clear another user's 2FA factor + backup codes (SFBL-249) |
 | `system.settings` | ✓ | ✗ | ✗ | View / change system settings |
+| `tokens.manage` | ✓ | ✓ | ✓ | Issue, list, and revoke own Personal Access Tokens (SFBL-368) |
+| `notifications.manage` | ✓ | ✓ | ✓ | Manage own notification subscriptions (SFBL-368 / SFBL-374) |
 
 ### Notes
 
@@ -154,9 +156,25 @@ For the full design rationale see `docs/specs/implemented/multi-user-rbac.md` §
 | `POST` | `/api/auth/logout` | Logout |
 | `POST` | `/api/me/password` | Change own password |
 | `GET` | `/api/me/login-history` | Own sign-in history |
-| `GET` | `/api/notification-subscriptions` | Own notification subscriptions |
-| `POST` | `/api/notification-subscriptions` | Create subscription |
-| `GET,PUT,DELETE` | `/api/notification-subscriptions/{id}` | Manage own subscription |
+
+### Personal Access Tokens (`/api/me/tokens/`)
+
+| Method | Path | Permission key | Notes |
+|---|---|---|---|
+| `GET` | `/api/me/tokens` | `tokens.manage` | List own PATs (metadata only) |
+| `POST` | `/api/me/tokens` | `tokens.manage` + session auth | Issue a new PAT; returns plaintext once; session auth required (SFBL-368) |
+| `DELETE` | `/api/me/tokens/{id}` | `tokens.manage` + session auth | Revoke own PAT; session auth required (SFBL-368) |
+
+### Notification Subscriptions (`/api/notification-subscriptions/`)
+
+| Method | Path | Permission key | Notes |
+|---|---|---|---|
+| `GET` | `/api/notification-subscriptions` | `notifications.manage` | Own notification subscriptions |
+| `POST` | `/api/notification-subscriptions` | `notifications.manage` | Create subscription |
+| `GET` | `/api/notification-subscriptions/{id}` | `notifications.manage` | Get own subscription |
+| `PUT` | `/api/notification-subscriptions/{id}` | `notifications.manage` | Update own subscription |
+| `DELETE` | `/api/notification-subscriptions/{id}` | `notifications.manage` | Delete own subscription |
+| `POST` | `/api/notification-subscriptions/{id}/test` | `notifications.manage` | Test subscription delivery |
 
 ### Unauthenticated (public)
 

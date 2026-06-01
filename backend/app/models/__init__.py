@@ -19,6 +19,7 @@ from app.models.notification_subscription import (
     NotificationTrigger,
 )
 from app.models.password_reset_token import PasswordResetToken
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.profile import Profile
 from app.models.profile_permission import ProfilePermission
 from app.models.user import User
@@ -43,6 +44,7 @@ __all__ = [
     "NotificationSubscription",
     "NotificationTrigger",
     "PasswordResetToken",
+    "PersonalAccessToken",
     "Profile",
     "ProfilePermission",
     "User",

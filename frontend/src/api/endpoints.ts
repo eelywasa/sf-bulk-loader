@@ -52,6 +52,9 @@ import type {
   Login2faEnrollAndVerifyResponse,
   AdminReset2faResponse,
   AboutPayload,
+  PatMetadata,
+  PatCreateRequest,
+  PatCreateResponse,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -469,6 +472,32 @@ export const meApi = {
 
   getLoginHistory: (limit = 10): Promise<LoginHistoryEntry[]> =>
     api.get<LoginHistoryEntry[]>(`/api/me/login-history?limit=${limit}`),
+}
+
+// ─── SFBL-369: Personal Access Tokens ────────────────────────────────────────
+
+/**
+ * API wrappers for the per-user PAT management endpoints.
+ *
+ * Security note: POST and DELETE require session (cookie/JWT) auth — a
+ * leaked PAT cannot mint or revoke tokens.  The frontend sends only the
+ * stored JWT, so this constraint is naturally satisfied.
+ */
+export const patApi = {
+  /** List the current user's PATs (metadata only — no plaintext or hash). */
+  list: (): Promise<PatMetadata[]> =>
+    api.get<PatMetadata[]>('/api/me/tokens'),
+
+  /**
+   * Issue a new PAT.
+   * Returns a `PatCreateResponse` that includes the plaintext token **once**.
+   */
+  create: (body: PatCreateRequest): Promise<PatCreateResponse> =>
+    api.post<PatCreateResponse>('/api/me/tokens', body),
+
+  /** Revoke a PAT by ID (204 No Content — returns undefined). */
+  revoke: (id: string): Promise<void> =>
+    api.delete(`/api/me/tokens/${id}`),
 }
 
 // ─── SFBL-248 / SFBL-251: two-phase login (pre-auth mfa_token bearer) ───────
