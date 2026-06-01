@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "base_url": "http://127.0.0.1:47000",
+  "port": 47000,
+  "pid": 12345
+}
