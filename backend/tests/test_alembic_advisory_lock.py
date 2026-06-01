@@ -72,7 +72,10 @@ class TestAdvisoryLockSqlite:
 
 # ── Postgres path: real lock acquire + release ───────────────────────────────
 
-_DEFAULT_PG = "postgresql+asyncpg://mjenkin@localhost:5432/test_alembic_advisory"
+# Default matches the CI Postgres container credentials (postgres:postgres) and
+# the local reference setup in docs/development.md. Override via
+# MIGRATION_TEST_PG_URL for a custom instance.
+_DEFAULT_PG = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_alembic_advisory"
 _PG_URL = os.environ.get("MIGRATION_TEST_PG_URL", _DEFAULT_PG)
 
 
