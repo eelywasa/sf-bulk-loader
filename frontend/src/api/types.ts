@@ -195,6 +195,35 @@ export function operationLabel(op: Operation): string {
   return op
 }
 
+// ─── Personal Access Tokens (SFBL-368 / SFBL-369) ────────────────────────────
+
+/** Safe metadata for a PAT — plaintext and hash are never included. */
+export interface PatMetadata {
+  id: string
+  name: string
+  prefix: string
+  last4: string
+  created_at: string  // ISO-8601
+  last_used_at: string | null
+  expires_at: string | null
+  revoked_at: string | null
+}
+
+/** Request body for POST /api/me/tokens. */
+export interface PatCreateRequest {
+  name: string
+  expires_at?: string | null  // ISO-8601 or null for non-expiring
+}
+
+/**
+ * Response for POST /api/me/tokens.
+ * Extends PatMetadata with the **plaintext token**, returned ONCE and not
+ * recoverable after this response.
+ */
+export interface PatCreateResponse extends PatMetadata {
+  token: string
+}
+
 // ─── API error types ───────────────────────────────────────────────────────────
 
 export interface ApiValidationError {

@@ -23,6 +23,7 @@ import {
   faCircleInfo,
   faUser,
   faUsers,
+  faKey,
   faChevronDown,
   faChevronLeft,
   faChevronRight,
@@ -59,6 +60,7 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
   const { authRequired } = useAuth()
   const canSettings = usePermission('system.settings')
   const canManageUsers = usePermission('users.manage')
+  const canManageTokens = usePermission('tokens.manage')
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
@@ -137,6 +139,18 @@ function SettingsMenu({ collapsed }: { collapsed: boolean }) {
             >
               <FontAwesomeIcon icon={faBell} className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
               <span>Notifications</span>
+            </button>
+          )}
+
+          {/* Per-user PAT management — users with tokens.manage permission */}
+          {authRequired && canManageTokens && (
+            <button
+              onClick={() => { setOpen(false); setThemeOpen(false); navigate('/settings/tokens') }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-hover transition-colors"
+              role="menuitem"
+            >
+              <FontAwesomeIcon icon={faKey} className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+              <span>API Tokens</span>
             </button>
           )}
 
