@@ -391,6 +391,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-desktop.txt pyinstaller
+          # SFBL-364: the desktop binary serves the MCP server via the `mcp`
+          # subcommand (single-binary design), so PyInstaller must be able to
+          # bundle sf_bulk_loader_mcp + the mcp SDK. Install the mcp-server
+          # package (pulls in `mcp`) into the build venv before freezing.
+          pip install ../mcp-server
         working-directory: backend
 
       - name: Build PyInstaller binary
