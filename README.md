@@ -46,6 +46,18 @@ pillars:
 
 ---
 
+## Claude Desktop integration (MCP)
+
+The desktop app auto-registers as an MCP server for Claude Desktop on macOS.
+Once registered, you can trigger loads, monitor progress, and diagnose failures
+directly from a Claude conversation. See
+[`docs/usage/using-the-mcp-server.md`](docs/usage/using-the-mcp-server.md) for
+the operator guide and
+[`docs/architecture/mcp-server.md`](docs/architecture/mcp-server.md) for the
+architecture.
+
+---
+
 ## Distribution Profiles
 
 The app supports three deployment profiles, selected via `APP_DISTRIBUTION`:

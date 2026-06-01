@@ -119,6 +119,9 @@ Validation lives in [`config.py`](../backend/app/config.py) — invalid combinat
 
 See the per-profile deployment guides: [`docs/deployment/docker.md`](deployment/docker.md), [`docs/deployment/desktop.md`](deployment/desktop.md), [`docs/deployment/aws.md`](deployment/aws.md).
 
+The desktop profile bundles an MCP sidecar that exposes the REST API as tools
+for Claude Desktop. See [`docs/architecture/mcp-server.md`](architecture/mcp-server.md).
+
 ---
 
 ## Authentication & RBAC (summary)

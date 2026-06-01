@@ -41,6 +41,12 @@ whichever feature you need.
 | 80 | [Output sinks](output-sinks.md) — local vs S3 |
 | 85 | [S3 connection setup](s3-connection-setup.md) — AWS IAM, bucket, policy walkthrough |
 
+## Automation
+
+| Order | Topic |
+|---|---|
+| 95 | [Using the MCP server](using-the-mcp-server.md) — drive the Bulk Loader from Claude Desktop |
+
 ## Staying informed
 
 | Order | Topic |
