@@ -172,7 +172,9 @@ function resolveUserDataDir(appName) {
  * @param {number} expectedPort - Port the app was launched with (BACKEND_PORT)
  */
 function assertDiscoveryFile(expectedPort) {
-  const userDataDir = resolveUserDataDir(productName)
+  // userData uses app.getName() === packageJson.name ("sf-bulk-loader-desktop"),
+  // NOT the electron-builder productName (which only names the .app/.dmg).
+  const userDataDir = resolveUserDataDir(packageName)
   const discoveryPath = path.join(userDataDir, 'mcp-discovery.json')
 
   if (!fs.existsSync(discoveryPath)) {

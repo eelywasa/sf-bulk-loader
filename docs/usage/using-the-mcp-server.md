@@ -121,7 +121,7 @@ For per-partition detail during a run, use `list_jobs(run_id=<uuid>)`.
   Personal Access Token channel that is not yet shipped.
 - **macOS auto-registration only.** Linux and Windows users can manually add
   the `sf-bulk-loader` entry to their Claude Desktop config if needed; see the
-  binary path in `~/Library/Application Support/Salesforce Bulk Loader/mcp-discovery.json`.
+  binary path in `~/Library/Application Support/sf-bulk-loader-desktop/mcp-discovery.json`.
 - **No WebSocket.** Real-time run updates from the WebSocket at
   `/ws/runs/{run_id}` are not available in the MCP channel. Use polling via
   `get_run`.

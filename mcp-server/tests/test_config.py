@@ -44,10 +44,11 @@ class TestBaseUrlPrecedence:
 
 
 class TestAppNameDefault:
-    def test_default_app_name_matches_electron_product(self) -> None:
+    def test_default_app_name_matches_electron_app_name(self) -> None:
         settings = McpSettings()
-        # Must match the Electron productName in electron-builder.config.js
-        assert settings.bulkloader_app_name == "Salesforce Bulk Loader"
+        # Must match Electron's app.getName() — i.e. electron/package.json `name`
+        # (what app.getPath('userData') uses), NOT the electron-builder productName.
+        assert settings.bulkloader_app_name == "sf-bulk-loader-desktop"
 
     def test_app_name_overridable(self) -> None:
         settings = McpSettings(bulkloader_app_name="My Custom App")

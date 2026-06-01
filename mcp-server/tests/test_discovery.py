@@ -61,11 +61,14 @@ class TestDataDirPaths:
         result = _data_dir("My App")
         assert result == tmp_path / "AppData" / "Roaming" / "My App"
 
-    def test_default_app_name_matches_electron_product_name(self) -> None:
-        """The default app_name must match the Electron productName."""
+    def test_default_app_name_matches_electron_app_name(self) -> None:
+        """The default app_name must match Electron's app.getName() — i.e. the
+        electron/package.json ``name`` (``sf-bulk-loader-desktop``), which is what
+        app.getPath('userData') uses. NOT the electron-builder productName
+        ("Salesforce Bulk Loader") — that only names the .app/.dmg artifact.
+        """
         path = discovery_file_path()
-        # productName from electron-builder.config.js is "Salesforce Bulk Loader"
-        assert "Salesforce Bulk Loader" in str(path)
+        assert "sf-bulk-loader-desktop" in str(path)
         assert path.name == "mcp-discovery.json"
 
 

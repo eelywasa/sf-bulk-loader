@@ -66,8 +66,12 @@ class McpSettings(BaseSettings):
     # validation / rotation logic ships with SFBL-371.
     bulkloader_pat: Optional[str] = None
 
-    # App name used by discovery.py to locate the OS data dir.
-    bulkloader_app_name: str = "Salesforce Bulk Loader"
+    # App name used by discovery.py to locate the OS data dir. This MUST be the
+    # Electron app.getName() value — i.e. electron/package.json `name`
+    # ("sf-bulk-loader-desktop") — which is what app.getPath('userData') uses.
+    # NOT the electron-builder productName ("Salesforce Bulk Loader"), which only
+    # names the .app/.dmg artifact. Override via BULKLOADER_APP_NAME if needed.
+    bulkloader_app_name: str = "sf-bulk-loader-desktop"
 
     @field_validator("bulkloader_base_url", mode="before")
     @classmethod

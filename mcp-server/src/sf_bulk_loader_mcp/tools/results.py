@@ -115,7 +115,7 @@ _LOG_ZIP_SUBDIR = "run-logs"
 
 # ── OS data-dir helper ─────────────────────────────────────────────────────────
 
-def _resolve_data_dir(app_name: str = "Salesforce Bulk Loader") -> Path:
+def _resolve_data_dir(app_name: str = "sf-bulk-loader-desktop") -> Path:
     """Return the OS-convention user data directory for *app_name*.
 
     Matches discovery.py._data_dir() — kept local to avoid importing private
@@ -310,7 +310,7 @@ async def download_logs_zip(
     success: bool = True,
     errors: bool = True,
     unprocessed: bool = True,
-    app_name: str = "Salesforce Bulk Loader",
+    app_name: str = "sf-bulk-loader-desktop",
     data_dir_override: Optional[Path] = None,
 ) -> dict[str, Any]:
     """Download the logs.zip for a run, save it to disk, and return path + member listing.

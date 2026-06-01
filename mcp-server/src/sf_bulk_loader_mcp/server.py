@@ -1682,7 +1682,7 @@ async def _handle_download_logs_zip(
     settings: McpSettings | None,
 ) -> list[TextContent]:
     run_id = args["run_id"]
-    app_name = (settings.bulkloader_app_name if settings else "Salesforce Bulk Loader")
+    app_name = (settings.bulkloader_app_name if settings else "sf-bulk-loader-desktop")
     try:
         payload = await _results.download_logs_zip(
             client,

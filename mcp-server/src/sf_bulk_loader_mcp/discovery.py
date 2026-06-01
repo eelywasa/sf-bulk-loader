@@ -6,15 +6,16 @@ OS conventions — critically WITHOUT relying on Electron's ``app.getPath()``,
 because the MCP server runs as a frozen PyInstaller binary that has no Electron
 context.
 
-OS conventions (must match Electron's app.getPath('userData') for productName
-"Salesforce Bulk Loader"):
-  macOS   ~/Library/Application Support/Salesforce Bulk Loader/
-  Linux   $XDG_CONFIG_HOME/Salesforce Bulk Loader/   (or ~/.config/…)
-  Windows %APPDATA%\\Salesforce Bulk Loader\\
+OS conventions (must match Electron's ``app.getPath('userData')``, which uses
+``app.getName()`` === electron/package.json ``name`` = "sf-bulk-loader-desktop"
+— NOT the electron-builder ``productName`` "Salesforce Bulk Loader", which only
+names the .app/.dmg artifact):
+  macOS   ~/Library/Application Support/sf-bulk-loader-desktop/
+  Linux   $XDG_CONFIG_HOME/sf-bulk-loader-desktop/   (or ~/.config/…)
+  Windows %APPDATA%\\sf-bulk-loader-desktop\\
 
-The app_name used to construct the path defaults to "Salesforce Bulk Loader"
-(the Electron ``productName`` from electron-builder.config.js) and is
-overridable via the ``BULKLOADER_APP_NAME`` environment variable or the
+The app_name used to construct the path defaults to "sf-bulk-loader-desktop"
+and is overridable via the ``BULKLOADER_APP_NAME`` environment variable or the
 ``McpSettings.bulkloader_app_name`` field so tests can point at a temp dir.
 
 Discovery-file schema (written by SFBL-364):
@@ -93,14 +94,14 @@ def _data_dir(app_name: str) -> Path:
     return Path.home() / ".config" / app_name
 
 
-def discovery_file_path(app_name: str = "Salesforce Bulk Loader") -> Path:
+def discovery_file_path(app_name: str = "sf-bulk-loader-desktop") -> Path:
     """Return the full path to ``mcp-discovery.json`` for *app_name*."""
     return _data_dir(app_name) / "mcp-discovery.json"
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def read_discovery(app_name: str = "Salesforce Bulk Loader") -> DiscoveryFile:
+def read_discovery(app_name: str = "sf-bulk-loader-desktop") -> DiscoveryFile:
     """Read and validate the ``mcp-discovery.json`` written by Electron.
 
     Raises:
@@ -135,7 +136,7 @@ def read_discovery(app_name: str = "Salesforce Bulk Loader") -> DiscoveryFile:
 
 def resolve_base_url(
     explicit_url: Optional[str] = None,
-    app_name: str = "Salesforce Bulk Loader",
+    app_name: str = "sf-bulk-loader-desktop",
 ) -> str:
     """Return the backend base URL, using the explicit override or discovery.
 

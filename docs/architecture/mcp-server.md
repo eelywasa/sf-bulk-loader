@@ -110,14 +110,16 @@ backend is confirmed healthy. Uses `buildDiscoveryPayload()` from
 — called lazily by `BulkLoaderClient` on first request when `AUTH_MODE=none`
 and no `BULKLOADER_BASE_URL` override is present.
 
-**File location** (must match Electron's `app.getPath('userData')` for
-`productName = "Salesforce Bulk Loader"`):
+**File location** — must match Electron's `app.getPath('userData')`, which uses
+`app.getName()` === `electron/package.json` `name` = `sf-bulk-loader-desktop`
+(NOT the electron-builder `productName` "Salesforce Bulk Loader", which only
+names the `.app`/`.dmg` artifact):
 
 | Platform | Path |
 |---|---|
-| macOS | `~/Library/Application Support/Salesforce Bulk Loader/mcp-discovery.json` |
-| Linux | `$XDG_CONFIG_HOME/Salesforce Bulk Loader/mcp-discovery.json` (or `~/.config/…`) |
-| Windows | `%APPDATA%\Salesforce Bulk Loader\mcp-discovery.json` |
+| macOS | `~/Library/Application Support/sf-bulk-loader-desktop/mcp-discovery.json` |
+| Linux | `$XDG_CONFIG_HOME/sf-bulk-loader-desktop/mcp-discovery.json` (or `~/.config/…`) |
+| Windows | `%APPDATA%\sf-bulk-loader-desktop\mcp-discovery.json` |
 
 **Schema** (validated by `discovery.py → DiscoveryFile`):
 
