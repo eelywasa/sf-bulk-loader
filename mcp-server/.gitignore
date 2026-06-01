@@ -1,0 +1,26 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python build artefacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# pytest cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy / ruff caches
+.mypy_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
