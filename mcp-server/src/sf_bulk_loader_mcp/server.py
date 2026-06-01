@@ -31,6 +31,7 @@ from .tools.health import check_health, format_health_result
 from .tools import connections as _conn
 from .tools import plans as _plans
 from .tools import runs as _runs
+from .tools import results as _results
 
 
 # ── Curated tool list ─────────────────────────────────────────────────────────
@@ -93,7 +94,11 @@ CURATED_TOOLS: list[dict[str, str]] = [
     {"name": "get_job",            "endpoint": "GET /api/jobs/{job_id}",                         "status": "implemented"},
 
     # ── Job Results / failure inspection (SFBL-363) ──────────────────────────
-    # Result-file download / preview tools are TODO in SFBL-363; not implemented here.
+    {"name": "preview_success_csv",     "endpoint": "GET /api/jobs/{job_id}/success-csv/preview",     "status": "implemented"},
+    {"name": "preview_error_csv",       "endpoint": "GET /api/jobs/{job_id}/error-csv/preview",       "status": "implemented"},
+    {"name": "preview_unprocessed_csv", "endpoint": "GET /api/jobs/{job_id}/unprocessed-csv/preview", "status": "implemented"},
+    {"name": "download_logs_zip",       "endpoint": "GET /api/runs/{run_id}/logs.zip",                "status": "implemented"},
+    {"name": "failure_summary",         "endpoint": "GET /api/jobs/{job_id}/error-csv/preview (aggregated)", "status": "implemented"},
 
     # ── Health (hand-written — see below) ────────────────────────────────────
     # Not in this list; registered separately because it targets a
@@ -103,15 +108,15 @@ CURATED_TOOLS: list[dict[str, str]] = [
 
 # ── Tool registration ─────────────────────────────────────────────────────────
 
-def _register_tools(server: Server, client: BulkLoaderClient) -> None:
+def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSettings | None = None) -> None:
     """Register all MCP tools on *server*.
 
-    Currently registers:
-      - ``health``  (hand-written)
+    ``settings`` is passed through to handlers that need non-request config
+    (e.g. download_logs_zip uses ``settings.bulkloader_app_name`` to resolve
+    the OS-convention save directory for the logs ZIP).
 
-    Generated / curated tools will be registered here as SFBL-360..363 are
-    implemented.  Each tool must call ``client.get/post/put/delete`` so that
-    auth headers and base URL are injected centrally.
+    Each tool calls ``client.get/post/put/delete`` so auth headers and base URL
+    are injected centrally.
     """
 
     @server.list_tools()
@@ -816,7 +821,235 @@ def _register_tools(server: Server, client: BulkLoaderClient) -> None:
                 },
             ),
 
-            # TODO (SFBL-363): add result-file download/preview tools here.
+            # ── Job Results / failure inspection (SFBL-363) ─────────────────────
+            #
+            # ROW-LIMIT AND CELL-BYTE CAPS
+            # Default row limit: 50 (matches backend default).
+            # Hard max row limit: 500 (mirrors backend ``le=500`` Query constraint).
+            # Cell-byte cap: 100 KB — rows are truncated beyond this, with a
+            # "__truncated__" marker row appended to the result.
+            #
+            # AUTH NOTE
+            # All preview and download endpoints are gated by ``files.view_contents``.
+            # In desktop profile (auth_mode=none) the virtual admin holds all
+            # permissions, so no auth header is required.
+            Tool(
+                name="preview_success_csv",
+                description=(
+                    "Preview the success result CSV rows for a completed Bulk API job.  "
+                    "Returns paginated rows, column headers, and pagination metadata.  "
+                    "Use offset/limit for pagination; use columns to restrict which fields "
+                    "are returned.  "
+                    "Default row limit: 50; hard max: 500.  "
+                    "Total cell bytes are capped at 100 KB regardless of row count — "
+                    "a '__truncated__' marker row is appended if the cap is reached.  "
+                    "Requires files.view_contents permission (auto-granted in desktop mode)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "job_id": {
+                            "type": "string",
+                            "description": "UUID of the job record.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": f"Maximum rows to return (default {_results.DEFAULT_ROW_LIMIT}, max {_results.MAX_ROW_LIMIT}).",
+                            "default": _results.DEFAULT_ROW_LIMIT,
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Number of rows to skip before returning results (for pagination).",
+                            "default": 0,
+                        },
+                        "columns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of column names to include in the output.  All columns returned if omitted.",
+                        },
+                        "filters": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "column": {"type": "string"},
+                                    "value": {"type": "string"},
+                                },
+                                "required": ["column", "value"],
+                            },
+                            "description": "Optional row filters — each item matches rows where the named column equals the value.",
+                        },
+                    },
+                    "required": ["job_id"],
+                },
+            ),
+            Tool(
+                name="preview_error_csv",
+                description=(
+                    "Preview the error result CSV rows for a completed Bulk API job.  "
+                    "Error rows include the Salesforce error message in the 'sf__Error' column.  "
+                    "Returns paginated rows, column headers, and pagination metadata.  "
+                    "Default row limit: 50; hard max: 500.  "
+                    "Total cell bytes are capped at 100 KB — a '__truncated__' marker row is "
+                    "appended if the cap is reached.  "
+                    "Use failure_summary to aggregate error reasons across multiple jobs.  "
+                    "Requires files.view_contents permission (auto-granted in desktop mode)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "job_id": {
+                            "type": "string",
+                            "description": "UUID of the job record.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": f"Maximum rows to return (default {_results.DEFAULT_ROW_LIMIT}, max {_results.MAX_ROW_LIMIT}).",
+                            "default": _results.DEFAULT_ROW_LIMIT,
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Number of rows to skip before returning results (for pagination).",
+                            "default": 0,
+                        },
+                        "columns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of column names to include in the output.",
+                        },
+                        "filters": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "column": {"type": "string"},
+                                    "value": {"type": "string"},
+                                },
+                                "required": ["column", "value"],
+                            },
+                            "description": "Optional row filters.",
+                        },
+                    },
+                    "required": ["job_id"],
+                },
+            ),
+            Tool(
+                name="preview_unprocessed_csv",
+                description=(
+                    "Preview the unprocessed records CSV for a completed Bulk API job.  "
+                    "Unprocessed records are those that were not attempted (e.g. the job was "
+                    "aborted before they could be submitted).  "
+                    "Default row limit: 50; hard max: 500.  "
+                    "Total cell bytes are capped at 100 KB — a '__truncated__' marker row is "
+                    "appended if the cap is reached.  "
+                    "Requires files.view_contents permission (auto-granted in desktop mode)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "job_id": {
+                            "type": "string",
+                            "description": "UUID of the job record.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": f"Maximum rows to return (default {_results.DEFAULT_ROW_LIMIT}, max {_results.MAX_ROW_LIMIT}).",
+                            "default": _results.DEFAULT_ROW_LIMIT,
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Number of rows to skip before returning results (for pagination).",
+                            "default": 0,
+                        },
+                        "columns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional list of column names to include in the output.",
+                        },
+                        "filters": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "column": {"type": "string"},
+                                    "value": {"type": "string"},
+                                },
+                                "required": ["column", "value"],
+                            },
+                            "description": "Optional row filters.",
+                        },
+                    },
+                    "required": ["job_id"],
+                },
+            ),
+            Tool(
+                name="download_logs_zip",
+                description=(
+                    "Download the complete logs ZIP for a load run and save it to disk.  "
+                    "The ZIP contains the success, error, and/or unprocessed result CSVs for "
+                    "every Bulk API job partition in the run, organised as "
+                    "'{step_id}/partition_{n}_{type}.csv' inside the archive.  "
+                    "Because ZIP bytes cannot be inlined for an LLM, the file is saved to "
+                    "the OS-convention user data directory and the saved path plus an archive "
+                    "member listing (name + size) are returned.  "
+                    "Repeated calls for the same run_id overwrite the previous download.  "
+                    "Requires files.view_contents permission (auto-granted in desktop mode)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            "type": "string",
+                            "description": "UUID of the load run.",
+                        },
+                        "success": {
+                            "type": "boolean",
+                            "description": "Include success CSVs (default true).",
+                            "default": True,
+                        },
+                        "errors": {
+                            "type": "boolean",
+                            "description": "Include error CSVs (default true).",
+                            "default": True,
+                        },
+                        "unprocessed": {
+                            "type": "boolean",
+                            "description": "Include unprocessed CSVs (default true).",
+                            "default": True,
+                        },
+                    },
+                    "required": ["run_id"],
+                },
+            ),
+            Tool(
+                name="failure_summary",
+                description=(
+                    "Aggregate the common failure reasons across one or more failed jobs.  "
+                    "For each job, fetches error rows from the error result CSV and groups "
+                    "them by the Salesforce error message ('sf__Error' column).  "
+                    "Returns the top error reasons ordered by frequency, a total error row "
+                    "count, and a list of jobs whose error CSV was unavailable.  "
+                    "This is the primary tool for explaining *why* records failed — use it "
+                    "after a run completes with errors to give the operator actionable insight.  "
+                    "Requires files.view_contents permission (auto-granted in desktop mode)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "job_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of job UUIDs to analyse.  Typically the failed/error jobs from a run (use list_jobs with job_status='failed' to get them).",
+                        },
+                        "top_n": {
+                            "type": "integer",
+                            "description": "Maximum number of distinct error reasons to return (default 20).",
+                            "default": 20,
+                        },
+                    },
+                    "required": ["job_ids"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -896,7 +1129,18 @@ def _register_tools(server: Server, client: BulkLoaderClient) -> None:
         if name == "get_job":
             return await _handle_get_job(client, arguments)
 
-        # TODO (SFBL-363): dispatch result-file download/preview tools here.
+        # ── Job Results / failure inspection (SFBL-363) ───────────────────────
+        if name == "preview_success_csv":
+            return await _handle_preview_success_csv(client, arguments)
+        if name == "preview_error_csv":
+            return await _handle_preview_error_csv(client, arguments)
+        if name == "preview_unprocessed_csv":
+            return await _handle_preview_unprocessed_csv(client, arguments)
+        if name == "download_logs_zip":
+            return await _handle_download_logs_zip(client, arguments, settings)
+        if name == "failure_summary":
+            return await _handle_failure_summary(client, arguments)
+
         return [TextContent(type="text", text=f"Tool '{name}' is not yet implemented.")]
 
 
@@ -1364,6 +1608,113 @@ async def _handle_get_job(
         return _unexpected_error(exc)
 
 
+# ── Result / failure-inspection handlers (SFBL-363) ──────────────────────────
+# Each handler follows the same error-isolation pattern as the run handlers above.
+
+
+def _results_error(exc: McpHttpError) -> list[TextContent]:
+    return _safe_text(f"Results error: {exc.to_tool_error_text()}")
+
+
+async def _handle_preview_success_csv(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    job_id = args["job_id"]
+    try:
+        payload = await _results.preview_success_csv(
+            client,
+            job_id,
+            limit=args.get("limit"),
+            offset=args.get("offset", 0),
+            columns=args.get("columns"),
+            filters=args.get("filters"),
+        )
+        return _safe_text(_results.format_preview(payload, "success", job_id))
+    except McpHttpError as exc:
+        return _results_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_preview_error_csv(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    job_id = args["job_id"]
+    try:
+        payload = await _results.preview_error_csv(
+            client,
+            job_id,
+            limit=args.get("limit"),
+            offset=args.get("offset", 0),
+            columns=args.get("columns"),
+            filters=args.get("filters"),
+        )
+        return _safe_text(_results.format_preview(payload, "error", job_id))
+    except McpHttpError as exc:
+        return _results_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_preview_unprocessed_csv(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    job_id = args["job_id"]
+    try:
+        payload = await _results.preview_unprocessed_csv(
+            client,
+            job_id,
+            limit=args.get("limit"),
+            offset=args.get("offset", 0),
+            columns=args.get("columns"),
+            filters=args.get("filters"),
+        )
+        return _safe_text(_results.format_preview(payload, "unprocessed", job_id))
+    except McpHttpError as exc:
+        return _results_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_download_logs_zip(
+    client: BulkLoaderClient,
+    args: dict[str, Any],
+    settings: McpSettings | None,
+) -> list[TextContent]:
+    run_id = args["run_id"]
+    app_name = (settings.bulkloader_app_name if settings else "Salesforce Bulk Loader")
+    try:
+        payload = await _results.download_logs_zip(
+            client,
+            run_id,
+            success=args.get("success", True),
+            errors=args.get("errors", True),
+            unprocessed=args.get("unprocessed", True),
+            app_name=app_name,
+        )
+        return _safe_text(_results.format_download_logs_zip(payload, run_id))
+    except McpHttpError as exc:
+        return _results_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
+async def _handle_failure_summary(
+    client: BulkLoaderClient, args: dict[str, Any]
+) -> list[TextContent]:
+    try:
+        payload = await _results.failure_summary(
+            client,
+            args["job_ids"],
+            top_n=args.get("top_n", 20),
+        )
+        return _safe_text(_results.format_failure_summary(payload))
+    except McpHttpError as exc:
+        return _results_error(exc)
+    except Exception as exc:
+        return _unexpected_error(exc)
+
+
 # ── Server entrypoint ─────────────────────────────────────────────────────────
 
 async def _run_server() -> None:
@@ -1371,7 +1722,7 @@ async def _run_server() -> None:
     server = Server("sf-bulk-loader-mcp")
 
     async with BulkLoaderClient(settings) as client:
-        _register_tools(server, client)
+        _register_tools(server, client, settings)
 
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
             await server.run(
