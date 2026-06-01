@@ -186,6 +186,11 @@ class AuthEvent:
     ACCOUNT_LOCKED = "auth.account.locked"
     ACCOUNT_UNLOCKED = "auth.account.unlocked"
 
+    # SFBL-366: personal access token lifecycle
+    PAT_ISSUED = "auth.pat_issued"
+    PAT_REVOKED = "auth.pat_revoked"
+    # NOTE: PAT_USED belongs to SFBL-367 (auth middleware — not this ticket).
+
     # SFBL-195: permission enforcement
     PERMISSION_DENIED = "auth.permission_denied"
 
