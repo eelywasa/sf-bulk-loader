@@ -1,8 +1,15 @@
 """Tests for the /api/input-connections endpoints."""
 
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from app.main import app
+from app.models.profile import Profile
+from app.models.profile_permission import ProfilePermission
+from app.models.user import User
+from app.services.auth import get_current_user
 
 _CONN = {
     "name": "Test Org",
@@ -309,3 +316,177 @@ def test_load_step_carries_input_connection_id(auth_client):
     load_steps = plan_detail["load_steps"]
     assert len(load_steps) == 1
     assert load_steps[0]["input_connection_id"] == ic_id
+
+
+# ── RBAC permission tests (SFBL-374) ──────────────────────────────────────────
+#
+# Mirrors the pattern in test_permission_matrix.py.
+# Three helpers build synthetic profile-bearing users and make requests
+# with auth_mode patched to "jwt" so require_permission evaluates real keys.
+
+
+def _make_profile_with_keys(name: str, *keys: str) -> Profile:
+    profile = Profile(id=str(uuid.uuid4()), name=name)
+    profile.permissions = [ProfilePermission(permission_key=k) for k in keys]
+    return profile
+
+
+def _user_with_keys(*keys: str) -> User:
+    profile = _make_profile_with_keys("test-profile", *keys)
+    user = User(
+        id=str(uuid.uuid4()),
+        email="rbac-test@example.com",
+        hashed_password="x",
+        is_admin=False,
+        status="active",
+    )
+    user.profile = profile
+    return user
+
+
+def _call_as_user(auth_client, user: User, method: str, path: str, body=None):
+    """Make a request injecting *user* and patching auth_mode='jwt'."""
+
+    async def _override():
+        return user
+
+    app.dependency_overrides[get_current_user] = _override
+    try:
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.auth_mode = "jwt"
+            fn = getattr(auth_client, method.lower())
+            return fn(path, json=body) if body is not None else fn(path)
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+# ── Hosted-mode: user WITHOUT connections.view gets 403 on read routes ─────────
+
+
+def test_input_connection_list_requires_view_permission(auth_client):
+    """GET / — user without connections.view gets 403."""
+    user = _user_with_keys()  # no keys
+    resp = _call_as_user(auth_client, user, "GET", "/api/input-connections/")
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["required_permission"] == "connections.view"
+
+
+def test_input_connection_get_requires_view_permission(auth_client):
+    """GET /{id} — user without connections.view gets 403."""
+    # Seed a record as an admin (auth_client already has all permissions)
+    ic_id = _create(auth_client).json()["id"]
+    user = _user_with_keys()  # no keys
+    resp = _call_as_user(auth_client, user, "GET", f"/api/input-connections/{ic_id}")
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["required_permission"] == "connections.view"
+
+
+# ── Hosted-mode: user WITH connections.view but NOT connections.manage ─────────
+
+
+def test_input_connection_create_requires_manage_permission(auth_client):
+    """POST / — connections.view is not enough; connections.manage is required."""
+    user = _user_with_keys("connections.view")
+    resp = _call_as_user(auth_client, user, "POST", "/api/input-connections/", _IC)
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["required_permission"] == "connections.manage"
+
+
+def test_input_connection_update_requires_manage_permission(auth_client):
+    """PUT /{id} — connections.view is not enough; connections.manage is required."""
+    ic_id = _create(auth_client).json()["id"]
+    user = _user_with_keys("connections.view")
+    resp = _call_as_user(auth_client, user, "PUT", f"/api/input-connections/{ic_id}", {"name": "X"})
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["required_permission"] == "connections.manage"
+
+
+def test_input_connection_delete_requires_manage_permission(auth_client):
+    """DELETE /{id} — connections.view is not enough; connections.manage is required."""
+    ic_id = _create(auth_client).json()["id"]
+    user = _user_with_keys("connections.view")
+    resp = _call_as_user(auth_client, user, "DELETE", f"/api/input-connections/{ic_id}")
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["required_permission"] == "connections.manage"
+
+
+def test_input_connection_test_requires_manage_permission(auth_client):
+    """POST /{id}/test — connections.view is not enough; connections.manage is required."""
+    ic_id = _create(auth_client).json()["id"]
+    user = _user_with_keys("connections.view")
+    resp = _call_as_user(auth_client, user, "POST", f"/api/input-connections/{ic_id}/test")
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["required_permission"] == "connections.manage"
+
+
+# ── Desktop mode: auth_mode=none bypasses all permission checks → 200 ─────────
+
+
+def _call_desktop(auth_client, method: str, path: str, body=None):
+    """Make a request with auth_mode='none' (desktop profile — no permission check)."""
+    user = User(
+        id=str(uuid.uuid4()),
+        email="desktop@localhost",
+        hashed_password="x",
+        is_admin=True,
+        status="active",
+    )
+    user.profile = None  # Desktop virtual user has no profile
+
+    async def _override():
+        return user
+
+    app.dependency_overrides[get_current_user] = _override
+    try:
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.auth_mode = "none"
+            mock_settings.input_storage_mode = "local"
+            fn = getattr(auth_client, method.lower())
+            return fn(path, json=body) if body is not None else fn(path)
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_input_connection_list_desktop_mode_returns_200(auth_client):
+    """GET / — desktop mode (auth_mode=none) returns 200 for all routes."""
+    resp = _call_desktop(auth_client, "GET", "/api/input-connections/")
+    assert resp.status_code == 200
+
+
+def test_input_connection_create_desktop_mode_returns_201(auth_client):
+    """POST / — desktop mode returns 201."""
+    resp = _call_desktop(auth_client, "POST", "/api/input-connections/", _IC)
+    assert resp.status_code == 201
+
+
+def test_input_connection_get_desktop_mode_returns_200(auth_client):
+    """GET /{id} — desktop mode returns 200."""
+    ic_id = _create(auth_client).json()["id"]
+    resp = _call_desktop(auth_client, "GET", f"/api/input-connections/{ic_id}")
+    assert resp.status_code == 200
+
+
+def test_input_connection_update_desktop_mode_returns_200(auth_client):
+    """PUT /{id} — desktop mode returns 200."""
+    ic_id = _create(auth_client).json()["id"]
+    resp = _call_desktop(auth_client, "PUT", f"/api/input-connections/{ic_id}", {"name": "Desktop Updated"})
+    assert resp.status_code == 200
+
+
+def test_input_connection_delete_desktop_mode_returns_204(auth_client):
+    """DELETE /{id} — desktop mode returns 204."""
+    ic_id = _create(auth_client).json()["id"]
+    resp = _call_desktop(auth_client, "DELETE", f"/api/input-connections/{ic_id}")
+    assert resp.status_code == 204
+
+
+def test_input_connection_test_desktop_mode_returns_200(auth_client):
+    """POST /{id}/test — desktop mode returns 200 (mocked S3 call)."""
+    ic_id = _create(auth_client).json()["id"]
+    with patch(
+        "app.api.input_connections.asyncio.to_thread",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        resp = _call_desktop(auth_client, "POST", f"/api/input-connections/{ic_id}/test")
+    assert resp.status_code == 200
