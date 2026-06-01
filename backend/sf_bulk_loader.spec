@@ -7,7 +7,7 @@
 # The entire dist/sf_bulk_loader/ folder is bundled into the Electron app as
 # an extraResource at Contents/Resources/backend/sf_bulk_loader/.
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_data_files
 
 block_cipher = None
 
@@ -24,8 +24,11 @@ datas += collect_all('pydantic_settings')[0]
 datas += collect_all('pydantic')[0]
 datas += collect_all('structlog')[0]
 
-# mcp SDK ships data files (e.g. JSON schemas)
-datas += collect_all('mcp')[0]
+# mcp SDK data files. Use collect_data_files — NOT collect_all/collect_submodules
+# over the whole `mcp` package: walking all of mcp imports the optional `mcp.cli`,
+# which requires the mcp[cli] extra (typer) we don't bundle, and crashes the build.
+# The runtime only needs mcp.server.* / mcp.shared.* (see hiddenimports below).
+datas += collect_data_files('mcp')
 
 # ── Hidden imports ────────────────────────────────────────────────────────────
 hiddenimports = [
@@ -169,8 +172,10 @@ hiddenimports = [
 # Collect all uvicorn submodules — its protocol loading is dynamic
 hiddenimports += collect_submodules('uvicorn')
 
-# Collect all mcp submodules — the SDK uses dynamic loading internally
-hiddenimports += collect_submodules('mcp')
+# Collect the mcp submodules the stdio server uses — scoped to mcp.server and
+# mcp.shared to AVOID importing the optional mcp.cli (requires typer / mcp[cli]).
+hiddenimports += collect_submodules('mcp.server')
+hiddenimports += collect_submodules('mcp.shared')
 
 # ── Excludes ──────────────────────────────────────────────────────────────────
 excludes = [
