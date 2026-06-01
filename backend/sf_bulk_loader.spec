@@ -177,6 +177,20 @@ hiddenimports += collect_submodules('uvicorn')
 hiddenimports += collect_submodules('mcp.server')
 hiddenimports += collect_submodules('mcp.shared')
 
+# mcp.server.__init__ eagerly imports FastMCP, and mcp.server.lowlevel does
+# `import jsonschema`. jsonschema's runtime stack — jsonschema-specifications
+# ships meta-schema DATA loaded via importlib.resources, and referencing uses
+# the compiled `rpds` extension — is NOT fully captured by PyInstaller's static
+# analysis on a clean build venv (it only worked locally by luck). Collect it
+# explicitly so the frozen `mcp` subcommand imports cleanly on Linux/Windows.
+mcp_extra_binaries = []
+for _pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rpds'):
+    _d, _b, _h = collect_all(_pkg)
+    datas += _d
+    mcp_extra_binaries += _b
+    hiddenimports += _h
+hiddenimports += ['sse_starlette', 'sse_starlette.sse', 'pydantic_settings']
+
 # ── Excludes ──────────────────────────────────────────────────────────────────
 excludes = [
     # asyncpg has platform-specific C extensions and is unused on desktop
@@ -196,7 +210,7 @@ excludes = [
 a = Analysis(
     ['server.py'],
     pathex=['.', '../mcp-server/src'],
-    binaries=[],
+    binaries=mcp_extra_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

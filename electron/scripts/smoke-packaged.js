@@ -310,7 +310,7 @@ async function assertMcpBinarySmoke(appBundleDir) {
     mcpProc.on('exit', (code) => {
       clearTimeout(timer)
       if (!settled) {
-        const detail = stderr ? ` stderr: ${stderr.slice(0, 200)}` : ''
+        const detail = stderr ? ` stderr: ${stderr.slice(-4000)}` : ''
         done(new Error(`MCP binary exited with code ${code} before responding.${detail}`))
       }
     })
