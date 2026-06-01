@@ -22,6 +22,7 @@ import SettingsSalesforcePage from './pages/SettingsSalesforcePage'
 import SettingsPartitioningPage from './pages/SettingsPartitioningPage'
 import SettingsSecurityPage from './pages/SettingsSecurityPage'
 import SettingsAboutPage from './pages/SettingsAboutPage'
+import SettingsTokensPage from './pages/SettingsTokensPage'
 import ForbiddenPage from './pages/ForbiddenPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import HelpPage from './pages/HelpPage'
@@ -157,6 +158,18 @@ const router = createRouter([
         element: (
           <ProtectedRoute permission="system.settings">
             <SettingsAboutPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        // Per-user PAT management — any authenticated user with tokens.manage;
+        // permission is enforced inside the page via PermissionGate rather than
+        // ProtectedRoute so non-privileged users see a message instead of a
+        // redirect.
+        path: '/settings/tokens',
+        element: (
+          <ProtectedRoute>
+            <SettingsTokensPage />
           </ProtectedRoute>
         ),
       },

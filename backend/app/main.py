@@ -28,6 +28,7 @@ from app.api.auth_2fa import router as auth_2fa_router
 from app.api.auth_login_2fa import router as auth_login_2fa_router
 from app.api.auth_reset import router as auth_reset_router
 from app.api.me import router as me_router
+from app.api.me_tokens import router as me_tokens_router
 from app.api.profile import router as profile_router
 from app.api.connections import router as connections_router
 from app.api.input_connections import router as input_connections_router
@@ -168,6 +169,7 @@ app.include_router(auth_reset_router)
 # Invitation-accept endpoints are public (token is the credential) — always registered
 app.include_router(invitations_router)
 app.include_router(me_router)
+app.include_router(me_tokens_router)
 app.include_router(profile_router)
 app.include_router(connections_router)
 app.include_router(input_connections_router)

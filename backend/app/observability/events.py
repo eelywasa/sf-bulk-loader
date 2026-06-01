@@ -186,6 +186,14 @@ class AuthEvent:
     ACCOUNT_LOCKED = "auth.account.locked"
     ACCOUNT_UNLOCKED = "auth.account.unlocked"
 
+    # SFBL-366: personal access token lifecycle
+    PAT_ISSUED = "auth.pat_issued"
+    PAT_REVOKED = "auth.pat_revoked"
+
+    # SFBL-367: emitted on every successful PAT-authenticated request
+    # (write-throttled — at most once per _LAST_USED_THROTTLE_SECONDS window).
+    PAT_USED = "auth.pat_used"
+
     # SFBL-195: permission enforcement
     PERMISSION_DENIED = "auth.permission_denied"
 
