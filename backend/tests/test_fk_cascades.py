@@ -46,6 +46,7 @@ from app.models.load_plan import LoadPlan
 from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep, Operation
 from app.models.login_attempt import LoginAttempt
+from app.models.personal_access_token import PersonalAccessToken
 from app.models.notification_delivery import NotificationDelivery
 from app.models.notification_subscription import (
     NotificationChannel,
@@ -78,6 +79,7 @@ EXPECTED_CASCADE_FKS: set[tuple[str, str, str]] = {
     ("profile_permissions", "profile_id", "profiles"),
     ("load_step", "load_plan_id", "load_plan"),
     ("job_record", "load_run_id", "load_run"),
+    ("personal_access_token", "user_id", "user"),
 }
 
 EXPECTED_SET_NULL_FKS: set[tuple[str, str, str]] = {
@@ -352,6 +354,31 @@ async def test_cascade_notification_subscription_user_id():
                 select(NotificationSubscription).where(
                     NotificationSubscription.id == sub.id
                 )
+            )
+        ).all()
+        assert rows == []
+
+
+async def test_cascade_personal_access_token_user_id():
+    import uuid as _uuid
+
+    async with _SessionFactory() as s:
+        u = await _mk_user(s)
+        await s.commit()
+        pat = PersonalAccessToken(
+            user_id=u.id,
+            name="cascade-test",
+            token_hash="cascade-" + _uuid.uuid4().hex,
+            prefix="sfbl_pat_",
+            last4="abcd",
+        )
+        s.add(pat)
+        await s.commit()
+        await s.execute(delete(User).where(User.id == u.id))
+        await s.commit()
+        rows = (
+            await s.execute(
+                select(PersonalAccessToken).where(PersonalAccessToken.id == pat.id)
             )
         ).all()
         assert rows == []
