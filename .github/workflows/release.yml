@@ -8,10 +8,10 @@ on:
 permissions:
   contents: write
   packages: write
-  # id-token: write is required for the publish-pypi job's OIDC Trusted Publisher
-  # exchange. Declared at workflow level so it propagates to that job; all other
-  # jobs use only contents + packages.
-  id-token: write
+  # NOTE: id-token: write (OIDC) is NOT granted here. A workflow-level grant
+  # would propagate to every job that doesn't declare its own permissions block
+  # (docker, electron, tier-2-e2e), handing them token-minting capability they
+  # don't need. It is scoped to the publish-pypi job instead (least privilege).
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -508,12 +508,16 @@ jobs:
   #   2. A `pypi` GitHub Environment created in repo Settings → Environments
   #      (optionally with a required-reviewer protection rule).
   #
-  # Version: strip the `v` prefix from the tag (e.g. v0.11.0 → 0.11.0) and
-  # inject into pyproject.toml before building, consistent with how Docker/
-  # Electron derive their versions from GITHUB_REF_NAME.
+  # Version: strip the `v` prefix from the tag (e.g. v0.11 → 0.11) and inject
+  # into pyproject.toml before building, consistent with how Docker/Electron
+  # derive their versions from GITHUB_REF_NAME. PEP 440 accepts a 2-part version.
   #
-  # Gated on tier-2-e2e — same gate as Docker/Electron — so a test failure
-  # prevents PyPI publish entirely.
+  # Gating: `needs: [tier-2-e2e]` chains this after the release E2E gate, BUT
+  # tier-2-e2e is a Salesforce scratch-org suite that does NOT exercise the
+  # Python package. So this job ALSO runs the mcp-server unit tests and a built-
+  # artifact smoke test as in-job steps before the publish step — a broken
+  # package therefore cannot reach PyPI (publish is the last step and only runs
+  # if every prior step passed).
   # ---------------------------------------------------------------------------
   publish-pypi:
     name: Publish MCP server to PyPI
@@ -534,6 +538,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Run mcp-server tests (publish gate)
+        # tier-2-e2e does not cover the Python package; gate the publish on the
+        # package's own suite so a regression cannot ship to PyPI.
+        run: |
+          pip install ./mcp-server pytest pytest-asyncio
+          pytest mcp-server/tests -q
+
       - name: Derive version from tag
         id: ver
         run: |
@@ -543,7 +554,9 @@ jobs:
 
       - name: Inject version into pyproject.toml
         # Replaces the pinned `version = "x.y.z"` line with the tag-derived
-        # version so the published package matches the release tag.
+        # version so the published package matches the release tag. The src layout
+        # has exactly one top-level `version = ` line (the [project] one);
+        # [build-system] uses `requires` and dep pins use `>=`, so this is safe.
         run: |
           sed -i "s/^version = .*/version = \"${{ steps.ver.outputs.version }}\"/" mcp-server/pyproject.toml
 
@@ -555,7 +568,20 @@ jobs:
         # Produces mcp-server/dist/sf_bulk_loader_mcp-<version>.tar.gz
         # and mcp-server/dist/sf_bulk_loader_mcp-<version>-py3-none-any.whl
 
+      - name: Smoke-test the built wheel
+        # Install the freshly-built wheel into a clean venv and confirm the
+        # console entrypoint resolves — catches packaging regressions (missing
+        # module, broken console_scripts) that editable installs would mask.
+        run: |
+          python -m venv /tmp/wheel-smoke
+          /tmp/wheel-smoke/bin/pip install mcp-server/dist/*.whl
+          /tmp/wheel-smoke/bin/sf-bulk-loader-mcp --version
+          /tmp/wheel-smoke/bin/python -c "import sf_bulk_loader_mcp; print('import OK', sf_bulk_loader_mcp.__version__)"
+
       - name: Publish to PyPI
+        # NOTE: @release/v1 is PyPA's maintained major-version ref. Pinning to a
+        # full commit SHA would be stricter supply-chain hygiene; deferred to
+        # avoid an unverified pin (tracked as a follow-up).
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: mcp-server/dist/
