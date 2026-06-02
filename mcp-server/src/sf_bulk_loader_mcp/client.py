@@ -5,24 +5,30 @@ This module owns:
     OpenAPI servers/security fields).
   - Central HTTP→MCP error mapping: 4xx/5xx → structured McpHttpError.
   - Safe error formatting: no raw stack traces are ever surfaced to MCP callers.
+  - Structured auth-failure logging (SFBL-371): 401 in PAT mode emits a
+    WARNING log with event_name="MCP_PAT_AUTH_FAILURE". The PAT value is
+    NEVER present in any log record (sanitization rule).
 
 Auth mode behaviour:
   none (desktop):  No Authorization header.  Base URL resolved lazily from
                    discovery.py on first request (so the server can start even
                    before the Electron app has written the discovery file).
   pat  (hosted):   Authorization: Bearer <token>.  Base URL from config.
-                   TODO (SFBL-371): PAT refresh / rotation logic ships here.
+                   Static token per session; no rotation in v1.
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
 
 from .config import AuthMode, McpSettings
 from .discovery import resolve_base_url
+
+logger = logging.getLogger(__name__)
 
 
 # ── Public error type ─────────────────────────────────────────────────────────
@@ -152,12 +158,31 @@ class BulkLoaderClient:
         headers: dict[str, str] = {
             "Accept": "application/json",
         }
-        if self._settings.auth_mode == AuthMode.PAT:
-            # TODO (SFBL-371): PAT refresh / rotation logic.  For now inject
-            # the raw token value if set.
-            if self._settings.bulkloader_pat:
-                headers["Authorization"] = f"Bearer {self._settings.bulkloader_pat}"
+        if self._settings.auth_mode == AuthMode.PAT and self._settings.bulkloader_pat:
+            # config.py validates that bulkloader_pat is set when auth_mode=PAT,
+            # so this branch is always taken in a well-configured PAT session.
+            # The PAT value is injected here and NOWHERE ELSE — never logged.
+            headers["Authorization"] = f"Bearer {self._settings.bulkloader_pat}"
         return headers
+
+    def _log_auth_failure_if_401(self, error: McpHttpError, path: str) -> None:
+        """Emit a structured WARNING when a 401 occurs in PAT mode (SFBL-371).
+
+        Sanitization rule: the PAT value is NEVER included in the log record.
+        The event is structured so it can be correlated by ops tooling.
+        """
+        if error.status_code == 401 and self._settings.auth_mode == AuthMode.PAT:
+            logger.warning(
+                "MCP PAT authentication failed — verify BULKLOADER_PAT is valid "
+                "and not expired. Mint a new token in Settings → API Tokens.",
+                extra={
+                    "event_name": "MCP_PAT_AUTH_FAILURE",
+                    "auth_mode": "pat",
+                    "status_code": 401,
+                    "path": path,
+                    # PAT value intentionally omitted — sanitization rule
+                },
+            )
 
     # ── Public request helpers ─────────────────────────────────────────────
 
@@ -167,7 +192,9 @@ class BulkLoaderClient:
         url = f"{base}{path}"
         response = await self._get_http().get(url, headers=self._build_headers(), **kwargs)
         if not response.is_success:
-            raise _map_http_error(response)
+            error = _map_http_error(response)
+            self._log_auth_failure_if_401(error, path)
+            raise error
         return response
 
     async def post(self, path: str, **kwargs: Any) -> httpx.Response:
@@ -176,7 +203,9 @@ class BulkLoaderClient:
         url = f"{base}{path}"
         response = await self._get_http().post(url, headers=self._build_headers(), **kwargs)
         if not response.is_success:
-            raise _map_http_error(response)
+            error = _map_http_error(response)
+            self._log_auth_failure_if_401(error, path)
+            raise error
         return response
 
     async def put(self, path: str, **kwargs: Any) -> httpx.Response:
@@ -185,7 +214,9 @@ class BulkLoaderClient:
         url = f"{base}{path}"
         response = await self._get_http().put(url, headers=self._build_headers(), **kwargs)
         if not response.is_success:
-            raise _map_http_error(response)
+            error = _map_http_error(response)
+            self._log_auth_failure_if_401(error, path)
+            raise error
         return response
 
     async def delete(self, path: str, **kwargs: Any) -> httpx.Response:
@@ -194,5 +225,7 @@ class BulkLoaderClient:
         url = f"{base}{path}"
         response = await self._get_http().delete(url, headers=self._build_headers(), **kwargs)
         if not response.is_success:
-            raise _map_http_error(response)
+            error = _map_http_error(response)
+            self._log_auth_failure_if_401(error, path)
+            raise error
         return response

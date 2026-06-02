@@ -183,15 +183,15 @@ class TestBulkLoaderClientErrorHandling:
         headers = client._build_headers()
         assert headers.get("Authorization") == "Bearer mytoken"
 
-    def test_pat_mode_without_token_does_not_inject_header(self) -> None:
-        settings = McpSettings(
-            auth_mode="pat",
-            bulkloader_base_url="http://hosted",
-            bulkloader_pat=None,
-        )
-        client = BulkLoaderClient(settings)
-        headers = client._build_headers()
-        assert "Authorization" not in headers
+    def test_pat_mode_requires_token_at_startup(self) -> None:
+        """PAT mode without a token now fails config validation (SFBL-371)."""
+        from pydantic import ValidationError
+        with pytest.raises((ValueError, ValidationError)):
+            McpSettings(
+                auth_mode="pat",
+                bulkloader_base_url="http://hosted",
+                bulkloader_pat=None,
+            )
 
 
 # ── Health tool tests (mocked client) ────────────────────────────────────────
@@ -242,3 +242,98 @@ class TestHealthTool:
 
         text = format_health_result({"status": "ok"})
         assert text == "Backend is ready. (status='ok')"
+
+
+# ── Auth-failure observability tests (SFBL-371) ───────────────────────────────
+
+class TestPatAuthFailureLogging:
+    """401 in PAT mode emits a structured WARNING; the PAT value is never logged."""
+
+    def _pat_settings(self) -> McpSettings:
+        return McpSettings(
+            auth_mode="pat",
+            bulkloader_base_url="http://hosted",
+            bulkloader_pat="sfbl_pat_secret_token",
+        )
+
+    @pytest.mark.asyncio
+    async def test_401_in_pat_mode_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(401, content=b"Unauthorized")
+        )
+        import logging
+        with caplog.at_level(logging.WARNING, logger="sf_bulk_loader_mcp.client"):
+            async with BulkLoaderClient(self._pat_settings()) as client:
+                client._http = httpx.AsyncClient(transport=transport)
+                with pytest.raises(McpHttpError) as exc_info:
+                    await client.get("/api/connections")
+            assert exc_info.value.status_code == 401
+
+        assert any(
+            "MCP_PAT_AUTH_FAILURE" in r.getMessage() or
+            getattr(r, "event_name", None) == "MCP_PAT_AUTH_FAILURE"
+            for r in caplog.records
+        ), "Expected MCP_PAT_AUTH_FAILURE event in log records"
+
+    @pytest.mark.asyncio
+    async def test_401_log_never_contains_pat_value(self, caplog: pytest.LogCaptureFixture) -> None:
+        """The PAT value must never appear in any log record — sanitization rule."""
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(401, content=b"Unauthorized")
+        )
+        import logging
+        with caplog.at_level(logging.WARNING, logger="sf_bulk_loader_mcp.client"):
+            async with BulkLoaderClient(self._pat_settings()) as client:
+                client._http = httpx.AsyncClient(transport=transport)
+                with pytest.raises(McpHttpError):
+                    await client.post("/api/load-plans/", json={})
+
+        full_log_text = " ".join(
+            r.getMessage() + str(r.__dict__)
+            for r in caplog.records
+        )
+        assert "sfbl_pat_secret_token" not in full_log_text, (
+            "PAT value must NEVER appear in log output"
+        )
+
+    @pytest.mark.asyncio
+    async def test_401_in_none_mode_does_not_log_auth_failure(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """401 in desktop/none mode must not log an auth-failure event."""
+        settings = McpSettings(bulkloader_base_url="http://desktop")
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(401, content=b"Unauthorized")
+        )
+        import logging
+        with caplog.at_level(logging.WARNING, logger="sf_bulk_loader_mcp.client"):
+            async with BulkLoaderClient(settings) as client:
+                client._http = httpx.AsyncClient(transport=transport)
+                with pytest.raises(McpHttpError):
+                    await client.get("/api/connections")
+
+        assert not any(
+            getattr(r, "event_name", None) == "MCP_PAT_AUTH_FAILURE"
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_401_error_in_pat_mode_does_not_log_auth_failure(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """403 / 500 etc. in PAT mode must not emit the auth-failure event."""
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(403, content=b"Forbidden")
+        )
+        import logging
+        with caplog.at_level(logging.WARNING, logger="sf_bulk_loader_mcp.client"):
+            async with BulkLoaderClient(self._pat_settings()) as client:
+                client._http = httpx.AsyncClient(transport=transport)
+                with pytest.raises(McpHttpError) as exc_info:
+                    await client.get("/api/connections")
+            assert exc_info.value.status_code == 403
+
+        assert not any(
+            getattr(r, "event_name", None) == "MCP_PAT_AUTH_FAILURE"
+            for r in caplog.records
+        )

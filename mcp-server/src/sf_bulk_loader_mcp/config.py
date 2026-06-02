@@ -61,9 +61,9 @@ class McpSettings(BaseSettings):
     # Explicit URL override — always wins for local dev.
     bulkloader_base_url: Optional[str] = None
 
-    # TODO (SFBL-371): PAT wiring.  The field is declared here so the client
-    # can inject the Bearer header when auth_mode == "pat", but the full
-    # validation / rotation logic ships with SFBL-371.
+    # Personal Access Token for PAT mode (SFBL-371).
+    # Required when auth_mode == "pat"; validated by model_validator below.
+    # NEVER log this value — honour sanitization rules.
     bulkloader_pat: Optional[str] = None
 
     # App name used by discovery.py to locate the OS data dir. This MUST be the
@@ -82,10 +82,18 @@ class McpSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_pat_mode_requirements(self) -> "McpSettings":
-        """Enforce that PAT mode has a base URL configured."""
-        if self.auth_mode == AuthMode.PAT and not self.bulkloader_base_url:
-            raise ValueError(
-                "BULKLOADER_BASE_URL is required when AUTH_MODE=pat. "
-                "Set it to the base URL of your hosted Bulk Loader instance."
-            )
+        """Enforce that PAT mode has both a base URL and a token configured."""
+        if self.auth_mode == AuthMode.PAT:
+            if not self.bulkloader_base_url:
+                raise ValueError(
+                    "BULKLOADER_BASE_URL is required when AUTH_MODE=pat. "
+                    "Set it to the base URL of your hosted Bulk Loader instance "
+                    "(e.g. https://bulkloader.example.com)."
+                )
+            if not self.bulkloader_pat:
+                raise ValueError(
+                    "BULKLOADER_PAT is required when AUTH_MODE=pat. "
+                    "Mint a Personal Access Token in the Bulk Loader UI "
+                    "(Settings → API Tokens) and set it here."
+                )
         return self
