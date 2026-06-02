@@ -31,6 +31,10 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              # The backend suite includes tests/test_mcp_pat_integration.py,
+              # which drives the mcp-server client against the real backend — so
+              # a change to the MCP client must re-run the backend leg.
+              - 'mcp-server/**'
               - '.github/workflows/ci-shared.yml'
             frontend:
               - 'frontend/**'
@@ -62,7 +66,12 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # SFBL-373: test_mcp_pat_integration.py imports the MCP client and
+          # drives it against the real backend. Install the mcp-server package
+          # so the integration test runs (it self-skips if absent).
+          pip install ../mcp-server
         working-directory: backend
 
       - name: Run tests
@@ -123,7 +132,11 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          # SFBL-373: see SQLite leg — install mcp-server so the PAT integration
+          # test runs (here it exercises the real PAT path against PostgreSQL).
+          pip install ../mcp-server
         working-directory: backend
 
       - name: Run tests
