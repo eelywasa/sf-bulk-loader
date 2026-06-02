@@ -521,6 +521,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      # A job-level permissions block resets every unspecified scope to `none`,
+      # so contents: read must be restated here for actions/checkout to fetch
+      # the repo (it has no other token/SSH auth).
+      contents: read
       id-token: write   # OIDC Trusted Publisher token exchange
 
     steps:
