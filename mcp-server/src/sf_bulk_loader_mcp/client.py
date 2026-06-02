@@ -55,7 +55,10 @@ class McpHttpError(Exception):
 
     def to_tool_error_text(self) -> str:
         """Return a safe single-string representation for MCP tool error content."""
-        parts = [f"HTTP {self.status_code}: {self.message}"]
+        # status_code 0 is the sentinel for a transport-level failure (no HTTP
+        # response was received) — render it as a connection error, not "HTTP 0".
+        prefix = "Connection error" if self.status_code == 0 else f"HTTP {self.status_code}"
+        parts = [f"{prefix}: {self.message}"]
         if self.detail:
             parts.append(f"Detail: {self.detail}")
         return " | ".join(parts)
@@ -101,6 +104,26 @@ def _map_http_error(response: httpx.Response) -> McpHttpError:
         message = f"Unexpected HTTP {status}"
 
     return McpHttpError(status_code=status, message=message, detail=detail)
+
+
+def _map_transport_error(exc: httpx.RequestError) -> McpHttpError:
+    """Convert an httpx transport error to a structured McpHttpError.
+
+    Transport errors (connection refused, DNS failure, timeout, TLS handshake)
+    never produce an HTTP response, so there is no status code. We surface a
+    clean, actionable message with the sentinel status_code=0 — NEVER a raw
+    httpx traceback (module guarantee: no raw stack traces reach MCP callers).
+    The exception type name is included for diagnosis; no token material or URL
+    internals are exposed.
+    """
+    return McpHttpError(
+        status_code=0,
+        message=(
+            f"Could not reach the Bulk Loader backend (transport error: "
+            f"{type(exc).__name__}). Check BULKLOADER_BASE_URL and that the "
+            "instance is reachable."
+        ),
+    )
 
 
 # ── Client ────────────────────────────────────────────────────────────────────
@@ -186,46 +209,40 @@ class BulkLoaderClient:
 
     # ── Public request helpers ─────────────────────────────────────────────
 
-    async def get(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a GET request, raising McpHttpError on non-2xx responses."""
+    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Send a request, raising McpHttpError on transport errors or non-2xx.
+
+        Central place for base-URL resolution, header injection, transport-error
+        mapping, and HTTP-error mapping + auth-failure logging — so every verb
+        behaves identically and no raw httpx exception ever escapes.
+        """
         base = self._resolve_base_url()
         url = f"{base}{path}"
-        response = await self._get_http().get(url, headers=self._build_headers(), **kwargs)
+        try:
+            response = await self._get_http().request(
+                method, url, headers=self._build_headers(), **kwargs
+            )
+        except httpx.RequestError as exc:
+            # Connection refused / DNS / timeout / TLS — no HTTP response.
+            raise _map_transport_error(exc) from exc
         if not response.is_success:
             error = _map_http_error(response)
             self._log_auth_failure_if_401(error, path)
             raise error
         return response
+
+    async def get(self, path: str, **kwargs: Any) -> httpx.Response:
+        """Send a GET request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("GET", path, **kwargs)
 
     async def post(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a POST request, raising McpHttpError on non-2xx responses."""
-        base = self._resolve_base_url()
-        url = f"{base}{path}"
-        response = await self._get_http().post(url, headers=self._build_headers(), **kwargs)
-        if not response.is_success:
-            error = _map_http_error(response)
-            self._log_auth_failure_if_401(error, path)
-            raise error
-        return response
+        """Send a POST request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("POST", path, **kwargs)
 
     async def put(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a PUT request, raising McpHttpError on non-2xx responses."""
-        base = self._resolve_base_url()
-        url = f"{base}{path}"
-        response = await self._get_http().put(url, headers=self._build_headers(), **kwargs)
-        if not response.is_success:
-            error = _map_http_error(response)
-            self._log_auth_failure_if_401(error, path)
-            raise error
-        return response
+        """Send a PUT request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("PUT", path, **kwargs)
 
     async def delete(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a DELETE request, raising McpHttpError on non-2xx responses."""
-        base = self._resolve_base_url()
-        url = f"{base}{path}"
-        response = await self._get_http().delete(url, headers=self._build_headers(), **kwargs)
-        if not response.is_success:
-            error = _map_http_error(response)
-            self._log_auth_failure_if_401(error, path)
-            raise error
-        return response
+        """Send a DELETE request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("DELETE", path, **kwargs)

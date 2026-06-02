@@ -244,6 +244,51 @@ class TestHealthTool:
         assert text == "Backend is ready. (status='ok')"
 
 
+# ── Transport-error mapping tests (SFBL-371 hardening) ────────────────────────
+
+class TestTransportErrorMapping:
+    """Connection/timeout failures map to a clean McpHttpError, never a raw httpx
+    traceback — upholding the module's 'no raw stack traces' guarantee."""
+
+    @pytest.fixture
+    def settings_with_url(self) -> McpSettings:
+        return McpSettings(bulkloader_base_url="http://unreachable")
+
+    @pytest.mark.asyncio
+    async def test_connect_error_maps_to_mcp_http_error(
+        self, settings_with_url: McpSettings
+    ) -> None:
+        def _raise(_request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused")
+
+        transport = httpx.MockTransport(_raise)
+        async with BulkLoaderClient(settings_with_url) as client:
+            client._http = httpx.AsyncClient(transport=transport)
+            with pytest.raises(McpHttpError) as exc_info:
+                await client.get("/api/connections")
+        err = exc_info.value
+        # Sentinel status 0 = transport failure (no HTTP response received).
+        assert err.status_code == 0
+        text = err.to_tool_error_text()
+        assert "Connection error" in text
+        assert "BULKLOADER_BASE_URL" in text
+        assert "Traceback" not in text
+
+    @pytest.mark.asyncio
+    async def test_timeout_maps_to_mcp_http_error(
+        self, settings_with_url: McpSettings
+    ) -> None:
+        def _raise(_request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectTimeout("timed out")
+
+        transport = httpx.MockTransport(_raise)
+        async with BulkLoaderClient(settings_with_url) as client:
+            client._http = httpx.AsyncClient(transport=transport)
+            with pytest.raises(McpHttpError) as exc_info:
+                await client.post("/api/load-plans/", json={})
+        assert exc_info.value.status_code == 0
+
+
 # ── Auth-failure observability tests (SFBL-371) ───────────────────────────────
 
 class TestPatAuthFailureLogging:
