@@ -2,29 +2,36 @@
 title: Using the MCP server
 slug: using-the-mcp-server
 nav_order: 95
-tags: [mcp, automation, claude, desktop]
+tags: [mcp, automation, claude, desktop, hosted, pat]
 summary: >-
-  Connect Claude Desktop to the Bulk Loader's MCP server to trigger loads,
-  monitor progress, and diagnose failures without leaving your AI chat.
+  Connect Claude Desktop (or any MCP client) to the Bulk Loader MCP server to
+  trigger loads, monitor progress, and diagnose failures without leaving your
+  AI chat. Works with both the desktop app and hosted/AWS deployments.
 ---
 
 # Using the MCP server
 
 ## What this covers / who should read this
 
-This page is for **desktop users** who want to drive the Salesforce Bulk Loader
-from Claude Desktop using the Model Context Protocol (MCP). You will learn what
-the desktop MCP server is, how it is registered automatically on macOS, and how
-to use the core "trigger a load and ask why it failed" workflow. The MCP server
-works with the desktop distribution profile only — hosted-profile support is a
-future enhancement.
+This page is for anyone who wants to drive the Salesforce Bulk Loader from
+Claude Desktop (or another MCP client) using the Model Context Protocol. Two
+distribution paths are supported:
+
+- **Desktop profile** — bundled with the macOS/Linux/Windows app; auto-registered
+  on macOS; no authentication needed. Read the [Desktop path](#desktop-profile-bundled)
+  section.
+- **Hosted / AWS profile** — installed standalone via `pipx`/`uvx`; authenticates
+  to a remote instance with a Personal Access Token. Read the
+  [Hosted path](#hosted-profile-standalone) section.
 
 ---
 
-## What is the MCP server?
+## Desktop profile (bundled)
 
-The Bulk Loader desktop app bundles a small Python MCP server alongside its
-backend. When you open the app on macOS, it:
+### What happens when the app starts
+
+The Bulk Loader desktop app bundles the MCP server alongside its backend. When
+you open the app on macOS, it:
 
 1. Starts the FastAPI backend on a local port.
 2. Writes a discovery file (`mcp-discovery.json`) so the MCP server can find
@@ -36,9 +43,7 @@ The next time you open Claude Desktop, a new `sf-bulk-loader` tool group
 appears. You can ask Claude to list your load plans, trigger a run, watch it
 complete, and explain any failures — all without opening the browser UI.
 
----
-
-## Auto-registration on macOS
+### Auto-registration on macOS
 
 Registration is automatic and idempotent. Every time the app starts:
 
@@ -51,9 +56,132 @@ Registration is automatic and idempotent. Every time the app starts:
 You do not need to configure anything manually. After the first launch, restart
 Claude Desktop once to pick up the new entry.
 
-> **Uninstalling.** The app does not yet auto-remove the config entry on
-> uninstall. If you uninstall the app, remove the `"sf-bulk-loader"` key from
-> `~/Library/Application Support/Claude/claude_desktop_config.json` manually.
+> **Uninstalling.** The app does not auto-remove the config entry on uninstall.
+> If you uninstall the app, manually remove the `"sf-bulk-loader"` key from
+> `~/Library/Application Support/Claude/claude_desktop_config.json`.
+
+> **Linux / Windows.** Auto-registration runs on macOS only. On other platforms,
+> add the entry manually — see [Manual registration](#manual-registration) below.
+
+---
+
+## Hosted profile (standalone)
+
+Hosted deployments have no local Bulk Loader app to bundle the MCP server into.
+Instead, you install the standalone `sf-bulk-loader-mcp` package on your own
+machine and point it at the remote instance using a Personal Access Token.
+
+### Step 1 — Mint a Personal Access Token
+
+You need an **operator** or **admin** account on the hosted instance.
+
+1. Log in to the Bulk Loader web UI.
+2. Go to **Settings → API Tokens**.
+3. Click **New token**, give it a name (e.g. `claude-mcp`), optionally set an
+   expiry, and click **Create**.
+4. Copy the token — it is shown only once. It looks like `sfbl_pat_…`.
+
+> The token inherits your account's full permissions. Treat it like a password.
+> You can revoke it at any time from the same settings page.
+
+### Step 2 — Install the standalone MCP server
+
+```bash
+# pipx (recommended — isolated environment, auto-path)
+pipx install sf-bulk-loader-mcp
+
+# Or with uvx (no install step needed — runs on demand)
+# uvx sf-bulk-loader-mcp  (see Step 3 for how to reference this in config)
+```
+
+Requires Python 3.12+. Verify the install:
+
+```bash
+sf-bulk-loader-mcp --help
+```
+
+### Step 3 — Register with your MCP client
+
+The hosted path requires **manual registration**. This is intentional — the
+desktop path owns auto-registration; the standalone package has no equivalent
+mechanism because it is not tied to a specific app install.
+
+**Claude Desktop** — add to
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or
+`%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "sf-bulk-loader": {
+      "command": "sf-bulk-loader-mcp",
+      "env": {
+        "AUTH_MODE": "pat",
+        "BULKLOADER_BASE_URL": "https://your-instance.example.com",
+        "BULKLOADER_PAT": "sfbl_pat_your_token_here"
+      }
+    }
+  }
+}
+```
+
+If using `uvx` instead of a `pipx` install, replace `"command"` with:
+```json
+"command": "uvx",
+"args": ["sf-bulk-loader-mcp"]
+```
+
+**Other MCP clients** — consult their documentation for adding a stdio MCP
+server; the command is `sf-bulk-loader-mcp` and the three env vars above are
+required.
+
+Restart your MCP client after editing the config.
+
+### Step 4 — Verify the connection
+
+Ask your MCP client to run the `health` tool. It should return:
+
+```
+Backend is ready. (status='ok' ...)
+```
+
+If you see `HTTP 401: Unauthorized`, your PAT is invalid or expired — mint a
+new one and update the config.
+
+### Unregistering
+
+To disconnect the MCP server, remove the `"sf-bulk-loader"` key from your MCP
+client's config file and restart the client. The standalone package itself can
+be removed with:
+
+```bash
+pipx uninstall sf-bulk-loader-mcp
+```
+
+---
+
+## Manual registration
+
+For desktop users on **Linux / Windows**, or any user who prefers not to rely
+on auto-registration:
+
+1. Find the bundled binary path from the discovery file:
+   - macOS: `~/Library/Application Support/sf-bulk-loader-desktop/mcp-discovery.json`
+   - Linux: `~/.config/sf-bulk-loader-desktop/mcp-discovery.json`
+   - Windows: `%APPDATA%\sf-bulk-loader-desktop\mcp-discovery.json`
+
+2. Add to your MCP client's config (no env vars needed — desktop is no-auth):
+
+   ```json
+   {
+     "mcpServers": {
+       "sf-bulk-loader": {
+         "command": "/path/to/sf_bulk_loader/sf_bulk_loader",
+         "args": ["mcp"]
+       }
+     }
+   }
+   ```
 
 ---
 
@@ -116,12 +244,9 @@ For per-partition detail during a run, use `list_jobs(run_id=<uuid>)`.
 
 ## Limitations
 
-- **Desktop profile only.** The MCP server runs without authentication. It
-  cannot be used with self-hosted or AWS-hosted deployments — that requires a
-  Personal Access Token channel that is not yet shipped.
-- **macOS auto-registration only.** Linux and Windows users can manually add
-  the `sf-bulk-loader` entry to their Claude Desktop config if needed; see the
-  binary path in `~/Library/Application Support/sf-bulk-loader-desktop/mcp-discovery.json`.
+- **macOS auto-registration only.** Linux and Windows desktop users must
+  register manually — see [Manual registration](#manual-registration).
+  Hosted/standalone users always register manually.
 - **No WebSocket.** Real-time run updates from the WebSocket at
   `/ws/runs/{run_id}` are not available in the MCP channel. Use polling via
   `get_run`.
