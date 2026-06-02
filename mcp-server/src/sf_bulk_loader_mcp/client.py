@@ -5,24 +5,30 @@ This module owns:
     OpenAPI servers/security fields).
   - Central HTTP→MCP error mapping: 4xx/5xx → structured McpHttpError.
   - Safe error formatting: no raw stack traces are ever surfaced to MCP callers.
+  - Structured auth-failure logging (SFBL-371): 401 in PAT mode emits a
+    WARNING log with event_name="MCP_PAT_AUTH_FAILURE". The PAT value is
+    NEVER present in any log record (sanitization rule).
 
 Auth mode behaviour:
   none (desktop):  No Authorization header.  Base URL resolved lazily from
                    discovery.py on first request (so the server can start even
                    before the Electron app has written the discovery file).
   pat  (hosted):   Authorization: Bearer <token>.  Base URL from config.
-                   TODO (SFBL-371): PAT refresh / rotation logic ships here.
+                   Static token per session; no rotation in v1.
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Any, AsyncGenerator, Optional
 
 import httpx
 
 from .config import AuthMode, McpSettings
 from .discovery import resolve_base_url
+
+logger = logging.getLogger(__name__)
 
 
 # ── Public error type ─────────────────────────────────────────────────────────
@@ -49,7 +55,10 @@ class McpHttpError(Exception):
 
     def to_tool_error_text(self) -> str:
         """Return a safe single-string representation for MCP tool error content."""
-        parts = [f"HTTP {self.status_code}: {self.message}"]
+        # status_code 0 is the sentinel for a transport-level failure (no HTTP
+        # response was received) — render it as a connection error, not "HTTP 0".
+        prefix = "Connection error" if self.status_code == 0 else f"HTTP {self.status_code}"
+        parts = [f"{prefix}: {self.message}"]
         if self.detail:
             parts.append(f"Detail: {self.detail}")
         return " | ".join(parts)
@@ -95,6 +104,26 @@ def _map_http_error(response: httpx.Response) -> McpHttpError:
         message = f"Unexpected HTTP {status}"
 
     return McpHttpError(status_code=status, message=message, detail=detail)
+
+
+def _map_transport_error(exc: httpx.RequestError) -> McpHttpError:
+    """Convert an httpx transport error to a structured McpHttpError.
+
+    Transport errors (connection refused, DNS failure, timeout, TLS handshake)
+    never produce an HTTP response, so there is no status code. We surface a
+    clean, actionable message with the sentinel status_code=0 — NEVER a raw
+    httpx traceback (module guarantee: no raw stack traces reach MCP callers).
+    The exception type name is included for diagnosis; no token material or URL
+    internals are exposed.
+    """
+    return McpHttpError(
+        status_code=0,
+        message=(
+            f"Could not reach the Bulk Loader backend (transport error: "
+            f"{type(exc).__name__}). Check BULKLOADER_BASE_URL and that the "
+            "instance is reachable."
+        ),
+    )
 
 
 # ── Client ────────────────────────────────────────────────────────────────────
@@ -152,47 +181,68 @@ class BulkLoaderClient:
         headers: dict[str, str] = {
             "Accept": "application/json",
         }
-        if self._settings.auth_mode == AuthMode.PAT:
-            # TODO (SFBL-371): PAT refresh / rotation logic.  For now inject
-            # the raw token value if set.
-            if self._settings.bulkloader_pat:
-                headers["Authorization"] = f"Bearer {self._settings.bulkloader_pat}"
+        if self._settings.auth_mode == AuthMode.PAT and self._settings.bulkloader_pat:
+            # config.py validates that bulkloader_pat is set when auth_mode=PAT,
+            # so this branch is always taken in a well-configured PAT session.
+            # The PAT value is injected here and NOWHERE ELSE — never logged.
+            headers["Authorization"] = f"Bearer {self._settings.bulkloader_pat}"
         return headers
+
+    def _log_auth_failure_if_401(self, error: McpHttpError, path: str) -> None:
+        """Emit a structured WARNING when a 401 occurs in PAT mode (SFBL-371).
+
+        Sanitization rule: the PAT value is NEVER included in the log record.
+        The event is structured so it can be correlated by ops tooling.
+        """
+        if error.status_code == 401 and self._settings.auth_mode == AuthMode.PAT:
+            logger.warning(
+                "MCP PAT authentication failed — verify BULKLOADER_PAT is valid "
+                "and not expired. Mint a new token in Settings → API Tokens.",
+                extra={
+                    "event_name": "MCP_PAT_AUTH_FAILURE",
+                    "auth_mode": "pat",
+                    "status_code": 401,
+                    "path": path,
+                    # PAT value intentionally omitted — sanitization rule
+                },
+            )
 
     # ── Public request helpers ─────────────────────────────────────────────
 
-    async def get(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a GET request, raising McpHttpError on non-2xx responses."""
+    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """Send a request, raising McpHttpError on transport errors or non-2xx.
+
+        Central place for base-URL resolution, header injection, transport-error
+        mapping, and HTTP-error mapping + auth-failure logging — so every verb
+        behaves identically and no raw httpx exception ever escapes.
+        """
         base = self._resolve_base_url()
         url = f"{base}{path}"
-        response = await self._get_http().get(url, headers=self._build_headers(), **kwargs)
+        try:
+            response = await self._get_http().request(
+                method, url, headers=self._build_headers(), **kwargs
+            )
+        except httpx.RequestError as exc:
+            # Connection refused / DNS / timeout / TLS — no HTTP response.
+            raise _map_transport_error(exc) from exc
         if not response.is_success:
-            raise _map_http_error(response)
+            error = _map_http_error(response)
+            self._log_auth_failure_if_401(error, path)
+            raise error
         return response
+
+    async def get(self, path: str, **kwargs: Any) -> httpx.Response:
+        """Send a GET request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("GET", path, **kwargs)
 
     async def post(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a POST request, raising McpHttpError on non-2xx responses."""
-        base = self._resolve_base_url()
-        url = f"{base}{path}"
-        response = await self._get_http().post(url, headers=self._build_headers(), **kwargs)
-        if not response.is_success:
-            raise _map_http_error(response)
-        return response
+        """Send a POST request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("POST", path, **kwargs)
 
     async def put(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a PUT request, raising McpHttpError on non-2xx responses."""
-        base = self._resolve_base_url()
-        url = f"{base}{path}"
-        response = await self._get_http().put(url, headers=self._build_headers(), **kwargs)
-        if not response.is_success:
-            raise _map_http_error(response)
-        return response
+        """Send a PUT request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("PUT", path, **kwargs)
 
     async def delete(self, path: str, **kwargs: Any) -> httpx.Response:
-        """Send a DELETE request, raising McpHttpError on non-2xx responses."""
-        base = self._resolve_base_url()
-        url = f"{base}{path}"
-        response = await self._get_http().delete(url, headers=self._build_headers(), **kwargs)
-        if not response.is_success:
-            raise _map_http_error(response)
-        return response
+        """Send a DELETE request, raising McpHttpError on transport/non-2xx errors."""
+        return await self._request("DELETE", path, **kwargs)

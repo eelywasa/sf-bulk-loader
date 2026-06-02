@@ -21,12 +21,30 @@ class TestPatModeValidation:
     def test_pat_mode_requires_base_url(self) -> None:
         from pydantic import ValidationError
         with pytest.raises((ValueError, ValidationError)):
-            McpSettings(auth_mode="pat", bulkloader_base_url=None)
+            McpSettings(auth_mode="pat", bulkloader_base_url=None, bulkloader_pat="tok")
 
-    def test_pat_mode_with_base_url_ok(self) -> None:
-        settings = McpSettings(auth_mode="pat", bulkloader_base_url="http://example.com")
+    def test_pat_mode_requires_pat_token(self) -> None:
+        """PAT mode with a base URL but no token must fail at startup."""
+        from pydantic import ValidationError
+        with pytest.raises((ValueError, ValidationError)) as exc_info:
+            McpSettings(auth_mode="pat", bulkloader_base_url="http://example.com", bulkloader_pat=None)
+        assert "BULKLOADER_PAT" in str(exc_info.value)
+
+    def test_pat_mode_requires_both_url_and_token(self) -> None:
+        """Neither field alone is sufficient — both are required."""
+        from pydantic import ValidationError
+        with pytest.raises((ValueError, ValidationError)):
+            McpSettings(auth_mode="pat")
+
+    def test_pat_mode_with_url_and_token_ok(self) -> None:
+        settings = McpSettings(
+            auth_mode="pat",
+            bulkloader_base_url="http://example.com",
+            bulkloader_pat="sfbl_pat_valid_token",
+        )
         assert settings.auth_mode == AuthMode.PAT
         assert settings.bulkloader_base_url == "http://example.com"
+        assert settings.bulkloader_pat == "sfbl_pat_valid_token"
 
 
 class TestBaseUrlPrecedence:

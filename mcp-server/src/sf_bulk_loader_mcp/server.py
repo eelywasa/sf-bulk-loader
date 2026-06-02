@@ -1732,8 +1732,41 @@ async def _run_server() -> None:
             )
 
 
+_HELP_TEXT = """\
+sf-bulk-loader-mcp — MCP server for the Salesforce Bulk Loader
+
+Runs as a stdio MCP server. Configure it via environment variables (no flags):
+
+  AUTH_MODE            "none" (desktop, default) or "pat" (hosted/remote)
+  BULKLOADER_BASE_URL  Base URL of the Bulk Loader instance
+                       (required when AUTH_MODE=pat; e.g. https://host.example.com)
+  BULKLOADER_PAT       Personal Access Token (required when AUTH_MODE=pat)
+
+Usage:
+  sf-bulk-loader-mcp            Start the stdio MCP server
+  sf-bulk-loader-mcp --help     Show this help and exit
+  sf-bulk-loader-mcp --version  Show the version and exit
+
+Register the command with your MCP client (e.g. Claude Desktop). See the
+"Using the MCP server" operator guide for full setup instructions.
+"""
+
+
 def main() -> None:
-    """Console-script entrypoint (sf-bulk-loader-mcp)."""
+    """Console-script entrypoint (sf-bulk-loader-mcp).
+
+    Handles ``--help`` / ``--version`` so operators can verify an install
+    without launching the stdio server; otherwise starts the server.
+    """
+    argv = sys.argv[1:]
+    if argv and argv[0] in ("-h", "--help"):
+        print(_HELP_TEXT)
+        return
+    if argv and argv[0] in ("-V", "--version"):
+        from . import __version__
+
+        print(f"sf-bulk-loader-mcp {__version__}")
+        return
     asyncio.run(_run_server())
 
 
