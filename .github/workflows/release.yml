@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
   packages: write
+  # id-token: write is required for the publish-pypi job's OIDC Trusted Publisher
+  # exchange. Declared at workflow level so it propagates to that job; all other
+  # jobs use only contents + packages.
+  id-token: write
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -494,3 +498,60 @@ jobs:
           fi
           git commit -m "sf-bulk-loader ${VERSION}"
           git push
+
+  # ---------------------------------------------------------------------------
+  # SFBL-372 — Publish MCP server to PyPI via OIDC Trusted Publisher.
+  #
+  # Prerequisites (owner one-time setup, already done):
+  #   1. PyPI Trusted Publisher configured at pypi.org/manage/account/publishing/
+  #      pointing at this workflow (release.yml) + the `pypi` GitHub Environment.
+  #   2. A `pypi` GitHub Environment created in repo Settings → Environments
+  #      (optionally with a required-reviewer protection rule).
+  #
+  # Version: strip the `v` prefix from the tag (e.g. v0.11.0 → 0.11.0) and
+  # inject into pyproject.toml before building, consistent with how Docker/
+  # Electron derive their versions from GITHUB_REF_NAME.
+  #
+  # Gated on tier-2-e2e — same gate as Docker/Electron — so a test failure
+  # prevents PyPI publish entirely.
+  # ---------------------------------------------------------------------------
+  publish-pypi:
+    name: Publish MCP server to PyPI
+    needs: [tier-2-e2e]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # OIDC Trusted Publisher token exchange
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Derive version from tag
+        id: ver
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Publishing sf-bulk-loader-mcp==${VERSION} to PyPI"
+
+      - name: Inject version into pyproject.toml
+        # Replaces the pinned `version = "x.y.z"` line with the tag-derived
+        # version so the published package matches the release tag.
+        run: |
+          sed -i "s/^version = .*/version = \"${{ steps.ver.outputs.version }}\"/" mcp-server/pyproject.toml
+
+      - name: Install build tooling
+        run: pip install --upgrade build
+
+      - name: Build distribution
+        run: python -m build mcp-server/
+        # Produces mcp-server/dist/sf_bulk_loader_mcp-<version>.tar.gz
+        # and mcp-server/dist/sf_bulk_loader_mcp-<version>-py3-none-any.whl
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: mcp-server/dist/
