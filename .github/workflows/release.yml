@@ -579,9 +579,11 @@ jobs:
           /tmp/wheel-smoke/bin/python -c "import sf_bulk_loader_mcp; print('import OK', sf_bulk_loader_mcp.__version__)"
 
       - name: Publish to PyPI
-        # NOTE: @release/v1 is PyPA's maintained major-version ref. Pinning to a
-        # full commit SHA would be stricter supply-chain hygiene; deferred to
-        # avoid an unverified pin (tracked as a follow-up).
-        uses: pypa/gh-action-pypi-publish@release/v1
+        # SFBL-377: pinned to a full commit SHA (immutable) rather than the
+        # moving @release/v1 branch ref. This job holds id-token: write and can
+        # publish to PyPI as us, so a repointed upstream branch/tag must not be
+        # able to alter the step. The pin is kept fresh by Dependabot
+        # (.github/dependabot.yml, github-actions ecosystem).
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
         with:
           packages-dir: mcp-server/dist/
