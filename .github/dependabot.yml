@@ -1,0 +1,30 @@
+# Dependabot configuration.
+#
+# SFBL-377: keep pinned GitHub Action SHAs fresh. Our workflows pin third-party
+# actions to immutable commit SHAs (e.g. pypa/gh-action-pypi-publish in
+# release.yml) for supply-chain safety. SHA pins don't receive upstream security
+# fixes automatically, so Dependabot watches the actions referenced across
+# .github/workflows/ and opens a PR when a newer release is available — giving us
+# immutability AND a deliberate, reviewed update path.
+#
+# Scope: github-actions ecosystem only. Extending Dependabot to the pip
+# (backend/, mcp-server/), npm (frontend/, electron/), or docker ecosystems is a
+# separate decision and intentionally out of scope here.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    # "/" makes Dependabot scan all workflow files under .github/workflows/.
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    # Consolidate all action bumps into a single weekly PR rather than one per
+    # action, to keep review load low.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "github-actions"
