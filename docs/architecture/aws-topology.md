@@ -106,7 +106,7 @@ Lambda@Edge OAuth gate can only originate from that region.
 flowchart LR
   user([Browser])
   cf[CloudFront]
-  edge[Lambda@Edge<br/>viewer-request<br/>GitHub OAuth gate]
+  edge["Lambda@Edge<br/>viewer-request<br/>GitHub OAuth gate"]
   s3ev[(Evidence S3 bucket<br/>pr-#123;n#125;/, main/, tier-2/#123;run-id#125;/)]
   gh((GitHub OAuth + API))
   sm[Secrets Manager<br/>OAuth client +<br/>session signing key]
@@ -135,8 +135,8 @@ flowchart TB
     s3[(Evidence bucket<br/>lifecycle: pr-#123;n#125;/ 30d,<br/>tier-2/#123;run-id#125;/ 90d,<br/>main/ retained)]
     oac[OAC]
     cfDist[CloudFront distribution]
-    edge[Lambda@Edge<br/>OAuth + collaborator check]
-    edgeRole[Lambda@Edge role<br/>Secrets read only]
+    edge["Lambda@Edge<br/>OAuth + collaborator check"]
+    edgeRole["Lambda@Edge role<br/>Secrets read only"]
     oauthSecret[Secrets Manager<br/>sfbl/test-evidence/oauth]
     pubRole[Publisher role<br/>GHA OIDC]
     oidc[GitHub Actions<br/>OIDC provider]
