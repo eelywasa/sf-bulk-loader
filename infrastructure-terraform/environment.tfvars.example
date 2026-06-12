@@ -1,0 +1,34 @@
+# Per-environment values - copy to <your-env>.tfvars, fill in, keep OUT of
+# version control (the committed tiers/*.tfvars carry sizing only).
+#
+#   terraform plan \
+#     -var-file=tiers/silver.tfvars \
+#     -var-file=production.tfvars \
+#     -out=plan.out
+#
+# Prerequisites you must create before the first apply (see README):
+#   - Route53 public hosted zone for hosted_zone_domain
+#   - ACM certificate in us-east-1 covering domain_name        -> certificate_arn
+#   - ACM certificate in aws_region covering backend_domain_name -> backend_certificate_arn
+
+env_name   = "production"
+aws_region = "eu-west-1"
+
+vpc_cidr = "10.20.0.0/16"
+
+hosted_zone_domain = "bulk-loader.example.com"
+domain_name        = "bulk-loader.example.com"
+certificate_arn    = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+backend_domain_name     = "api.bulk-loader.example.com"
+backend_certificate_arn = "arn:aws:acm:eu-west-1:123456789012:certificate/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+
+# Tag of the backend image mirrored from GHCR into the ECR repository this
+# stack creates (see the deployment guide for the mirror step).
+image_tag = "stable"
+
+# Optional - SES email identity. Defaults to hosted_zone_domain. Set
+# ses_identity_adopt_existing = true if the domain identity is already
+# verified in this AWS account.
+# ses_identity_domain         = "bulk-loader.example.com"
+# ses_identity_adopt_existing = false

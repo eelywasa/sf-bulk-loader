@@ -1,0 +1,14 @@
+# Remote-state backend configuration - copy to backend.hcl and fill in.
+# backend.hcl is git-ignored; these values are specific to your AWS account.
+#
+#   terraform init -backend-config=backend.hcl
+#
+# Prerequisite: create the state bucket yourself (versioning + SSE enabled
+# recommended). No DynamoDB table is needed - use_lockfile enables native
+# S3 state locking (Terraform >= 1.10 / OpenTofu >= 1.10).
+
+bucket       = "my-terraform-state-bucket"
+key          = "bulk-loader/production/terraform.tfstate"
+region       = "eu-west-1"
+encrypt      = true
+use_lockfile = true
