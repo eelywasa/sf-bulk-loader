@@ -49,3 +49,34 @@ module "data" {
   ses_identity_domain         = local.ses_identity_domain
   ses_identity_adopt_existing = var.ses_identity_adopt_existing
 }
+
+# Stack 3: ECS/Fargate backend service + ALB
+# First-deploy ordering: the backend image must be mirrored into ECR and the
+# migration task run BEFORE this module's service can start (see the guide).
+module "backend" {
+  source = "./modules/backend"
+
+  env_name = var.env_name
+
+  vpc_id                            = module.network.vpc_id
+  public_subnet_ids                 = module.network.public_subnet_ids
+  alb_security_group_id             = module.network.alb_security_group_id
+  backend_service_security_group_id = module.network.backend_service_security_group_id
+
+  ecr_repository_url   = module.data.ecr_repository_url
+  image_tag            = var.image_tag
+  injected_secret_arns = module.data.injected_secret_arns
+  injected_ssm_arns    = module.data.injected_ssm_arns
+  ses_identity_arn     = module.data.ses_identity_arn
+
+  backend_domain_name     = var.backend_domain_name
+  backend_certificate_arn = var.backend_certificate_arn
+  hosted_zone_domain      = var.hosted_zone_domain
+
+  ecs_desired_count          = var.ecs_desired_count
+  ecs_task_cpu               = var.ecs_task_cpu
+  ecs_task_memory            = var.ecs_task_memory
+  log_retention_days         = var.log_retention_days
+  container_insights_enabled = var.container_insights_enabled
+  use_fargate_spot           = var.use_fargate_spot
+}
