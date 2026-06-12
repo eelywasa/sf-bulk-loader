@@ -80,3 +80,18 @@ module "backend" {
   container_insights_enabled = var.container_insights_enabled
   use_fargate_spot           = var.use_fargate_spot
 }
+
+# Stack 4: CloudFront + S3 static frontend
+module "frontend" {
+  source = "./modules/frontend"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  env_name                   = var.env_name
+  domain_name                = var.domain_name
+  certificate_arn            = var.certificate_arn
+  backend_origin_domain_name = var.backend_domain_name
+}
