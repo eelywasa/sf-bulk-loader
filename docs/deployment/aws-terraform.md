@@ -79,12 +79,19 @@ not depend on GHCR availability):
 ```bash
 ECR_URL=$(terraform output -raw ecr_repository_url)
 aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR_URL%%/*}"
-docker pull ghcr.io/eelywasa/sf-bulk-loader-backend:v0.13
-docker tag  ghcr.io/eelywasa/sf-bulk-loader-backend:v0.13 "$ECR_URL:stable"
-docker push "$ECR_URL:stable"
+docker buildx imagetools create -t "${ECR_URL}:stable" \
+  ghcr.io/eelywasa/sf-bulk-loader-backend:v0.13
 ```
 
 The tag you push must match `image_tag` in your tfvars.
+
+> **Why `imagetools create` and not pull/tag/push:** the published image is
+> multi-arch and Fargate runs **x86_64** by default. A plain `docker pull` on
+> an Apple-Silicon machine resolves to the arm64 variant, and pushing that
+> single-arch image leaves the task crashing with `exec format error`.
+> `imagetools create` copies the full multi-arch manifest registry-to-registry
+> (no local pull), so the right variant is always available. (Found by the
+> first real apply smoke.)
 
 ### 4. Populate the secrets
 
