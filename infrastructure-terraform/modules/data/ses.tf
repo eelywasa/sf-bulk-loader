@@ -31,5 +31,7 @@ locals {
   #   T._domainkey.<domain> CNAME T.dkim.amazonses.com
   # Empty when adopting an existing identity (DNS was configured when it was
   # first verified).
-  ses_dkim_tokens = var.ses_identity_adopt_existing ? [] : aws_sesv2_email_identity.main[0].dkim_signing_attributes[0].tokens
+  # try(): dkim_signing_attributes is provider-computed and may be empty
+  # until AWS populates it (and under test mocks).
+  ses_dkim_tokens = var.ses_identity_adopt_existing ? [] : try(aws_sesv2_email_identity.main[0].dkim_signing_attributes[0].tokens, [])
 }

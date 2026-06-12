@@ -56,28 +56,18 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
   signing_protocol                  = "sigv4"
 }
 
-# --- Managed policies, resolved by name (no magic GUIDs) ---
-
-data "aws_cloudfront_cache_policy" "caching_optimized" {
-  provider = aws.us_east_1
-  name     = "Managed-CachingOptimized"
-}
-
-data "aws_cloudfront_cache_policy" "caching_disabled" {
-  provider = aws.us_east_1
-  name     = "Managed-CachingDisabled"
-}
-
-data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
-  provider = aws.us_east_1
-  name     = "Managed-AllViewerExceptHostHeader"
-}
-
 # --- Distribution ---
 
 locals {
-  s3_origin_id  = "frontend-s3"
-  alb_origin_id = "backend-alb"
+  # AWS-managed CloudFront policy ids - global, stable constants published in
+  # the CloudFront docs (identical in every account and region). Referenced
+  # directly rather than via data lookups so the native test suite can assert
+  # behaviour wiring from plan values.
+  cache_policy_caching_optimized        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # Managed-CachingOptimized
+  cache_policy_caching_disabled         = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # Managed-CachingDisabled
+  origin_request_all_viewer_except_host = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # Managed-AllViewerExceptHostHeader
+  s3_origin_id                          = "frontend-s3"
+  alb_origin_id                         = "backend-alb"
 
   # /api/* and /ws/* share identical behaviour settings: never cached, all
   # methods, every viewer header except Host forwarded (the origin must see
@@ -119,7 +109,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
+    cache_policy_id        = local.cache_policy_caching_optimized
   }
 
   # /api/* and /ws/* -> ALB -> Fargate. Not cached; WebSocket connections
@@ -133,8 +123,8 @@ resource "aws_cloudfront_distribution" "frontend" {
       viewer_protocol_policy   = "redirect-to-https"
       allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
       cached_methods           = ["GET", "HEAD", "OPTIONS"]
-      cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
-      origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+      cache_policy_id          = local.cache_policy_caching_disabled
+      origin_request_policy_id = local.origin_request_all_viewer_except_host
     }
   }
 
