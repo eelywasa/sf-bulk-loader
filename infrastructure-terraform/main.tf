@@ -30,8 +30,9 @@ module "data" {
   isolated_subnet_ids               = module.network.isolated_subnet_ids
   backend_service_security_group_id = module.network.backend_service_security_group_id
 
-  protect_data = var.rds_deletion_protection
-  image_tag    = var.image_tag
+  protect_data        = var.rds_deletion_protection
+  skip_final_snapshot = var.rds_skip_final_snapshot
+  image_tag           = var.image_tag
 
   rds_instance_class        = var.rds_instance_class
   rds_multi_az              = var.rds_multi_az

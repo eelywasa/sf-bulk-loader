@@ -14,6 +14,6 @@ output "frontend_bucket_name" {
 }
 
 output "deploy_command" {
-  description = "Upload the Vite build and invalidate the cache. --delete prunes files removed from dist/ (parity with the CDK BucketDeployment prune)."
-  value       = "cd frontend && npm run build && aws s3 sync dist/ s3://${aws_s3_bucket.frontend.id}/ --delete && aws cloudfront create-invalidation --distribution-id ${aws_cloudfront_distribution.frontend.id} --paths '/*'"
+  description = "Upload the Vite build and invalidate the cache. --delete prunes files removed from dist/ (parity with the CDK BucketDeployment prune). Path is relative to infrastructure-terraform/, where the runbook leaves the operator."
+  value       = "cd ../frontend && npm run build && aws s3 sync dist/ s3://${aws_s3_bucket.frontend.id}/ --delete && aws cloudfront create-invalidation --distribution-id ${aws_cloudfront_distribution.frontend.id} --paths '/*'"
 }

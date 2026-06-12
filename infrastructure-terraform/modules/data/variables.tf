@@ -19,7 +19,12 @@ variable "backend_service_security_group_id" {
 }
 
 variable "protect_data" {
-  description = "Whether this environment holds real data (tier rds_deletion_protection). Drives RDS deletion protection + final snapshot, the Secrets Manager recovery window, and whether ECR images can be force-deleted."
+  description = "Whether this environment holds real data (tier rds_deletion_protection). Drives RDS deletion protection, the Secrets Manager recovery window, and whether ECR images can be force-deleted."
+  type        = bool
+}
+
+variable "skip_final_snapshot" {
+  description = "Skip the RDS final snapshot on destroy. Deliberately decoupled from protect_data: disabling deletion protection to tear an environment down must not also drop the final snapshot."
   type        = bool
 }
 

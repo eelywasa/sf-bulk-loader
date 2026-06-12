@@ -9,6 +9,7 @@ rds_multi_az               = true
 rds_allocated_storage      = 100
 rds_backup_retention_days  = 30
 rds_deletion_protection    = true
+rds_skip_final_snapshot    = false
 ecs_desired_count          = 2
 ecs_task_cpu               = 1024
 ecs_task_memory            = 2048

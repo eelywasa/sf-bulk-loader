@@ -34,6 +34,7 @@ variables {
   isolated_subnet_ids               = ["subnet-aaa", "subnet-bbb"]
   backend_service_security_group_id = "sg-backend0123"
   protect_data                      = false
+  skip_final_snapshot               = true
   image_tag                         = "latest"
   ecs_task_cpu                      = 512
   ecs_task_memory                   = 1024
@@ -97,6 +98,27 @@ run "rds_hardening" {
   assert {
     condition     = aws_db_subnet_group.main.subnet_ids == toset(["subnet-aaa", "subnet-bbb"])
     error_message = "The DB subnet group must span exactly the isolated subnets."
+  }
+}
+
+# The protected-teardown scenario from the PR #105 Codex review: disabling
+# deletion protection (the required first step of a real teardown) must NOT
+# drop the final snapshot with it.
+run "final_snapshot_survives_protection_flip" {
+  command = apply
+
+  module {
+    source = "./modules/data"
+  }
+
+  variables {
+    protect_data        = false
+    skip_final_snapshot = false
+  }
+
+  assert {
+    condition     = !aws_db_instance.main.skip_final_snapshot && aws_db_instance.main.final_snapshot_identifier == "bulk-loader-test-final"
+    error_message = "With protection off but skip_final_snapshot=false, the destroy must still take the final snapshot - the last recovery point in a protected-tier teardown."
   }
 }
 

@@ -95,8 +95,12 @@ snapshot-on-destroy persistence machinery is not part of this flavour.
 ```bash
 terraform fmt -check -recursive
 terraform init -backend=false
-terraform validate
+terraform validate -no-tests
+terraform test
 ```
 
-Same commands work under `tofu`. The native test suite (`terraform test` /
-`tofu test`) is documented in the deployment guide.
+Same commands work under `tofu` (where plain `tofu validate` is fine).
+`-no-tests` works around a Terraform validate quirk: its test-file pass
+mis-handles the aliased-provider mapping the frontend test uses and reports a
+spurious "Provider configuration not present" error. The test files are fully
+exercised by `terraform test` itself, and OpenTofu validates them clean.

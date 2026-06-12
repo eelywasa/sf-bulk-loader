@@ -136,6 +136,11 @@ variable "rds_deletion_protection" {
   type        = bool
 }
 
+variable "rds_skip_final_snapshot" {
+  description = "Skip the RDS final snapshot on destroy. Deliberately separate from rds_deletion_protection: tearing down a protected environment means disabling protection first, and that flip must not silently drop the final snapshot too. Keep false on any tier holding real data."
+  type        = bool
+}
+
 variable "ecs_desired_count" {
   description = "Number of backend Fargate tasks."
   type        = number

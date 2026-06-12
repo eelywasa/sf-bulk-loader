@@ -93,9 +93,12 @@ resource "aws_db_instance" "main" {
   backup_retention_period = var.rds_backup_retention_days
 
   # The CDK persistOnDestroy snapshot machinery is not ported, so for tiers
-  # holding real data deletion protection stays on and a destroy (after
-  # explicitly disabling protection) still takes a final snapshot.
+  # holding real data deletion protection stays on. The final-snapshot
+  # decision is deliberately a SEPARATE variable: tearing down a protected
+  # environment requires flipping protect_data off first, and if that same
+  # flip disabled the final snapshot, the teardown would delete the database
+  # with no recovery point exactly when one matters (Codex review, PR #105).
   deletion_protection       = var.protect_data
-  skip_final_snapshot       = !var.protect_data
-  final_snapshot_identifier = var.protect_data ? "bulk-loader-${var.env_name}-final" : null
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = "bulk-loader-${var.env_name}-final"
 }

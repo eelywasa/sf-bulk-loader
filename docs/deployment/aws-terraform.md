@@ -177,9 +177,15 @@ A bad image rollout rolls back automatically (deployment circuit breaker).
 ```bash
 terraform fmt -check -recursive
 terraform init -backend=false
-terraform validate
-terraform test          # 18 mocked native tests - no credentials, no cost
+terraform validate -no-tests   # see note below
+terraform test                 # 19 mocked native tests - no credentials, no cost
 ```
+
+> `-no-tests` sidesteps a Terraform validate quirk: its test-file pass
+> mis-handles the aliased-provider mapping in the frontend test's run blocks
+> and reports a spurious "Provider configuration not present" error. The test
+> files are fully exercised by `terraform test`, and plain `tofu validate`
+> handles them correctly.
 
 The test suite (`tests/*.tftest.hcl`) encodes the falsifiable acceptance
 criteria from the epic: no plaintext path to the DB (`rds.force_ssl`), DB
@@ -242,7 +248,7 @@ Conscious differences from the CDK flavour, each with its rationale:
 | 2 | `DATABASE_URL` auto-composed from RDS endpoint + generated credentials (CDK leaves it for the operator) | Removes the most error-prone manual step on a fresh deploy; `ignore_changes` hands ownership to the operator after first apply |
 | 3 | SSM parameters created with working defaults (CDK imports operator-created ones) | No pre-apply `put-parameter` dance on a fresh account; `ignore_changes` means operator edits are never reverted |
 | 4 | Bucket names include the account id (`bulk-loader-<env>-<account>-input`) | CDK's deterministic names collide across customer accounts in S3's global namespace |
-| 5 | silver/gold tiers keep `rds_deletion_protection = true` (CDK: false) | The CDK turns it off only because its snapshot-on-destroy persist machinery guards durability; that machinery is not ported, so protection is the remaining data-loss guard |
+| 5 | silver/gold tiers keep `rds_deletion_protection = true` (CDK: false), and the final snapshot is a **separate** variable (`rds_skip_final_snapshot`, false on silver/gold) | The CDK turns protection off only because its snapshot-on-destroy persist machinery guards durability; that machinery is not ported, so protection is the remaining guard. Snapshot behaviour is decoupled so that tearing down a protected tier (which requires flipping protection off first) still takes the final snapshot |
 | 6 | Frontend upload is a documented operator command, not IaC (CDK: BucketDeployment) | Terraform has no asset-bundling equivalent; `aws s3 sync --delete` + invalidation preserves the prune semantics |
 | 7 | CloudFront managed policies referenced by their global id constants (CDK: enum) | The ids are AWS-published, identical in every account/region; direct references make behaviour wiring assertable in the native test suite |
 | 8 | Secret recovery window derives from the data-protection flag (30 d protected / 0 d disposable) | Mirrors the CDK RETAIN/DESTROY split in spirit; immediate deletion keeps bronze destroy/recreate cycles clean |

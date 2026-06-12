@@ -86,6 +86,7 @@ variables {
   rds_allocated_storage      = 20
   rds_backup_retention_days  = 7
   rds_deletion_protection    = false
+  rds_skip_final_snapshot    = true
   ecs_desired_count          = 1
   ecs_task_cpu               = 512
   ecs_task_memory            = 1024

@@ -238,14 +238,25 @@ resource "aws_iam_role" "flow_logs" {
 data "aws_iam_policy_document" "flow_logs_delivery" {
   count = var.enable_flow_logs ? 1 : 0
 
+  # Writes are scoped to this log group's streams.
   statement {
     actions = [
       "logs:CreateLogStream",
       "logs:PutLogEvents",
+    ]
+    resources = ["${aws_cloudwatch_log_group.flow_logs[0].arn}:*"]
+  }
+
+  # The describes operate on log-group (not log-stream) ARNs; AWS's canonical
+  # flow-logs delivery policy grants them on * and scoping them to a stream
+  # pattern can make delivery fail with an access error (Codex review,
+  # PR #105). Read-only metadata, so * is acceptable here.
+  statement {
+    actions = [
       "logs:DescribeLogGroups",
       "logs:DescribeLogStreams",
     ]
-    resources = ["${aws_cloudwatch_log_group.flow_logs[0].arn}:*"]
+    resources = ["*"]
   }
 }
 
