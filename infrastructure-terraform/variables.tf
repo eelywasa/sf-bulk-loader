@@ -18,8 +18,8 @@ variable "env_name" {
   type        = string
 
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{1,30}$", var.env_name))
-    error_message = "env_name must be lowercase alphanumeric/hyphen, 2-31 chars, starting with a letter (it is embedded in bucket, cluster, and secret names)."
+    condition     = can(regex("^[a-z][a-z0-9-]{1,18}$", var.env_name))
+    error_message = "env_name must be lowercase alphanumeric/hyphen, 2-19 chars, starting with a letter - it is embedded in bucket names, which S3 caps at 63 chars including the account id."
   }
 }
 

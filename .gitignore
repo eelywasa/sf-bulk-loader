@@ -11,6 +11,9 @@ __pycache__/
 
 # Data (DB, input CSVs, output logs)
 data/
+# ...but not the Terraform data-layer module, which the rule above would
+# otherwise swallow silently (it matches any nested data/ directory).
+!infrastructure-terraform/modules/data/
 
 # TLS certificates (private keys must never be committed)
 certs/
