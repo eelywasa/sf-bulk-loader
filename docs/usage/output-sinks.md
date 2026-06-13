@@ -19,7 +19,12 @@ connections and attaching them to plans requires `plans.manage`.
 
 ---
 
-## Local output sink (default)
+## Default output sink (profile-dependent)
+
+> On **AWS-hosted**, the default sink is the deployment's first-party **S3
+> output bucket**, reached keyless via the ECS task role — no output connection
+> needed, and results survive task recycle (SFBL-385). The local filesystem
+> layout below applies to the **desktop** and **Docker / self-hosted** profiles.
 
 Results are written under the server's configured output directory:
 
@@ -36,8 +41,9 @@ data/output/
 In Docker, this path is a volume mount. In desktop, it's under the OS
 user-data directory.
 
-No configuration required — every plan defaults to the local sink unless you
-attach an output connection.
+No configuration required — every plan uses the profile's default sink (local
+directory, or the first-party S3 bucket on AWS-hosted) unless you attach an
+output connection.
 
 ---
 

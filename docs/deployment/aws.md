@@ -743,19 +743,38 @@ The `aws_hosted` profile sets `input_storage_mode=s3`. Source CSV files are
 read from S3 rather than the local filesystem; result files from the Bulk
 API are written to S3.
 
-### S3 input/output connections (IAM access keys required)
+### Default storage is the deployment's first-party S3 buckets (SFBL-385)
 
-The application reads and writes S3 via per-Connection AWS access keys
-stored encrypted in the database, **not** via the ECS task role's default
-credential chain. This means the Data stack's input/output buckets are not
-automatically accessible to the running application — operators must
-configure an InputConnection (or OutputConnection) in the UI with explicit
-credentials.
+On `aws_hosted` the **default** Input and Output storage **is** the Data
+stack's own first-party buckets (`bulk-loader-{env}-…-input` /
+`-output`) — no connection setup is required:
 
-Setup steps after the buckets are provisioned:
+- The bucket names + region are injected into the backend (and migration)
+  task definitions as `S3_INPUT_BUCKET` / `S3_OUTPUT_BUCKET` /
+  `S3_BUCKET_REGION`.
+- The application reaches them **keyless**, via the ECS **task role's**
+  default credential chain (no stored access keys). The task role carries a
+  least-privilege grant — object read/write on the two key-spaces plus
+  `ListBucket` on exactly those two bucket ARNs.
+- The implicit/"default" source (the Files page **Input Files** /
+  **Output Files** tabs, and any load run with no explicit output connection)
+  therefore resolves to these buckets, and results **survive ECS task
+  recycle** — they are no longer written to ephemeral container disk.
 
-1. **Create an IAM user** in the deploying account, e.g. `bulk-loader-{env}-s3`.
-2. **Attach an inline policy** scoped to the input + output buckets:
+This is identical on the CDK and Terraform flavours (see
+[aws-terraform.md](aws-terraform.md) — the cross-flavour parity table).
+
+### BYO-keys connections — for external / cross-account buckets only
+
+You only need to create an `InputConnection` / `OutputConnection` with stored
+IAM access keys when reading from or writing to a bucket **outside** this
+deployment (e.g. a customer-owned or cross-account bucket). For the
+deployment's own first-party buckets, no connection is needed.
+
+To wire an external bucket:
+
+1. **Create an IAM user** (or role) in the account that owns the bucket.
+2. **Attach an inline policy** scoped to that bucket:
    ```json
    {
      "Version": "2012-10-17",
@@ -763,38 +782,30 @@ Setup steps after the buckets are provisioned:
        {
          "Effect": "Allow",
          "Action": ["s3:ListBucket"],
-         "Resource": [
-           "arn:aws:s3:::<input-bucket>",
-           "arn:aws:s3:::<output-bucket>"
-         ]
-       },
-       {
-         "Effect": "Allow",
-         "Action": ["s3:GetObject"],
-         "Resource": ["arn:aws:s3:::<input-bucket>/*"]
+         "Resource": ["arn:aws:s3:::<external-bucket>"]
        },
        {
          "Effect": "Allow",
          "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-         "Resource": ["arn:aws:s3:::<output-bucket>/*"]
+         "Resource": ["arn:aws:s3:::<external-bucket>/*"]
        }
      ]
    }
    ```
-3. **Generate access keys** for the IAM user and copy them.
+3. **Generate access keys** and copy them.
 4. **In the running application**, navigate to *Connections → New Input
    Connection*. Choose the S3 provider, paste the access key ID + secret,
    set the bucket and region, and use the connection's "Test" button to
-   verify read (and write, for output connections) access.
+   verify access.
 
-The bucket retention lifecycle rules are driven by the chosen tier (see
-"Sizing and cost"). With `inputRetentionDays`/`outputRetentionDays` > 0,
-S3 will expire objects after that many days; set to 0 to retain forever.
+The first-party bucket retention lifecycle rules are driven by the chosen
+tier (see "Sizing and cost"). With `inputRetentionDays`/`outputRetentionDays`
+> 0, S3 expires objects after that many days; set to 0 to retain forever.
 
-A code-path alternative — `InputConnection.use_task_role` mode that lets
-boto3 resolve credentials from the ECS task role's default credential
-chain, eliminating BYO keys for first-party buckets — is filed under
-[SFBL-295](https://matthew-jenkin.atlassian.net/browse/SFBL-295) (production-scale hardening epic).
+> The shared keyless-S3 primitive is also exposed to BYO connections via
+> `InputConnection.use_task_role` (so an operator can opt a connection into the
+> task-role chain for a same-account bucket) — tracked under
+> [SFBL-295](https://matthew-jenkin.atlassian.net/browse/SFBL-295).
 
 ---
 
