@@ -549,6 +549,12 @@ export class DataStack extends cdk.Stack {
       environment: {
         APP_DISTRIBUTION: 'aws_hosted',
         RUN_MIGRATIONS: 'true',
+        // SFBL-385: keep the storage env contract identical to the service task
+        // so the migration boots through the same config validator (which now
+        // requires these on input_storage_mode=s3).
+        S3_INPUT_BUCKET: this.inputBucket.bucketName,
+        S3_OUTPUT_BUCKET: this.outputBucket.bucketName,
+        S3_BUCKET_REGION: this.region,
       },
       // Override the Dockerfile CMD: run alembic upgrade head then exit cleanly.
       command: ['sh', '-c', 'alembic upgrade head'],
@@ -566,6 +572,29 @@ export class DataStack extends cdk.Stack {
     adminUsernameParam.grantRead(migrationTaskDefinition.executionRole!);
     emailFromAddressParam.grantRead(migrationTaskDefinition.executionRole!);
     emailSesRegionParam.grantRead(migrationTaskDefinition.executionRole!);
+
+    // SFBL-385: scoped first-party S3 access on the migration TASK role (not the
+    // execution role) - mirrors the service task role in BackendStack so the
+    // storage posture is identical across both task definitions. Least-privilege:
+    // object RW on the two key-spaces + ListBucket on the two bucket ARNs, no
+    // wildcard resource.
+    migrationTaskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: 'FirstPartyBucketObjectReadWrite',
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+        resources: [
+          this.inputBucket.arnForObjects('*'),
+          this.outputBucket.arnForObjects('*'),
+        ],
+      }),
+    );
+    migrationTaskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: 'FirstPartyBucketList',
+        actions: ['s3:ListBucket'],
+        resources: [this.inputBucket.bucketArn, this.outputBucket.bucketArn],
+      }),
+    );
 
     // --- Outputs ---
     new cdk.CfnOutput(this, 'EcrRepositoryUri', {

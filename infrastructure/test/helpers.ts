@@ -76,6 +76,8 @@ export function synthStacks(opts: SynthOptions = {}) {
     albSecurityGroup: network.albSecurityGroup,
     backendServiceSecurityGroup: network.backendServiceSecurityGroup,
     backendRepository: data.backendRepository,
+    inputBucket: data.inputBucket,
+    outputBucket: data.outputBucket,
     encryptionKeySecret: data.encryptionKeySecret,
     jwtSecretKeySecret: data.jwtSecretKeySecret,
     databaseUrlSecret: data.databaseUrlSecret,

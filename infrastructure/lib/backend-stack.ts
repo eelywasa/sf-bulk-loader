@@ -6,6 +6,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
@@ -22,6 +23,15 @@ export interface BackendStackProps extends cdk.StackProps {
    * stack is deployed (see SFBL-276 deploy ordering).
    */
   backendRepository: ecr.IRepository;
+  /**
+   * First-party S3 buckets created by DataStack. On aws_hosted the implicit /
+   * default Input and Output storage source resolves to these buckets via the
+   * keyless task-role credential chain (SFBL-385). Their names are injected as
+   * S3_INPUT_BUCKET / S3_OUTPUT_BUCKET env vars and the task role is granted
+   * scoped object RW + ListBucket on exactly these two ARNs.
+   */
+  inputBucket: s3.IBucket;
+  outputBucket: s3.IBucket;
   // ISecret, not Secret: on a SFBL-297 snapshot restore DataStack imports these
   // by name (Secret.fromSecretNameV2), which yields ISecret. grantRead and
   // ecs.Secret.fromSecretsManager both accept ISecret.
@@ -147,20 +157,20 @@ export class BackendStack extends cdk.Stack {
     capacityProviderAssociations.node.addDependency(cluster);
 
     // --- IAM Task Role ---
-    // Container-side identity for the running task. The application reads S3
-    // input/output via per-Connection access keys stored encrypted in the DB
-    // (see app/services/output_storage.py and app/api/input_connections.py),
-    // so the task role does NOT need direct S3 grants on the input/output
-    // buckets. Operators must create an IAM user, generate access keys, and
-    // paste them into the InputConnection form via the UI - see
-    // docs/deployment/aws.md "S3 input/output connections" section.
-    //
-    // SFBL-295 will add an `InputConnection.use_task_role` mode that lets
-    // first-party buckets resolve via this role's default credential chain;
-    // at that point S3 grants will be added back here.
+    // Container-side identity for the running task. On aws_hosted the implicit /
+    // default Input and Output storage resolves to the deployment's own
+    // first-party S3 buckets via this role's default credential chain (keyless,
+    // SFBL-385) - so the task role is granted scoped object RW + ListBucket on
+    // exactly those two buckets below (modifying DECISION 022's "no S3 on the
+    // task role" posture for first-party buckets only). External / cross-account
+    // buckets still use per-Connection BYO IAM keys stored encrypted in the DB
+    // (see app/services/input_storage.py); those are the non-default path and do
+    // not rely on this grant. The keyless-S3 primitive is shared with SFBL-295's
+    // InputConnection.use_task_role - this stack owns the grant so it is added
+    // once.
     //
     // Secrets Manager and SSM access is granted via the task execution role
-    // below (managed by ECS).
+    // below (managed by ECS), NOT this task role.
     const taskRole = new iam.Role(this, 'TaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       description: `Bulk Loader ECS task role (${env})`,
@@ -239,6 +249,12 @@ export class BackendStack extends cdk.Stack {
         // each rolling deploy. See docs/deployment/aws.md "Ongoing
         // Deployments" for the deploy sequence.
         RUN_MIGRATIONS: 'false',
+        // SFBL-385: first-party default storage. The app resolves the implicit
+        // Input/Output source to these buckets (keyless task-role chain). Names
+        // are non-sensitive deployment identity, so plain environment is correct.
+        S3_INPUT_BUCKET: props.inputBucket.bucketName,
+        S3_OUTPUT_BUCKET: props.outputBucket.bucketName,
+        S3_BUCKET_REGION: this.region,
       },
 
       portMappings: [{ containerPort: 8000 }],
@@ -294,6 +310,34 @@ export class BackendStack extends cdk.Stack {
         sid: 'SesAccountReadForHealthProbe',
         actions: ['ses:GetSendQuota', 'ses:GetAccount'],
         resources: ['*'],
+      }),
+    );
+
+    // --- IAM: scoped S3 access to the first-party buckets (SFBL-385) ---
+    // Least-privilege: object read/write on the two bucket key-spaces and
+    // ListBucket on the two bucket ARNs - no wildcard resource, and no grant on
+    // the access-logs or frontend buckets. The app reaches these via the boto3
+    // default credential chain (this task role), keyless.
+    const firstPartyBucketArns = [
+      props.inputBucket.bucketArn,
+      props.outputBucket.bucketArn,
+    ];
+    const firstPartyObjectArns = [
+      props.inputBucket.arnForObjects('*'),
+      props.outputBucket.arnForObjects('*'),
+    ];
+    taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: 'FirstPartyBucketObjectReadWrite',
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+        resources: firstPartyObjectArns,
+      }),
+    );
+    taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: 'FirstPartyBucketList',
+        actions: ['s3:ListBucket'],
+        resources: firstPartyBucketArns,
       }),
     );
 
