@@ -31,6 +31,7 @@ from app.services.input_storage import (
     LocalInputStorage,
     S3InputStorage,
     _s3_outcome_code,
+    build_s3_client,
     get_storage,
     resolve_storage_locations,
 )
@@ -292,6 +293,49 @@ async def test_storage_locations_s3_mode_no_credentials(monkeypatch):
     blob = json.dumps({k: vars(v) for k, v in locs.items()}).lower()
     for needle in ("access_key", "secret", "session_token", "aws_", "akia", "x-amz", "signature"):
         assert needle not in blob
+
+
+# ── build_s3_client: blank/partial creds must not silently go keyless (Codex P2) ─
+
+
+def test_build_s3_client_keyless_when_no_credentials(monkeypatch):
+    captured = _capture_boto3_client(monkeypatch)
+    build_s3_client(region="eu-west-1")
+    assert captured.get("region_name") == "eu-west-1"
+    assert "aws_access_key_id" not in captured
+    assert "aws_secret_access_key" not in captured
+
+
+def test_build_s3_client_blank_byo_keys_are_passed_not_keyless(monkeypatch):
+    """A blank BYO key must reach boto3 (which rejects it), NOT fall back to the
+    task role. Falsification: if blanks were treated as keyless, the key kwargs
+    would be absent and a misconfigured connection would silently get first-party
+    bucket access on aws_hosted."""
+    captured = _capture_boto3_client(monkeypatch)
+    build_s3_client(region="eu-west-1", access_key_id="", secret_access_key="")
+    assert captured.get("aws_access_key_id") == ""
+    assert captured.get("aws_secret_access_key") == ""
+
+
+def test_build_s3_client_partial_credentials_raise(monkeypatch):
+    _capture_boto3_client(monkeypatch)
+    with pytest.raises(ValueError, match="Incomplete S3 credentials"):
+        build_s3_client(region="eu-west-1", access_key_id="AKIA", secret_access_key=None)
+    with pytest.raises(ValueError, match="Incomplete S3 credentials"):
+        build_s3_client(region="eu-west-1", access_key_id=None, secret_access_key="sk")
+
+
+def test_input_connection_create_rejects_blank_credentials():
+    from pydantic import ValidationError as PydValidationError
+
+    from app.schemas.input_connection import InputConnectionCreate
+
+    with pytest.raises(PydValidationError):
+        InputConnectionCreate(name="x", provider="s3", bucket="b", access_key_id="", secret_access_key="sk")
+    with pytest.raises(PydValidationError):
+        InputConnectionCreate(name="x", provider="s3", bucket="b", access_key_id="ak", secret_access_key="   ")
+    ok = InputConnectionCreate(name="x", provider="s3", bucket="b", access_key_id="ak", secret_access_key="sk")
+    assert ok.access_key_id == "ak"
 
 
 async def test_storage_locations_local_mode():

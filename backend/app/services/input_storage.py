@@ -307,6 +307,14 @@ def build_s3_client(
     chain — on ``aws_hosted`` that is the ECS task role. When both keys are
     supplied (the BYO-keys path), they are passed through unchanged.
 
+    The keyless decision is made on identity (``is None``), **not** truthiness:
+    the keyless path is taken only when *both* credentials are ``None``. A BYO
+    connection with a blank/empty-string key is therefore passed through to
+    boto3 (which rejects it) rather than silently falling back to the task role
+    — that fail-open would let a misconfigured BYO connection read/write the
+    first-party buckets on ``aws_hosted``. Supplying exactly one of the two is a
+    programming error and raises.
+
     Args:
         region: AWS region name, or ``None`` for the boto3 default.
         access_key_id: AWS access key ID, or ``None`` for the keyless path.
@@ -315,9 +323,20 @@ def build_s3_client(
 
     Returns:
         A configured boto3 S3 client.
+
+    Raises:
+        ValueError: If exactly one of *access_key_id* / *secret_access_key* is
+            provided (an incomplete credential pair).
     """
     client_kwargs: dict = {"service_name": "s3", "region_name": region}
-    if access_key_id and secret_access_key:
+    has_access_key = access_key_id is not None
+    has_secret_key = secret_access_key is not None
+    if has_access_key != has_secret_key:
+        raise ValueError(
+            "Incomplete S3 credentials: supply both access_key_id and "
+            "secret_access_key, or neither (keyless task-role access)."
+        )
+    if has_access_key and has_secret_key:
         client_kwargs["aws_access_key_id"] = access_key_id
         client_kwargs["aws_secret_access_key"] = secret_access_key
         if session_token:
