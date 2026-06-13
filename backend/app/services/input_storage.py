@@ -14,6 +14,7 @@ from __future__ import annotations
 import boto3
 import botocore.exceptions
 import csv
+import fnmatch
 import io
 import logging
 import os
@@ -160,14 +161,42 @@ def _validate_glob_pattern(glob_pattern: str) -> str:
     return str(pure)
 
 
-def _matches_glob(path: str, glob_pattern: str) -> bool:
-    """Match *path* against *glob_pattern* using pathlib-style semantics."""
-    pure = pathlib.PurePosixPath(path)
-    if pure.match(glob_pattern):
-        return True
-    if glob_pattern.startswith("**/"):
-        return pure.match(glob_pattern[3:])
+def _glob_match_parts(path_parts: list[str], pat_parts: list[str]) -> bool:
+    """Anchored, depth-aware glob match of *path_parts* against *pat_parts*.
+
+    Mirrors ``pathlib.Path.glob`` semantics (each non-``**`` pattern segment
+    matches exactly one path segment; ``**`` matches zero or more segments) —
+    unlike ``PurePosixPath.match``, which matches from the right and would let a
+    root-only pattern like ``*.csv`` match a nested key ``sub/a.csv``.
+    """
+    if not pat_parts:
+        return not path_parts
+    head, *rest = pat_parts
+    if head == "**":
+        # ``**`` consumes zero or more path segments.
+        for i in range(len(path_parts) + 1):
+            if _glob_match_parts(path_parts[i:], rest):
+                return True
+        return False
+    if not path_parts:
+        return False
+    if fnmatch.fnmatchcase(path_parts[0], head):
+        return _glob_match_parts(path_parts[1:], rest)
     return False
+
+
+def _matches_glob(path: str, glob_pattern: str) -> bool:
+    """Match *path* against *glob_pattern* with anchored, depth-aware semantics.
+
+    Used by :class:`S3InputStorage.discover_files` so S3 discovery honours the
+    same glob depth as the local filesystem (``Path.glob``): ``*.csv`` matches
+    only root-level keys, ``sub/*.csv`` exactly one level, ``**/*.csv``
+    recursively. See SFBL-385 (Codex review) — promoting S3 to the default
+    input source made this parity load-bearing.
+    """
+    path_parts = [p for p in path.split("/") if p]
+    pat_parts = [p for p in glob_pattern.split("/") if p]
+    return _glob_match_parts(path_parts, pat_parts)
 
 
 def _normalise_root_prefix(root_prefix: Optional[str]) -> str:
@@ -682,12 +711,65 @@ class S3InputStorage:
             prefix = f"{prefix}/"
 
         entries: list[InputEntry] = []
+        # Paginate via the continuation token. ListObjectsV2 returns at most
+        # 1,000 keys/CommonPrefixes per response; now that this is the default
+        # Files-page browse path on aws_hosted (SFBL-385), a single call would
+        # silently truncate large prefixes. Loop until the listing is no longer
+        # truncated. (Continuation-token loop rather than the paginator so the
+        # bounded retry/observability stays inline.)
+        continuation_token: Optional[str] = None
         try:
-            response = self._client.list_objects_v2(
-                Bucket=self._bucket,
-                Prefix=prefix,
-                Delimiter="/",
-            )
+            while True:
+                list_kwargs: dict = {
+                    "Bucket": self._bucket,
+                    "Prefix": prefix,
+                    "Delimiter": "/",
+                }
+                if continuation_token:
+                    list_kwargs["ContinuationToken"] = continuation_token
+                response = self._client.list_objects_v2(**list_kwargs)
+
+                for common_prefix in response.get("CommonPrefixes", []):
+                    key = common_prefix.get("Prefix", "")
+                    rel_key = _relative_key(key.rstrip("/"), self._root_prefix)
+                    name = pathlib.PurePosixPath(rel_key).name
+                    if not name or name.startswith("."):
+                        continue
+                    entries.append(
+                        InputEntry(
+                            name=name,
+                            kind="directory",
+                            path=rel_key,
+                            size_bytes=None,
+                            row_count=None,
+                        )
+                    )
+
+                for item in response.get("Contents", []):
+                    key = item.get("Key", "")
+                    if not key or key.endswith("/"):
+                        continue
+                    rel_key = _relative_key(key, self._root_prefix)
+                    if "/" in rel_key[len(rel_path) + 1 :] if rel_path else "/" in rel_key:
+                        continue
+                    name = pathlib.PurePosixPath(rel_key).name
+                    if name.startswith(".") or not name.lower().endswith(".csv"):
+                        continue
+                    entries.append(
+                        InputEntry(
+                            name=name,
+                            kind="file",
+                            path=rel_key,
+                            size_bytes=item.get("Size"),
+                            row_count=None,
+                        )
+                    )
+
+                if not response.get("IsTruncated"):
+                    break
+                continuation_token = response.get("NextContinuationToken")
+                if not continuation_token:
+                    break
         except botocore.exceptions.ClientError as exc:
             logger.warning(
                 "S3 input list failed for s3://%s/%s: %s", self._bucket, prefix, exc,
@@ -698,42 +780,6 @@ class S3InputStorage:
                 },
             )
             raise InputStorageError(f"Could not list S3 path {path!r}: {exc}") from exc
-
-        for common_prefix in response.get("CommonPrefixes", []):
-            key = common_prefix.get("Prefix", "")
-            rel_key = _relative_key(key.rstrip("/"), self._root_prefix)
-            name = pathlib.PurePosixPath(rel_key).name
-            if not name or name.startswith("."):
-                continue
-            entries.append(
-                InputEntry(
-                    name=name,
-                    kind="directory",
-                    path=rel_key,
-                    size_bytes=None,
-                    row_count=None,
-                )
-            )
-
-        for item in response.get("Contents", []):
-            key = item.get("Key", "")
-            if not key or key.endswith("/"):
-                continue
-            rel_key = _relative_key(key, self._root_prefix)
-            if "/" in rel_key[len(rel_path) + 1 :] if rel_path else "/" in rel_key:
-                continue
-            name = pathlib.PurePosixPath(rel_key).name
-            if name.startswith(".") or not name.lower().endswith(".csv"):
-                continue
-            entries.append(
-                InputEntry(
-                    name=name,
-                    kind="file",
-                    path=rel_key,
-                    size_bytes=item.get("Size"),
-                    row_count=None,
-                )
-            )
 
         return _sort_entries(entries)
 

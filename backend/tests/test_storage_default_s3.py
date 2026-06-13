@@ -30,6 +30,7 @@ from app.services.input_storage import (
     LOCAL_OUTPUT_SOURCE,
     LocalInputStorage,
     S3InputStorage,
+    _matches_glob,
     _s3_outcome_code,
     build_s3_client,
     get_storage,
@@ -345,3 +346,59 @@ async def test_storage_locations_local_mode():
     assert locs["output"].provider == "local"
     assert locs["input"].bucket is None
     assert locs["input"].region is None
+
+
+# ── S3 glob depth parity with Path.glob (Codex P1 round 5) ───────────────────────
+
+
+@pytest.mark.parametrize(
+    "key,pattern,expected",
+    [
+        ("a.csv", "*.csv", True),
+        ("nested/a.csv", "*.csv", False),       # root-only pattern must NOT match nested
+        ("nested/a.csv", "**/*.csv", True),
+        ("a.csv", "**/*.csv", True),            # ** matches zero dirs
+        ("sub/a.csv", "sub/*.csv", True),
+        ("sub/deep/a.csv", "sub/*.csv", False), # one level only
+        ("sub/deep/a.csv", "sub/**/*.csv", True),
+        ("accounts_1.csv", "accounts_*.csv", True),
+        ("x/accounts_1.csv", "accounts_*.csv", False),
+        ("a.txt", "*.csv", False),
+    ],
+)
+def test_matches_glob_honors_local_depth(key, pattern, expected):
+    assert _matches_glob(key, pattern) is expected
+
+
+# ── S3 list_entries pagination (Codex P2 round 5) ────────────────────────────────
+
+
+async def test_s3_list_entries_follows_continuation_token(monkeypatch):
+    """list_entries must walk every page; a single list_objects_v2 caps at 1,000
+    keys. Falsification: without continuation handling only page-1's file (a.csv)
+    would appear."""
+
+    class _PagedClient:
+        def __init__(self):
+            self.calls = 0
+
+        def list_objects_v2(self, **kwargs):
+            self.calls += 1
+            if "ContinuationToken" not in kwargs:
+                return {
+                    "Contents": [{"Key": "a.csv", "Size": 1}],
+                    "IsTruncated": True,
+                    "NextContinuationToken": "tok-2",
+                }
+            assert kwargs["ContinuationToken"] == "tok-2"
+            return {"Contents": [{"Key": "b.csv", "Size": 1}], "IsTruncated": False}
+
+    client = _PagedClient()
+    monkeypatch.setattr(input_storage.boto3, "client", lambda **_k: client)
+    _enable_s3_mode(monkeypatch)
+
+    storage = await get_storage("local", db=None)
+    entries = storage.list_entries()
+
+    assert sorted(e.name for e in entries) == ["a.csv", "b.csv"]
+    assert client.calls == 2
