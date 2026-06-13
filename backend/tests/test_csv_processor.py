@@ -694,6 +694,37 @@ class TestBuildRetryPartitions:
         mock_out.read_bytes.assert_called_once_with(s3_ref)
 
     @pytest.mark.asyncio
+    async def test_track_a_local_ref_read_locally_even_with_s3_output_storage(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """Mixed-vintage (Codex P2 round 4): a relative ref must be read from the
+        local output dir even when an S3 output_storage is supplied.
+
+        Falsification: if the relative ref were routed to the S3 storage,
+        read_bytes would be called (and return a non-bytes MagicMock); asserting
+        it is NOT called proves the local-read branch.
+        """
+        error_file = tmp_path / "err.csv"
+        error_file.write_bytes(b"sf__Id,sf__Error,Name,Ext\n001,bad,Acme,EXT-1\n")
+
+        job = _fake_job(error_file_path="err.csv")  # relative ref, not s3://
+        step = _fake_step()
+        mock_out = MagicMock()  # would be used only for s3:// refs
+
+        result = await build_retry_partitions(
+            job_records=[job],
+            step=step,
+            partition_size=100,
+            output_dir=str(tmp_path),
+            db=_fake_db(),
+            output_storage=mock_out,
+        )
+
+        assert len(result) == 1
+        assert b"Acme" in result[0]
+        mock_out.read_bytes.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_track_b_local_source_returns_original_partition(self) -> None:
         """Track B (no result files): re-discovers and re-partitions via storage mock."""
         original_chunk = b"Name\nAcme\n"

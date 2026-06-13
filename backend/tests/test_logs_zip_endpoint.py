@@ -339,3 +339,31 @@ def test_logs_zip_reads_s3_refs_via_output_storage(auth_client):
     assert f"{step_id}/partition_0_success.csv" in names
     z = zipfile.ZipFile(io.BytesIO(resp.content))
     assert z.read(f"{step_id}/partition_0_success.csv") == b"Name\nAlice\n"
+
+
+def test_logs_zip_reads_local_ref_even_when_run_resolves_to_s3(auth_client, tmp_path):
+    """Mixed-vintage (Codex P2 round 4): a run that now resolves to S3 can still
+    hold a relative (local) ref from before the upgrade. It must be read from the
+    local output dir, not routed to S3 storage.
+
+    Falsification: the round-3 code routed every ref through the resolved S3
+    storage; a local ref sent to _FakeS3OutStorage (empty) would raise and be
+    skipped, leaving the archive empty.
+    """
+    _, plan_id, step_id, run_id = _setup(auth_client)
+    local_rel = f"{run_id}/{step_id}/partition_0_success.csv"
+    _write_csv(tmp_path, local_rel)
+    _seed_job(run_id, step_id, success_file_path=local_rel)
+
+    fake = _FakeS3OutStorage({})  # raises if asked to read anything
+    with patch(
+        "app.services.settings.dirs.effective_output_dir",
+        new=AsyncMock(return_value=str(tmp_path)),
+    ), patch(
+        "app.services.output_storage.get_output_storage",
+        new=AsyncMock(return_value=fake),
+    ):
+        resp = auth_client.get(f"/api/runs/{run_id}/logs.zip")
+
+    assert resp.status_code == 200
+    assert f"{step_id}/partition_0_success.csv" in _namelist(resp)

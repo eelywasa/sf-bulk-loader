@@ -72,18 +72,23 @@ async def build_logs_zip(
     )
     jobs = list(result.scalars().all())
 
-    # Resolve the output storage the run actually wrote to (SFBL-385): local on
-    # the filesystem profiles, the first-party S3 bucket (keyless) on aws_hosted
-    # with no explicit output connection, or a BYO connection. Reading via
-    # OutputStorage.read_bytes handles both local relative paths and s3:// refs
-    # — joining refs to output_dir would skip every S3 result file.
+    # Read each result file via the storage matching its PERSISTED ref shape,
+    # not the run's current resolved backend (SFBL-385). A run can hold
+    # mixed-vintage refs — e.g. an aws_hosted run created before this upgrade
+    # (local relative paths) whose plan now resolves to S3, or vice-versa.
+    # Routing every ref through one backend would mis-read the others; instead
+    # local relative refs go to the local output dir and s3:// refs go to the
+    # run's S3 storage. read_bytes handles each backend's read.
     from app.services.output_storage import (  # noqa: PLC0415
+        LocalOutputStorage,
         OutputStorageError,
         get_output_storage,
     )
+    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
 
+    local_storage = LocalOutputStorage(await effective_output_dir())
     plan = await db.get(LoadPlan, run.load_plan_id)
-    storage = await get_output_storage(plan.output_connection_id if plan else None, db)
+    s3_storage = await get_output_storage(plan.output_connection_id if plan else None, db)
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -99,13 +104,14 @@ async def build_logs_zip(
             for ref in candidates:
                 if not ref:
                     continue
+                reader = s3_storage if ref.startswith("s3://") else local_storage
                 try:
-                    data = storage.read_bytes(ref)
+                    data = reader.read_bytes(ref)
                 except (OutputStorageError, FileNotFoundError):
                     # Missing/inaccessible result file — skip it (matches the
                     # prior os.path.isfile skip behaviour).
                     continue
-                zf.writestr(_zip_member_name(ref, storage), data)
+                zf.writestr(_zip_member_name(ref, reader), data)
 
     buf.seek(0)
     return buf

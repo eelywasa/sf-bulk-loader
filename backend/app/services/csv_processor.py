@@ -281,8 +281,16 @@ async def build_retry_partitions(
     output_base = pathlib.Path(output_dir)
 
     def _read_result_bytes(ref: str) -> bytes | None:
-        """Read a Track A result file, provider-aware; None if missing."""
-        if output_storage is not None:
+        """Read a Track A result file by its persisted ref shape; None if missing.
+
+        s3:// refs go through the run's S3 *output_storage*; relative refs are
+        read from the local output dir. Branching on the ref (not the run's
+        current backend) handles mixed-vintage refs — e.g. a failed job from an
+        older default-local run on a deployment now resolving to S3 (SFBL-385).
+        """
+        if ref.startswith("s3://"):
+            if output_storage is None:
+                return None
             from app.services.output_storage import OutputStorageError  # noqa: PLC0415
 
             try:
