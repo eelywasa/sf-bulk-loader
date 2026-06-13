@@ -2,7 +2,6 @@
 
 import io
 import logging
-import os
 import pathlib
 import zipfile
 from datetime import datetime, timezone
@@ -73,6 +72,19 @@ async def build_logs_zip(
     )
     jobs = list(result.scalars().all())
 
+    # Resolve the output storage the run actually wrote to (SFBL-385): local on
+    # the filesystem profiles, the first-party S3 bucket (keyless) on aws_hosted
+    # with no explicit output connection, or a BYO connection. Reading via
+    # OutputStorage.read_bytes handles both local relative paths and s3:// refs
+    # — joining refs to output_dir would skip every S3 result file.
+    from app.services.output_storage import (  # noqa: PLC0415
+        OutputStorageError,
+        get_output_storage,
+    )
+
+    plan = await db.get(LoadPlan, run.load_plan_id)
+    storage = await get_output_storage(plan.output_connection_id if plan else None, db)
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for job in jobs:
@@ -84,21 +96,39 @@ async def build_logs_zip(
             if unprocessed:
                 candidates.append(job.unprocessed_file_path)
 
-            from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
-
-            out_dir = await effective_output_dir()
-            for rel_path in candidates:
-                if not rel_path:
+            for ref in candidates:
+                if not ref:
                     continue
-                full_path = os.path.join(out_dir, rel_path)
-                if not os.path.isfile(full_path):
+                try:
+                    data = storage.read_bytes(ref)
+                except (OutputStorageError, FileNotFoundError):
+                    # Missing/inaccessible result file — skip it (matches the
+                    # prior os.path.isfile skip behaviour).
                     continue
-                parts = pathlib.PurePosixPath(rel_path.replace("\\", "/")).parts
-                archive_name = str(pathlib.PurePosixPath(*parts[1:])) if len(parts) > 1 else rel_path
-                zf.write(full_path, archive_name)
+                zf.writestr(_zip_member_name(ref, storage), data)
 
     buf.seek(0)
     return buf
+
+
+def _zip_member_name(ref: str, storage: object) -> str:
+    """Return the in-archive name for a result-file *ref*.
+
+    Drops the leading path component (the plan/run grouping dir) so the archive
+    is rooted at the run, matching the historical local layout. Works for both
+    local relative paths and ``s3://bucket/<prefix><rel>`` URIs — for S3 the
+    bucket and configured root prefix are stripped first so the member name
+    matches the local layout exactly.
+    """
+    rel = ref
+    if ref.startswith("s3://"):
+        bucket = getattr(storage, "_bucket", "") or ""
+        root_prefix = getattr(storage, "_root_prefix", "") or ""
+        scheme_bucket = f"s3://{bucket}/"
+        key = ref[len(scheme_bucket):] if ref.startswith(scheme_bucket) else ref[len("s3://"):]
+        rel = key[len(root_prefix):] if root_prefix and key.startswith(root_prefix) else key
+    parts = pathlib.PurePosixPath(rel.replace("\\", "/")).parts
+    return str(pathlib.PurePosixPath(*parts[1:])) if len(parts) > 1 else rel
 
 
 async def prepare_retry_step(
@@ -171,6 +201,16 @@ async def prepare_retry_step(
                 logger.warning("prepare_retry_step: could not obtain token for SF job cleanup: %s", exc)
 
     from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+    from app.services.output_storage import get_output_storage  # noqa: PLC0415
+
+    # The output storage the original run wrote its result files to — local on
+    # the filesystem profiles, the first-party S3 bucket on aws_hosted with no
+    # explicit output connection (SFBL-385). Track A reads route through it so
+    # s3:// result refs are read from S3 instead of the local output dir.
+    retry_plan = await db.get(LoadPlan, original_run.load_plan_id)
+    output_storage = await get_output_storage(
+        retry_plan.output_connection_id if retry_plan else None, db
+    )
 
     partitions = await build_retry_partitions(
         job_records=retryable_jobs,
@@ -178,6 +218,7 @@ async def prepare_retry_step(
         partition_size=step.partition_size,
         output_dir=await effective_output_dir(),
         db=db,
+        output_storage=output_storage,
     )
 
     if not partitions:

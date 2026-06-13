@@ -663,6 +663,37 @@ class TestBuildRetryPartitions:
         assert b"Beta" in result[0]
 
     @pytest.mark.asyncio
+    async def test_track_a_reads_s3_refs_via_output_storage(self) -> None:
+        """aws_hosted default-S3 (Codex P1 round 3): error/unprocessed refs are
+        s3:// URIs read via output_storage.read_bytes — not joined to output_dir.
+
+        Falsification: output_dir is /nonexistent, so the pre-fix filesystem read
+        would find nothing and return []; routing through output_storage.read_bytes
+        must still recover the rows.
+        """
+        mock_out = MagicMock()
+        mock_out.read_bytes.return_value = b"sf__Id,sf__Error,Name,Ext\n001,bad,Acme,EXT-1\n"
+
+        s3_ref = "s3://fp-output/plan/run/step/partition_0_error.csv"
+        job = _fake_job(error_file_path=s3_ref)
+        step = _fake_step()
+
+        result = await build_retry_partitions(
+            job_records=[job],
+            step=step,
+            partition_size=100,
+            output_dir="/nonexistent",
+            db=_fake_db(),
+            output_storage=mock_out,
+        )
+
+        assert len(result) == 1
+        text = result[0].decode("utf-8")
+        assert "Acme" in text
+        assert "sf__Id" not in text
+        mock_out.read_bytes.assert_called_once_with(s3_ref)
+
+    @pytest.mark.asyncio
     async def test_track_b_local_source_returns_original_partition(self) -> None:
         """Track B (no result files): re-discovers and re-partitions via storage mock."""
         original_chunk = b"Name\nAcme\n"
