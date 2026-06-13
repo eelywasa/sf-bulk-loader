@@ -66,9 +66,19 @@ class TestDesktopProfile:
             make(app_distribution="desktop", transport_mode="http")
 
 
+# S3 bucket coordinates the aws_hosted profile now requires (SFBL-386). Injected
+# in production by the IaC; tests supply them explicitly to construct a valid
+# aws_hosted profile.
+AWS_S3 = {
+    "s3_input_bucket": "bulk-loader-staging-input",
+    "s3_output_bucket": "bulk-loader-staging-output",
+    "s3_bucket_region": "eu-west-1",
+}
+
+
 class TestAwsHostedProfile:
     def test_aws_hosted_with_postgresql_is_valid(self):
-        s = make(app_distribution="aws_hosted", database_url=PG_URL)
+        s = make(app_distribution="aws_hosted", database_url=PG_URL, **AWS_S3)
         assert s.app_distribution == "aws_hosted"
         assert s.auth_mode == "local"
         assert s.transport_mode == "https"
@@ -76,15 +86,63 @@ class TestAwsHostedProfile:
 
     def test_aws_hosted_rejects_sqlite(self):
         with pytest.raises(ValidationError, match="aws_hosted requires a PostgreSQL DATABASE_URL"):
-            make(app_distribution="aws_hosted", database_url=SQLITE_URL)
+            make(app_distribution="aws_hosted", database_url=SQLITE_URL, **AWS_S3)
 
     def test_aws_hosted_rejects_http_transport(self):
         with pytest.raises(ValidationError, match="aws_hosted requires transport_mode=https"):
-            make(app_distribution="aws_hosted", database_url=PG_URL, transport_mode="http")
+            make(app_distribution="aws_hosted", database_url=PG_URL, transport_mode="http", **AWS_S3)
 
     def test_aws_hosted_rejects_local_storage(self):
         with pytest.raises(ValidationError, match="aws_hosted requires input_storage_mode=s3"):
             make(app_distribution="aws_hosted", database_url=PG_URL, input_storage_mode="local")
+
+
+class TestS3BucketFailFast:
+    """input_storage_mode=s3 fails fast without the first-party bucket coordinates (SFBL-386).
+
+    Falsification: if the resolver silently fell back to the filesystem (or
+    deferred the error to the first request), these would not raise at config
+    construction and the test would fail.
+    """
+
+    def test_aws_hosted_requires_input_bucket(self):
+        with pytest.raises(ValidationError, match="S3_INPUT_BUCKET"):
+            make(
+                app_distribution="aws_hosted",
+                database_url=PG_URL,
+                s3_output_bucket="out",
+                s3_bucket_region="eu-west-1",
+            )
+
+    def test_aws_hosted_requires_output_bucket(self):
+        with pytest.raises(ValidationError, match="S3_OUTPUT_BUCKET"):
+            make(
+                app_distribution="aws_hosted",
+                database_url=PG_URL,
+                s3_input_bucket="in",
+                s3_bucket_region="eu-west-1",
+            )
+
+    def test_aws_hosted_requires_bucket_region(self):
+        with pytest.raises(ValidationError, match="S3_BUCKET_REGION"):
+            make(
+                app_distribution="aws_hosted",
+                database_url=PG_URL,
+                s3_input_bucket="in",
+                s3_output_bucket="out",
+            )
+
+    def test_missing_all_lists_all_three(self):
+        with pytest.raises(
+            ValidationError,
+            match="S3_INPUT_BUCKET, S3_OUTPUT_BUCKET, S3_BUCKET_REGION",
+        ):
+            make(app_distribution="aws_hosted", database_url=PG_URL)
+
+    def test_self_hosted_with_s3_mode_also_fails_fast(self):
+        """The contract is scoped to the storage mode, not the profile."""
+        with pytest.raises(ValidationError, match="S3_INPUT_BUCKET"):
+            make(app_distribution="self_hosted", database_url=PG_URL, input_storage_mode="s3")
 
 
 class TestSelfHostedProfile:

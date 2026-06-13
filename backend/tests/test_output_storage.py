@@ -109,7 +109,7 @@ def test_local_write_bytes_nested_dirs_created(tmp_path):
 
 def _make_s3_storage(fake_client, *, bucket="test-bucket", root_prefix=None):
     """Helper: create an S3OutputStorage backed by *fake_client*."""
-    with patch("app.services.output_storage.boto3.client", return_value=fake_client):
+    with patch("app.services.input_storage.boto3.client", return_value=fake_client):
         storage = S3OutputStorage(
             bucket=bucket,
             root_prefix=root_prefix,
@@ -228,7 +228,7 @@ def test_factory_valid_s3_connection_out_returns_s3_storage():
         direction="out",
     )
     db = _make_db_with_connection(ic)
-    with patch("app.services.output_storage.boto3.client"):
+    with patch("app.services.input_storage.boto3.client"):
         result = _run_async(get_output_storage("ic-001", db))
     assert isinstance(result, S3OutputStorage)
 
@@ -248,7 +248,7 @@ def test_factory_valid_s3_connection_both_returns_s3_storage():
         direction="both",
     )
     db = _make_db_with_connection(ic)
-    with patch("app.services.output_storage.boto3.client"):
+    with patch("app.services.input_storage.boto3.client"):
         result = _run_async(get_output_storage("ic-002", db))
     assert isinstance(result, S3OutputStorage)
 
@@ -307,7 +307,7 @@ def test_local_resolve_uri_returns_relative_path(tmp_path):
 
 
 def test_s3_resolve_uri_returns_s3_scheme_with_prefix():
-    with patch("app.services.output_storage.boto3.client"):
+    with patch("app.services.input_storage.boto3.client"):
         storage = S3OutputStorage(
             bucket="my-bucket",
             root_prefix="results/",
@@ -322,7 +322,7 @@ def test_s3_resolve_uri_returns_s3_scheme_with_prefix():
 
 
 def test_s3_resolve_uri_without_root_prefix():
-    with patch("app.services.output_storage.boto3.client"):
+    with patch("app.services.input_storage.boto3.client"):
         storage = S3OutputStorage(
             bucket="my-bucket",
             root_prefix=None,
@@ -459,7 +459,7 @@ class _FakeMultipartS3Client:
 
 def _make_s3_multipart_storage(fake_client, *, bucket="test-bucket", root_prefix=None):
     """Create an S3OutputStorage backed by a fake multipart-capable client."""
-    with patch("app.services.output_storage.boto3.client", return_value=fake_client):
+    with patch("app.services.input_storage.boto3.client", return_value=fake_client):
         storage = S3OutputStorage(
             bucket=bucket,
             root_prefix=root_prefix,

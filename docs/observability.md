@@ -110,6 +110,30 @@ and increments `sfbl_bulk_job_poll_timeout_total`. See SFBL-111.
 
 The S3 output upload path in `S3OutputStorage.write_bytes` is a new storage interaction boundary. All three lifecycle events are emitted with structured `extra` fields (`event_name`, `outcome_code`, and where applicable `s3_bucket`, `s3_key`, `bytes_written`).
 
+#### First-party S3 default storage (SFBL-385/386)
+
+On `aws_hosted` (`input_storage_mode=s3`) the implicit/default Input and Output
+source resolves to the deployment's first-party S3 buckets via the keyless ECS
+task-role chain. The resolution sites log the resolved backend + bucket:
+
+- `get_storage(None|""|"local"|"local-output")` → `storage.input.listed` at INFO
+  with `s3_bucket` (the resolved first-party bucket).
+- `get_output_storage(None)` → `storage.output.persisted` at INFO with `s3_bucket`.
+
+S3 **input** access failures (`list_objects_v2` / `get_object` / `get_paginator`
+in `S3InputStorage`) are logged at WARNING with `event_name=storage.input.failed`
+and an outcome code mapped from the `ClientError`:
+
+| S3 error code | OutcomeCode |
+|---|---|
+| `AccessDenied`, `NoSuchBucket`, `NoSuchKey` (non-404 read path) | `storage_error` |
+| `SlowDown`, `Throttling`, `ThrottlingException`, `503`, `RequestTimeout` | `rate_limited` |
+
+(`NoSuchKey`/`404` on a single-object read still raises `FileNotFoundError` →
+HTTP 404, not a storage failure.) The mapping lives in
+`input_storage._s3_outcome_code`. S3 **output** write failures keep their
+existing `output_upload_error` code on `storage.output.upload.failed`.
+
 ### Bulk query events (SFBL-171)
 
 `bulk_query.job.created` · `bulk_query.job.polled` · `bulk_query.job.page_downloaded`

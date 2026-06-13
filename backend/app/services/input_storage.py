@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.input_connection import InputConnection
+from app.observability.events import OutcomeCode, StorageEvent
 from app.utils.encryption import decrypt_secret
 
 logger = logging.getLogger(__name__)
@@ -285,6 +286,56 @@ class _S3StreamingBodyReader(io.RawIOBase):
 
     def readable(self) -> bool:
         return True
+
+
+# ── Keyless S3 client primitive (SFBL-385) ─────────────────────────────────────
+
+
+def build_s3_client(
+    *,
+    region: Optional[str],
+    access_key_id: Optional[str] = None,
+    secret_access_key: Optional[str] = None,
+    session_token: Optional[str] = None,
+):
+    """Construct a boto3 S3 client, with or without explicit credentials.
+
+    This is the single keyless-S3 primitive shared by the implicit first-party
+    storage resolution (SFBL-385) and ``InputConnection.use_task_role``
+    (SFBL-295). When *access_key_id* / *secret_access_key* are omitted, **no**
+    credential kwargs are passed and boto3 resolves credentials via its default
+    chain — on ``aws_hosted`` that is the ECS task role. When both keys are
+    supplied (the BYO-keys path), they are passed through unchanged.
+
+    Args:
+        region: AWS region name, or ``None`` for the boto3 default.
+        access_key_id: AWS access key ID, or ``None`` for the keyless path.
+        secret_access_key: AWS secret access key, or ``None`` for keyless.
+        session_token: Optional STS session token (only used when keys are set).
+
+    Returns:
+        A configured boto3 S3 client.
+    """
+    client_kwargs: dict = {"service_name": "s3", "region_name": region}
+    if access_key_id and secret_access_key:
+        client_kwargs["aws_access_key_id"] = access_key_id
+        client_kwargs["aws_secret_access_key"] = secret_access_key
+        if session_token:
+            client_kwargs["aws_session_token"] = session_token
+    return boto3.client(**client_kwargs)
+
+
+def _s3_outcome_code(exc: "botocore.exceptions.ClientError") -> str:
+    """Map an S3 ``ClientError`` to a canonical observability outcome code.
+
+    ``AccessDenied`` / ``NoSuchBucket`` / ``NoSuchKey`` are read-access failures
+    (``storage_error``); ``SlowDown`` / ``Throttling`` / HTTP 503 are throttling
+    (``rate_limited``). See ``docs/observability.md`` (storage flow).
+    """
+    code = exc.response.get("Error", {}).get("Code", "")
+    if code in {"SlowDown", "Throttling", "ThrottlingException", "503", "RequestTimeout"}:
+        return OutcomeCode.RATE_LIMITED
+    return OutcomeCode.STORAGE_ERROR
 
 
 # ── Local storage implementation ──────────────────────────────────────────────
@@ -575,21 +626,20 @@ class S3InputStorage:
         bucket: str,
         root_prefix: Optional[str],
         region: Optional[str],
-        access_key_id: str,
-        secret_access_key: str,
+        access_key_id: Optional[str] = None,
+        secret_access_key: Optional[str] = None,
         session_token: Optional[str] = None,
     ) -> None:
         self._bucket = bucket
         self._root_prefix = _normalise_root_prefix(root_prefix)
-        client_kwargs = {
-            "service_name": "s3",
-            "aws_access_key_id": access_key_id,
-            "aws_secret_access_key": secret_access_key,
-            "region_name": region,
-        }
-        if session_token:
-            client_kwargs["aws_session_token"] = session_token
-        self._client = boto3.client(**client_kwargs)
+        # Keyless when no credentials are supplied — boto3 resolves via the ECS
+        # task-role chain (SFBL-385). BYO keys are passed through unchanged.
+        self._client = build_s3_client(
+            region=region,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            session_token=session_token,
+        )
 
     def _safe_relative_path(self, path: str) -> str:
         return _normalise_relative_path(path)
@@ -620,6 +670,14 @@ class S3InputStorage:
                 Delimiter="/",
             )
         except botocore.exceptions.ClientError as exc:
+            logger.warning(
+                "S3 input list failed for s3://%s/%s: %s", self._bucket, prefix, exc,
+                extra={
+                    "event_name": StorageEvent.INPUT_FAILED,
+                    "outcome_code": _s3_outcome_code(exc),
+                    "s3_bucket": self._bucket,
+                },
+            )
             raise InputStorageError(f"Could not list S3 path {path!r}: {exc}") from exc
 
         for common_prefix in response.get("CommonPrefixes", []):
@@ -754,6 +812,15 @@ class S3InputStorage:
                     if _matches_glob(rel_key, safe_pattern):
                         matched.append(rel_key)
         except botocore.exceptions.ClientError as exc:
+            logger.warning(
+                "S3 input discovery failed for %r in s3://%s: %s",
+                glob_pattern, self._bucket, exc,
+                extra={
+                    "event_name": StorageEvent.INPUT_FAILED,
+                    "outcome_code": _s3_outcome_code(exc),
+                    "s3_bucket": self._bucket,
+                },
+            )
             raise InputStorageError(f"Could not discover S3 files for {glob_pattern!r}: {exc}") from exc
 
         return sorted(matched)
@@ -780,6 +847,14 @@ class S3InputStorage:
             code = exc.response.get("Error", {}).get("Code")
             if code in {"NoSuchKey", "404"}:
                 raise FileNotFoundError(f"File not found: {path!r}") from exc
+            logger.warning(
+                "S3 input read failed for s3://%s/%s: %s", self._bucket, key, exc,
+                extra={
+                    "event_name": StorageEvent.INPUT_FAILED,
+                    "outcome_code": _s3_outcome_code(exc),
+                    "s3_bucket": self._bucket,
+                },
+            )
             raise InputStorageError(
                 f"Could not read S3 object {path!r}: {exc}"
             ) from exc
@@ -802,14 +877,77 @@ the same :class:`BaseInputStorage` contract used for true inputs.
 """
 
 
+def _s3_default_storage_enabled() -> bool:
+    """Whether the implicit/default source resolves to first-party S3 (SFBL-385).
+
+    True when ``input_storage_mode == "s3"`` (the aws_hosted default). The
+    bucket coordinates are guaranteed present by the fail-fast startup
+    validation in :class:`app.config.Settings`.
+    """
+    return settings.input_storage_mode == "s3"
+
+
+def _default_input_storage() -> "S3InputStorage":
+    """Keyless first-party-input-bucket storage for the default source."""
+    logger.info(
+        "Default input source resolves to s3://%s (keyless task-role)",
+        settings.s3_input_bucket,
+        extra={
+            "event_name": StorageEvent.INPUT_LISTED,
+            "outcome_code": OutcomeCode.OK,
+            "s3_bucket": settings.s3_input_bucket,
+        },
+    )
+    return S3InputStorage(
+        bucket=settings.s3_input_bucket,
+        root_prefix=settings.s3_input_prefix,
+        region=settings.s3_bucket_region,
+    )
+
+
+def _default_output_as_input_storage() -> "S3InputStorage":
+    """Keyless first-party-output-bucket storage, browsed as an input source.
+
+    Backs the ``local-output`` sentinel on ``aws_hosted`` so the Files-page
+    Output tab and DML steps chaining a prior run's output read from the
+    first-party output bucket instead of the ephemeral container filesystem.
+    """
+    logger.info(
+        "Default output-as-input source resolves to s3://%s (keyless task-role)",
+        settings.s3_output_bucket,
+        extra={
+            "event_name": StorageEvent.INPUT_LISTED,
+            "outcome_code": OutcomeCode.OK,
+            "s3_bucket": settings.s3_output_bucket,
+        },
+    )
+    return S3InputStorage(
+        bucket=settings.s3_output_bucket,
+        root_prefix=settings.s3_output_prefix,
+        region=settings.s3_bucket_region,
+    )
+
+
 async def get_storage(source: Optional[str], db: AsyncSession) -> BaseInputStorage:
-    """Resolve *source* to the appropriate input storage provider."""
+    """Resolve *source* to the appropriate input storage provider.
+
+    On ``input_storage_mode == "s3"`` (aws_hosted) the implicit/default source
+    (``None`` / ``""`` / ``"local"``) and the ``local-output`` sentinel resolve
+    to the deployment's first-party S3 buckets via the keyless task-role chain
+    (SFBL-385). On the filesystem profiles they resolve to the local input /
+    output directories exactly as before. Explicit connection-id sources are
+    unchanged on every profile (BYO keys, decrypted).
+    """
     from app.services.settings.dirs import effective_input_dir, effective_output_dir  # noqa: PLC0415
 
     if source in (None, "", "local"):
+        if _s3_default_storage_enabled():
+            return _default_input_storage()
         return LocalInputStorage(await effective_input_dir())
 
     if source == LOCAL_OUTPUT_SOURCE:
+        if _s3_default_storage_enabled():
+            return _default_output_as_input_storage()
         return LocalInputStorage(await effective_output_dir())
 
     ic = await db.get(InputConnection, source)
@@ -828,3 +966,73 @@ async def get_storage(source: Optional[str], db: AsyncSession) -> BaseInputStora
         secret_access_key=decrypt_secret(ic.secret_access_key),
         session_token=decrypt_secret(ic.session_token) if ic.session_token else None,
     )
+
+
+# ── Storage-location metadata (SFBL-296) ───────────────────────────────────────
+
+
+@dataclass
+class StorageLocation:
+    """Non-secret description of where the implicit Input/Output files live.
+
+    Surfaced by ``/api/runtime`` so the Files page can tell operators *where*
+    the listed files physically reside. Carries **no** credentials, tokens, or
+    presigned URLs — only the deployment-identity coordinates (bucket / region /
+    prefix) and a human-readable display URI/path.
+    """
+
+    provider: str           # "s3" | "local"
+    uri: str                # "s3://bucket/prefix" or the filesystem directory
+    bucket: Optional[str]   # S3 bucket name, or None for local
+    region: Optional[str]   # S3 region, or None for local
+    prefix: Optional[str]   # S3 key prefix, or None when unset / local
+
+
+def _s3_display_uri(bucket: Optional[str], prefix: Optional[str]) -> str:
+    norm = _normalise_root_prefix(prefix)
+    return f"s3://{bucket}/{norm}" if norm else f"s3://{bucket}"
+
+
+async def resolve_storage_locations() -> dict[str, StorageLocation]:
+    """Return the resolved Input and Output storage locations (no secrets).
+
+    Mirrors exactly what :func:`get_storage` / ``get_output_storage`` resolve
+    for the default source on the active profile: first-party S3 buckets on
+    ``input_storage_mode == "s3"``, otherwise the effective local directories.
+    """
+    from app.services.settings.dirs import effective_input_dir, effective_output_dir  # noqa: PLC0415
+
+    if _s3_default_storage_enabled():
+        return {
+            "input": StorageLocation(
+                provider="s3",
+                uri=_s3_display_uri(settings.s3_input_bucket, settings.s3_input_prefix),
+                bucket=settings.s3_input_bucket,
+                region=settings.s3_bucket_region,
+                prefix=settings.s3_input_prefix or None,
+            ),
+            "output": StorageLocation(
+                provider="s3",
+                uri=_s3_display_uri(settings.s3_output_bucket, settings.s3_output_prefix),
+                bucket=settings.s3_output_bucket,
+                region=settings.s3_bucket_region,
+                prefix=settings.s3_output_prefix or None,
+            ),
+        }
+
+    return {
+        "input": StorageLocation(
+            provider="local",
+            uri=await effective_input_dir(),
+            bucket=None,
+            region=None,
+            prefix=None,
+        ),
+        "output": StorageLocation(
+            provider="local",
+            uri=await effective_output_dir(),
+            bucket=None,
+            region=None,
+            prefix=None,
+        ),
+    }

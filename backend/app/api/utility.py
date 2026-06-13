@@ -18,12 +18,14 @@ from app.database import get_db
 from app.models.user import User
 from app.services.auth import get_current_user, validate_ws_token
 from app.services.input_storage import (
+    LOCAL_OUTPUT_SOURCE,
     BaseInputStorage,
     InputStorageError,
     InputConnectionNotFoundError,
-    LocalInputStorage,
     UnsupportedInputProviderError,
+    StorageLocation,
     get_storage,
+    resolve_storage_locations,
 )
 from app.observability.events import OutcomeCode, SystemEvent
 from app.observability.metrics import ws_active_connections
@@ -201,12 +203,23 @@ async def preview_input_file(
 @router.get("/api/files/output", response_model=List[InputDirectoryEntry])
 async def list_output_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(_require_files_view),
 ) -> List[InputDirectoryEntry]:
-    """List CSV files and subdirectories at the given path within the local output directory."""
-    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+    """List CSV files and subdirectories within the default output location.
 
-    storage = LocalInputStorage(await effective_output_dir())
+    Routes through the same resolver as the ``local-output`` source so the
+    Output tab follows the deployment's first-party S3 output bucket on
+    ``aws_hosted`` and the local output directory on the filesystem profiles
+    (SFBL-386, QA #1). Resolving directly to ``LocalInputStorage`` here would
+    leave the tab pinned to ephemeral container disk.
+    """
+    try:
+        storage = await get_storage(LOCAL_OUTPUT_SOURCE, db)
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    provider = _resolve_provider(storage)
     try:
         entries = storage.list_entries(path)
     except InputStorageError as exc:
@@ -218,8 +231,8 @@ async def list_output_files(
             path=e.path,
             size_bytes=e.size_bytes,
             row_count=e.row_count,
-            source="local-output",
-            provider="local",
+            source=LOCAL_OUTPUT_SOURCE,
+            provider=provider,
         )
         for e in entries
     ]
@@ -231,9 +244,15 @@ async def preview_output_file(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(_require_files_view_contents),
 ) -> InputPreviewResponse:
-    """Return a paginated page of data rows from a CSV file in the local output directory."""
+    """Preview a CSV from the default output location.
+
+    Resolves through the same ``local-output`` resolver as
+    :func:`list_output_files` so previews follow the first-party S3 output
+    bucket on ``aws_hosted`` (SFBL-386, QA #1).
+    """
     parsed_filters: list[dict[str, str]] | None = None
     if filters is not None:
         try:
@@ -253,9 +272,12 @@ async def preview_output_file(
                 )
         parsed_filters = parsed
 
-    from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+    try:
+        storage = await get_storage(LOCAL_OUTPUT_SOURCE, db)
+    except InputStorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    storage = LocalInputStorage(await effective_output_dir())
+    provider = _resolve_provider(storage)
     try:
         preview = await run_in_threadpool(storage.preview_file, file_path, limit, offset, parsed_filters)
     except InputStorageError as exc:
@@ -277,12 +299,26 @@ async def preview_output_file(
         "offset": preview.offset,
         "limit": preview.limit,
         "has_next": preview.has_next,
-        "source": "local-output",
-        "provider": "local",
+        "source": LOCAL_OUTPUT_SOURCE,
+        "provider": provider,
     }
 
 
 # ── Runtime config ─────────────────────────────────────────────────────────────
+
+
+class StorageLocationResponse(BaseModel):
+    """Non-secret description of where the Input/Output files live (SFBL-296).
+
+    Carries only deployment-identity coordinates — never credentials, tokens,
+    or presigned URLs.
+    """
+
+    provider: str
+    uri: str
+    bucket: Optional[str] = None
+    region: Optional[str] = None
+    prefix: Optional[str] = None
 
 
 class RuntimeConfigResponse(BaseModel):
@@ -290,6 +326,18 @@ class RuntimeConfigResponse(BaseModel):
     app_distribution: str
     transport_mode: str
     input_storage_mode: str
+    # Per-source resolved storage locations (input/output) for the Files page.
+    storage_locations: Dict[str, StorageLocationResponse]
+
+
+def _to_storage_location_response(loc: StorageLocation) -> StorageLocationResponse:
+    return StorageLocationResponse(
+        provider=loc.provider,
+        uri=loc.uri,
+        bucket=loc.bucket,
+        region=loc.region,
+        prefix=loc.prefix,
+    )
 
 
 @router.get("/api/runtime", response_model=RuntimeConfigResponse)
@@ -297,13 +345,20 @@ async def runtime_config() -> RuntimeConfigResponse:
     """Return the active distribution profile settings.
 
     Unauthenticated — the frontend calls this on startup to adapt its behaviour
-    (e.g. whether to show the login screen).
+    (e.g. whether to show the login screen). ``storage_locations`` tells the
+    Files page where the implicit Input/Output files physically live (S3 bucket
+    on aws_hosted, directory path on the filesystem profiles) without exposing
+    any credentials (SFBL-296).
     """
+    locations = await resolve_storage_locations()
     return RuntimeConfigResponse(
         auth_mode=settings.auth_mode or "",
         app_distribution=settings.app_distribution,
         transport_mode=settings.transport_mode or "",
         input_storage_mode=settings.input_storage_mode or "",
+        storage_locations={
+            key: _to_storage_location_response(loc) for key, loc in locations.items()
+        },
     )
 
 
