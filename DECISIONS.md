@@ -933,3 +933,66 @@ Consequences:
   live in the separate repo and are created after the first `.dmg` release
   exists to populate the cask `sha256`.
 
+---
+
+## 031 — aws_hosted default storage is the first-party S3 buckets, not local disk (SFBL-385)
+
+On `aws_hosted` the implicit/"default" Input and Output storage source now
+resolves to the deployment's own first-party S3 buckets, via the ECS task
+role's credential chain — **not** the ephemeral container filesystem.
+Desktop and self_hosted are unchanged (local filesystem).
+
+**Why.** `aws_hosted` already requires `input_storage_mode=s3`, but the
+resolvers (`get_storage`, `get_output_storage`) ignored it and always
+returned the filesystem providers rooted at `/data/{input,output}`. On
+Fargate that path is ephemeral, so: the Files page browsed an empty dir,
+and — more seriously — a load run with no explicit output connection wrote
+results to disk that is **lost on task recycle**. The first-party buckets
+the IaC provisions were unreachable unless an operator hand-created a
+BYO-keys `InputConnection`. (Verified identical on CDK and Terraform: both
+backend task roles carry SES-only actions, zero `s3:*`, and no
+`S3_*_BUCKET` env vars — see the v0.14 staging restore + SFBL-378
+validation.)
+
+**Decision — Option 1 (chosen): config-driven implicit S3.** The
+`NULL`/`""`/`"local"` source keeps meaning "the default location"; in
+`aws_hosted` that default is backed by the first-party bucket. Bucket names
+arrive as env vars (`S3_INPUT_BUCKET` / `S3_OUTPUT_BUCKET` /
+`S3_BUCKET_REGION`); the S3 client is constructed **keyless** (boto3 default
+chain → task role). The task role gains S3 read/write scoped to exactly the
+two first-party bucket ARNs. UI semantics are made honest by SFBL-296
+(relabel "Local …" → "Input/Output Files" and surface the bucket).
+
+**Option 2 (rejected): seed a default S3 `InputConnection` row.** Drop the
+"local" concept in hosted and represent the default as a seeded, system-
+protected connection. Rejected because:
+1. Desktop fundamentally needs local filesystem storage, so "local" can't
+   leave the model — Option 2 *adds* a second mechanism rather than
+   replacing one, raising total complexity.
+2. A seeded connection is a **DB row → travels in the RDS snapshot**, so on
+   restore into a deployment with different bucket names (cross-flavour
+   TF vs CDK naming, cross-account, re-home) it points at stale buckets and
+   needs boot-time reconciliation — the same footgun that already bites
+   `DATABASE_URL` on every restore (DECISION 028). Storage *location* is
+   deployment identity and belongs in config, not in restorable data.
+3. It needs a schema migration (`use_task_role` + a system/protected flag),
+   first-boot seeding, and Connections-page protection UI — a much larger
+   blast radius for no net conceptual win.
+
+**Relationship to DECISION 022.** This modifies 022's "task role gets no S3
+grants" posture: the task role now gets S3 grants **for the first-party
+buckets only**. BYO-keys `InputConnection`s remain exactly as in 022 for
+external / cross-account buckets — they are the explicit, non-default path.
+The keyless-S3-client primitive is shared with SFBL-295's
+`InputConnection.use_task_role`; SFBL-385 owns/extracts it and SFBL-295
+consumes it (avoids adding the grant twice).
+
+**Trade-off.** The default storage becomes "invisible infrastructure"
+(no connection row to inspect); SFBL-296's bucket surfacing on the Files
+page is the mitigation. Accepted — reconfiguring a hosted deployment's
+default storage is rare and is correctly a redeploy-time (config) action,
+not a runtime UI edit.
+
+Tracked: epic **SFBL-385** (backend SFBL-386, CDK SFBL-387, Terraform
+SFBL-388, docs SFBL-389); UI semantics **SFBL-296**.
+
