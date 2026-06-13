@@ -199,10 +199,17 @@ absent resource types):
 
 ```bash
 grep -rn "aws_nat_gateway" infrastructure-terraform/modules/ && echo FAIL || echo OK   # no-NAT cost guarantee
-grep -n '"s3:' infrastructure-terraform/modules/backend/*.tf && echo FAIL || echo OK   # task role carries no S3 grants
+grep -n '"s3:\*"' infrastructure-terraform/modules/backend/*.tf && echo FAIL || echo OK # no wildcard S3 action on the task role
 git ls-files infrastructure-terraform | grep -v '\.example$' | grep -v tests/ \
   | xargs grep -lE ':[0-9]{12}:' && echo FAIL || echo OK                                # no real account ids committed
 ```
+
+> **SFBL-388:** the old `grep '"s3:'` gate asserted the task role carried *no*
+> S3 grants. The task role now holds a **scoped** first-party-bucket grant
+> (object RW + `ListBucket` on exactly the two bucket ARNs), so that gate is
+> replaced by the precise positive + no-wildcard assertions in
+> `tests/backend.tftest.hcl` / `tests/data.tftest.hcl`. The grep gate above now
+> only guards against a wildcard `s3:*` *action* slipping in.
 
 ## Parity checklist (vs the CDK stacks)
 
@@ -225,8 +232,8 @@ lands here:
 | Migration task + dedicated cluster + log group | `data` — task definition, cluster, scoped execution role |
 | ECS cluster + FARGATE/FARGATE_SPOT capacity providers | `backend` — `aws_ecs_cluster_capacity_providers`, service depends on it |
 | Fargate service (circuit breaker, 50/200, public IPs, gold Spot hybrid) | `backend` — `aws_ecs_service` |
-| Task definition (10 injections, APP_DISTRIBUTION/RUN_MIGRATIONS, /live health) | `backend` — `aws_ecs_task_definition` |
-| Execution role (scoped secret/SSM reads) + task role (SES only, no S3) | `backend` — `iam.tf` |
+| Task definition (10 injections, APP_DISTRIBUTION/RUN_MIGRATIONS, S3_INPUT/OUTPUT_BUCKET + S3_BUCKET_REGION, /live health) | `backend` — `aws_ecs_task_definition` |
+| Execution role (scoped secret/SSM reads) + task role (SES + scoped first-party S3 RW/List, no wildcard — SFBL-388) | `backend` — `iam.tf` |
 | ALB, HTTPS listener (TLS13 policy), HTTP→301, target group (/ready) | `backend` — `alb.tf` |
 | Route53 alias for the backend domain | `backend` — `aws_route53_record` |
 | Frontend bucket + OAC + CloudFront (SPA, /api/*, /ws/*) | `frontend` — `main.tf` |
@@ -237,6 +244,23 @@ lands here:
 (first-party staging ops tooling; customer deployments are create-fresh);
 the test-evidence stack (internal CI); CDK CfnOutputs that exist purely for
 cross-stack wiring (Terraform modules pass values directly).
+
+**First-party S3 default storage parity (SFBL-385/388 — QA #9).** The two
+flavours must end behaviourally identical on the storage surface. This is a
+*positive* cross-flavour check, not just two suites passing in isolation:
+
+| Contract | CDK (`infrastructure/lib`) | Terraform (`infrastructure-terraform/modules`) |
+|---|---|---|
+| Env var names | `S3_INPUT_BUCKET` / `S3_OUTPUT_BUCKET` / `S3_BUCKET_REGION` | identical |
+| Injected on | backend service **and** migration task defs | identical |
+| Task-role S3 actions | `s3:GetObject/PutObject/DeleteObject` (objects) + `s3:ListBucket` (bucket) | identical |
+| Resource shape | `<inputArn>/*`, `<outputArn>/*` (objects); `<inputArn>`, `<outputArn>` (list) — no wildcard | identical |
+| Granted to | service **task** role + migration **task** role (never the execution roles) | identical |
+
+Verified by `test/sfbl-387-default-s3.test.ts` (CDK synth) and the
+`iam_direction` / `migration_task_contract` runs in
+`tests/{backend,data}.tftest.hcl` (Terraform/OpenTofu plan). When changing the
+storage grant in one flavour, update the other and re-confirm this table.
 
 ## Parity-deviation register
 

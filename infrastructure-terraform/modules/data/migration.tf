@@ -36,12 +36,37 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
   }
 }
 
-# Container-side identity. The migration only talks to the database (via the
-# injected DATABASE_URL), so the role carries no policies.
+# Container-side identity. The migration talks to the database via the injected
+# DATABASE_URL; it also carries the same scoped first-party S3 grant as the
+# backend service task role (SFBL-388) so the storage posture is identical
+# across both task definitions and the config validator's env contract matches.
 resource "aws_iam_role" "migration_task" {
   name_prefix        = "bl-${var.env_name}-migration-task-"
   description        = "Bulk Loader one-shot migration task role (${var.env_name})"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+}
+
+# Scoped first-party S3 access on the migration TASK role (not the execution
+# role): object RW on the two key-spaces + ListBucket on the two bucket ARNs,
+# no wildcard resource. Mirrors modules/backend/iam.tf.
+data "aws_iam_policy_document" "migration_task_s3" {
+  statement {
+    sid       = "FirstPartyBucketObjectReadWrite"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.data["input"].arn}/*", "${aws_s3_bucket.data["output"].arn}/*"]
+  }
+
+  statement {
+    sid       = "FirstPartyBucketList"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.data["input"].arn, aws_s3_bucket.data["output"].arn]
+  }
+}
+
+resource "aws_iam_role_policy" "migration_task_s3" {
+  name_prefix = "s3-"
+  role        = aws_iam_role.migration_task.id
+  policy      = data.aws_iam_policy_document.migration_task_s3.json
 }
 
 # Execution role - what ECS itself uses to pull the image, write logs, and
@@ -129,6 +154,12 @@ resource "aws_ecs_task_definition" "migration" {
       environment = [
         { name = "APP_DISTRIBUTION", value = "aws_hosted" },
         { name = "RUN_MIGRATIONS", value = "true" },
+        # SFBL-385: keep the storage env contract identical to the service task
+        # so the migration boots through the same config validator (which now
+        # requires these on input_storage_mode=s3).
+        { name = "S3_INPUT_BUCKET", value = aws_s3_bucket.data["input"].id },
+        { name = "S3_OUTPUT_BUCKET", value = aws_s3_bucket.data["output"].id },
+        { name = "S3_BUCKET_REGION", value = local.region },
       ]
 
       # Override the image CMD: run the migration then exit cleanly.

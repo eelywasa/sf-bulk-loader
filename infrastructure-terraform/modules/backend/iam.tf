@@ -4,12 +4,14 @@
 #   read the secrets/SSM parameters it injects as env vars. This role, NOT
 #   the task role, holds the secret/SSM reads.
 #
-#   Task role - the running container's identity. It has NO S3 grants: the
-#   application reads/writes S3 via per-Connection access keys stored
-#   encrypted in the DB (app/services/output_storage.py,
-#   app/api/input_connections.py). Its only permissions are SES send
-#   (scoped to this deployment's identity) and the account-wide SES reads
-#   the health probe needs.
+#   Task role - the running container's identity. On aws_hosted the default
+#   Input/Output storage resolves to the first-party buckets via this role's
+#   keyless credential chain (SFBL-385), so it carries scoped object RW +
+#   ListBucket on exactly those two buckets (below). External / cross-account
+#   buckets still use per-Connection BYO keys stored encrypted in the DB
+#   (app/services/input_storage.py) - the non-default path, no grant needed.
+#   It also has SES send (scoped to this deployment's identity) and the
+#   account-wide SES reads the health probe needs.
 
 data "aws_iam_policy_document" "ecs_tasks_assume" {
   statement {
@@ -86,4 +88,29 @@ resource "aws_iam_role_policy" "task_ses" {
   name_prefix = "ses-"
   role        = aws_iam_role.task.id
   policy      = data.aws_iam_policy_document.task_ses.json
+}
+
+# First-party S3 default storage (SFBL-385/388). Least-privilege: object RW on
+# the two bucket key-spaces + ListBucket on the two bucket ARNs. No wildcard
+# resource, and no grant on the access-logs bucket. Attached to the TASK role
+# (not the execution role) - the app reaches S3 via the boto3 default
+# credential chain (this role), keyless.
+data "aws_iam_policy_document" "task_s3" {
+  statement {
+    sid       = "FirstPartyBucketObjectReadWrite"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${var.input_bucket_arn}/*", "${var.output_bucket_arn}/*"]
+  }
+
+  statement {
+    sid       = "FirstPartyBucketList"
+    actions   = ["s3:ListBucket"]
+    resources = [var.input_bucket_arn, var.output_bucket_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "task_s3" {
+  name_prefix = "s3-"
+  role        = aws_iam_role.task.id
+  policy      = data.aws_iam_policy_document.task_s3.json
 }

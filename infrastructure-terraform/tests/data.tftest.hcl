@@ -233,6 +233,29 @@ run "migration_task_contract" {
     condition     = length(jsondecode(aws_ecs_task_definition.migration.container_definitions)[0].secrets) == 10
     error_message = "Migration task must inject all ten secret/SSM values (full config validator runs at boot)."
   }
+
+  # SFBL-388: the migration task carries the same first-party S3 env contract
+  # as the service task so it boots through the identical config validator.
+  assert {
+    condition = alltrue([
+      anytrue([for e in jsondecode(aws_ecs_task_definition.migration.container_definitions)[0].environment : e.name == "S3_INPUT_BUCKET" && e.value == aws_s3_bucket.data["input"].id]),
+      anytrue([for e in jsondecode(aws_ecs_task_definition.migration.container_definitions)[0].environment : e.name == "S3_OUTPUT_BUCKET" && e.value == aws_s3_bucket.data["output"].id]),
+      anytrue([for e in jsondecode(aws_ecs_task_definition.migration.container_definitions)[0].environment : e.name == "S3_BUCKET_REGION"]),
+    ])
+    error_message = "Migration task must inject S3_INPUT_BUCKET/S3_OUTPUT_BUCKET/S3_BUCKET_REGION bound to the first-party buckets."
+  }
+
+  # The migration TASK role gets scoped object RW + ListBucket on exactly the
+  # two bucket ARNs - no wildcard resource. Mirrors the backend module.
+  assert {
+    condition = (
+      data.aws_iam_policy_document.migration_task_s3.statement[0].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]) &&
+      data.aws_iam_policy_document.migration_task_s3.statement[1].actions == toset(["s3:ListBucket"]) &&
+      !contains(data.aws_iam_policy_document.migration_task_s3.statement[0].resources, "*") &&
+      !contains(data.aws_iam_policy_document.migration_task_s3.statement[1].resources, "*")
+    )
+    error_message = "Migration task-role S3 grant must be object RW + ListBucket scoped to the two bucket ARNs, no wildcard."
+  }
 }
 
 run "ses_adopt_existing_creates_nothing" {

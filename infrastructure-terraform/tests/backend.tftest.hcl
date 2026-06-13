@@ -2,9 +2,12 @@
 # falsification clauses: IAM direction (execution role reads config, task
 # role does not), gold Fargate Spot hybrid, health-check paths.
 #
-# The "task role has no S3 grants" absence check is structural (no s3:*
-# statement exists in the module) and enforced by the grep gate in the
-# deployment guide's validation section.
+# SFBL-388 modifies the SFBL-382 posture: the task role now carries scoped
+# first-party S3 grants (object RW + ListBucket on exactly the two bucket
+# ARNs). The previous "task role has no S3 grants" structural absence check is
+# REPLACED below by a positive, scoped assertion plus an execution-role-no-S3
+# falsification clause - so the grant cannot silently widen to a wildcard and
+# cannot drift onto the execution role.
 
 mock_provider "aws" {
   # The provider validates policy JSON even under mocks - pin a valid doc.
@@ -75,6 +78,10 @@ variables {
     EMAIL_SES_REGION   = "arn:aws:ssm:eu-west-1:111122223333:parameter/test/bulk-loader/email-ses-region"
   }
   ses_identity_arn           = "arn:aws:ses:eu-west-1:111122223333:identity/example.com"
+  input_bucket_name          = "bulk-loader-test-input"
+  output_bucket_name         = "bulk-loader-test-output"
+  input_bucket_arn           = "arn:aws:s3:::bulk-loader-test-input"
+  output_bucket_arn          = "arn:aws:s3:::bulk-loader-test-output"
   backend_domain_name        = "api.bulk-loader.example.com"
   backend_certificate_arn    = "arn:aws:acm:eu-west-1:111122223333:certificate/00000000-0000-0000-0000-000000000000"
   hosted_zone_domain         = "example.com"
@@ -104,6 +111,17 @@ run "task_definition_runtime_contract" {
       anytrue([for e in jsondecode(aws_ecs_task_definition.backend.container_definitions)[0].environment : e.name == "RUN_MIGRATIONS" && e.value == "false"]),
     ])
     error_message = "Service tasks must set APP_DISTRIBUTION=aws_hosted and RUN_MIGRATIONS=false."
+  }
+
+  # SFBL-388: the three first-party S3 bucket env vars are injected, bound to
+  # the buckets and the deploy region.
+  assert {
+    condition = alltrue([
+      anytrue([for e in jsondecode(aws_ecs_task_definition.backend.container_definitions)[0].environment : e.name == "S3_INPUT_BUCKET" && e.value == var.input_bucket_name]),
+      anytrue([for e in jsondecode(aws_ecs_task_definition.backend.container_definitions)[0].environment : e.name == "S3_OUTPUT_BUCKET" && e.value == var.output_bucket_name]),
+      anytrue([for e in jsondecode(aws_ecs_task_definition.backend.container_definitions)[0].environment : e.name == "S3_BUCKET_REGION" && e.value == "eu-west-1"]),
+    ])
+    error_message = "Backend task must inject S3_INPUT_BUCKET/S3_OUTPUT_BUCKET/S3_BUCKET_REGION bound to the first-party buckets."
   }
 
   # Container liveness uses /live - /ready here would let a DB blip kill
@@ -145,6 +163,37 @@ run "iam_direction" {
   assert {
     condition     = data.aws_iam_policy_document.task_ses.statement[1].actions == toset(["ses:GetSendQuota", "ses:GetAccount"])
     error_message = "The only wildcard-resource statement on the task role is the SES account-read pair."
+  }
+
+  # SFBL-388 (replaces the old "task role has no S3 grants" absence check):
+  # the task role carries scoped object RW on the two key-spaces + ListBucket
+  # on the two bucket ARNs - exactly, nothing extra.
+  assert {
+    condition = (
+      data.aws_iam_policy_document.task_s3.statement[0].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]) &&
+      data.aws_iam_policy_document.task_s3.statement[0].resources == toset(["${var.input_bucket_arn}/*", "${var.output_bucket_arn}/*"]) &&
+      data.aws_iam_policy_document.task_s3.statement[1].actions == toset(["s3:ListBucket"]) &&
+      data.aws_iam_policy_document.task_s3.statement[1].resources == toset([var.input_bucket_arn, var.output_bucket_arn])
+    )
+    error_message = "Task-role S3 grant must be object RW on bucket/* + ListBucket on exactly the two first-party bucket ARNs."
+  }
+
+  # Falsification: no S3 statement on the task role may use Resource:"*".
+  assert {
+    condition = (
+      !contains(data.aws_iam_policy_document.task_s3.statement[0].resources, "*") &&
+      !contains(data.aws_iam_policy_document.task_s3.statement[1].resources, "*")
+    )
+    error_message = "Task-role S3 statements must never use a wildcard resource."
+  }
+
+  # QA #6: S3 lives on the TASK role only - the execution role carries no s3:*.
+  assert {
+    condition = alltrue([
+      for s in data.aws_iam_policy_document.execution_config_read.statement :
+      !anytrue([for a in s.actions : strcontains(a, "s3:")])
+    ])
+    error_message = "The backend execution role must carry no s3:* actions - S3 belongs on the task role only."
   }
 }
 

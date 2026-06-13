@@ -38,6 +38,16 @@ output "output_bucket_name" {
   value       = aws_s3_bucket.data["output"].id
 }
 
+output "input_bucket_arn" {
+  description = "ARN of the input bucket - scopes the backend task role's S3 grant (SFBL-388)."
+  value       = aws_s3_bucket.data["input"].arn
+}
+
+output "output_bucket_arn" {
+  description = "ARN of the output bucket - scopes the backend task role's S3 grant (SFBL-388)."
+  value       = aws_s3_bucket.data["output"].arn
+}
+
 output "access_logs_bucket_name" {
   description = "S3 bucket receiving server-access logs for the data buckets."
   value       = aws_s3_bucket.access_logs.id

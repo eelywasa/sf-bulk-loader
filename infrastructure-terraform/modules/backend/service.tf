@@ -30,12 +30,18 @@ resource "aws_ecs_task_definition" "backend" {
       # Manager; non-sensitive from SSM.
       secrets = local.injected_secrets
 
-      # Plain env vars carry only static distribution policy and the
-      # migration gate: service tasks never run migrations - the one-shot
-      # task in the data module handles that before each rollout.
+      # Plain env vars carry only static distribution policy, the migration
+      # gate, and the first-party bucket coordinates (non-sensitive deployment
+      # identity). Service tasks never run migrations - the one-shot task in
+      # the data module handles that before each rollout. SFBL-385: the app
+      # resolves the default Input/Output source to these buckets via the task
+      # role's keyless credential chain.
       environment = [
         { name = "APP_DISTRIBUTION", value = "aws_hosted" },
         { name = "RUN_MIGRATIONS", value = "false" },
+        { name = "S3_INPUT_BUCKET", value = var.input_bucket_name },
+        { name = "S3_OUTPUT_BUCKET", value = var.output_bucket_name },
+        { name = "S3_BUCKET_REGION", value = data.aws_region.current.region },
       ]
 
       portMappings = [

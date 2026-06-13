@@ -70,6 +70,13 @@ module "backend" {
   injected_ssm_arns    = module.data.injected_ssm_arns
   ses_identity_arn     = module.data.ses_identity_arn
 
+  # First-party S3 default storage (SFBL-388) - names injected as env vars,
+  # ARNs scope the task role's S3 grant.
+  input_bucket_name  = module.data.input_bucket_name
+  output_bucket_name = module.data.output_bucket_name
+  input_bucket_arn   = module.data.input_bucket_arn
+  output_bucket_arn  = module.data.output_bucket_arn
+
   backend_domain_name     = var.backend_domain_name
   backend_certificate_arn = var.backend_certificate_arn
   hosted_zone_domain      = var.hosted_zone_domain

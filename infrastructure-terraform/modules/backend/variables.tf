@@ -48,6 +48,29 @@ variable "ses_identity_arn" {
   type        = string
 }
 
+# First-party S3 default storage (SFBL-385/388). The app resolves the implicit
+# Input/Output source to these buckets via the task role's keyless credential
+# chain. Names are injected as plain env vars; ARNs scope the task-role policy.
+variable "input_bucket_name" {
+  description = "First-party input S3 bucket name (default Input source on aws_hosted)."
+  type        = string
+}
+
+variable "output_bucket_name" {
+  description = "First-party output S3 bucket name (default Output target on aws_hosted)."
+  type        = string
+}
+
+variable "input_bucket_arn" {
+  description = "First-party input S3 bucket ARN - scopes the task role's S3 grant."
+  type        = string
+}
+
+variable "output_bucket_arn" {
+  description = "First-party output S3 bucket ARN - scopes the task role's S3 grant."
+  type        = string
+}
+
 variable "backend_domain_name" {
   description = "FQDN for the backend origin - the Route53 alias created here."
   type        = string
