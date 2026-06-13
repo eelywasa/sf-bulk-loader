@@ -170,7 +170,7 @@ run "iam_direction" {
   # on the two bucket ARNs - exactly, nothing extra.
   assert {
     condition = (
-      data.aws_iam_policy_document.task_s3.statement[0].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]) &&
+      data.aws_iam_policy_document.task_s3.statement[0].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]) &&
       data.aws_iam_policy_document.task_s3.statement[0].resources == toset(["${var.input_bucket_arn}/*", "${var.output_bucket_arn}/*"]) &&
       data.aws_iam_policy_document.task_s3.statement[1].actions == toset(["s3:ListBucket"]) &&
       data.aws_iam_policy_document.task_s3.statement[1].resources == toset([var.input_bucket_arn, var.output_bucket_arn])

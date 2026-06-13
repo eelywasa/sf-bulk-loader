@@ -581,7 +581,9 @@ export class DataStack extends cdk.Stack {
     migrationTaskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         sid: 'FirstPartyBucketObjectReadWrite',
-        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+        // AbortMultipartUpload mirrors the service task role (S3OutputStorage
+        // aborts a streamed multipart upload on failure).
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:AbortMultipartUpload'],
         resources: [
           this.inputBucket.arnForObjects('*'),
           this.outputBucket.arnForObjects('*'),

@@ -253,7 +253,7 @@ flavours must end behaviourally identical on the storage surface. This is a
 |---|---|---|
 | Env var names | `S3_INPUT_BUCKET` / `S3_OUTPUT_BUCKET` / `S3_BUCKET_REGION` | identical |
 | Injected on | backend service **and** migration task defs | identical |
-| Task-role S3 actions | `s3:GetObject/PutObject/DeleteObject` (objects) + `s3:ListBucket` (bucket) | identical |
+| Task-role S3 actions | `s3:GetObject/PutObject/DeleteObject/AbortMultipartUpload` (objects) + `s3:ListBucket` (bucket) | identical |
 | Resource shape | `<inputArn>/*`, `<outputArn>/*` (objects); `<inputArn>`, `<outputArn>` (list) — no wildcard | identical |
 | Granted to | service **task** role + migration **task** role (never the execution roles) | identical |
 

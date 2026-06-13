@@ -249,7 +249,7 @@ run "migration_task_contract" {
   # two bucket ARNs - no wildcard resource. Mirrors the backend module.
   assert {
     condition = (
-      data.aws_iam_policy_document.migration_task_s3.statement[0].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]) &&
+      data.aws_iam_policy_document.migration_task_s3.statement[0].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]) &&
       data.aws_iam_policy_document.migration_task_s3.statement[1].actions == toset(["s3:ListBucket"]) &&
       !contains(data.aws_iam_policy_document.migration_task_s3.statement[0].resources, "*") &&
       !contains(data.aws_iam_policy_document.migration_task_s3.statement[1].resources, "*")

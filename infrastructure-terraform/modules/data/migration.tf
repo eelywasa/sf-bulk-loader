@@ -51,8 +51,10 @@ resource "aws_iam_role" "migration_task" {
 # no wildcard resource. Mirrors modules/backend/iam.tf.
 data "aws_iam_policy_document" "migration_task_s3" {
   statement {
-    sid       = "FirstPartyBucketObjectReadWrite"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    sid = "FirstPartyBucketObjectReadWrite"
+    # AbortMultipartUpload mirrors the backend module (S3OutputStorage aborts a
+    # streamed multipart upload on failure).
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
     resources = ["${aws_s3_bucket.data["input"].arn}/*", "${aws_s3_bucket.data["output"].arn}/*"]
   }
 

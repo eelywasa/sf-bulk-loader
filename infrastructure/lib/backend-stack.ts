@@ -329,7 +329,9 @@ export class BackendStack extends cdk.Stack {
     taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         sid: 'FirstPartyBucketObjectReadWrite',
-        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+        // AbortMultipartUpload is required so S3OutputStorage.open_writer can
+        // abort a streamed multipart upload on failure (avoids orphaned parts).
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:AbortMultipartUpload'],
         resources: firstPartyObjectArns,
       }),
     );

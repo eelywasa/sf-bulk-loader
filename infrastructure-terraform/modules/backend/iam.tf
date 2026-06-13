@@ -97,8 +97,10 @@ resource "aws_iam_role_policy" "task_ses" {
 # credential chain (this role), keyless.
 data "aws_iam_policy_document" "task_s3" {
   statement {
-    sid       = "FirstPartyBucketObjectReadWrite"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    sid = "FirstPartyBucketObjectReadWrite"
+    # AbortMultipartUpload lets S3OutputStorage.open_writer abort a streamed
+    # multipart upload on failure (avoids orphaned parts).
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
     resources = ["${var.input_bucket_arn}/*", "${var.output_bucket_arn}/*"]
   }
 
