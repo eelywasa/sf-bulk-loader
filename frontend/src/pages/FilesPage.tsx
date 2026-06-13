@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFolder, faChevronRight } from '@fortawesome/free-solid-svg-icons'
-import { filesApi, inputConnectionsApi } from '../api/endpoints'
+import { filesApi, getRuntimeConfig, inputConnectionsApi } from '../api/endpoints'
 import { formatApiErrorStrict } from '../api/errors'
-import type { InputConnection, InputDirectoryEntry } from '../api/types'
+import type { InputConnection, InputDirectoryEntry, StorageLocation } from '../api/types'
 import { Card, CsvPreviewPanel, EmptyState, Spinner } from '../components/ui'
 import { ALERT_ERROR, LABEL_CLASS, SELECT_CLASS } from '../components/ui/formStyles'
 import { usePermission } from '../hooks/usePermission'
@@ -134,6 +135,48 @@ function PreviewEmpty() {
   )
 }
 
+// ─── Storage location line ─────────────────────────────────────────────────────
+
+interface StorageLocationLineProps {
+  location: StorageLocation | null
+  appDistribution: string
+}
+
+/**
+ * Tells the operator *where* the listed files physically live (SFBL-296).
+ * S3 deployments show the bucket URI; filesystem deployments show the directory
+ * path, with a deep link to Storage Settings on desktop.
+ */
+function StorageLocationLine({ location, appDistribution }: StorageLocationLineProps) {
+  if (!location) return null
+
+  if (location.provider === 's3') {
+    return (
+      <p className="mt-1 text-xs text-content-muted" data-testid="storage-location">
+        Stored in <span className="font-mono">{location.uri}</span>
+      </p>
+    )
+  }
+
+  // Filesystem provider — directory path, plus a Storage Settings link on desktop.
+  const isDesktop = appDistribution === 'desktop'
+  return (
+    <p className="mt-1 text-xs text-content-muted" data-testid="storage-location">
+      Stored in <span className="font-mono">{location.uri}</span>
+      {isDesktop ? (
+        <>
+          {' · '}
+          <Link to="/settings" className="text-content-link hover:text-accent-hover">
+            Configured in Storage Settings
+          </Link>
+        </>
+      ) : (
+        <> · container-mounted volume</>
+      )}
+    </p>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FilesPage() {
@@ -158,7 +201,36 @@ export default function FilesPage() {
     queryFn: () => inputConnectionsApi.list(),
   })
 
+  const { data: runtime } = useQuery({
+    queryKey: ['runtime-config'],
+    queryFn: () => getRuntimeConfig(),
+    staleTime: 5 * 60 * 1000,
+  })
+
   const isOutputSource = source === 'local-output'
+
+  // Where the files for the active source physically live (SFBL-296).
+  const activeLocation: StorageLocation | null = (() => {
+    if (source === 'local') return runtime?.storage_locations?.input ?? null
+    if (source === 'local-output') return runtime?.storage_locations?.output ?? null
+    const conn = inputConnections.find((c) => c.id === source)
+    if (!conn) return null
+    const prefix = conn.root_prefix ? `/${conn.root_prefix.replace(/^\/+|\/+$/g, '')}` : ''
+    return {
+      provider: 's3',
+      uri: `s3://${conn.bucket}${prefix}`,
+      bucket: conn.bucket,
+      region: conn.region ?? null,
+      prefix: conn.root_prefix ?? null,
+    }
+  })()
+
+  const locationLine = (
+    <StorageLocationLine
+      location={activeLocation}
+      appDistribution={runtime?.app_distribution ?? ''}
+    />
+  )
 
   const {
     data: entries,
@@ -186,8 +258,8 @@ export default function FilesPage() {
         onChange={(e) => handleSourceChange(e.target.value)}
         className={SELECT_CLASS + ' w-auto'}
       >
-        <option value="local">Local Input Files</option>
-        <option value="local-output">Local Output Files</option>
+        <option value="local">Input Files</option>
+        <option value="local-output">Output Files</option>
         {inputConnections.map((conn) => (
           <option key={conn.id} value={conn.id}>{conn.name}</option>
         ))}
@@ -197,10 +269,19 @@ export default function FilesPage() {
 
   const sourceDescription =
     source === 'local'
-      ? 'Browse and preview CSV files in the local input directory.'
+      ? 'Browse and preview input CSV files.'
       : source === 'local-output'
-        ? 'Browse and preview result CSV files written to the local output directory.'
+        ? 'Browse and preview result CSV files written by load runs.'
         : 'Browse and preview CSV files from the selected storage connection.'
+
+  const header = (
+    <div>
+      <h1 className="text-2xl font-bold text-content-primary">Files</h1>
+      <p className="mt-1 text-sm text-content-muted">{sourceDescription}</p>
+      {sourceSelector}
+      {locationLine}
+    </div>
+  )
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -219,13 +300,7 @@ export default function FilesPage() {
       formatApiErrorStrict(filesErr, 'Failed to load files')
     return (
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-content-primary">Files</h1>
-          <p className="mt-1 text-sm text-content-muted">
-            {sourceDescription}
-          </p>
-          {sourceSelector}
-        </div>
+        {header}
         <div className={ALERT_ERROR}>
           <p>{message}</p>
         </div>
@@ -238,19 +313,13 @@ export default function FilesPage() {
   if (!entries || entries.length === 0) {
     return (
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-content-primary">Files</h1>
-          <p className="mt-1 text-sm text-content-muted">
-            {sourceDescription}
-          </p>
-          {sourceSelector}
-        </div>
+        {header}
         <Breadcrumb currentPath={currentPath} onNavigate={handleNavigate} />
         <EmptyState
           title="No files found"
           description={
             source === 'local'
-              ? 'Place CSV files in the /data/input directory to see them here.'
+              ? 'Add CSV files to the input storage location to see them here.'
               : source === 'local-output'
                 ? 'No result files found. Run a load plan to generate output files.'
                 : 'No files found in this location.'
@@ -305,13 +374,7 @@ export default function FilesPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-content-primary">Files</h1>
-        <p className="mt-1 text-sm text-content-muted">
-          {sourceDescription}
-        </p>
-        {sourceSelector}
-      </div>
+      {header}
 
       <Breadcrumb currentPath={currentPath} onNavigate={handleNavigate} />
 

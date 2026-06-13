@@ -52,7 +52,7 @@ declares:
 | **SOQL** | Query steps only — the statement to execute. |
 | **Partition size** | Per-step override of the default partition size. |
 | **Assignment rule** | Optional Salesforce assignment rule ID (Leads / Cases). |
-| **Input source** | Three-way: local input, previous-run output (S3 or local-output), or **From upstream step in this run** — feeds a named query step's artefact directly into this DML step. See [Chaining steps](chaining-steps.md). |
+| **Input source** | Three-way: **Input files**, **Previous-run output** (prior run results), or **From upstream step in this run** — feeds a named query step's artefact directly into this DML step. See [Chaining steps](chaining-steps.md). |
 
 ### Operations
 

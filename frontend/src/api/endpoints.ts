@@ -55,6 +55,7 @@ import type {
   PatMetadata,
   PatCreateRequest,
   PatCreateResponse,
+  RuntimeConfig,
 } from './types'
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -607,6 +608,13 @@ export const filesApi = {
       `/api/files/output/${buildPreviewPath(filePath)}/preview?${query.toString()}`,
     )
   },
+}
+
+// ─── Runtime config (SFBL-296) ────────────────────────────────────────────────
+
+/** Public runtime config, including the resolved storage locations. */
+export function getRuntimeConfig(): Promise<RuntimeConfig> {
+  return apiFetch<RuntimeConfig>('/api/runtime')
 }
 
 // ─── About / system info (SFBL-269) ──────────────────────────────────────────

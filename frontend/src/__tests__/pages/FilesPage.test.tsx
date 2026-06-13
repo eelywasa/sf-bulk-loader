@@ -15,6 +15,10 @@ const MOCK_RUNTIME: RuntimeConfig = {
   app_distribution: 'self_hosted',
   transport_mode: 'http',
   input_storage_mode: 'local',
+  storage_locations: {
+    input: { provider: 'local', uri: '/data/input', bucket: null, region: null, prefix: null },
+    output: { provider: 'local', uri: '/data/output', bucket: null, region: null, prefix: null },
+  },
 }
 
 const MOCK_USER: UserResponse = {
@@ -39,9 +43,10 @@ vi.mock('../../api/endpoints', () => ({
   inputConnectionsApi: {
     list: vi.fn(),
   },
+  getRuntimeConfig: vi.fn(),
 }))
 
-import { filesApi, inputConnectionsApi } from '../../api/endpoints'
+import { filesApi, getRuntimeConfig, inputConnectionsApi } from '../../api/endpoints'
 import type { InputConnection } from '../../api/types'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -96,7 +101,7 @@ const widePreview: InputFilePreview = {
 
 // ─── Render helper ────────────────────────────────────────────────────────────
 
-function renderFilesPage() {
+function renderFilesPage(runtime: RuntimeConfig = MOCK_RUNTIME) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -105,9 +110,11 @@ function renderFilesPage() {
 
   localStorage.setItem('auth_token', 'test-token')
   vi.spyOn(client, 'apiFetch').mockImplementation((url: string) => {
-    if (url === '/api/runtime') return Promise.resolve(MOCK_RUNTIME)
+    if (url === '/api/runtime') return Promise.resolve(runtime)
     return Promise.resolve(MOCK_USER)
   })
+  // FilesPage fetches the runtime config (for storage_locations) via this wrapper.
+  vi.mocked(getRuntimeConfig).mockResolvedValue(runtime)
 
   return render(
     <ThemeProvider>
@@ -221,7 +228,7 @@ describe('FilesPage', () => {
     renderFilesPage()
     await waitFor(() => {
       expect(
-        screen.getByText(/Place CSV files in the \/data\/input directory/),
+        screen.getByText(/Add CSV files to the input storage location/),
       ).toBeInTheDocument()
     })
   })
@@ -677,14 +684,14 @@ describe('FilesPage', () => {
 
   // ── Source selector ────────────────────────────────────────────────────────
 
-  it('always shows source selector with at least local input and local output options', async () => {
+  it('always shows source selector with at least input and output options', async () => {
     vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
     vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
     renderFilesPage()
     await waitFor(() => screen.getByText('accounts.csv'))
     const select = screen.getByLabelText('Source')
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
-    expect(options).toEqual(['Local Input Files', 'Local Output Files'])
+    expect(options).toEqual(['Input Files', 'Output Files'])
   })
 
   it('shows source selector when input connections exist', async () => {
@@ -703,7 +710,7 @@ describe('FilesPage', () => {
     await waitFor(() => screen.getByLabelText('Source'))
     const select = screen.getByLabelText('Source')
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
-    expect(options).toEqual(['Local Input Files', 'Local Output Files', 'Production S3'])
+    expect(options).toEqual(['Input Files', 'Output Files', 'Production S3'])
   })
 
   it('defaults to local source', async () => {
@@ -826,7 +833,7 @@ describe('FilesPage', () => {
     vi.mocked(filesApi.listInput).mockResolvedValue([])
     renderFilesPage()
     await waitFor(() => {
-      expect(screen.getByText(/Place CSV files in the \/data\/input directory/)).toBeInTheDocument()
+      expect(screen.getByText(/Add CSV files to the input storage location/)).toBeInTheDocument()
     })
   })
 
@@ -901,6 +908,88 @@ describe('FilesPage', () => {
     await user.selectOptions(screen.getByLabelText('Source'), 'local-output')
     await waitFor(() =>
       expect(screen.getByText('No result files found. Run a load plan to generate output files.')).toBeInTheDocument()
+    )
+  })
+
+  // ── Storage-location surfacing per profile (SFBL-296) ────────────────────────
+
+  const AWS_RUNTIME: RuntimeConfig = {
+    auth_mode: 'local',
+    app_distribution: 'aws_hosted',
+    transport_mode: 'https',
+    input_storage_mode: 's3',
+    storage_locations: {
+      input: { provider: 's3', uri: 's3://bulk-loader-staging-input', bucket: 'bulk-loader-staging-input', region: 'eu-west-1', prefix: null },
+      output: { provider: 's3', uri: 's3://bulk-loader-staging-output', bucket: 'bulk-loader-staging-output', region: 'eu-west-1', prefix: null },
+    },
+  }
+
+  const DESKTOP_RUNTIME: RuntimeConfig = {
+    auth_mode: 'none',
+    app_distribution: 'desktop',
+    transport_mode: 'local',
+    input_storage_mode: 'local',
+    storage_locations: {
+      input: { provider: 'local', uri: '/Users/me/sfbl/input', bucket: null, region: null, prefix: null },
+      output: { provider: 'local', uri: '/Users/me/sfbl/output', bucket: null, region: null, prefix: null },
+    },
+  }
+
+  it('surfaces the S3 bucket URI on aws_hosted', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage(AWS_RUNTIME)
+    await waitFor(() => screen.getByText('accounts.csv'))
+    const loc = await screen.findByTestId('storage-location')
+    expect(loc).toHaveTextContent('s3://bulk-loader-staging-input')
+    // No misleading "Local" wording.
+    expect(loc.textContent).not.toMatch(/local/i)
+  })
+
+  it('switches the surfaced location to the output bucket on the Output tab (aws_hosted)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue([])
+    vi.mocked(filesApi.listOutput).mockResolvedValue(fileList)
+    renderFilesPage(AWS_RUNTIME)
+    await waitFor(() => screen.getByLabelText('Source'))
+    await user.selectOptions(screen.getByLabelText('Source'), 'local-output')
+    await waitFor(() =>
+      expect(screen.getByTestId('storage-location')).toHaveTextContent('s3://bulk-loader-staging-output'),
+    )
+  })
+
+  it('surfaces the directory path and a Storage Settings deep link on desktop', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage(DESKTOP_RUNTIME)
+    await waitFor(() => screen.getByText('accounts.csv'))
+    const loc = await screen.findByTestId('storage-location')
+    expect(loc).toHaveTextContent('/Users/me/sfbl/input')
+    const link = screen.getByRole('link', { name: 'Configured in Storage Settings' })
+    expect(link).toHaveAttribute('href', '/settings')
+  })
+
+  it('surfaces the directory path with a container-volume note on self_hosted (no deep link)', async () => {
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage() // default MOCK_RUNTIME = self_hosted
+    await waitFor(() => screen.getByText('accounts.csv'))
+    const loc = await screen.findByTestId('storage-location')
+    expect(loc).toHaveTextContent('/data/input')
+    expect(loc).toHaveTextContent('container-mounted volume')
+    expect(screen.queryByRole('link', { name: 'Configured in Storage Settings' })).not.toBeInTheDocument()
+  })
+
+  it('surfaces the selected connection bucket for a BYO S3 source', async () => {
+    const user = userEvent.setup()
+    vi.mocked(inputConnectionsApi.list).mockResolvedValue([s3Connection])
+    vi.mocked(filesApi.listInput).mockResolvedValue(fileList)
+    renderFilesPage()
+    await waitFor(() => screen.getByLabelText('Source'))
+    await user.selectOptions(screen.getByLabelText('Source'), s3Connection.id)
+    await waitFor(() =>
+      expect(screen.getByTestId('storage-location')).toHaveTextContent('s3://my-data-bucket/data/csvs'),
     )
   })
 })

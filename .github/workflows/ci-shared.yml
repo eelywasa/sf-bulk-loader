@@ -43,6 +43,8 @@ jobs:
               - 'docs/usage/**'
               - 'backend/app/auth/permissions.py'
               - 'frontend/scripts/check-help-links.mjs'
+              - 'frontend/scripts/check-no-local-labels.mjs'
+              - 'frontend/src/**'
             mcp_server:
               - 'mcp-server/**'
               - '.github/workflows/ci-shared.yml'
@@ -323,6 +325,8 @@ jobs:
         working-directory: frontend
       - name: Check help docs
         run: node frontend/scripts/check-help-links.mjs
+      - name: Check no "Local Input/Output" UI copy (SFBL-296)
+        run: node frontend/scripts/check-no-local-labels.mjs
 
   mcp-server-test:
     name: MCP Server Tests

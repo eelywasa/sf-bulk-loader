@@ -328,7 +328,7 @@ export default function StepEditorModal({
                   <span className="text-sm text-content-primary">Input connection / CSV file</span>
                 </label>
 
-                {/* Mode 2: Local output (prior run) */}
+                {/* Mode 2: previous-run output (the local-output sentinel) */}
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="radio"
@@ -337,10 +337,10 @@ export default function StepEditorModal({
                     checked={stepForm.input_source_mode === 'local_output'}
                     onChange={() => onInputSourceModeChange('local_output')}
                     className="mt-0.5 h-4 w-4 border-border-strong text-accent focus:ring-border-focus"
-                    aria-label="Local output (prior run results)"
+                    aria-label="Previous-run output (prior run results)"
                   />
                   <span className="text-sm text-content-primary">
-                    Local output{' '}
+                    Previous-run output{' '}
                     <span className="text-content-muted">(prior run results)</span>
                   </span>
                 </label>
@@ -409,7 +409,7 @@ export default function StepEditorModal({
                   onChange={(e) => onInputSourceChange(e.target.value)}
                   className={SELECT_CLASS}
                 >
-                  <option value="">Local input files</option>
+                  <option value="">Input files</option>
                   {inputConnections.map((inputConnection) => (
                     <option key={inputConnection.id} value={inputConnection.id}>
                       {inputConnection.name}
@@ -419,11 +419,11 @@ export default function StepEditorModal({
               </div>
             )}
 
-            {/* Mode 2: helper text for local output */}
+            {/* Mode 2: helper text for previous-run output */}
             {stepForm.input_source_mode === 'local_output' && (
               <p className={HELPER_TEXT_CLASS}>
                 Chain a prior run's output (e.g. query results) into this step.
-                Paths are relative to the local output directory.
+                Paths are relative to the output storage location.
               </p>
             )}
 

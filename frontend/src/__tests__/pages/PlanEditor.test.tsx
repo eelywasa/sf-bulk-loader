@@ -530,7 +530,7 @@ describe('PlanEditor', () => {
       screen.getByRole('radio', { name: 'Input connection / CSV file' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('radio', { name: 'Local output (prior run results)' }),
+      screen.getByRole('radio', { name: 'Previous-run output (prior run results)' }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('radio', { name: 'From upstream step in this run' }),
@@ -538,7 +538,7 @@ describe('PlanEditor', () => {
     // Default: pattern mode selected
     expect(screen.getByRole('radio', { name: 'Input connection / CSV file' })).toBeChecked()
     // Connection dropdown is shown in pattern mode
-    expect(screen.getByRole('option', { name: 'Local input files' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Input files' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'S3 Source' })).toBeInTheDocument()
   })
 
@@ -555,7 +555,7 @@ describe('PlanEditor', () => {
     const dialog = screen.getByRole('dialog')
     await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Account')
     // Switch to local_output mode via radio
-    await user.click(within(dialog).getByRole('radio', { name: 'Local output (prior run results)' }))
+    await user.click(within(dialog).getByRole('radio', { name: 'Previous-run output (prior run results)' }))
     await user.type(within(dialog).getByLabelText(/CSV File Pattern/), 'accounts_*.csv')
 
     await user.click(within(dialog).getByRole('button', { name: 'Add Step' }))

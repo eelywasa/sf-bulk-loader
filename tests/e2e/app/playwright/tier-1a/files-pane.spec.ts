@@ -147,4 +147,41 @@ test.describe("Files pane — filesystem-seed flow", () => {
       });
     }
   });
+
+  test("Files page uses neutral Input/Output labels and surfaces the storage location (SFBL-296)", async ({
+    page,
+    request,
+  }, testInfo) => {
+    linkIssue(testInfo, "SFBL-296");
+
+    const authMode = await fetchAuthMode(request);
+    if (authMode !== "none") {
+      await loginViaUi(page, email, password);
+    }
+
+    const filesPage = new FilesPage(page);
+    await filesPage.goto();
+    await expect(filesPage.sourceSelect).toBeVisible({ timeout: 10_000 });
+
+    // Neutral labels — the misleading "Local" qualifier is gone (SFBL-296).
+    const labels = await filesPage.sourceOptionLabels();
+    expect(labels).toContain("Input Files");
+    expect(labels).toContain("Output Files");
+    expect(labels.join(" ")).not.toMatch(/Local Input|Local Output/);
+
+    // The storage location is surfaced and tells the operator where files live.
+    await expect(filesPage.storageLocation).toBeVisible({ timeout: 10_000 });
+    const locText = (await filesPage.storageLocation.textContent()) ?? "";
+    expect(locText).toMatch(/Stored in/);
+
+    // Profile-specific assertion: CI runs the desktop profile (auth_mode=none),
+    // where the location is a filesystem path with a Storage Settings deep link.
+    if (authMode === "none") {
+      await expect(filesPage.storageSettingsLink).toBeVisible();
+      await expect(filesPage.storageSettingsLink).toHaveAttribute(
+        "href",
+        "/settings",
+      );
+    }
+  });
 });

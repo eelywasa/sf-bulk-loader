@@ -35,6 +35,29 @@ card on the run detail page are hidden when the permission is absent).
 
 ---
 
+## Where files live
+
+The **Source** selector switches between **Input Files**, **Output Files**, and
+any configured storage connection. (These were once labelled "Local Input /
+Output Files" — the "Local" qualifier was dropped because on the AWS-hosted and
+Docker profiles the files don't live on a local disk.)
+
+Under the selector the pane shows a **storage-location line** telling you where
+the listed files physically reside, derived from `/api/runtime`:
+
+| Profile | What you see |
+|---|---|
+| **AWS-hosted** | `Stored in s3://bulk-loader-<env>-…-input` — the deployment's first-party S3 bucket (the default storage; no connection needed). |
+| **Desktop** | `Stored in <directory>` plus a **Configured in Storage Settings** deep link. |
+| **Docker / self-hosted** | `Stored in <directory> · container-mounted volume`. |
+| **BYO connection selected** | `Stored in s3://<bucket>/<prefix>` of that connection. |
+
+On AWS-hosted, both Input and Output default to the first-party S3 buckets via
+the ECS task role — see [Storage & output sinks](../architecture/storage.md) and
+the [AWS deployment guide](../deployment/aws.md).
+
+---
+
 ## Output layout
 
 Local output sink:

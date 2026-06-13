@@ -509,6 +509,21 @@ Ask, in order:
 **Never** create a new shared component in a `pages/` folder. Shared = `components/ui/`.
 Page-specific composition = `pages/*/components/`.
 
+### Storage terminology — no "Local" qualifier (SFBL-296)
+
+User-visible copy must not call storage **"Local Input"** or **"Local Output"**.
+In two of three deployment profiles (AWS-hosted, Docker self-hosted) the data
+does not live on a local disk, so the qualifier is misleading. Use neutral
+**"Input Files"** / **"Output Files"** (Files page) and **"Previous-run output"**
+for the prior-run-results step input mode.
+
+Where the page needs to say *where* files live, surface it from
+`getRuntimeConfig().storage_locations` (per-input/output `{provider, uri, bucket,
+region, prefix}`, credential-free) rather than hard-coding a path — see the
+`StorageLocationLine` pattern in `FilesPage.tsx`. A CI guard
+(`frontend/scripts/check-no-local-labels.mjs`, wired into the `docs-drift` job)
+fails the build if "Local Input"/"Local Output" reappears in `frontend/src`.
+
 ### PermissionGate
 
 `src/components/PermissionGate.tsx` — conditionally renders children based on the current user's RBAC permissions.
