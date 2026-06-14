@@ -144,6 +144,8 @@ itself (see [SFBL-390](https://matthew-jenkin.atlassian.net/browse/SFBL-390)):
 the `frontend` module manages it under `hosted_zone_domain`, gated by
 `manage_frontend_dns` (default true), and re-points it automatically whenever
 the distribution domain changes. **No manual DNS record creation is needed.**
+On environments upgraded from the old manual runbook, `allow_overwrite = true`
+lets the first `apply` adopt the pre-existing manual alias rather than erroring.
 
 For external-DNS deployments whose `domain_name` is not in this account's
 Route53, set `manage_frontend_dns = false`; Terraform then emits no Route53

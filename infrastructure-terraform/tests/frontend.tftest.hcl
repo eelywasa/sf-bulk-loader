@@ -116,9 +116,12 @@ run "behaviour_structure" {
       length(aws_route53_record.frontend) == 1 &&
       aws_route53_record.frontend[0].name == var.domain_name &&
       aws_route53_record.frontend[0].type == "A" &&
-      aws_route53_record.frontend[0].alias[0].zone_id == "Z2FDTNDATAQYW2"
+      aws_route53_record.frontend[0].alias[0].zone_id == "Z2FDTNDATAQYW2" &&
+      # allow_overwrite lets the first apply adopt a pre-existing manual alias
+      # and repoint on later applies, instead of erroring on create.
+      aws_route53_record.frontend[0].allow_overwrite == true
     )
-    error_message = "manage_frontend_dns=true must emit one A-alias for domain_name to the CloudFront zone Z2FDTNDATAQYW2."
+    error_message = "manage_frontend_dns=true must emit one A-alias for domain_name to the CloudFront zone Z2FDTNDATAQYW2, with allow_overwrite so it adopts/repoints."
   }
 }
 

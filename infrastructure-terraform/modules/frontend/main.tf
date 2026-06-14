@@ -184,6 +184,14 @@ resource "aws_route53_record" "frontend" {
   name    = var.domain_name
   type    = "A"
 
+  # Adopt + repoint rather than fail. Environments upgraded from the old manual
+  # runbook already have an unmanaged domain_name alias that is not in Terraform
+  # state; without this, the first apply after the upgrade errors instead of
+  # taking the record over (provider >= 4 defaults allow_overwrite to false).
+  # This is also what makes the "auto-repoint on a new CloudFront domain"
+  # behaviour work on every subsequent apply.
+  allow_overwrite = true
+
   alias {
     name = aws_cloudfront_distribution.frontend.domain_name
     # Global constant for CloudFront alias targets (every account/region).

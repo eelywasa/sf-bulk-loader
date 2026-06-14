@@ -146,6 +146,16 @@ export class FrontendStack extends cdk.Stack {
     // `domainName` lives in DNS this account does not control. No Route53
     // record is emitted; the operator points their own DNS at the CloudFront
     // `DistributionDomainName` output below.
+    //
+    // Upgrading an existing environment (one-time): CloudFormation cannot adopt
+    // a Route53 record that was created outside the stack - if a `domainName`
+    // alias already exists from the old manual runbook, the first deploy that
+    // carries this record fails with "but it already exists". Delete that manual
+    // record once (or deploy once with `manageFrontendDns: false`) before
+    // enabling, then this stack creates and owns it. Fresh environments and any
+    // env torn down via `cdk destroy` (which removes the managed record) are
+    // unaffected. See docs/deployment/aws.md § "Upgrading an existing
+    // environment". (Terraform handles this automatically via allow_overwrite.)
     if (props.manageFrontendDns !== false) {
       new route53.CfnRecordSet(this, 'FrontendAliasRecord', {
         hostedZoneName: `${props.hostedZoneDomain}.`,

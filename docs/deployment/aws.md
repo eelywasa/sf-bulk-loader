@@ -480,6 +480,17 @@ to `false` in `cdk.context.json` only for external-DNS deployments whose
 `domainName` is not in this account's Route53 — then point your own DNS at the
 `DistributionDomainName` stack output by hand.
 
+> **Upgrading an existing environment (one-time).** CloudFormation cannot adopt
+> a Route53 record created outside the stack. If an environment already has a
+> `domainName` alias from the old manual runbook (pre-SFBL-390), the first
+> deploy carrying the managed record fails with *"…but it already exists"*.
+> Before that deploy, **delete the manual `domainName` A-alias once** (or run
+> that one deploy with `manageFrontendDns: false`), then redeploy normally — the
+> stack creates and owns it thereafter. Fresh environments, and any environment
+> torn down via `cdk destroy` (which removes the managed record), need no action.
+> *(The Terraform flavour adopts the existing record automatically via
+> `allow_overwrite`, so this step is CDK-only.)*
+
 ### 11. Smoke test
 
 ```bash
