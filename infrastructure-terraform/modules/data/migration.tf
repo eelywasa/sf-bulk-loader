@@ -155,6 +155,8 @@ resource "aws_ecs_task_definition" "migration" {
 
       environment = [
         { name = "APP_DISTRIBUTION", value = "aws_hosted" },
+        # SFBL-391: production mode (echo off) - parity with the service task.
+        { name = "APP_ENV", value = "production" },
         { name = "RUN_MIGRATIONS", value = "true" },
         # SFBL-385: keep the storage env contract identical to the service task
         # so the migration boots through the same config validator (which now

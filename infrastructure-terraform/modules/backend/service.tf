@@ -38,6 +38,10 @@ resource "aws_ecs_task_definition" "backend" {
       # role's keyless credential chain.
       environment = [
         { name = "APP_DISTRIBUTION", value = "aws_hosted" },
+        # SFBL-391: production mode. The app defaults app_env to "development"
+        # (config.py), which turns SQLAlchemy echo on (database.py) and floods
+        # logs. Set explicitly so it can't drift back via a redeploy.
+        { name = "APP_ENV", value = "production" },
         { name = "RUN_MIGRATIONS", value = "false" },
         { name = "S3_INPUT_BUCKET", value = var.input_bucket_name },
         { name = "S3_OUTPUT_BUCKET", value = var.output_bucket_name },

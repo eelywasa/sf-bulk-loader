@@ -224,6 +224,15 @@ run "migration_task_contract" {
     error_message = "Migration task must set RUN_MIGRATIONS=true."
   }
 
+  # SFBL-391: production mode (SQLAlchemy echo off) - parity with the service task.
+  assert {
+    condition = anytrue([
+      for e in jsondecode(aws_ecs_task_definition.migration.container_definitions)[0].environment :
+      e.name == "APP_ENV" && e.value == "production"
+    ])
+    error_message = "Migration task must set APP_ENV=production (else app defaults to development → SQL echo)."
+  }
+
   assert {
     condition     = jsondecode(aws_ecs_task_definition.migration.container_definitions)[0].command == ["sh", "-c", "alembic upgrade head"]
     error_message = "Migration task must run alembic upgrade head and exit."
