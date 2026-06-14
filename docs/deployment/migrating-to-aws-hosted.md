@@ -209,7 +209,7 @@ Then `aws ecs update-service --force-new-deployment` to start the service agains
 
 ### 9. Smoke test before flipping DNS
 
-Run the full smoke test from [`aws.md` step 12](aws.md#12-smoke-test) against the **CloudFront domain name** (not yet your custom domain). Then drive the UI through:
+Run the full smoke test from [`aws.md` step 11](aws.md#11-smoke-test) against the **CloudFront domain name** (not yet your custom domain). Then drive the UI through:
 
 - Log in as a **migrated user** (not just the bootstrap admin) — confirms the encryption key and password hashes round-tripped correctly.
 - Open a previously-existing Salesforce Connection and click **Test** — confirms the Fernet-encrypted private key decrypts.
