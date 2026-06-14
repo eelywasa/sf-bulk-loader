@@ -103,3 +103,45 @@ module "frontend" {
   certificate_arn            = var.certificate_arn
   backend_origin_domain_name = var.backend_domain_name
 }
+
+# Stack 4 (DNS): frontend apex domain_name -> CloudFront A-alias (SFBL-390).
+# Kept in the root (not the frontend module) so it can carry a plain static
+# depends_on = [module.backend]: the public record must not go live before the
+# backend ALB + api.<domain> origin exist, else the distribution's /api/* and
+# /ws/* origin resolves to nothing. Mirrors the CDK
+# FrontendStack.addDependency(backendStack) ordering in bin/app.ts.
+#
+# manage_frontend_dns (default true) gates it. Set false for external-DNS
+# deployments or staged same-account migrations/cutovers (see
+# docs/deployment/migrating-to-aws-hosted.md); then no record / no zone lookup
+# is emitted and you point your own DNS at module.frontend.distribution_domain_name.
+data "aws_route53_zone" "frontend" {
+  count = var.manage_frontend_dns ? 1 : 0
+
+  name         = var.hosted_zone_domain
+  private_zone = false
+}
+
+resource "aws_route53_record" "frontend" {
+  count = var.manage_frontend_dns ? 1 : 0
+
+  depends_on = [module.backend]
+
+  zone_id = data.aws_route53_zone.frontend[0].zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  # Adopt + repoint rather than fail. Environments upgraded from the old manual
+  # runbook already have an unmanaged domain_name alias that is not in Terraform
+  # state; without this, the first apply after the upgrade errors instead of
+  # taking the record over (provider >= 4 defaults allow_overwrite to false).
+  # Also what makes "auto-repoint on a new CloudFront domain" work on later applies.
+  allow_overwrite = true
+
+  alias {
+    name = module.frontend.distribution_domain_name
+    # Global constant for CloudFront alias targets (every account/region).
+    zone_id                = "Z2FDTNDATAQYW2"
+    evaluate_target_health = false
+  }
+}

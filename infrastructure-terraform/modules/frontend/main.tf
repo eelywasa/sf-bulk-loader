@@ -157,6 +157,13 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 }
 
+# --- Frontend apex DNS alias (SFBL-390) ---
+# The domain_name -> CloudFront A-alias is managed in the ROOT module
+# (../../main.tf), not here, so it can carry a plain static
+# `depends_on = [module.backend]` - the public record must not go live before
+# the backend ALB + api.<domain> origin exist. The module only exposes
+# distribution_domain_name as an output for the root record to target.
+
 # --- Bucket policy ---
 # GetObject restricted to THIS distribution via AWS:SourceArn - not all of
 # CloudFront - plus the HTTPS-only deny. Applied after both bucket and

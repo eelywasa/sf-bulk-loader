@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
@@ -15,6 +16,30 @@ export interface FrontendStackProps extends cdk.StackProps {
   certificateArn: string;
   /** Backend origin hostname covered by the ALB certificate (for example api.example.com). */
   backendOriginDomainName: string;
+  /**
+   * Public hosted zone (in this account's Route53) that `domainName` lives
+   * under - for example `bulk-loader.example.com`. Used to create the frontend
+   * apex A-alias when `manageFrontendDns` is on.
+   */
+  hostedZoneDomain: string;
+  /**
+   * Whether to manage the frontend `domainName` Route53 A-alias in this stack
+   * (SFBL-390). Default true: the alias is created/destroyed/repointed with the
+   * stack, so no manual Route53 step is needed on stack-up/down.
+   *
+   * Set false when this account should NOT own the `domainName` record during
+   * the deploy. Two cases:
+   *   1. External-DNS deployments whose `domainName` lives in DNS this account
+   *      does not control - the operator points their own DNS at the CloudFront
+   *      `DistributionDomainName` output.
+   *   2. Staged same-account migrations/cutovers (see
+   *      docs/deployment/migrating-to-aws-hosted.md) where the live `domainName`
+   *      record still points at the old system and must only be flipped to
+   *      CloudFront after smoke-testing. Keep this false through deploy + smoke,
+   *      then cut over (delete the old record and redeploy with the flag true,
+   *      or flip DNS by hand).
+   */
+  manageFrontendDns?: boolean;
 }
 
 /**
@@ -117,6 +142,43 @@ export class FrontendStack extends cdk.Stack {
       domainNames: [props.domainName],
       certificate: acm.Certificate.fromCertificateArn(this, 'Cert', props.certificateArn),
     });
+
+    // --- Frontend apex DNS alias (SFBL-390) ---
+    // Mirrors the backend's `BackendAliasRecord` (backend-stack.ts) so the
+    // frontend `domainName` is created/destroyed/repointed with the stack -
+    // no manual Route53 UPSERT/DELETE on stack-up/down. `domainName` is an
+    // ordinary subdomain of the deployment's own `hostedZoneDomain`, so this
+    // is always safe to manage. The alias targets the CloudFront distribution
+    // via the global, fixed CloudFront alias hosted-zone id `Z2FDTNDATAQYW2`.
+    //
+    // Opt-out (`manageFrontendDns: false`): for external-DNS deployments whose
+    // `domainName` lives in DNS this account does not control. No Route53
+    // record is emitted; the operator points their own DNS at the CloudFront
+    // `DistributionDomainName` output below.
+    //
+    // Upgrading an existing environment (one-time): CloudFormation cannot adopt
+    // a Route53 record that was created outside the stack - if a `domainName`
+    // alias already exists from the old manual runbook, the first deploy that
+    // carries this record fails with "but it already exists". To enable
+    // management, delete (or CFN-import) that manual record once, then deploy
+    // with `manageFrontendDns: true`. (Deploying with the flag false does NOT
+    // remove/adopt it - that only keeps DNS unmanaged.) Fresh environments and
+    // any env torn down via `cdk destroy` (which removes the managed record) are
+    // unaffected. See docs/deployment/aws.md § "Upgrading an existing
+    // environment". (Terraform handles this automatically via allow_overwrite.)
+    if (props.manageFrontendDns !== false) {
+      new route53.CfnRecordSet(this, 'FrontendAliasRecord', {
+        hostedZoneName: `${props.hostedZoneDomain}.`,
+        name: `${props.domainName}.`,
+        type: 'A',
+        aliasTarget: {
+          dnsName: distribution.distributionDomainName,
+          // Global constant for CloudFront alias targets (every account/region).
+          hostedZoneId: 'Z2FDTNDATAQYW2',
+          evaluateTargetHealth: false,
+        },
+      });
+    }
 
     // --- Frontend Deployment ---
     // Uploads ../frontend/dist into the frontend bucket and invalidates the

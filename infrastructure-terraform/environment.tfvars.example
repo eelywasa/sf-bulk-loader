@@ -20,6 +20,17 @@ hosted_zone_domain = "bulk-loader.example.com"
 domain_name        = "bulk-loader.example.com"
 certificate_arn    = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
+# Optional - frontend apex DNS (SFBL-390). Defaults to true: the domain_name
+# A-alias -> CloudFront is managed in-stack (created/destroyed/repointed
+# automatically; no manual Route53 step). Set false when this account should not
+# own the domain_name record during apply: (1) external-DNS deployments whose
+# domain_name lives elsewhere, or (2) staged same-account migrations/cutovers
+# where the live record must only be flipped after smoke-testing (allow_overwrite
+# means a default-on apply would clobber it). Then no Route53 record is emitted
+# and you point your own DNS at the cloudfront_distribution_domain output.
+# See docs/deployment/migrating-to-aws-hosted.md.
+# manage_frontend_dns = true
+
 backend_domain_name     = "api.bulk-loader.example.com"
 backend_certificate_arn = "arn:aws:acm:eu-west-1:123456789012:certificate/yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
 

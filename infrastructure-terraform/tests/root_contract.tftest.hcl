@@ -130,3 +130,42 @@ run "env_name_length_capped" {
 
   expect_failures = [var.env_name]
 }
+
+# SFBL-390: with manage_frontend_dns at its default (true), the root emits
+# exactly one A-alias for domain_name to the CloudFront zone Z2FDTNDATAQYW2,
+# with allow_overwrite so it adopts a pre-existing manual record and repoints.
+run "frontend_dns_managed_by_default" {
+  command = plan
+
+  assert {
+    condition = (
+      length(aws_route53_record.frontend) == 1 &&
+      aws_route53_record.frontend[0].name == var.domain_name &&
+      aws_route53_record.frontend[0].type == "A" &&
+      aws_route53_record.frontend[0].alias[0].zone_id == "Z2FDTNDATAQYW2" &&
+      aws_route53_record.frontend[0].allow_overwrite == true
+    )
+    error_message = "manage_frontend_dns=true must emit one A-alias for domain_name to CloudFront zone Z2FDTNDATAQYW2, with allow_overwrite."
+  }
+}
+
+# SFBL-390 falsification: with manage_frontend_dns = false the plan must contain
+# NO Route53 record (and no zone lookup) for domain_name - proving external-DNS
+# and staged-migration deployments are unaffected.
+run "frontend_dns_opt_out_emits_nothing" {
+  command = plan
+
+  variables {
+    manage_frontend_dns = false
+  }
+
+  assert {
+    condition     = length(aws_route53_record.frontend) == 0
+    error_message = "manage_frontend_dns=false must emit no Route53 record for domain_name."
+  }
+
+  assert {
+    condition     = length(data.aws_route53_zone.frontend) == 0
+    error_message = "manage_frontend_dns=false must perform no hosted-zone lookup."
+  }
+}

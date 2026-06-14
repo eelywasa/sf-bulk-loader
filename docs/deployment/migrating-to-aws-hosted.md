@@ -40,6 +40,7 @@ Work through this list before starting the cutover. Most of it can be done well 
 - [ ] **Encryption key recovered** from the running self-hosted host (see [step 3](#3-recover-the-encryption-key) below). Treat it like any other secret — never paste it into a chat or commit it.
 - [ ] **JWT secret rotation decision made.** The cutover invalidates all existing sessions either way; this guide recommends rotating the JWT signing secret on cutover so old tokens immediately stop being honoured.
 - [ ] **DNS plan.** You're flipping `bulkloader.example.com` from your self-hosted ALB/nginx to the AWS CloudFront distribution. Decide ahead of time whether you'll do an A-record swap with TTL pre-lowered or a phased cutover behind a new hostname.
+- [ ] **Disable IaC frontend DNS until cutover (SFBL-390).** The AWS stack manages the `domain_name` → CloudFront alias in IaC by default (`manageFrontendDns` / `manage_frontend_dns`, default true). In a staged cutover that record still points at your **live self-hosted** system, so you must **deploy with the flag `false`** — otherwise the deploy moves production traffic to the unvalidated CloudFront before step 9. (On the Terraform flavour this is critical: `allow_overwrite = true` means a default-on apply silently clobbers the live record.) You flip DNS by hand in step 10, then optionally hand ownership to IaC afterwards.
 - [ ] **Admin email + password chosen** for the bootstrap admin user that AWS Secrets Manager will inject into `lifespan()` on first boot. Existing user records survive the DB migration; this admin is the one you'll log in as the moment the AWS task starts, before the migrated users come back online.
 - [ ] **Maintenance window communicated** to whoever uses the system. Plan for ~30–60 minutes of downtime depending on data volume.
 
@@ -184,6 +185,12 @@ For the bootstrap admin user, populate `/{env}/bulk-loader/admin-email` and `/{e
 
 ### 8. Deploy and migrate the schema
 
+> **Deploy with frontend DNS management OFF.** Set `manageFrontendDns: false`
+> (CDK, in `cdk.context.json`) or `manage_frontend_dns = false` (Terraform) for
+> this environment before deploying, so the deploy does **not** create or
+> overwrite the live `domain_name` record. You'll flip DNS by hand in step 10
+> once smoke passes, and can re-enable IaC management afterwards (step 10b).
+
 If you haven't already deployed the AWS environment, do so now per [`aws.md` step 8](aws.md#8-deploy-backendstack--handle-the-first-deploy-migration-race). The `MigrationTaskDef` chicken-and-egg from a true clean deploy doesn't apply here because your DB is already populated from step 2b — but the migration task should still run once to ensure `alembic_version` matches the deployed image:
 
 ```bash
@@ -202,7 +209,7 @@ Then `aws ecs update-service --force-new-deployment` to start the service agains
 
 ### 9. Smoke test before flipping DNS
 
-Run the full smoke test from [`aws.md` step 12](aws.md#12-smoke-test) against the **CloudFront domain name** (not yet your custom domain). Then drive the UI through:
+Run the full smoke test from [`aws.md` step 11](aws.md#11-smoke-test) against the **CloudFront domain name** (not yet your custom domain). Then drive the UI through:
 
 - Log in as a **migrated user** (not just the bootstrap admin) — confirms the encryption key and password hashes round-tripped correctly.
 - Open a previously-existing Salesforce Connection and click **Test** — confirms the Fernet-encrypted private key decrypts.
@@ -236,6 +243,21 @@ aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --cha
 ```
 
 The previous A record (pointing at your self-hosted ALB / EC2 / nginx) is replaced by the CloudFront alias. Existing in-flight requests that resolve to the old IP will hit the (still-running, but not accepting writes) self-hosted instance for up to the previous TTL — which is why step 1 stopped writes before any of this began.
+
+### 10b. (Optional) Hand the alias back to IaC
+
+Once cutover is validated, you can return to the default of IaC-managed frontend
+DNS so future stack-ups/downs and rebuilds repoint the alias automatically:
+
+- **Terraform:** set `manage_frontend_dns = true` (or remove the override) and
+  `terraform apply`. `allow_overwrite = true` lets Terraform adopt the record you
+  created by hand in step 10 and keep it pointed at CloudFront — no gap.
+- **CDK:** CloudFormation can't adopt a record created outside the stack, so the
+  alias you made in step 10 must be **deleted** and recreated by the stack. Set
+  `manageFrontendDns: true`, then `cdk deploy BulkLoader-${ENV}-Frontend`. To
+  minimise the gap, delete the manual record immediately before the deploy (or
+  accept a brief DNS gap during the propagation window). Skip this entirely if
+  you prefer to keep managing the public record by hand.
 
 ### 11. Tear down (or freeze) the self-hosted instance
 

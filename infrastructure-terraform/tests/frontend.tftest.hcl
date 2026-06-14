@@ -106,6 +106,10 @@ run "behaviour_structure" {
     )
     error_message = "The frontend bucket must block all public access."
   }
+
+  # NB the frontend domain_name Route53 alias (SFBL-390) lives in the ROOT
+  # module (it needs depends_on = [module.backend]); its assertions are in
+  # root_contract.tftest.hcl, not here.
 }
 
 run "wiring_and_policy" {
