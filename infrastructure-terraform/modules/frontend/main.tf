@@ -158,53 +158,11 @@ resource "aws_cloudfront_distribution" "frontend" {
 }
 
 # --- Frontend apex DNS alias (SFBL-390) ---
-# Mirrors modules/backend/alb.tf's aws_route53_record.backend so the frontend
-# domain_name is created/destroyed/repointed with the stack - no manual Route53
-# UPSERT/DELETE on stack-up/down. domain_name is an ordinary subdomain of the
-# deployment's own hosted_zone_domain, so this is always safe to manage. The
-# alias targets the CloudFront distribution via the global, fixed CloudFront
-# alias hosted-zone id Z2FDTNDATAQYW2.
-#
-# Opt-out (manage_frontend_dns = false): for external-DNS deployments whose
-# domain_name lives in DNS this account does not control. count drops to 0 so
-# NO Route53 record (and no zone lookup) is emitted; the operator points their
-# own DNS at the CloudFront domain (the cloudfront_domain_name output).
-
-data "aws_route53_zone" "frontend" {
-  count = var.manage_frontend_dns ? 1 : 0
-
-  name         = var.hosted_zone_domain
-  private_zone = false
-}
-
-resource "aws_route53_record" "frontend" {
-  count = var.manage_frontend_dns ? 1 : 0
-
-  # Publish the public alias only after whatever the caller passes (the backend
-  # module) is in place, so domain_name never resolves to a distribution whose
-  # /api/* + /ws/* origin (api.<domain>) does not exist yet. Scoped to this
-  # record rather than the whole module to avoid deferring the data sources.
-  depends_on = [var.dns_alias_depends_on]
-
-  zone_id = data.aws_route53_zone.frontend[0].zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  # Adopt + repoint rather than fail. Environments upgraded from the old manual
-  # runbook already have an unmanaged domain_name alias that is not in Terraform
-  # state; without this, the first apply after the upgrade errors instead of
-  # taking the record over (provider >= 4 defaults allow_overwrite to false).
-  # This is also what makes the "auto-repoint on a new CloudFront domain"
-  # behaviour work on every subsequent apply.
-  allow_overwrite = true
-
-  alias {
-    name = aws_cloudfront_distribution.frontend.domain_name
-    # Global constant for CloudFront alias targets (every account/region).
-    zone_id                = "Z2FDTNDATAQYW2"
-    evaluate_target_health = false
-  }
-}
+# The domain_name -> CloudFront A-alias is managed in the ROOT module
+# (../../main.tf), not here, so it can carry a plain static
+# `depends_on = [module.backend]` - the public record must not go live before
+# the backend ALB + api.<domain> origin exist. The module only exposes
+# distribution_domain_name as an output for the root record to target.
 
 # --- Bucket policy ---
 # GetObject restricted to THIS distribution via AWS:SourceArn - not all of

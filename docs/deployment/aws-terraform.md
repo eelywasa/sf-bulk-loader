@@ -249,7 +249,7 @@ lands here:
 | Execution role (scoped secret/SSM reads) + task role (SES + scoped first-party S3 RW/List, no wildcard — SFBL-388) | `backend` — `iam.tf` |
 | ALB, HTTPS listener (TLS13 policy), HTTP→301, target group (/ready) | `backend` — `alb.tf` |
 | Route53 alias for the backend domain | `backend` — `aws_route53_record` |
-| Route53 alias for the frontend domain (gated by `manage_frontend_dns`, default true — SFBL-390) | `frontend` — `aws_route53_record` |
+| Route53 alias for the frontend domain (gated by `manage_frontend_dns`, default true — SFBL-390; in root for a static `depends_on = [module.backend]`) | root `main.tf` — `aws_route53_record.frontend` |
 | Frontend bucket + OAC + CloudFront (SPA, /api/*, /ws/*) | `frontend` — `main.tf` |
 | 403/404 → index.html, us-east-1 cert | `frontend` — distribution config |
 | BucketDeployment (build upload + invalidation, pruned) | operator step — `frontend_deploy_command` output (deviation 6) |

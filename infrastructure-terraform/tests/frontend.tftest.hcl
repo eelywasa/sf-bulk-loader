@@ -27,7 +27,6 @@ variables {
   domain_name                = "bulk-loader.example.com"
   certificate_arn            = "arn:aws:acm:us-east-1:111122223333:certificate/00000000-0000-0000-0000-000000000000"
   backend_origin_domain_name = "api.bulk-loader.example.com"
-  hosted_zone_domain         = "bulk-loader.example.com"
 }
 
 run "behaviour_structure" {
@@ -108,51 +107,9 @@ run "behaviour_structure" {
     error_message = "The frontend bucket must block all public access."
   }
 
-  # SFBL-390: with manage_frontend_dns at its default (true), exactly one
-  # Route53 A-alias for domain_name targeting CloudFront (alias zone
-  # Z2FDTNDATAQYW2) is planned in this module.
-  assert {
-    condition = (
-      length(aws_route53_record.frontend) == 1 &&
-      aws_route53_record.frontend[0].name == var.domain_name &&
-      aws_route53_record.frontend[0].type == "A" &&
-      aws_route53_record.frontend[0].alias[0].zone_id == "Z2FDTNDATAQYW2" &&
-      # allow_overwrite lets the first apply adopt a pre-existing manual alias
-      # and repoint on later applies, instead of erroring on create.
-      aws_route53_record.frontend[0].allow_overwrite == true
-    )
-    error_message = "manage_frontend_dns=true must emit one A-alias for domain_name to the CloudFront zone Z2FDTNDATAQYW2, with allow_overwrite so it adopts/repoints."
-  }
-}
-
-# SFBL-390 falsification: with manage_frontend_dns = false, the plan must
-# contain NO Route53 record (and no zone lookup) for domain_name - proving
-# external-DNS deployments are unaffected.
-run "opt_out_emits_no_dns" {
-  command = plan
-
-  module {
-    source = "./modules/frontend"
-  }
-
-  providers = {
-    aws           = aws
-    aws.us_east_1 = aws.us_east_1
-  }
-
-  variables {
-    manage_frontend_dns = false
-  }
-
-  assert {
-    condition     = length(aws_route53_record.frontend) == 0
-    error_message = "manage_frontend_dns=false must emit no Route53 record for domain_name."
-  }
-
-  assert {
-    condition     = length(data.aws_route53_zone.frontend) == 0
-    error_message = "manage_frontend_dns=false must perform no hosted-zone lookup."
-  }
+  # NB the frontend domain_name Route53 alias (SFBL-390) lives in the ROOT
+  # module (it needs depends_on = [module.backend]); its assertions are in
+  # root_contract.tftest.hcl, not here.
 }
 
 run "wiring_and_policy" {

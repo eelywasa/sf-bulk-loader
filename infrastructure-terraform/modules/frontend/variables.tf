@@ -18,19 +18,6 @@ variable "backend_origin_domain_name" {
   type        = string
 }
 
-variable "hosted_zone_domain" {
-  description = "Public Route53 hosted zone (in this account) that domain_name lives under (e.g. bulk-loader.example.com). Used to create the frontend apex alias when manage_frontend_dns is true. Must already exist."
-  type        = string
-}
-
-variable "dns_alias_depends_on" {
-  description = "SFBL-390: references the frontend domain_name Route53 record must wait on (e.g. the backend module) so the public alias is never published before the backend ALB + api.<domain> origin exist. Scoped to the record alone - a module-level depends_on would defer this module's data sources and churn the S3 bucket name. Defaults to none."
-  type        = any
-  default     = []
-}
-
-variable "manage_frontend_dns" {
-  description = "SFBL-390: manage the frontend domain_name Route53 A-alias in this module (default true) so it is created/destroyed/repointed with the stack. Set false when this account should not own the domain_name record during apply: (1) external-DNS deployments whose domain_name lives in DNS this account does not control, or (2) staged same-account migrations/cutovers where the live record still points at the old system and must only be flipped after smoke-testing (NB allow_overwrite means a default-on apply would clobber that live record immediately). When false, no Route53 record is emitted for domain_name."
-  type        = bool
-  default     = true
-}
+# SFBL-390: the frontend domain_name Route53 alias is managed in the root module
+# (it needs depends_on = [module.backend]); this module just outputs
+# distribution_domain_name for the root record to target. No DNS variables here.
