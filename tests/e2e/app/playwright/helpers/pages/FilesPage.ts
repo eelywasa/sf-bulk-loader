@@ -17,10 +17,25 @@ export class FilesPage {
   /** The source selector dropdown ("Source" label). */
   readonly sourceSelect: Locator;
 
+  /** The storage-location subtitle ("Stored in …") — SFBL-296. */
+  readonly storageLocation: Locator;
+
+  /** The desktop "Configured in Storage Settings" deep link — SFBL-296. */
+  readonly storageSettingsLink: Locator;
+
   constructor(page: Page) {
     this.page = page;
     this.fileList = page.getByRole("listbox", { name: "Files" });
     this.sourceSelect = page.getByLabel("Source");
+    this.storageLocation = page.getByTestId("storage-location");
+    this.storageSettingsLink = page.getByRole("link", {
+      name: "Configured in Storage Settings",
+    });
+  }
+
+  /** Visible text of every option in the source selector. */
+  async sourceOptionLabels(): Promise<string[]> {
+    return this.sourceSelect.locator("option").allTextContents();
   }
 
   /** Navigate to the /files route. */

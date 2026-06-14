@@ -341,7 +341,7 @@ describe('Three-way input source radio (SFBL-264)', () => {
     const dialog = screen.getByRole('dialog')
 
     expect(within(dialog).getByRole('radio', { name: 'Input connection / CSV file' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('radio', { name: 'Local output (prior run results)' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('radio', { name: 'Previous-run output (prior run results)' })).toBeInTheDocument()
     expect(within(dialog).getByRole('radio', { name: 'From upstream step in this run' })).toBeInTheDocument()
   })
 
@@ -355,7 +355,7 @@ describe('Three-way input source radio (SFBL-264)', () => {
     const dialog = screen.getByRole('dialog')
 
     expect(within(dialog).getByRole('radio', { name: 'Input connection / CSV file' })).toBeChecked()
-    expect(within(dialog).getByRole('radio', { name: 'Local output (prior run results)' })).not.toBeChecked()
+    expect(within(dialog).getByRole('radio', { name: 'Previous-run output (prior run results)' })).not.toBeChecked()
     expect(within(dialog).getByRole('radio', { name: 'From upstream step in this run' })).not.toBeChecked()
   })
 
@@ -370,7 +370,7 @@ describe('Three-way input source radio (SFBL-264)', () => {
     const dialog = screen.getByRole('dialog')
 
     await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Contact')
-    await user.click(within(dialog).getByRole('radio', { name: 'Local output (prior run results)' }))
+    await user.click(within(dialog).getByRole('radio', { name: 'Previous-run output (prior run results)' }))
     await user.type(within(dialog).getByLabelText(/CSV File Pattern/), 'contacts_*.csv')
 
     await user.click(within(dialog).getByRole('button', { name: 'Add Step' }))
@@ -484,7 +484,7 @@ describe('Three-way input source radio (SFBL-264)', () => {
     await user.click(editButtons[editButtons.length - 1])
 
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByRole('radio', { name: 'Local output (prior run results)' })).toBeChecked()
+    expect(within(dialog).getByRole('radio', { name: 'Previous-run output (prior run results)' })).toBeChecked()
   })
 })
 

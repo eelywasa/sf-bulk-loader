@@ -37,11 +37,45 @@ For hosted profiles, a `LoadStep` may set `input_connection_id` to an `InputConn
 
 See [`docs/usage/s3-connection-setup.md`](../usage/s3-connection-setup.md) for operator configuration.
 
+### Default source resolution — first-party S3 on aws_hosted (SFBL-385)
+
+The resolver `get_storage(source, db)` keys off `input_storage_mode`:
+
+- **`local`** (desktop / self_hosted) — the implicit/default source
+  (`None` / `""` / `"local"`) resolves to the local input directory, and the
+  `local-output` sentinel to the local output directory (filesystem behaviour,
+  unchanged).
+- **`s3`** (aws_hosted) — the default source resolves to the deployment's
+  **first-party input bucket**, and `local-output` to the **first-party output
+  bucket**, both constructed **keyless**: `boto3.client("s3", …)` with no
+  credential kwargs, so boto3 resolves via the **ECS task role's** default
+  credential chain. Bucket names + region come from the `S3_INPUT_BUCKET` /
+  `S3_OUTPUT_BUCKET` / `S3_BUCKET_REGION` env vars (injected by the IaC), with
+  optional `S3_INPUT_PREFIX` / `S3_OUTPUT_PREFIX`. Startup fails fast if those
+  bucket coordinates are missing.
+
+Explicit `input_connection_id` sources are unchanged on every profile — they
+use the BYO keys stored on the `InputConnection` row. The keyless client
+builder (`input_storage.build_s3_client`) is the shared primitive consumed by
+both the default path and `InputConnection.use_task_role` (SFBL-295). See
+[DECISION 031](../../DECISIONS.md) for why this is config-driven rather than a
+seeded connection row.
+
 ---
 
 ## Output sinks
 
-### Local (default)
+### Default
+
+On desktop / self_hosted (`input_storage_mode=local`), results land on the
+local filesystem (below). On **aws_hosted** (`input_storage_mode=s3`), a run
+with **no explicit `output_connection_id`** writes to the deployment's
+first-party **output bucket** via the keyless task-role chain (SFBL-385) — so
+`get_output_storage(None)` returns an `S3OutputStorage`, never a
+`LocalOutputStorage`, and artifacts survive task recycle. The S3 layout below
+is preserved under the optional output prefix.
+
+### Local (filesystem profiles)
 
 Results land under `OUTPUT_DIR` (default `data/output/`):
 

@@ -447,6 +447,60 @@ async def test_query_step_uses_local_output_storage_when_no_connection(db: Async
     assert isinstance(captured_storage[0], LocalOutputStorage)
 
 
+async def test_query_step_uses_s3_output_storage_when_no_connection_on_aws_hosted(
+    db: AsyncSession, tmp_path
+):
+    """Run-output durability (SFBL-386 QA #2): with output_connection_id unset on
+    aws_hosted, the run writes to the first-party S3 output bucket — never
+    LocalOutputStorage (which is lost on Fargate task recycle).
+
+    Falsification: if get_output_storage ignored input_storage_mode, the captured
+    storage would be LocalOutputStorage and the s3:// assertion below would fail.
+    """
+    from unittest.mock import MagicMock
+
+    from app.services.output_storage import LocalOutputStorage, S3OutputStorage
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn, output_connection_id=None)
+    step = await _make_query_step(db, plan)
+    run = await _make_run(db, plan)
+
+    captured_storage = []
+
+    async def fake_run_bulk_query(
+        *, soql, operation, instance_url, access_token, output_storage, relative_path, **kwargs
+    ):
+        captured_storage.append(output_storage)
+        return _make_query_result(row_count=10)
+
+    bulk_mock = _make_bulk_client_mock()
+    db_factory = make_db_factory(db)
+
+    with (
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=bulk_mock),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=_make_storage_mock())),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.input_storage.boto3.client", return_value=MagicMock()),
+        patch("app.services.output_storage.settings.input_storage_mode", "s3"),
+        patch("app.services.output_storage.settings.s3_output_bucket", "first-party-output"),
+        patch("app.services.output_storage.settings.s3_bucket_region", "eu-west-1"),
+        patch("app.services.output_storage.settings.s3_output_prefix", None),
+        patch("app.services.orchestrator.run_bulk_query", new=fake_run_bulk_query),
+    ):
+        await _execute_run(run.id, db, db_factory=db_factory)
+
+    await db.refresh(run)
+    assert run.status == RunStatus.completed
+    assert len(captured_storage) == 1
+    assert isinstance(captured_storage[0], S3OutputStorage)
+    assert not isinstance(captured_storage[0], LocalOutputStorage)
+    # Durable artifact ref points at the first-party output bucket.
+    assert captured_storage[0].resolve_uri("x.csv").startswith("s3://first-party-output/")
+
+
 async def test_query_step_uses_s3_output_storage_when_connection_set(db: AsyncSession, tmp_path):
     """With output_connection_id set, the factory is called and S3 storage is used."""
     from app.models.input_connection import InputConnection

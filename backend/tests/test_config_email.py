@@ -52,7 +52,15 @@ def test_self_hosted_profile_defaults_email_backend_to_noop():
 
 
 def test_aws_hosted_profile_defaults_email_backend_to_ses():
-    s = make(app_distribution="aws_hosted", database_url=PG_URL)
+    # SFBL-386: aws_hosted (input_storage_mode=s3) now requires the first-party
+    # bucket coordinates; supply them so the profile validates.
+    s = make(
+        app_distribution="aws_hosted",
+        database_url=PG_URL,
+        s3_input_bucket="in",
+        s3_output_bucket="out",
+        s3_bucket_region="eu-west-1",
+    )
     assert s.email_backend == "ses"
 
 

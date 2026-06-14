@@ -27,7 +27,7 @@ export const EMPTY_PLAN_FORM: PlanFormData = {
 /**
  * UI-only mode for the input source widget in StepEditorModal.
  * `pattern`    → Input connection / CSV file (legacy behaviour)
- * `local_output` → Local output files from a prior run
+ * `local_output` → previous-run output files (the local-output sentinel)
  * `from_step`  → Chain from an upstream query step (new in SFBL-264)
  */
 export type InputSourceMode = 'pattern' | 'local_output' | 'from_step'

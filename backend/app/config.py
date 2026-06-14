@@ -140,6 +140,20 @@ class Settings(BaseSettings):
     input_dir: str = "/data/input"
     output_dir: str = "/data/output"
 
+    # First-party S3 default storage (SFBL-385/386).
+    # When input_storage_mode == "s3" (the aws_hosted default), the implicit /
+    # "default" Input and Output source resolves to these first-party buckets via
+    # the ECS task-role credential chain (keyless — no stored keys). Bucket names
+    # and region are injected as env vars by the IaC (CDK/Terraform). Optional
+    # prefixes scope all reads/writes under a key prefix. Required on any profile
+    # running input_storage_mode=s3; fail-fast validation below. Desktop /
+    # self_hosted (input_storage_mode=local) ignore these and use the filesystem.
+    s3_input_bucket: str | None = None
+    s3_output_bucket: str | None = None
+    s3_bucket_region: str | None = None
+    s3_input_prefix: str | None = None
+    s3_output_prefix: str | None = None
+
     # Email — note: all email configuration is now managed via DB-backed settings
     # (SFBL-155). The fields below are retained only for the distribution profile
     # email_backend default in _apply_distribution_profile; they are seeded into
@@ -177,6 +191,27 @@ class Settings(BaseSettings):
                 raise ValueError("desktop profile does not support auth_mode=local")
             if self.transport_mode != "local":
                 raise ValueError("desktop profile requires transport_mode=local")
+
+        # S3 default storage requires the first-party bucket coordinates (SFBL-386).
+        # Fail fast at startup rather than 500ing on the first file listing / run.
+        # Scoped to input_storage_mode (not the profile) so any profile opting into
+        # s3 storage is held to the same contract.
+        if self.input_storage_mode == "s3":
+            missing = [
+                name
+                for name, value in (
+                    ("S3_INPUT_BUCKET", self.s3_input_bucket),
+                    ("S3_OUTPUT_BUCKET", self.s3_output_bucket),
+                    ("S3_BUCKET_REGION", self.s3_bucket_region),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "input_storage_mode=s3 requires "
+                    + ", ".join(missing)
+                    + " (the first-party S3 bucket coordinates injected by the IaC)"
+                )
 
         return self
 

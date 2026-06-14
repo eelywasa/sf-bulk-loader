@@ -27,11 +27,17 @@ flowchart LR
   alb -->|HTTP plaintext<br/>inside VPC| ecs
 
   ecs -->|"asyncpg + force_ssl"| rds
-  ecs -->|"BYO IAM keys per Connection<br/>(see SFBL-295)"| s3in
-  ecs -->|"BYO IAM keys per Connection"| s3out
+  ecs -->|"task-role identity<br/>(default storage, keyless — SFBL-385)"| s3in
+  ecs -->|"task-role identity<br/>(default storage, keyless — SFBL-385)"| s3out
   ecs -->|"task-role identity"| ses
   ecs -->|"JWT-bearer OAuth +<br/>Bulk job lifecycle"| sf
 ```
+
+> On `aws_hosted` the implicit/default Input and Output storage resolves to
+> the first-party Input/Output buckets via the **ECS task role's** credential
+> chain (no stored keys) — the task role carries scoped object RW + ListBucket
+> on exactly those two buckets. External / cross-account buckets still use
+> per-Connection BYO IAM keys (the non-default path).
 
 ## Stack ownership
 
@@ -82,6 +88,10 @@ flowchart TB
   cluster --> svctd
   migcluster --> migtd
   alb --> svctd
+  svctd -.task-role S3 RW.-> s3in
+  svctd -.task-role S3 RW.-> s3out
+  migtd -.task-role S3 RW.-> s3in
+  migtd -.task-role S3 RW.-> s3out
   cfDist --> s3fe
   cfDist -->|"/api/* /ws/*"| alb
   routeApi --> alb

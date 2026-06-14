@@ -1,10 +1,27 @@
 // ─── Runtime config ────────────────────────────────────────────────────────────
 
+/**
+ * Non-secret description of where the implicit Input/Output files live
+ * (SFBL-296). Never carries credentials, tokens, or presigned URLs.
+ */
+export interface StorageLocation {
+  provider: string // 's3' | 'local'
+  uri: string // 's3://bucket/prefix' or the filesystem directory path
+  bucket?: string | null
+  region?: string | null
+  prefix?: string | null
+}
+
 export interface RuntimeConfig {
   auth_mode: 'none' | 'local'
   app_distribution: string
   transport_mode: string
   input_storage_mode: string
+  /**
+   * Resolved Input/Output storage locations, keyed 'input' / 'output'. Optional
+   * for resilience against older backends; the current backend always sends it.
+   */
+  storage_locations?: Record<string, StorageLocation>
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────────────────

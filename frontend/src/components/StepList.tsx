@@ -152,10 +152,10 @@ function SortableStepRow({
               <p className="text-xs text-content-muted mt-0.5 font-mono truncate">
                 <span className="not-italic font-sans text-content-muted mr-1">
                   {step.input_connection_id === 'local-output'
-                    ? 'Local output'
+                    ? 'Output files'
                     : step.input_connection_id
                       ? (inputConnections.find((c) => c.id === step.input_connection_id)?.name ?? 'S3')
-                      : 'Local'}
+                      : 'Input files'}
                   {' · '}
                 </span>
                 {step.csv_file_pattern}

@@ -70,8 +70,8 @@ A two-step plan — query → delete — is the canonical way to bulk-delete rec
 matching a predicate:
 
 1. Add a `query` step that selects `Id` for the rows you want to delete.
-2. Add a `delete` step **after** it with **Input Source** set to **Local output
-   files (prior run results)**.
+2. Add a `delete` step **after** it with **Input Source** set to **Previous-run
+   output** (prior run results).
 3. Click **Browse** on the delete step and pick the query step's result CSV.
 
 Two plans are currently required because run-specific output folders don't

@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.input_connection import InputConnection
 from app.models.job import JobRecord
 from app.services.input_storage import (
@@ -108,11 +109,34 @@ async def resolve_step_input(
 
     # ── 3. Construct the appropriate storage backend ─────────────────────────
     if plan.output_connection_id is None:
-        # Local backend — success_file_path is already relative to output_dir.
-        from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
+        # Default output (no explicit connection). On the filesystem profiles
+        # success_file_path is a path relative to output_dir; on aws_hosted
+        # (input_storage_mode=s3) the default output now resolves to the
+        # first-party output bucket, so the stored ref is an s3:// URI written
+        # by the keyless S3 output storage (SFBL-385). Branch on the actual
+        # stored ref shape rather than assuming None means local.
+        ref = upstream_record.success_file_path
+        if ref.startswith("s3://"):
+            parsed = urllib.parse.urlparse(ref)
+            uri_bucket = parsed.netloc
+            full_key = parsed.path.lstrip("/")
+            if not uri_bucket or not full_key:
+                raise StepReferenceResolutionError(
+                    f"Malformed S3 URI (missing bucket or key): {ref!r}"
+                )
+            # Keyless — the first-party output bucket is reached via the ECS
+            # task-role chain, the same way the upstream step wrote it.
+            storage: BaseInputStorage = S3InputStorage(
+                bucket=uri_bucket,
+                root_prefix="",  # full_key is already the complete object key
+                region=settings.s3_bucket_region,
+            )
+            rel_path = full_key
+        else:
+            from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
 
-        storage: BaseInputStorage = LocalInputStorage(await effective_output_dir())
-        rel_path = upstream_record.success_file_path
+            storage = LocalInputStorage(await effective_output_dir())
+            rel_path = ref
     else:
         # S3 backend — success_file_path is an s3:// URI written by the
         # output-storage layer (SFBL-115).  Parse it to recover the bucket and

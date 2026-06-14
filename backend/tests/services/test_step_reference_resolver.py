@@ -311,6 +311,60 @@ def test_s3_backend_returns_s3_input_storage_and_full_key():
     assert paths == ["outputs/run-abc/accounts.csv"]
 
 
+def test_default_s3_mode_no_connection_returns_keyless_s3_storage():
+    """aws_hosted default output (Codex P1): output_connection_id is None but the
+    upstream stored an s3:// ref in the first-party output bucket. The resolver
+    must read it via a *keyless* S3InputStorage on that bucket — not pass the URI
+    to LocalInputStorage.
+
+    Falsification: returning LocalInputStorage (the old None-means-local
+    assumption) would set rel_path to the raw s3:// URI and fail downstream;
+    passing key kwargs or calling decrypt_secret would break the keyless proof.
+    """
+    captured: dict = {}
+
+    async def _test():
+        async with _TestSession() as session:
+            # output_connection_id stays None (default), but the stored ref is s3://.
+            step, run_id, plan = await _seed_local_scenario(
+                session,
+                success_file_path="s3://first-party-output/plan/run/01_account/partition_0_success.csv",
+            )
+
+        async with _TestSession() as session:
+            from sqlalchemy import select as sa_select
+            from app.models.load_step import LoadStep as LS
+            from app.models.load_plan import LoadPlan as LP
+
+            step = (await session.execute(sa_select(LS).where(LS.id == step.id))).scalar_one()
+            plan = (await session.execute(sa_select(LP).where(LP.id == plan.id))).scalar_one()
+
+            def fake_client(**kw):
+                captured.clear()
+                captured.update(kw)
+                return _FakeS3Client()
+
+            with patch("app.services.input_storage.boto3.client", side_effect=fake_client), \
+                 patch(
+                     "app.services.step_reference_resolver.decrypt_secret",
+                     side_effect=AssertionError("decrypt_secret must not be called on the keyless default path"),
+                 ), \
+                 patch("app.services.input_storage.settings.s3_bucket_region", "eu-west-1"):
+                storage, paths = await resolve_step_input(step, run_id, plan, session)
+
+        return storage, paths
+
+    storage, paths = _run(_test())
+    assert isinstance(storage, S3InputStorage)
+    assert storage._bucket == "first-party-output"
+    assert storage._root_prefix == ""
+    assert paths == ["plan/run/01_account/partition_0_success.csv"]
+    # Keyless: region only, no credential kwargs.
+    assert captured.get("region_name") == "eu-west-1"
+    assert "aws_access_key_id" not in captured
+    assert "aws_secret_access_key" not in captured
+
+
 def test_s3_bucket_mismatch_raises_resolution_error():
     """URI bucket != InputConnection.bucket → StepReferenceResolutionError."""
     async def _test():

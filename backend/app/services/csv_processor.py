@@ -33,7 +33,7 @@ from typing import IO, Callable, Iterator, Optional, Sequence, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding, get_storage as _default_get_storage  # noqa: F401 — re-export
+from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding, detect_encoding_from_bytes, get_storage as _default_get_storage  # noqa: F401 — re-export
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +243,7 @@ async def build_retry_partitions(
     output_dir: str,
     db: AsyncSession,
     _get_storage: Callable = _default_get_storage,
+    output_storage: object = None,  # OutputStorage; reads Track A result files
 ) -> list[bytes]:
     """Build CSV partition bytes for retrying failed/aborted jobs of a single step.
 
@@ -263,14 +264,41 @@ async def build_retry_partitions(
         step: The :class:`LoadStep` that owns these jobs.
         partition_size: Maximum data rows per output partition.
         output_dir: Absolute path to the output directory (``settings.output_dir``).
+            Used only for the legacy filesystem read when *output_storage* is
+            ``None`` (e.g. unit tests).
         db: Database session used to resolve the input storage connection.
         _get_storage: Injected storage-resolver callable (default: ``get_storage``).
+        output_storage: The :class:`~app.services.output_storage.OutputStorage`
+            the run wrote results to. When provided, Track A result files are
+            read via ``read_bytes`` so an ``s3://`` ref (the aws_hosted default
+            output, SFBL-385) is read from S3 rather than mis-joined to
+            *output_dir*. When ``None``, falls back to the local filesystem read.
 
     Returns:
         List of UTF-8 CSV bytes: Track A re-partitioned chunks followed by
         Track B original chunks.  Returns ``[]`` if there are no retryable records.
     """
     output_base = pathlib.Path(output_dir)
+
+    def _read_result_bytes(ref: str) -> bytes | None:
+        """Read a Track A result file by its persisted ref shape; None if missing.
+
+        s3:// refs go through the run's S3 *output_storage*; relative refs are
+        read from the local output dir. Branching on the ref (not the run's
+        current backend) handles mixed-vintage refs — e.g. a failed job from an
+        older default-local run on a deployment now resolving to S3 (SFBL-385).
+        """
+        if ref.startswith("s3://"):
+            if output_storage is None:
+                return None
+            from app.services.output_storage import OutputStorageError  # noqa: PLC0415
+
+            try:
+                return output_storage.read_bytes(ref)
+            except (OutputStorageError, FileNotFoundError):
+                return None
+        p = output_base / ref
+        return p.read_bytes() if p.is_file() else None
 
     # Resolve storage once for all Track B jobs (avoids redundant DB lookups).
     # Track B may not exist at all, but resolving upfront keeps the code clean.
@@ -287,43 +315,41 @@ async def build_retry_partitions(
         if has_result_files:
             # ── Track A ──────────────────────────────────────────────────────
             if job.error_file_path:
-                error_path = output_base / job.error_file_path
-                if error_path.is_file():
-                    enc = detect_encoding(error_path)
+                raw = _read_result_bytes(job.error_file_path)
+                if raw is not None:
                     try:
-                        with error_path.open(encoding=enc, newline="") as fh:
-                            reader = csv.reader(fh)
-                            raw_header = next(reader, None)
-                            if raw_header is not None:
-                                # Strip sf__Id and sf__Error (always first two cols)
-                                data_header = [h.strip() for h in raw_header[2:]]
-                                if track_a_header is None:
-                                    track_a_header = data_header
-                                for row in reader:
-                                    track_a_rows.append(row[2:])
+                        enc = detect_encoding_from_bytes(raw)
+                        reader = csv.reader(io.StringIO(raw.decode(enc, errors="replace")))
+                        raw_header = next(reader, None)
+                        if raw_header is not None:
+                            # Strip sf__Id and sf__Error (always first two cols)
+                            data_header = [h.strip() for h in raw_header[2:]]
+                            if track_a_header is None:
+                                track_a_header = data_header
+                            for row in reader:
+                                track_a_rows.append(row[2:])
                     except Exception:
                         logger.warning(
                             "build_retry_partitions: could not read error file %s",
-                            error_path,
+                            job.error_file_path,
                         )
 
             if job.unprocessed_file_path:
-                unprocessed_path = output_base / job.unprocessed_file_path
-                if unprocessed_path.is_file():
-                    enc = detect_encoding(unprocessed_path)
+                raw = _read_result_bytes(job.unprocessed_file_path)
+                if raw is not None:
                     try:
-                        with unprocessed_path.open(encoding=enc, newline="") as fh:
-                            reader = csv.reader(fh)
-                            raw_header = next(reader, None)
-                            if raw_header is not None:
-                                if track_a_header is None:
-                                    track_a_header = [h.strip() for h in raw_header]
-                                for row in reader:
-                                    track_a_rows.append(row)
+                        enc = detect_encoding_from_bytes(raw)
+                        reader = csv.reader(io.StringIO(raw.decode(enc, errors="replace")))
+                        raw_header = next(reader, None)
+                        if raw_header is not None:
+                            if track_a_header is None:
+                                track_a_header = [h.strip() for h in raw_header]
+                            for row in reader:
+                                track_a_rows.append(row)
                     except Exception:
                         logger.warning(
                             "build_retry_partitions: could not read unprocessed file %s",
-                            unprocessed_path,
+                            job.unprocessed_file_path,
                         )
         else:
             # ── Track B ──────────────────────────────────────────────────────

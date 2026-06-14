@@ -1004,3 +1004,106 @@ def test_preview_output_file_in_subdirectory(auth_client):
     body = resp.json()
     assert body["header"] == ["sf__Id", "sf__Error"]
     assert len(body["rows"]) == 1
+
+
+# ── Output Files API routes through the resolver on aws_hosted (SFBL-386 QA #1) ──
+
+
+def _enable_s3_output_mode(stack):
+    """Patch the shared settings into s3 storage mode for an output-API test."""
+    import app.services.input_storage as _ist
+
+    stack.enter_context(patch.object(_ist.settings, "input_storage_mode", "s3"))
+    stack.enter_context(patch.object(_ist.settings, "s3_input_bucket", "fp-input"))
+    stack.enter_context(patch.object(_ist.settings, "s3_output_bucket", "fp-output"))
+    stack.enter_context(patch.object(_ist.settings, "s3_bucket_region", "eu-west-1"))
+    stack.enter_context(patch.object(_ist.settings, "s3_input_prefix", None))
+    stack.enter_context(patch.object(_ist.settings, "s3_output_prefix", None))
+
+
+def test_list_output_files_uses_s3_resolver_on_aws_hosted(auth_client):
+    """On aws_hosted the Output tab must list from the first-party output bucket.
+
+    Falsification: if the endpoint still built LocalInputStorage(effective_output_dir())
+    directly, provider would be 'local' and the listing would come from the
+    ephemeral container disk rather than S3.
+    """
+    from contextlib import ExitStack
+
+    captured: dict = {}
+
+    class _OutputBucketClient:
+        def list_objects_v2(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "CommonPrefixes": [],
+                "Contents": [{"Key": "partition_0_success.csv", "Size": 42}],
+            }
+
+    with ExitStack() as stack:
+        _enable_s3_output_mode(stack)
+        stack.enter_context(
+            patch("app.services.input_storage.boto3.client", return_value=_OutputBucketClient())
+        )
+        resp = auth_client.get("/api/files/output")
+
+    assert resp.status_code == 200
+    entries = resp.json()
+    assert all(e["provider"] == "s3" for e in entries)
+    assert all(e["source"] == "local-output" for e in entries)
+    assert [e["name"] for e in entries] == ["partition_0_success.csv"]
+
+
+def test_preview_output_file_uses_s3_resolver_on_aws_hosted(auth_client):
+    from contextlib import ExitStack
+
+    class _OutputBucketClient:
+        def get_object(self, *, Bucket, Key):
+            assert Bucket == "fp-output"
+            return {"Body": _FakeS3Body(b"sf__Id,sf__Error\n001,BAD\n")}
+
+    with ExitStack() as stack:
+        _enable_s3_output_mode(stack)
+        stack.enter_context(
+            patch("app.services.input_storage.boto3.client", return_value=_OutputBucketClient())
+        )
+        resp = auth_client.get("/api/files/output/run-01/partition_0_errors.csv/preview")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["provider"] == "s3"
+    assert body["source"] == "local-output"
+    assert body["header"] == ["sf__Id", "sf__Error"]
+
+
+# ── /api/runtime exposes storage_locations metadata (SFBL-296 QA #4) ─────────────
+
+
+def test_runtime_config_includes_storage_locations(client):
+    resp = client.get("/api/runtime")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "storage_locations" in body
+    locs = body["storage_locations"]
+    assert set(locs) == {"input", "output"}
+    # Default test profile is self_hosted → local provider.
+    assert locs["input"]["provider"] == "local"
+    assert locs["output"]["provider"] == "local"
+
+
+def test_runtime_storage_locations_carry_no_credentials(client):
+    """The unauthenticated payload must never leak credentials (SFBL-296 QA #4)."""
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        _enable_s3_output_mode(stack)
+        resp = client.get("/api/runtime")
+
+    assert resp.status_code == 200
+    locs = resp.json()["storage_locations"]
+    assert locs["input"]["provider"] == "s3"
+    assert locs["input"]["bucket"] == "fp-input"
+    assert locs["output"]["bucket"] == "fp-output"
+    blob = str(resp.json()).lower()
+    for needle in ("access_key", "secret", "session_token", "akia", "x-amz", "signature"):
+        assert needle not in blob

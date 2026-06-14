@@ -275,7 +275,7 @@ class _FakeS3Client:
 
 
 def _make_s3_storage(fake_client, *, bucket: str = "output-bucket", root_prefix=None):
-    with patch("app.services.output_storage.boto3.client", return_value=fake_client):
+    with patch("app.services.input_storage.boto3.client", return_value=fake_client):
         return S3OutputStorage(
             bucket=bucket,
             root_prefix=root_prefix,

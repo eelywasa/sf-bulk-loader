@@ -22,13 +22,17 @@ from typing import AsyncIterator, Optional, Protocol, runtime_checkable
 
 import aiofiles
 import aiofiles.os
-import boto3
 import botocore.exceptions
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.input_connection import InputConnection
 from app.observability.events import OutcomeCode, StorageEvent
-from app.services.input_storage import _join_s3_key, _normalise_root_prefix
+from app.services.input_storage import (
+    _join_s3_key,
+    _normalise_root_prefix,
+    build_s3_client,
+)
 from app.utils.encryption import decrypt_secret
 
 logger = logging.getLogger(__name__)
@@ -226,21 +230,20 @@ class S3OutputStorage:
         bucket: str,
         root_prefix: Optional[str],
         region: Optional[str],
-        access_key_id: str,
-        secret_access_key: str,
+        access_key_id: Optional[str] = None,
+        secret_access_key: Optional[str] = None,
         session_token: Optional[str] = None,
     ) -> None:
         self._bucket = bucket
         self._root_prefix = _normalise_root_prefix(root_prefix)
-        client_kwargs: dict = {
-            "service_name": "s3",
-            "aws_access_key_id": access_key_id,
-            "aws_secret_access_key": secret_access_key,
-            "region_name": region,
-        }
-        if session_token:
-            client_kwargs["aws_session_token"] = session_token
-        self._client = boto3.client(**client_kwargs)
+        # Keyless when no credentials are supplied — boto3 resolves via the ECS
+        # task-role chain (SFBL-385). BYO keys are passed through unchanged.
+        self._client = build_s3_client(
+            region=region,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            session_token=session_token,
+        )
 
     def write_bytes(self, relative_path: str, data: bytes) -> str:
         """Upload *data* to S3 as ``root_prefix + relative_path``.
@@ -489,6 +492,24 @@ async def get_output_storage(
             is not yet supported.
     """
     if not output_connection_id:
+        # Default output: first-party S3 output bucket on aws_hosted (keyless via
+        # the ECS task-role chain), else the local output directory (SFBL-385).
+        if settings.input_storage_mode == "s3":
+            logger.info(
+                "Default run output resolves to s3://%s (keyless task-role)",
+                settings.s3_output_bucket,
+                extra={
+                    "event_name": StorageEvent.OUTPUT_PERSISTED,
+                    "outcome_code": OutcomeCode.OK,
+                    "s3_bucket": settings.s3_output_bucket,
+                },
+            )
+            return S3OutputStorage(
+                bucket=settings.s3_output_bucket,
+                root_prefix=settings.s3_output_prefix,
+                region=settings.s3_bucket_region,
+            )
+
         from app.services.settings.dirs import effective_output_dir  # noqa: PLC0415
 
         return LocalOutputStorage(await effective_output_dir())
