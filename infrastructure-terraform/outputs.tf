@@ -37,7 +37,7 @@ output "ecs_cluster_name" {
 }
 
 output "cloudfront_distribution_domain" {
-  description = "CloudFront distribution domain - point the frontend DNS (domain_name) at this."
+  description = "CloudFront distribution domain. The frontend domain_name alias is managed in-stack by default (manage_frontend_dns); only external-DNS deployments (manage_frontend_dns = false) point their own DNS at this."
   value       = module.frontend.distribution_domain_name
 }
 

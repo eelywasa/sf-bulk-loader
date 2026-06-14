@@ -71,7 +71,7 @@ is required or acceptable for a reproducible deployment.
 | `BulkLoader-{env}-Network` | VPC, public subnets (ALB + ECS) and isolated subnets (RDS) across 2 AZs, S3 Gateway Endpoint |
 | `BulkLoader-{env}-Data` | ECR repository, RDS PostgreSQL (with `force_ssl=1` parameter group), S3 input + output buckets, Secrets Manager secrets, SES domain identity |
 | `BulkLoader-{env}-Backend` | ECS cluster, Fargate task/service, ALB, backend Route53 alias, SES IAM policies |
-| `BulkLoader-{env}-Frontend` | CloudFront distribution, S3 frontend bucket, automated `BucketDeployment` of the Vite build |
+| `BulkLoader-{env}-Frontend` | CloudFront distribution, S3 frontend bucket, automated `BucketDeployment` of the Vite build, frontend `domainName` Route53 alias (when `manageFrontendDns` is on) |
 
 **ECR lives in `Data`, not `Backend`** — this is deliberate. The ECS service in
 `Backend` cannot start until at least one image exists in ECR; the split lets
@@ -186,9 +186,11 @@ for hosted distributions.
 > account hit several non-obvious gotchas that aren't visible from a single
 > `cdk deploy --all` invocation. The flow below is the one validated against
 > `bulkloader.forcetide.net`; in particular the *one-shot migration run*
-> (step 8), the *frontend build flavour* (step 9), and the *Route53 alias for
-> the frontend domain* (step 11) require manual operator action that the CDK
-> does not automate. (The old *MigrationTaskDef chicken-and-egg* is gone —
+> (step 8) and the *frontend build flavour* (step 9) require manual operator
+> action that the CDK does not automate. (The frontend apex Route53 alias used
+> to be a manual step too; since [SFBL-390](https://matthew-jenkin.atlassian.net/browse/SFBL-390)
+> FrontendStack manages it in-stack — see step 10.) (The old
+> *MigrationTaskDef chicken-and-egg* is gone —
 > SFBL-298 moved the migration task and its own Fargate cluster into DataStack,
 > so it runs cleanly **before** BackendStack exists; step 8 is now an ordered
 > step, not a race.)
@@ -218,9 +220,13 @@ for hosted distributions.
   and the service boots cleanly. (If you ever deploy BackendStack against an
   un-migrated DB, the service crashloops and the SFBL-355 deployment circuit
   breaker rolls the deploy back — a fast, clear failure rather than a hang.)
-- **CloudFront does not auto-create the Route53 alias for the frontend
-  domain.** ALB origins for `backendDomainName` are aliased automatically;
-  CloudFront aliases for `domainName` are not. Step 11 adds it manually.
+- **The frontend Route53 alias is now managed in-stack
+  ([SFBL-390](https://matthew-jenkin.atlassian.net/browse/SFBL-390)).**
+  FrontendStack creates the `domainName` → CloudFront A-alias and auto-repoints
+  it on every deploy (gated by the `manageFrontendDns` env flag, default true),
+  so no manual `route53 change-resource-record-sets` is needed. Set
+  `manageFrontendDns: false` only for external-DNS deployments whose
+  `domainName` lives outside this account's Route53.
 
 ### 1. Bootstrap CDK (once per account, **two regions**)
 
@@ -284,6 +290,7 @@ Required fields:
 | `backendDomainName` | Backend origin hostname used by CloudFront (for example `api.example.com`) |
 | `backendCertificateArn` | ALB certificate ARN in the deployment region |
 | `hostedZoneDomain` | Route53 hosted zone that owns `backendDomainName` and `domainName` |
+| `manageFrontendDns` (optional) | Manage the `domainName` → CloudFront Route53 alias in-stack. Defaults to `true`; set `false` for external-DNS deployments whose `domainName` is not in this account's Route53 |
 | `sesIdentityDomain` (optional) | SES sender domain — defaults to `hostedZoneDomain` |
 | `sesIdentityAdoptExisting` (optional) | `true` if the SES identity is already verified outside this stack |
 
@@ -464,38 +471,16 @@ The `BucketDeployment` construct uploads `frontend/dist/` to S3 and
 issues a CloudFront invalidation automatically. CloudFront distribution
 provisioning typically takes 5–15 minutes on first creation.
 
-### 11. Add the Route53 alias for the frontend domain
+Since [SFBL-390](https://matthew-jenkin.atlassian.net/browse/SFBL-390), this
+deploy also creates (and on later deploys auto-repoints) the `domainName` →
+CloudFront Route53 A-alias under `hostedZoneDomain`, using the well-known
+CloudFront alias hosted-zone constant `Z2FDTNDATAQYW2`. **No manual Route53
+step is required.** It is gated by `manageFrontendDns` (default true); set it
+to `false` in `cdk.context.json` only for external-DNS deployments whose
+`domainName` is not in this account's Route53 — then point your own DNS at the
+`DistributionDomainName` stack output by hand.
 
-CDK does not auto-create the alias from `domainName` to the CloudFront
-distribution (only the ALB origin alias for `backendDomainName` is
-automated). Add it once:
-
-```bash
-DIST_DNS=$(aws cloudformation describe-stacks --stack-name BulkLoader-${ENV}-Frontend \
-  --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue" --output text)
-HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name --dns-name "$HOSTED_ZONE." \
-  --query 'HostedZones[0].Id' --output text | sed 's|/hostedzone/||')
-
-cat > /tmp/cf-alias.json <<EOF
-{ "Changes": [ { "Action": "UPSERT", "ResourceRecordSet": {
-  "Name": "${DOMAIN}.", "Type": "A",
-  "AliasTarget": {
-    "HostedZoneId": "Z2FDTNDATAQYW2",
-    "DNSName": "${DIST_DNS}.",
-    "EvaluateTargetHealth": false
-  }
-} } ] }
-EOF
-
-aws route53 change-resource-record-sets \
-  --hosted-zone-id "$HOSTED_ZONE_ID" \
-  --change-batch file:///tmp/cf-alias.json
-```
-
-`Z2FDTNDATAQYW2` is the well-known CloudFront hosted-zone-ID constant —
-it's not derived from anything in your account.
-
-### 12. Smoke test
+### 11. Smoke test
 
 ```bash
 # Health behind CloudFront (exercises CloudFront → ALB → ECS → RDS)

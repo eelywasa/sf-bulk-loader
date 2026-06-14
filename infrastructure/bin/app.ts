@@ -114,6 +114,10 @@ new FrontendStack(app, `${prefix}-Frontend`, {
   domainName: envConfig.domainName as string,
   certificateArn: envConfig.certificateArn as string,
   backendOriginDomainName: envConfig.backendDomainName as string,
+  hostedZoneDomain: envConfig.hostedZoneDomain as string,
+  // SFBL-390: manage the frontend apex Route53 alias in-stack by default;
+  // set manageFrontendDns: false in cdk.json for external-DNS deployments.
+  manageFrontendDns: envConfig.manageFrontendDns as boolean | undefined,
   description: `Salesforce Bulk Loader - frontend hosting (${envName})`,
 }).addDependency(backendStack);
 

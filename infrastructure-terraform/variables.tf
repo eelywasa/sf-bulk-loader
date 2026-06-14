@@ -57,6 +57,12 @@ variable "domain_name" {
   type        = string
 }
 
+variable "manage_frontend_dns" {
+  description = "SFBL-390: manage the frontend domain_name Route53 A-alias in IaC (default true) so it is created/destroyed/repointed with the stack - no manual Route53 step on stack-up/down. Set false for external-DNS deployments whose domain_name lives in DNS this account does not control; then no Route53 record is emitted for domain_name and you point your own DNS at the CloudFront domain."
+  type        = bool
+  default     = true
+}
+
 variable "certificate_arn" {
   description = "ACM certificate ARN for the CloudFront distribution covering domain_name. MUST be issued in us-east-1 - a CloudFront constraint, regardless of aws_region."
   type        = string

@@ -133,15 +133,22 @@ terraform plan  -var-file=tiers/silver.tfvars -var-file=production.tfvars -out=p
 terraform apply plan.out
 ```
 
-### 7. Upload the frontend and point DNS
+### 7. Upload the frontend
 
 ```bash
 terraform output -raw frontend_deploy_command   # build + s3 sync --delete + invalidation
 ```
 
-Run it, then create a DNS record for `domain_name` pointing at
-`cloudfront_distribution_domain` (CNAME or, if the frontend domain lives in
-the same Route53 zone, an alias A record).
+The `domain_name` → CloudFront Route53 A-alias is created by `terraform apply`
+itself (see [SFBL-390](https://matthew-jenkin.atlassian.net/browse/SFBL-390)):
+the `frontend` module manages it under `hosted_zone_domain`, gated by
+`manage_frontend_dns` (default true), and re-points it automatically whenever
+the distribution domain changes. **No manual DNS record creation is needed.**
+
+For external-DNS deployments whose `domain_name` is not in this account's
+Route53, set `manage_frontend_dns = false`; Terraform then emits no Route53
+record and you point your own DNS at the `cloudfront_distribution_domain`
+output (CNAME, or an alias A record in your provider).
 
 ### 8. Verify SES (first deploy only)
 
@@ -236,6 +243,7 @@ lands here:
 | Execution role (scoped secret/SSM reads) + task role (SES + scoped first-party S3 RW/List, no wildcard — SFBL-388) | `backend` — `iam.tf` |
 | ALB, HTTPS listener (TLS13 policy), HTTP→301, target group (/ready) | `backend` — `alb.tf` |
 | Route53 alias for the backend domain | `backend` — `aws_route53_record` |
+| Route53 alias for the frontend domain (gated by `manage_frontend_dns`, default true — SFBL-390) | `frontend` — `aws_route53_record` |
 | Frontend bucket + OAC + CloudFront (SPA, /api/*, /ws/*) | `frontend` — `main.tf` |
 | 403/404 → index.html, us-east-1 cert | `frontend` — distribution config |
 | BucketDeployment (build upload + invalidation, pruned) | operator step — `frontend_deploy_command` output (deviation 6) |

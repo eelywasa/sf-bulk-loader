@@ -157,6 +157,41 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 }
 
+# --- Frontend apex DNS alias (SFBL-390) ---
+# Mirrors modules/backend/alb.tf's aws_route53_record.backend so the frontend
+# domain_name is created/destroyed/repointed with the stack - no manual Route53
+# UPSERT/DELETE on stack-up/down. domain_name is an ordinary subdomain of the
+# deployment's own hosted_zone_domain, so this is always safe to manage. The
+# alias targets the CloudFront distribution via the global, fixed CloudFront
+# alias hosted-zone id Z2FDTNDATAQYW2.
+#
+# Opt-out (manage_frontend_dns = false): for external-DNS deployments whose
+# domain_name lives in DNS this account does not control. count drops to 0 so
+# NO Route53 record (and no zone lookup) is emitted; the operator points their
+# own DNS at the CloudFront domain (the cloudfront_domain_name output).
+
+data "aws_route53_zone" "frontend" {
+  count = var.manage_frontend_dns ? 1 : 0
+
+  name         = var.hosted_zone_domain
+  private_zone = false
+}
+
+resource "aws_route53_record" "frontend" {
+  count = var.manage_frontend_dns ? 1 : 0
+
+  zone_id = data.aws_route53_zone.frontend[0].zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name = aws_cloudfront_distribution.frontend.domain_name
+    # Global constant for CloudFront alias targets (every account/region).
+    zone_id                = "Z2FDTNDATAQYW2"
+    evaluate_target_health = false
+  }
+}
+
 # --- Bucket policy ---
 # GetObject restricted to THIS distribution via AWS:SourceArn - not all of
 # CloudFront - plus the HTTPS-only deny. Applied after both bucket and

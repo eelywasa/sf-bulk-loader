@@ -72,6 +72,7 @@ flowchart TB
   subgraph frontend["BulkLoader-#123;env#125;-Frontend"]
     s3fe[(Frontend bucket<br/>OAC-only)]
     cfDist[CloudFront distribution]
+    routeFe[Route53 A-ALIAS<br/>domainName<br/>gated by manageFrontendDns]
   end
 
   vpc --> rds
@@ -95,12 +96,14 @@ flowchart TB
   cfDist --> s3fe
   cfDist -->|"/api/* /ws/*"| alb
   routeApi --> alb
+  routeFe --> cfDist
 ```
 
-> **Manual step on first deploy:** the Route53 A-ALIAS for
-> `domainName` → CloudFront is **not** auto-created by CDK (only the
-> `backendDomainName` → ALB alias is). See `docs/deployment/aws.md`
-> step 11.
+> **Frontend apex DNS is IaC-managed (SFBL-390):** the Route53 A-ALIAS for
+> `domainName` → CloudFront is created and auto-repointed by the Frontend
+> stack/module, gated by `manageFrontendDns` / `manage_frontend_dns`
+> (default true). Only external-DNS deployments (flag false) point their own
+> DNS at the CloudFront distribution domain. See `docs/deployment/aws.md`.
 
 ## Test evidence host (SFBL-334)
 

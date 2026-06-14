@@ -102,4 +102,9 @@ module "frontend" {
   domain_name                = var.domain_name
   certificate_arn            = var.certificate_arn
   backend_origin_domain_name = var.backend_domain_name
+
+  # SFBL-390: manage the frontend apex Route53 alias in-module by default;
+  # set manage_frontend_dns = false for external-DNS deployments.
+  hosted_zone_domain  = var.hosted_zone_domain
+  manage_frontend_dns = var.manage_frontend_dns
 }
