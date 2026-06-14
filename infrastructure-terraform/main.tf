@@ -107,4 +107,12 @@ module "frontend" {
   # set manage_frontend_dns = false for external-DNS deployments.
   hosted_zone_domain  = var.hosted_zone_domain
   manage_frontend_dns = var.manage_frontend_dns
+
+  # The frontend only consumes hostname *strings* (var.backend_domain_name), so
+  # there's no implicit dependency edge on the backend. Now that the frontend
+  # publishes the public domain_name -> CloudFront alias, that record must not go
+  # live before the backend ALB and its api.<domain> origin exist - otherwise the
+  # distribution's /api/* and /ws/* origin resolves to nothing. Mirrors the CDK
+  # FrontendStack.addDependency(backendStack) ordering in bin/app.ts.
+  depends_on = [module.backend]
 }
