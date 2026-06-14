@@ -244,6 +244,11 @@ export class BackendStack extends cdk.Stack {
       environment: {
         // Distribution profile - drives all aws_hosted startup validation in config.py.
         APP_DISTRIBUTION: 'aws_hosted',
+        // SFBL-391: hosted deployments run in production mode. The app defaults
+        // app_env to "development" (config.py), which turns SQLAlchemy echo on
+        // (database.py) and floods CloudWatch with every SQL statement. CDK must
+        // set this explicitly or a deploy reverts any manual fix on the service.
+        APP_ENV: 'production',
         // SFBL-277: service tasks never run migrations - the one-shot
         // MigrationTaskDefinition below handles that out-of-band before
         // each rolling deploy. See docs/deployment/aws.md "Ongoing

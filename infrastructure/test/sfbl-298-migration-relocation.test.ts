@@ -84,4 +84,26 @@ describe('SFBL-298 migration task relocation', () => {
       ]),
     });
   });
+
+  // SFBL-391: hosted task defs must set APP_ENV=production. Absence falls back
+  // to the app's "development" default, which turns SQLAlchemy echo on.
+  test('service + migration tasks set APP_ENV=production', () => {
+    const { backend, data } = synthStacks();
+    Template.fromStack(backend).hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Name: 'backend',
+          Environment: Match.arrayWith([{ Name: 'APP_ENV', Value: 'production' }]),
+        }),
+      ]),
+    });
+    Template.fromStack(data).hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Name: 'migration',
+          Environment: Match.arrayWith([{ Name: 'APP_ENV', Value: 'production' }]),
+        }),
+      ]),
+    });
+  });
 });

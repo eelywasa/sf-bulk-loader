@@ -109,8 +109,10 @@ run "task_definition_runtime_contract" {
     condition = alltrue([
       anytrue([for e in jsondecode(aws_ecs_task_definition.backend.container_definitions)[0].environment : e.name == "APP_DISTRIBUTION" && e.value == "aws_hosted"]),
       anytrue([for e in jsondecode(aws_ecs_task_definition.backend.container_definitions)[0].environment : e.name == "RUN_MIGRATIONS" && e.value == "false"]),
+      # SFBL-391: production mode (else the app defaults to development → SQL echo flood).
+      anytrue([for e in jsondecode(aws_ecs_task_definition.backend.container_definitions)[0].environment : e.name == "APP_ENV" && e.value == "production"]),
     ])
-    error_message = "Service tasks must set APP_DISTRIBUTION=aws_hosted and RUN_MIGRATIONS=false."
+    error_message = "Service tasks must set APP_DISTRIBUTION=aws_hosted, RUN_MIGRATIONS=false, and APP_ENV=production."
   }
 
   # SFBL-388: the three first-party S3 bucket env vars are injected, bound to

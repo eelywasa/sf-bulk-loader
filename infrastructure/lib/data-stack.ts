@@ -548,6 +548,8 @@ export class DataStack extends cdk.Stack {
       },
       environment: {
         APP_DISTRIBUTION: 'aws_hosted',
+        // SFBL-391: production mode (echo off) - parity with the service task.
+        APP_ENV: 'production',
         RUN_MIGRATIONS: 'true',
         // SFBL-385: keep the storage env contract identical to the service task
         // so the migration boots through the same config validator (which now
