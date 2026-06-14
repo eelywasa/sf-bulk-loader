@@ -109,10 +109,11 @@ module "frontend" {
   manage_frontend_dns = var.manage_frontend_dns
 
   # The frontend only consumes hostname *strings* (var.backend_domain_name), so
-  # there's no implicit dependency edge on the backend. Now that the frontend
-  # publishes the public domain_name -> CloudFront alias, that record must not go
-  # live before the backend ALB and its api.<domain> origin exist - otherwise the
-  # distribution's /api/* and /ws/* origin resolves to nothing. Mirrors the CDK
+  # there's no implicit edge on the backend. The public domain_name -> CloudFront
+  # alias must not go live before the backend ALB + api.<domain> origin exist,
+  # else the distribution's /api/* and /ws/* origin resolves to nothing. Scope
+  # the ordering to the DNS record only (a module-level depends_on would defer
+  # the frontend's data sources and churn the S3 bucket). Mirrors the CDK
   # FrontendStack.addDependency(backendStack) ordering in bin/app.ts.
-  depends_on = [module.backend]
+  dns_alias_depends_on = [module.backend]
 }

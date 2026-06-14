@@ -180,6 +180,12 @@ data "aws_route53_zone" "frontend" {
 resource "aws_route53_record" "frontend" {
   count = var.manage_frontend_dns ? 1 : 0
 
+  # Publish the public alias only after whatever the caller passes (the backend
+  # module) is in place, so domain_name never resolves to a distribution whose
+  # /api/* + /ws/* origin (api.<domain>) does not exist yet. Scoped to this
+  # record rather than the whole module to avoid deferring the data sources.
+  depends_on = [var.dns_alias_depends_on]
+
   zone_id = data.aws_route53_zone.frontend[0].zone_id
   name    = var.domain_name
   type    = "A"

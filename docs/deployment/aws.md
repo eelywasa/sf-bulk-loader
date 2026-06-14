@@ -486,13 +486,16 @@ When `false`, point your own DNS at the `DistributionDomainName` stack output.
 > **Upgrading an existing environment (one-time).** CloudFormation cannot adopt
 > a Route53 record created outside the stack. If an environment already has a
 > `domainName` alias from the old manual runbook (pre-SFBL-390), the first
-> deploy carrying the managed record fails with *"…but it already exists"*.
-> Before that deploy, **delete the manual `domainName` A-alias once** (or run
-> that one deploy with `manageFrontendDns: false`), then redeploy normally — the
-> stack creates and owns it thereafter. Fresh environments, and any environment
-> torn down via `cdk destroy` (which removes the managed record), need no action.
-> *(The Terraform flavour adopts the existing record automatically via
-> `allow_overwrite`, so this step is CDK-only.)*
+> deploy carrying the managed record fails with *"…but it already exists"*. To
+> enable in-stack management, **delete (or CloudFormation-import) the manual
+> `domainName` A-alias once, then deploy with `manageFrontendDns: true`** — the
+> stack creates and owns it thereafter. (Deploying with `manageFrontendDns:
+> false` does **not** remove or adopt the record; it only skips emitting one, so
+> it's a way to *keep managing DNS yourself*, not a step toward enabling
+> management.) Fresh environments, and any environment torn down via `cdk
+> destroy` (which removes the managed record), need no action. *(The Terraform
+> flavour adopts the existing record automatically via `allow_overwrite`, so
+> this delete step is CDK-only.)*
 
 ### 11. Smoke test
 
