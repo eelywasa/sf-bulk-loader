@@ -25,10 +25,19 @@ export interface FrontendStackProps extends cdk.StackProps {
   /**
    * Whether to manage the frontend `domainName` Route53 A-alias in this stack
    * (SFBL-390). Default true: the alias is created/destroyed/repointed with the
-   * stack, so no manual Route53 step is needed on stack-up/down. Set false for
-   * external-DNS deployments whose `domainName` lives in DNS this account does
-   * not control - then no Route53 record is emitted for `domainName` and the
-   * operator points their own DNS at the CloudFront `DistributionDomainName`.
+   * stack, so no manual Route53 step is needed on stack-up/down.
+   *
+   * Set false when this account should NOT own the `domainName` record during
+   * the deploy. Two cases:
+   *   1. External-DNS deployments whose `domainName` lives in DNS this account
+   *      does not control - the operator points their own DNS at the CloudFront
+   *      `DistributionDomainName` output.
+   *   2. Staged same-account migrations/cutovers (see
+   *      docs/deployment/migrating-to-aws-hosted.md) where the live `domainName`
+   *      record still points at the old system and must only be flipped to
+   *      CloudFront after smoke-testing. Keep this false through deploy + smoke,
+   *      then cut over (delete the old record and redeploy with the flag true,
+   *      or flip DNS by hand).
    */
   manageFrontendDns?: boolean;
 }

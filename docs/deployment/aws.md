@@ -290,7 +290,7 @@ Required fields:
 | `backendDomainName` | Backend origin hostname used by CloudFront (for example `api.example.com`) |
 | `backendCertificateArn` | ALB certificate ARN in the deployment region |
 | `hostedZoneDomain` | Route53 hosted zone that owns `backendDomainName` and `domainName` |
-| `manageFrontendDns` (optional) | Manage the `domainName` → CloudFront Route53 alias in-stack. Defaults to `true`; set `false` for external-DNS deployments whose `domainName` is not in this account's Route53 |
+| `manageFrontendDns` (optional) | Manage the `domainName` → CloudFront Route53 alias in-stack. Defaults to `true`; set `false` for external-DNS deployments whose `domainName` is not in this account's Route53, or for staged same-account migrations/cutovers (see [migrating-to-aws-hosted.md](migrating-to-aws-hosted.md)) |
 | `sesIdentityDomain` (optional) | SES sender domain — defaults to `hostedZoneDomain` |
 | `sesIdentityAdoptExisting` (optional) | `true` if the SES identity is already verified outside this stack |
 
@@ -476,9 +476,12 @@ deploy also creates (and on later deploys auto-repoints) the `domainName` →
 CloudFront Route53 A-alias under `hostedZoneDomain`, using the well-known
 CloudFront alias hosted-zone constant `Z2FDTNDATAQYW2`. **No manual Route53
 step is required.** It is gated by `manageFrontendDns` (default true); set it
-to `false` in `cdk.context.json` only for external-DNS deployments whose
-`domainName` is not in this account's Route53 — then point your own DNS at the
-`DistributionDomainName` stack output by hand.
+to `false` in `cdk.context.json` when this account should not own the
+`domainName` record during the deploy — either an external-DNS deployment whose
+`domainName` is not in this account's Route53, or a staged same-account
+migration/cutover where the live record must only be flipped to CloudFront after
+smoke-testing (see [migrating-to-aws-hosted.md](migrating-to-aws-hosted.md)).
+When `false`, point your own DNS at the `DistributionDomainName` stack output.
 
 > **Upgrading an existing environment (one-time).** CloudFormation cannot adopt
 > a Route53 record created outside the stack. If an environment already has a

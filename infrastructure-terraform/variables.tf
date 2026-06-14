@@ -58,7 +58,7 @@ variable "domain_name" {
 }
 
 variable "manage_frontend_dns" {
-  description = "SFBL-390: manage the frontend domain_name Route53 A-alias in IaC (default true) so it is created/destroyed/repointed with the stack - no manual Route53 step on stack-up/down. Set false for external-DNS deployments whose domain_name lives in DNS this account does not control; then no Route53 record is emitted for domain_name and you point your own DNS at the CloudFront domain."
+  description = "SFBL-390: manage the frontend domain_name Route53 A-alias in IaC (default true) so it is created/destroyed/repointed with the stack - no manual Route53 step on stack-up/down. Set false when this account should not own the domain_name record during apply: (1) external-DNS deployments whose domain_name lives elsewhere, or (2) staged same-account migrations/cutovers where the live record must only be flipped after smoke-testing. When false, no Route53 record is emitted and you point your own DNS at the CloudFront domain. See docs/deployment/migrating-to-aws-hosted.md."
   type        = bool
   default     = true
 }

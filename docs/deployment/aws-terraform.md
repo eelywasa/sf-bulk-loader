@@ -147,10 +147,14 @@ the distribution domain changes. **No manual DNS record creation is needed.**
 On environments upgraded from the old manual runbook, `allow_overwrite = true`
 lets the first `apply` adopt the pre-existing manual alias rather than erroring.
 
-For external-DNS deployments whose `domain_name` is not in this account's
-Route53, set `manage_frontend_dns = false`; Terraform then emits no Route53
-record and you point your own DNS at the `cloudfront_distribution_domain`
-output (CNAME, or an alias A record in your provider).
+Set `manage_frontend_dns = false` when this account should not own the
+`domain_name` record during apply: an external-DNS deployment whose
+`domain_name` is not in this account's Route53, **or** a staged same-account
+migration/cutover where the live record must only be flipped after smoke-testing
+(with the flag on, `allow_overwrite` would clobber the live record on the first
+apply — see [migrating-to-aws-hosted.md](migrating-to-aws-hosted.md)). When
+`false`, Terraform emits no Route53 record and you point your own DNS at the
+`cloudfront_distribution_domain` output (CNAME, or an alias A record).
 
 ### 8. Verify SES (first deploy only)
 
