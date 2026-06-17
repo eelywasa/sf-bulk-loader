@@ -47,10 +47,10 @@ jobs:
     # ReadTimeoutError forcing pip retries — observed on PR #88).
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Explicit `scope=` on the GHA cache directives is critical (SFBL-335
       # follow-up): without it, docker/build-push-action derives a scope key
@@ -61,7 +61,7 @@ jobs:
       # scope to a stable string per image (`backend` / `frontend`) gives
       # subsequent pushes on the same PR a deterministic key to hit.
       - name: Build backend image (with layer cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: backend
           push: false
@@ -71,7 +71,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
       - name: Build frontend image (with layer cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: frontend/Dockerfile
@@ -91,7 +91,7 @@ jobs:
           ls -lh /tmp/images
 
       - name: Upload image artefacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-pr-images
           path: /tmp/images/
@@ -115,10 +115,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -141,7 +141,7 @@ jobs:
           echo 'APP_DISTRIBUTION=desktop' > .env
 
       - name: Download pre-built images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: e2e-pr-images
           path: /tmp/images
@@ -185,7 +185,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-tier-1a
           path: tests/e2e/playwright-report/
@@ -197,7 +197,7 @@ jobs:
       # are exactly when we most want the evidence available.
       - name: Upload Tier 1a allure-results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-tier-1a
           path: tests/e2e/allure-results/
@@ -225,10 +225,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -251,7 +251,7 @@ jobs:
           echo 'SF_DESCRIBE_FIXTURES_DIR=/data/e2e-fixtures/app:/data/e2e-fixtures/sf' >> .env
 
       - name: Download pre-built images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: e2e-pr-images
           path: /tmp/images
@@ -299,7 +299,7 @@ jobs:
       # SFBL-334 / SFBL-345: same allure-results upload pattern as Tier 1a.
       - name: Upload Tier 1b allure-results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-tier-1b
           path: tests/e2e/allure-results/
@@ -308,7 +308,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-tier-1b
           path: tests/e2e/playwright-report/

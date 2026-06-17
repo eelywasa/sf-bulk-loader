@@ -96,20 +96,20 @@ jobs:
       # 1. Checkout
       # -----------------------------------------------------------------------
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # -----------------------------------------------------------------------
       # 2. Set up runtimes
       # -----------------------------------------------------------------------
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: 'tests/e2e/package-lock.json'
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -419,7 +419,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-tier-2-${{ github.run_id }}
           path: tests/e2e/playwright-report/
@@ -431,7 +431,7 @@ jobs:
       # are exactly when the dashboard is most useful.
       - name: Upload Tier 2 allure-results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-tier-2
           path: tests/e2e/allure-results/
@@ -445,7 +445,7 @@ jobs:
       # ends at "X records failed" with no visibility into the error rows.
       - name: Upload bulk-loader data dirs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bulk-loader-data-tier-2-${{ github.run_id }}
           path: |
@@ -509,7 +509,7 @@ jobs:
 
       - name: Upload sfdxAuthUrl artifact
         if: always() && github.event_name == 'workflow_dispatch' && inputs.skip_destroy && !inputs.reuse_shared_scratch
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tier2-scratch-auth-url
           path: /tmp/tier2-reuse/sfdx-auth-url.txt
