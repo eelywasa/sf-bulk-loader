@@ -80,7 +80,7 @@ not depend on GHCR availability):
 ECR_URL=$(terraform output -raw ecr_repository_url)
 aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR_URL%%/*}"
 docker buildx imagetools create -t "${ECR_URL}:stable" \
-  ghcr.io/eelywasa/sf-bulk-loader-backend:v0.13
+  ghcr.io/eelywasa/sf-bulk-loader-backend:0.15.18
 ```
 
 The tag you push must match `image_tag` in your tfvars.
