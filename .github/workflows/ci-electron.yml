@@ -23,7 +23,7 @@ jobs:
     outputs:
       electron: ${{ steps.filter.outputs.electron }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -44,9 +44,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -54,7 +54,7 @@ jobs:
             electron/package-lock.json
             frontend/package-lock.json
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -72,7 +72,7 @@ jobs:
 
       - name: Cache PyInstaller binary
         id: pyinstaller-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: backend/dist/sf_bulk_loader
           key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**', 'mcp-server/**', '.github/workflows/ci-electron.yml') }}
@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload unpacked artifact on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sf-bulk-loader-linux-x64-${{ github.sha }}
           path: electron/dist/linux-unpacked/**
@@ -130,9 +130,9 @@ jobs:
             artifact_path: electron/dist/win-unpacked/**
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -140,7 +140,7 @@ jobs:
             electron/package-lock.json
             frontend/package-lock.json
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -158,7 +158,7 @@ jobs:
 
       - name: Cache PyInstaller binary
         id: pyinstaller-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: backend/dist/sf_bulk_loader
           key: pyinstaller-${{ runner.os }}-${{ hashFiles('backend/**/*.py', 'backend/requirements-desktop.txt', 'backend/sf_bulk_loader.spec', 'backend/alembic.ini', 'backend/alembic/**', 'mcp-server/**', '.github/workflows/ci-electron.yml') }}
@@ -188,7 +188,7 @@ jobs:
 
       - name: Upload unpacked artifact on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sf-bulk-loader-${{ matrix.artifact_suffix }}-${{ github.sha }}
           path: ${{ matrix.artifact_path }}
