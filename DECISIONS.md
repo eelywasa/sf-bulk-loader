@@ -996,3 +996,70 @@ not a runtime UI edit.
 Tracked: epic **SFBL-385** (backend SFBL-386, CDK SFBL-387, Terraform
 SFBL-388, docs SFBL-389); UI semantics **SFBL-296**.
 
+## 032 — Input CSVs are decoded as UTF-8 with a per-step override; encoding auto-detection is deleted (SFBL-400)
+
+Input files are decoded as **UTF-8** (`utf-8-sig`) unless a **step-level**
+`encoding` override says otherwise. The prefix-sampling auto-detection that
+shipped with the original spec §4.3 is removed entirely.
+
+**Why.** `open_text` sampled the first 64 KiB, inferred an encoding from that
+sample alone, then wrapped the whole stream with it. On a 696 KB input the
+remaining ~630 KB was never sampled, so a later byte could invalidate the
+guess mid-read — the SFBL-400 incident, 14 failed runs producing zero jobs.
+Hardening that is not possible: a prefix guess applied to a whole stream is
+unsound by construction.
+
+The decisive evidence was the *silent* variant. The official Salesforce Data
+Loader read the same file as windows-1252 and **corrupted 25 Accounts in
+`ucas-mig2` while reporting success** — all 60 non-ASCII rows match a
+windows-1252 decoding, none match UTF-8. Our detection would do the same
+whenever the offending bytes miss cp1252's five undefined values. The loud
+crash was the lucky outcome.
+
+**Decision.** Delete `_ENCODING_CANDIDATES`, `detect_encoding` and
+`detect_encoding_from_bytes`. Default to `utf-8-sig` — not bare `utf-8`,
+because `str.strip()` does not remove U+FEFF, so a BOM would survive header
+stripping and be uploaded to Salesforce as part of the first column name.
+Offer a curated dropdown (UTF-8 / Windows-1252 / ISO-8859-1) on the **step**,
+not the connection: `InputConnection` carries transport only, `LoadStep`
+carries every data-format setting, and `input_connection_id` is nullable so a
+connection-level field is unreachable for the default input source.
+
+Rejected: hardening detection (manages an unsound guess rather than removing
+it); an `on_decode_error=replace` lossy mode (buys a lossy load of a malformed
+file when a lossless offline repair exists); a deployment-wide default
+setting and a connection-level field (both add a second place to configure one
+value); and `utf-16` on the allow-list (with no BOM it guesses endianness and
+decodes garbage cleanly, reintroducing the silent-mojibake path).
+
+**Owner decisions locked 2026-08-17.**
+
+- **Preview surfaces stay lenient.** `api/utility.py:175`/`:282` have no step
+  context, so strict decoding would regress the Files pane to a permanent 400
+  with no remedy. Previews decode with `errors="replace"` and never raise,
+  carrying a flag when replacement occurred. Browsing is advisory — nothing
+  read through `preview_file` reaches Salesforce — and `list_entries` already
+  does exactly this. Loads stay strict.
+- **Failure-diagnostic cap: 8 MB.** On decode failure the file is re-read to
+  report what it looks like ("decodes cleanly as Windows-1252, set it" vs "no
+  supported encoding decodes the whole file — repair at source"). Above 8 MB
+  the message degrades to naming the byte and offset only. The diagnostic
+  streams in chunks, abandons each candidate at its first failure, and runs
+  off the event loop.
+- **Column type: `String(16)`, not `SAEnum`.** The `Operation` precedent uses
+  `SAEnum(..., name="operation_enum")`, which creates a named type on Postgres
+  that migrations must create and drop. A plain string column with
+  schema-level enum validation gives the same 422 without the migration
+  complexity.
+
+**Consequence — this is a breaking change.** A cp1252 or latin-1 source on a
+step with no explicit encoding loads today and will fail afterwards until the
+dropdown is set. Hard switch, no backfill: backfilling by detection would bake
+the guess into stored config, and grandfathering would keep the
+silent-corruption path alive for exactly the steps most at risk. Some of those
+loads are already silently corrupting data — converting invisible corruption
+into a visible, one-dropdown fix is the point. Blast radius is bounded: there
+is no in-product scheduler, so no unattended recurring loads.
+
+Full design, evidence and rejected options: `docs/specs/input-encoding-and-error-visibility.md` (revision 7+).
+

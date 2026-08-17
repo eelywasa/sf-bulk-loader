@@ -663,6 +663,14 @@ revisions 2–5 is removed — `InputConnection` carries transport only, and
 `LoadStep` already owns every data-format setting. See the revision-6 note
 above.
 
+*Storage:* a **`String(16)` column** with schema-level enum validation
+(owner decision, 2026-08-17 — "keep it simple"). The alternative was the
+`Operation` precedent (`models/load_step.py:17-24`), a `str, enum.Enum` used
+directly as the Pydantic field type; it yields a 422 automatically but uses
+`SAEnum(..., name="operation_enum")`, which creates a **named type on
+Postgres** that migrations must create and drop. A plain string column gives
+the same 422 without that complexity.
+
 *UI:* a **dropdown, defaulting to UTF-8**, in the step editor. A curated
 allow-list, **not** free text and not the full ~100-codec Python list:
 
@@ -784,7 +792,9 @@ counts.*
    a 16 MB object would stall the loop, including pending WebSocket
    broadcasts. Run the diagnostic via `run_in_threadpool`.
 
-Bound it explicitly: cap the diagnostic at a configured byte limit, stream in
+Bound it explicitly: **cap the diagnostic at 8 MB** (owner decision,
+2026-08-17 — diagnoses the great majority of real inputs while bounding the
+worst case), stream in
 chunks rather than materialising the object, and **abandon each candidate
 codec at its first failure** rather than reading to EOF. Above the cap,
 degrade the message to *"file too large to diagnose (N MB); UTF-8 decoding
