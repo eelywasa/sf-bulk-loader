@@ -264,9 +264,46 @@ on the strength of this incident.
 -t UTF-8` cannot re-encode a mixed file; there is no single source encoding to
 convert *from*. Corrected below.
 
-**C7 — the real bug is upstream.** Whatever generated this file emitted UTF-8
-and cp1252 into the same column. That generator will keep producing malformed
-files until it is fixed, and no amount of loader tolerance addresses it.
+**C7 — the real bug is upstream, in the extract/obfuscation pipeline.**
+Whatever generated this file emitted UTF-8 and cp1252 into the same column,
+and will keep doing so until fixed. No amount of loader tolerance addresses
+it.
+
+The file is production data passed through an obfuscation process that
+rewrites account IDs and names. Four findings locate the defect in that
+pipeline rather than in the production source:
+
+1. **The same character is written both ways.** `á` appears as UTF-8 twice
+   and as cp1252 nine times — same column, same file. No single consistent
+   producer does that.
+2. **Encoding was chosen per record.** 50 of the 60 non-ASCII rows fit
+   *"write cp1252 if the value fits, else fall back to UTF-8"* — a per-value
+   encoder fallback, which is a **writer** behaviour, not a property of
+   stored data. (The 10 exceptions all involve `í`, written as UTF-8 even
+   though cp1252 could represent it; unexplained, and worth noting rather
+   than explaining away.)
+3. **The two encodings are uniformly interleaved** across all 7,684 rows —
+   UTF-8 rows average position 3,828, cp1252 rows 3,425, against a uniform
+   expectation of 3,842. Not a concatenation of two files, and not a
+   merge-and-sort.
+4. **It is a single extract.** `RecordTypeId` and `OwnerId` each hold exactly
+   one distinct value across every row. There is no second source to blame.
+
+Salesforce stores text as Unicode and its APIs return UTF-8; it cannot emit
+per-row varying encodings. So the mixing was introduced downstream of
+Salesforce, by whatever wrote this CSV.
+
+*Limit of the evidence:* the corruption is confined to `Name`, the column the
+obfuscation rewrites — but the ID columns are alphanumeric and would carry no
+encoding signal either way, so that confinement is weaker evidence than it
+looks. The findings establish that *a writer* chose encodings per value; they
+do not separate the obfuscation step from the export step feeding it. The
+settling experiment is to run known-clean UTF-8 input containing both
+cp1252-representable accents (`í á é`) and non-representable ones
+(`ł ę ğ č ư Đ`) through the obfuscation and strict-decode the output.
+
+This is context for the epic, not work in it — but it is why C1 holds: the
+product should refuse malformed input and let it be fixed at source.
 
 ### Why the run dies rather than degrading
 
