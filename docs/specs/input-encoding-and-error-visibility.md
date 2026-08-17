@@ -1180,6 +1180,10 @@ Per the Epic DoD, shipping this requires:
   Both files carry `required_permission: plans.manage`, which exists in
   `backend/app/auth/permissions.py`.
 - `docs/usage/index.md` — its CSV-format blurb repeats the auto-detect claim.
+- `docs/usage/files-pane.md` — D1.11 changes what the Files pane does with a
+  non-UTF-8 file (lenient decode, replacement flag). Note that previews are
+  advisory and may show replacement characters, while a *load* of the same
+  file will fail until Encoding is set on the step.
 - **The input-connection topic needs no change** — encoding is not a
   connection setting (r6).
 - **Release notes — breaking change.** Auto-detection is removed; sources that
