@@ -7,7 +7,41 @@ identified; this file is the locked design for fixing all three.
 See [Story breakdown](#story-breakdown) for the child tickets.
 
 All line references were verified against `origin/main` at `2a351ba`, and
-re-verified at `e1cd3d4` during the QA pass below.
+re-verified during the QA passes at `e1cd3d4` and again at revision 7.
+
+---
+
+## What is actually in scope
+
+**Read this table first.** This document has been revised seven times in one
+day and records rejected approaches alongside live ones. The revision notes
+below are the reasoning; this table is the answer.
+
+| Decision | State |
+|---|---|
+| **D1.0** UTF-8 (`utf-8-sig`) default, detection deleted | **Live** — the premise (r5) |
+| **D1.1** fail loudly, no silent lossy decode | Live |
+| **D1.2 / D1.2a** `InputDecodeError` subclass + handler branching | Live |
+| **D1.3** step-level `encoding` override | **Live — primary mechanism** (r6: step only) |
+| **D1.5** attribute at step, then re-raise | Live |
+| **D1.6** `LocalInputStorage` incl. `preview_file` | Live |
+| **D1.8** `_DecodingTextStream` wrapper | Live |
+| **D1.8a** `open_text`/`preview_file` gain an `encoding` parameter | **Live** (r7) — without it D1.3 cannot work |
+| **D1.10 / D1.10a** diagnose on failure, never act; bounded and non-blocking | **Live** (r5, bounded r7) |
+| **D1.11** preview surfaces stay lenient (`errors="replace"`) | **Live** (r7) |
+| **D2.1–D2.3** run error visibility | Live |
+| **D3.1 / D3.1a / D3.2** reject empty `object_name` | Live |
+| **D4.1 / D4.2** `input_decode_error` outcome code | Live |
+| ~~D1.4~~ lossy `on_decode_error` mode | **CUT** (r4) |
+| ~~D1.7~~ bound the sample read | **RESOLVED BY DELETION** (r5) |
+| ~~D1.9~~ warn on auto-detected encoding | **CUT** (r5) — no detection left to warn about |
+| ~~C3~~ "never name an encoding in the error" | **Superseded by D1.10** |
+| ~~C5~~ / SFBL-404 per-row quarantine | **Parked** |
+| ~~Connection-level `encoding`~~ | **CUT** (r6) — step-level only |
+
+Cut sections are retained deliberately: the revision narrative is what stops a
+future engineer re-proposing prefix-sampled auto-detection, which four
+revisions took as a given.
 
 **Revision 2 (2026-08-17)** — revised after a three-lens QA pass against the
 codebase. The diagnosis in Defects 1–3 was confirmed in full; the *designs*
@@ -137,6 +171,51 @@ considered and rejected: the step-level override covers every case
 functionally, and `settings_service` remains available if a real need appears.
 Building it speculatively is the over-engineering this epic has been trimming.
 
+**Revision 7 (2026-08-17) — final QA pass.** Three independent reviews against
+the codebase. The r5/r6 design survives, but two gaps blocked implementation
+and several live sections still pointed at cut ones.
+
+Blockers found and fixed:
+
+- **D1.8a (new)** — there was **no route from the step's `encoding` to any
+  read site**. `open_text` and `preview_file` take no encoding argument, and
+  `partition_csv(encoding=)` is documented as ignored for pre-opened streams,
+  which is what every production caller passes. The Protocol must change.
+  Same class of error as the original D1.2: a mechanism specified without
+  checking the plumbing existed.
+- **D1.11 (new)** — two of the six call sites (`api/utility.py:175`, `:282`,
+  the Files-page previews) have **no step**, so under D1.0 they would regress
+  from working to a permanent 400 with no remedy anywhere in the product.
+  Preview surfaces now decode leniently; only *loads* are strict.
+
+Also corrected:
+
+- **D1.10a (new)** — the diagnostic re-read was unbounded, had no way to
+  re-read an S3 stream (no `seek` on `_S3StreamingBodyReader`), and would
+  block the event loop. Now bounded, given a re-read closure, and run off-loop.
+- The prescribed fix for `csv_processor.py:321/341` (a *hard* utf-8 decode)
+  would have been swallowed by a bare `except Exception` and produced a
+  **silently empty retry reporting success** — a new instance of the failure
+  class this epic exists to remove. Keep `errors="replace"`.
+- **`utf-16` dropped** from the allow-list: with no BOM it guesses endianness
+  and decodes garbage cleanly, reintroducing the silent-mojibake path D1.0
+  deletes.
+- **D1.8** must reproduce `newline=""` exactly, or quoted embedded newlines
+  corrupt.
+- Live sections that still demanded cut work: an acceptance criterion required
+  D1.4's decode-error policy; D1.8 justified itself as hosting D1.4's counter;
+  C4 called D1.9 "the highest-value item in the epic" 300 lines before D1.9's
+  CUT heading.
+- The defect summary table still said "two of the five" error keys (it is
+  three of six). Line references corrected: `unknown_exit` `:1055` (was
+  `:1053`), `circuit_breaker` `:886` (was `:884`), `detect_encoding` `:120`
+  (was `:134`).
+- The "file-level split is clean" sequencing claim was **false** — S1+S3 both
+  edit `schemas/load_step.py`, S1+S2 both edit `types.ts`.
+- Added the live/cut table at the top, and named the actual docs that assert
+  auto-detection (`docs/usage/csv-format.md:26`,
+  `docs/architecture/storage.md:29`).
+
 Corrected line reference: `_s3_outcome_code` is at `input_storage.py:376`
 (previously cited as `:396`).
 
@@ -162,7 +241,7 @@ first was fixed.
 | # | Defect | Severity |
 |---|---|---|
 | 1 | Encoding detected from a 64 KiB prefix, applied to the whole stream | Blocker — loads fail |
-| 2 | `RunErrorSummary` silently discards two of the five error keys written | High — fatal errors invisible in UI/API |
+| 2 | `RunErrorSummary` silently discards **three of the six** error keys written | High — fatal errors invisible in UI/API |
 | 3 | `LoadStep.object_name` accepts an empty string | Medium — latent, blocks on fix of #1 |
 
 ---
@@ -311,20 +390,25 @@ behaviour, and the operator then repairs it losslessly. D1.4 would have
 bought a lossy load of a malformed file at the price of the most intricate
 machinery in the epic, when a lossless offline repair already exists.
 
-**C3 (revised) — there is no "recommended encoding" for this file.** Both
+**C3 (revised; later superseded by D1.10 — see below) — there is no "recommended encoding" for this file.** Both
 `cp1252` and `utf-8` are wrong for part of it. The remedy is to repair the
 file, not to choose better. The error message should name the byte and offset
 so the operator can find it; it should not recommend an encoding, because any
 recommendation would be wrong for some of the data.
 
-**C4 (strengthened) — D1.9 is no longer hypothetical.** It was written as a
-warning about a silent failure mode. That failure mode has now **happened in
-production, caused by the official tool**, and is sitting in `ucas-mig2`. Our
-own code would do the same whenever the offending bytes fall outside cp1252's
-five undefined values — the loud crash we are fixing is the *lucky* outcome;
-the silent success is the dangerous one. D1.9 is the decision that addresses
-the dangerous case, and it is now the highest-value item in the epic after
-the crash fix itself.
+**C4 (superseded at revision 5 — see D1.9) — the silent failure, and why
+detection had to go.** The dangerous failure mode is not the crash. It has
+**happened in production, caused by the official tool**, and is sitting in
+`ucas-mig2`: a wrong-but-valid decode that writes mojibake while reporting
+success. Our own code would do the same whenever the offending bytes fall
+outside cp1252's five undefined values — the loud crash we are fixing is the
+*lucky* outcome.
+
+*Superseded:* revision 4 concluded from this that D1.9 (warn when a non-UTF-8
+encoding is auto-detected) was "the highest-value item in the epic after the
+crash fix". Revision 5 removed detection entirely, so the failure mode cannot
+occur in our code and **D1.9 is cut**. This evidence now stands as the
+argument for *why detection had to go* — not as work to be done.
 
 **C5 (revised) — per-row quarantine is parked.** It is a mechanism for
 partially loading a malformed file, and falls to the same objection as D1.4.
@@ -422,9 +506,12 @@ actively misdirects diagnosis. Any error we surface must report a
 
 ### Design
 
-Decisions are ordered by topic, not by number: D1.1–D1.6 are the original
-set, and D1.7–D1.9 (added later) sit next to the decision each one supports.
-The numbers are stable identifiers — do not renumber.
+Decisions are ordered by topic, not by number. D1.1–D1.6 are the original
+set; D1.0, D1.2a, D1.7–D1.11 were added later and sit next to the decision
+each supports. **D1.0 leads because revision 5 made it the premise everything
+else hangs off.** The numbers are stable identifiers — do not renumber. See
+the live/cut table at the top of this document for what is actually in
+scope.
 
 **D1.0 — UTF-8 by default; no auto-detection.** *New at revision 5, and the
 decision the rest of this section now hangs off.*
@@ -455,8 +542,15 @@ Call sites to change when detection is removed:
 - `csv_processor.py:124`, `:204` — already `encoding or detect_encoding(...)`;
   the fallback becomes the default constant.
 - `csv_processor.py:321`, `:341` — these detect on **Salesforce result files**
-  (downloaded error/unprocessed CSVs), which are always UTF-8. Replace with a
-  hard `utf-8` decode; detection there was never meaningful.
+  (downloaded error/unprocessed CSVs), which are always UTF-8; verified by
+  tracing `result_persistence.py:170`/`:198`, and note the data Salesforce
+  echoes back originated from `_render_partition`, which serialises UTF-8
+  unconditionally. Detection there was never meaningful. **Change to
+  `raw.decode("utf-8", errors="replace")` — drop the detection, keep the
+  `replace`.** A *hard* decode would raise on a surprise byte, be swallowed by
+  the bare `except Exception` at `:334-338`/`:352-356`, and produce a
+  **silently empty retry** that reports success having re-submitted nothing —
+  a new instance of exactly the failure class this epic exists to remove.
 - Delete the ~9 `detect_encoding` tests in `test_csv_processor.py` and
   `test_input_storage.py` and replace with override-resolution tests.
 
@@ -510,8 +604,16 @@ It must implement the text-IO surface actually consumed downstream —
 `__iter__`, `readline`, `read`, `__enter__`/`__exit__`, `close` — since
 callers pass it to `csv.reader` and `csv.DictReader`.
 
-This wrapper is load-bearing for three separate requirements and should be
-built once:
+**It must reproduce `newline=""` semantics exactly.** Every current read site
+passes `newline=""` deliberately — `input_storage.py:547`, `:573`, `:664`,
+`:932`, `csv_processor.py:129`, `:205` — because the `csv` module requires it:
+without it, quoted fields containing embedded newlines are corrupted. So the
+wrapper must perform **no newline translation**, and `readline` must treat
+`\r`, `\n` and `\r\n` all as terminators. A naive `readline` that splits on
+`\n` breaks multi-line quoted fields and lone-`\r` files. Test with a quoted
+embedded-newline field.
+
+This wrapper is load-bearing for two separate requirements:
 
 1. It is the only place a `UnicodeDecodeError` can be caught (D1.2).
 2. It makes the **file-absolute** offset exact *by construction*. This matters:
@@ -519,9 +621,37 @@ built once:
    stream, so the offset cannot be recovered after the fact. Deriving it
    arithmetically from `exc.object`/`exc.start` was verified to work but
    depends on CPython buffering internals and breaks if anything peeks or
-   issues sized reads. Owning the loop avoids both traps. Mind the 3-byte
-   `utf-8-sig` BOM when computing offsets.
-3. It is where D1.4's replacement counter lives.
+   issues sized reads. Owning the loop avoids both traps. **Count bytes fed to the decoder and do not adjust for the
+   `utf-8-sig` BOM** — the cumulative count is already file-absolute.
+   Subtracting 3 is the likely mistake and would report 219351 for the
+   incident file instead of 219354.
+
+*(Revision 3 listed a third requirement — hosting D1.4's replacement counter.
+D1.4 was cut at revision 4, so the wrapper now earns its place on the two
+above.)*
+
+**D1.8a — The storage Protocol must carry the encoding.** *New at revision 7 —
+without this, D1.3 cannot be implemented at all.*
+
+There is currently **no route from a step's `encoding` to any read site**:
+
+- `BaseInputStorage.open_text(self, path: str)` (`input_storage.py:102`,
+  implementations at `:641` and `:893`) takes **no encoding argument**.
+  Neither does `preview_file` (`:92`, `:505`, `:786`).
+- `partition_csv` *does* accept `encoding=`, but its own docstring
+  (`csv_processor.py:189-191`) says it is *"Only used when source is a
+  `pathlib.Path`; ignored for pre-opened streams"* — and **every production
+  caller passes a pre-opened stream** (`step_executor.py:228`,
+  `csv_processor.py:369`), obtained from `storage.open_text(...)`. On the real
+  path that parameter is dead weight.
+
+So `open_text` and `preview_file` gain `*, encoding: str | None = None` on the
+Protocol and on both providers, and all call sites pass the step-resolved
+value. This must be stated explicitly or an implementer will wire the step
+field to `partition_csv(encoding=)` and find it silently ignored.
+
+Note the resemblance to the original D1.2 defect: a mechanism specified
+without checking that the plumbing to reach it exists.
 
 **D1.3 — Explicit encoding override, on the step. PRIMARY MECHANISM.** Add a
 single optional `encoding` field to **`LoadStep`**. With detection gone this
@@ -541,7 +671,20 @@ allow-list, **not** free text and not the full ~100-codec Python list:
 | UTF-8 *(default)* | `utf-8-sig` |
 | Windows-1252 | `cp1252` |
 | ISO-8859-1 (Latin-1) | `latin-1` |
-| UTF-16 | `utf-16` |
+
+**`utf-16` was considered and dropped** (revision 7). Python's `utf-16` codec
+with no BOM falls back to *native* endianness, so a UTF-16-BE file without a
+BOM decodes without raising, into garbage — reintroducing precisely the
+"wrong encoding decodes cleanly, mojibake reaches Salesforce" failure that
+D1.0 exists to delete. By the spec's own standard (every entry is a way to
+mis-set the encoding and corrupt data, so entries must earn their place) it
+does not qualify. If a real UTF-16 source appears, add explicit `utf-16-le`
+and `utf-16-be` entries rather than the endianness-guessing `utf-16`.
+
+**`latin-1` never raises** on any byte sequence, so a step set to Latin-1 can
+never produce an `InputDecodeError` or a D1.10 diagnostic. That is inherent to
+the codec, not a defect — but it must be stated in the operator docs rather
+than discovered.
 
 The field is optional and renders as "UTF-8 (default)" when unset, so the
 override reads as a deliberate choice rather than a required decision. The
@@ -552,14 +695,50 @@ Keep the list short. Every entry is a way for an operator to mis-set the
 encoding and corrupt data, so entries need to earn their place; add more only
 on evidence of a real source that needs them.
 
+**D1.11 — Preview surfaces stay lenient; only *loads* are strict.** *New at
+revision 7. This is the first real cost of the revision-6 step-only decision,
+and it needs an explicit answer rather than being discovered in
+implementation.*
+
+Two of the six call sites have **no step context at all**:
+`api/utility.py:175` (Files-page input preview, storage resolved from a
+`source` query param) and `:282` (output preview, resolved from the
+`LOCAL_OUTPUT_SOURCE` sentinel). Both call `storage.preview_file(...)`
+directly.
+
+Today a cp1252 file browses fine there, because `preview_file` auto-detects.
+Under D1.0 those endpoints would return 400 — and there would be **no remedy
+anywhere in the product**, because there is no step on which to set an
+encoding, and revision 6 removed the connection-level field that could
+otherwise have covered a connection-scoped browse. The rollout's justification
+("one dropdown change rather than an investigation") simply does not hold for
+the file browser.
+
+**Decision: preview surfaces decode with `errors="replace"` and never raise.**
+
+Rationale: browsing a file is *advisory*, not a load. Nothing read through
+`preview_file` reaches Salesforce, so lenient decoding there cannot corrupt
+data — the property that makes leniency unacceptable on the load path is
+absent. There is precedent in the same file: `list_entries`
+(`input_storage.py:486`) already hardcodes `encoding="utf-8-sig",
+errors="replace"` for exactly this reason.
+
+The preview response should carry a flag when replacement occurred, so the UI
+can note "some characters could not be decoded" rather than presenting
+mojibake as fact.
+
+Rejected alternatives: an `encoding` query param plus a Files-page control
+(adds a second place to configure encoding, which revision 6 just spent effort
+removing); and accepting the regression (turns a working browse into a
+permanent 400 with no remedy).
+
 **D1.10 — Diagnose on failure; never act on the diagnosis.** *New at revision
 5.* Removing detection means a previously-working cp1252 file now fails. That
 is the intended trade — visible failure over silent corruption — but the
 failure has to be genuinely actionable, or we have just moved the operator's
 problem rather than solved it.
 
-So on decode failure only (the run is already dead; a second read costs
-nothing that matters), re-read the file and report **what it looks like**,
+So on decode failure only, re-read the file and report **what it looks like**,
 without using the answer:
 
 - If the whole file decodes cleanly as one of the allow-listed codecs:
@@ -580,6 +759,40 @@ This supersedes C3, which said the message should not name an encoding. C3 was
 right that the product must not *choose* one; naming a candidate as advice,
 with the mixed-encoding case called out explicitly, does not reintroduce that
 risk.
+
+**D1.10a — The diagnostic must be bounded, non-blocking, and given a way to
+re-read.** *Added at revision 7. Revision 5 asserted "a second read costs
+nothing that matters"; that was asserted, not argued, and it is wrong on three
+counts.*
+
+1. **It contradicts D1.7's own out-of-scope note**, which ruled out a second
+   full read or GET per file on 16 MB inputs. D1.10 requires exactly that —
+   and up to *four* of them, one per allow-listed codec. The contradiction is
+   resolved in D1.7 below: pre-scanning is out of scope on the **success**
+   path; D1.10 runs only after a failure has already killed the run.
+2. **The wrapper cannot re-read.** `InputDecodeError` is raised inside
+   `_DecodingTextStream`, constructed inside `open_text`. For S3 the
+   underlying `_S3StreamingBodyReader` (`input_storage.py:285-317`) wraps an
+   already-partially-consumed `StreamingBody`, is `io.RawIOBase` with only
+   `readinto`/`readable`, and implements **no `seek`**. Each provider must
+   therefore hand the wrapper a `reread: Callable[[], IO[bytes]]` closure at
+   construction; without it the diagnostic is unimplementable on S3.
+3. **It would block the event loop.** `step_executor.py:227` and
+   `run_coordinator.py:577` run the read loop directly on the loop — neither
+   module uses `run_in_threadpool`/`to_thread` (unlike `api/utility.py`, which
+   correctly wraps `preview_file`). A second GET plus four decode attempts of
+   a 16 MB object would stall the loop, including pending WebSocket
+   broadcasts. Run the diagnostic via `run_in_threadpool`.
+
+Bound it explicitly: cap the diagnostic at a configured byte limit, stream in
+chunks rather than materialising the object, and **abandon each candidate
+codec at its first failure** rather than reading to EOF. Above the cap,
+degrade the message to *"file too large to diagnose (N MB); UTF-8 decoding
+failed at byte 0x81, offset 219354"* — which still carries everything the
+operator needs to locate the problem.
+
+Without this, `path.read_bytes()` per codec satisfies every acceptance
+criterion while making the failure path slower than the load it replaced.
 
 *Why step-level is the only workable home.* `get_storage`
 (`input_storage.py:1008-1017`) resolves `None`, `""`, `"local"` and
@@ -658,13 +871,13 @@ revisions 2–4 spent an entire decision, a metric, a preflight-warning channel
 and its acceptance criteria on *managing* a bad guess. Deleting the guess
 removes all of it and leaves the system safer.
 
-One element of D1.9 is worth keeping in a reduced form: **log the resolved
-encoding and where it came from** (step override or UTF-8 default). That is
-cheap, it makes "which encoding did we actually use for this run?" answerable
-from the logs, and it carries none of the warning machinery D1.9 required.
+*(One element survives in reduced form — logging the resolved encoding and
+its source. It lives in the Observability section, not here, so it is not
+buried inside a cut decision.)*
 
 **D1.7 — ~~Bound the local sample read~~ — RESOLVED BY DELETION at revision
-5.** `detect_encoding` is removed outright by D1.0, taking the defect with it.
+5.** `detect_encoding` (`input_storage.py:120`) is removed outright by D1.0,
+taking the defect with it.
 Retained below for the record.
 
 *Original text.* Added 2026-08-17 during ticketing;
@@ -676,10 +889,11 @@ of needless allocation per `open_text` call, and it scales with input size.
 Replace with a bounded read. Folded into S1 because D1.6 already touches this
 function.
 
-Out of scope: full-file pre-scanning for encoding detection. The input tree
-contains files up to 16 MB (`ContactPointTypeConsent_sample.csv`); a second
-full read or GET per file is not justified when D1.2/D1.3 make the failure
-actionable and avoidable.
+*Out of scope: pre-scanning on the **success** path.* The input tree contains
+files up to 16 MB (`ContactPointTypeConsent_sample.csv`); a second full read
+or GET per file on every successful load is not justified. This does **not**
+forbid D1.10's diagnostic, which runs only after a decode failure has already
+terminated the run, and which D1.10a bounds explicitly.
 
 ---
 
@@ -698,10 +912,10 @@ defect describes.*
 | `preflight_warnings` | `:615` (merge) | ✅ |
 | `storage_error` | `:741` | ✅ |
 | `unexpected_exception` | `:778` | ❌ |
-| `circuit_breaker` | `:884` (merge) | ✅ |
-| `unknown_exit` | `:1053` (merge) | ❌ |
+| `circuit_breaker` | `:886` (merge) | ✅ |
+| `unknown_exit` | `:1055` (merge) | ❌ |
 
-`unknown_exit` is written by the SFBL-112 `finally` backstop — the
+`unknown_exit` (`run_coordinator.py:1055`) is written by the SFBL-112 `finally` backstop — the
 **last-resort** failure path, whose message an operator most needs and which
 is currently guaranteed to be invisible.
 
@@ -956,19 +1170,25 @@ decode failure therefore logs with `event_name=storage.input.failed`,
 
 Per the Epic DoD, shipping this requires:
 
-- `docs/usage/` — document the encoding dropdown on the **step / plan-editor**
-  topic, with frontmatter `required_permission` checked against
-  `backend/app/auth/permissions.py`. Must state plainly that **input is
-  expected to be UTF-8**, that non-UTF-8 sources set Encoding on the step, and
-  that **a mixed-encoding file cannot be fixed by any override** and must be
-  repaired at source. The input-connection topic needs no change — encoding is
-  not a connection setting.
+- `docs/usage/csv-format.md:26` — its **Encoding** bullet currently says
+  *"Latin-1 and CP-1252 are auto-detected and re-encoded to UTF-8"*, which
+  becomes factually wrong. Must instead state that **input is expected to be
+  UTF-8**, that non-UTF-8 sources set Encoding on the step, and that **a
+  mixed-encoding file cannot be fixed by any override** and must be repaired
+  at source. Note also that a step set to Latin-1 can never fail to decode.
+- `docs/usage/load-plans.md` — the step-editor topic, for the dropdown itself.
+  Both files carry `required_permission: plans.manage`, which exists in
+  `backend/app/auth/permissions.py`.
+- `docs/usage/index.md` — its CSV-format blurb repeats the auto-detect claim.
+- **The input-connection topic needs no change** — encoding is not a
+  connection setting (r6).
 - **Release notes — breaking change.** Auto-detection is removed; sources that
   relied on it must set Encoding on the step. State the remedy
   in the note itself, not just the change.
-- `docs/architecture/` — update any description of input storage decoding.
-  Revision 5 deletes the detection layer entirely, so anything describing the
-  cp1252/latin-1 ladder is now wrong rather than merely stale.
+- `docs/architecture/storage.md:29` — currently states *"input encodings
+  (latin-1, cp1252, UTF-8 ± BOM) are **detected** and re-emitted as UTF-8"*.
+  Revision 5 deletes the detection layer, so this is now **wrong**, not merely
+  stale.
 - `docs/specs/implemented/input-storage-spec.md` — banner noting this spec
   supersedes its encoding-detection section. Note the *original* spec §4.3
   specified detection as a feature (commit `b85c755`), so this is a
@@ -1037,11 +1257,16 @@ remedy (set Encoding on the step) stated in the note itself.
 
 ### Sequencing
 
-**Revision 4: the three stories are now fully independent.** The only
-coupling was D1.4's `decode_replacements` field on `RunErrorSummary`, and
-cutting D1.4 removes it. The file-level split is clean: S1 owns
-`input_storage.py`/`step_executor.py`, S2 owns `load_run.py` plus the three
-error-summary consumers, S3 owns `load_step.py`.
+**The three stories are *design*-independent** — no ticket depends on
+another's output. The coupling that existed (D1.4's `decode_replacements`
+field on `RunErrorSummary`) went with D1.4 at revision 4.
+
+**They are not *file*-independent**, and revision 4 wrongly claimed they were:
+S1 and S3 both edit `backend/app/schemas/load_step.py` (S1 adds `encoding` to
+`LoadStepBase`/`LoadStepUpdate`; S3 constrains `object_name`), and S1 and S2
+both edit `frontend/src/api/types.ts`. Harmless in one bundled PR, but it
+would mislead anyone splitting the work across parallel worktrees. Implement
+sequentially on the epic branch, S1 first.
 
 They still ship as **one bundled PR** — they share an incident and a
 validation cycle, and S1+S2 are jointly needed for the fix to be observable.
@@ -1090,6 +1315,28 @@ validation cycle, and S1+S2 are jointly needed for the fix to be observable.
   returns nothing.*
 - An encoding value outside the allow-list is rejected at write time with a
   422, not at read time.
+- **D1.8a:** the step's `encoding` demonstrably reaches the read. A test sets
+  it on a step and asserts the file is decoded with that codec. *Falsification:
+  wiring it only to `partition_csv(encoding=)` must fail this, because that
+  parameter is ignored for the pre-opened streams every caller passes.*
+- **D1.10a, bounded:** the diagnostic streams in chunks and abandons each
+  candidate codec at its first failure. A test on a file larger than the chunk
+  size asserts peak resident bytes stay bounded. *Falsification:
+  `path.read_bytes()` per codec must fail this.* Above the configured size cap
+  the message degrades to the "too large to diagnose" form while still naming
+  the byte and offset.
+- **D1.10a, non-blocking:** the diagnostic runs off the event loop.
+- **D1.11:** the Files-page preview endpoints (`api/utility.py:175`, `:282`)
+  still return 200 for a cp1252 file after this change, with a flag indicating
+  characters were replaced. *Falsification: a strict-decode implementation
+  returns 400 and must fail this — those endpoints have no step, so a 400
+  would leave the operator no remedy anywhere in the product.*
+- **`newline=""` semantics:** a CSV containing a quoted field with an embedded
+  newline round-trips unchanged through `_DecodingTextStream`. *Falsification:
+  a `readline` that splits on `\n` must fail this.*
+- A decode failure increments the `input_decode_error` metric; a test asserts
+  the counter delta. This is the rollout's migration signal, so it must be
+  implemented and tested rather than assumed.
 - **D1.10, the two diagnostic branches:** a file that decodes cleanly as
   cp1252 produces an error naming Windows-1252 as a candidate; the attached
   mixed-encoding `Account_sample.csv` produces an error stating that *no*
@@ -1104,8 +1351,8 @@ validation cycle, and S1+S2 are jointly needed for the fix to be observable.
   read left to bound.)
 - A bad byte planted inside a record with recognisable field content produces
   an error message that does **not** contain that content (`sanitization.py`).
-- The operator can set both the encoding override and the decode-error policy
-  from the step editor, and the value round-trips
+- The operator can set the encoding override from the step editor, and the
+  value round-trips
   through `GET`. *Falsification: a backend-only implementation must fail this.*
 
 **S2**
