@@ -34,6 +34,16 @@ had material errors. Changes:
 Corrected line reference: `_s3_outcome_code` is at `input_storage.py:376`
 (previously cited as `:396`).
 
+**Revision 3 (2026-08-17)** — the actual `Account_sample.csv` was obtained
+and analysed. The production error reproduces byte-for-byte. The headline
+finding is that **the file is mixed-encoding and no single codec decodes
+it**, which the earlier revisions assumed away. See
+[Ground truth](#ground-truth--analysis-of-the-actual-file). Consequences: D1.3
+alone cannot fix this file, D1.4 is load-bearing rather than optional, and
+the operator workaround given in revisions 1–2 does not work. Also adds C5
+(per-row quarantine, filed as SFBL-404) and a verified lossless repair
+script.
+
 ---
 
 ## Background
@@ -109,6 +119,87 @@ terminal fallback can never be reached by a mid-stream failure.
 
 `LocalInputStorage.open_text` (`input_storage.py:641`) has the same flaw via
 `detect_encoding`, which samples `file_path.read_bytes()[:65536]`.
+
+### Ground truth — analysis of the actual file
+
+**Revision 3 (2026-08-17).** The offending `Account_sample.csv` (696,790
+bytes — the exact size cited above) was obtained and analysed directly. The
+production error reproduces **byte-for-byte**:
+
+```
+'charmap' codec can't decode byte 0x81 in position 6362: character maps to <undefined>
+```
+
+This settles the chunk-relative offset question empirically: the true file
+offset of that `0x81` is **219,354**. The reported `6362` is off by a factor
+of 34, and sits inside the 64 KiB window that was never the problem.
+
+**The file is mixed-encoding. No single encoding decodes it.**
+
+This is the finding that changes the design. The file is not "a cp1252 file"
+or "a UTF-8 file with a corrupt byte" — it contains *both* encodings
+interleaved:
+
+| Codec | Result on the real file |
+|---|---|
+| `utf-8` | **Fails** — 38 separate invalid sequences (`0xe1 0xe3 0xe9 0xe4 0xeb 0xef 0xf3 0xf4 0xfd`, i.e. single-byte latin-1 `á ã é ä ë ï ó ô ý`) |
+| `cp1252` | **Fails** — 3 undefined bytes, at offsets 219,354 (`0x81`), 512,085 (`0x8D`), 534,793 (`0x90`) |
+| `latin-1` | Never raises, but **silently mojibakes 25 rows** |
+
+The three cp1252-undefined bytes are not corruption — they are *legitimate
+UTF-8 continuation bytes*. Decoded as UTF-8 the affected fields read
+`Áhufglq-wmunh`, `Ezpnáčegfá`, `Vbươeg Đeàb` — Vietnamese and Czech names.
+Meanwhile the 38 UTF-8 failures are genuine single-byte latin-1 accents. Both
+encodings are present in the same file, in the same column.
+
+Scale: **7,684 rows, of which only 60 contain any non-ASCII byte at all.**
+39 valid UTF-8 multi-byte sequences; 38 single-byte latin-1 characters.
+
+Rows altered, by strategy:
+
+| Strategy | Rows altered (of 7,684) |
+|---|---|
+| `cp1252` + `replace` | **3** |
+| `latin-1` (silent) | 25 mojibaked, no error |
+| `utf-8` + `replace` | 36 |
+
+### Consequences for the design
+
+**C1 — D1.3 alone cannot fix this file.** The explicit encoding override is
+advertised as "the operator's escape hatch when they know the source
+encoding". For this file there *is no* correct answer to give it. The escape
+hatch does not open. This must be stated plainly in the operator
+documentation, or the feature will be seen to have failed on the very file
+that motivated it.
+
+**C2 — D1.4 (`on_decode_error=replace`) is load-bearing, not optional.** It
+is the only in-product path that loads this file at all. Combined with
+`encoding=cp1252` it costs 3 rows' accented characters out of 7,684 —
+99.96% clean. This decision must not be deferred to a follow-up.
+
+**C3 — the recommended operator combination is `cp1252` + `replace`,** not
+UTF-8. This is counter-intuitive (the file is *mostly* UTF-8) and is exactly
+the kind of thing an operator will get wrong unaided, so the decode-error
+message should name the better-performing encoding where one is detectable.
+
+**C4 — D1.9 is quantified.** A latin-1 fallback would have silently written
+mojibake into 25 rows of real customer names. D1.1's refusal to fall back is
+vindicated, and D1.9's "surface the detected encoding" warning has a concrete
+number attached to what it prevents.
+
+**C5 — consider per-row quarantine rather than whole-file abort.** With 60 of
+7,684 rows carrying any non-ASCII and only 3 unloadable under
+`cp1252`+`replace`, aborting the entire load for 3 bad rows is a poor trade.
+Isolating undecodable **rows** — reporting them like any other failed record
+rather than killing the run — would be strictly better than either abort or
+lossy-replace, and fits the existing per-record error CSV the product
+already produces. Flagged as a design option, not yet locked: it is a larger
+change than D1.4 and should not delay the blocker fix. See SFBL-404.
+
+**C6 — the operator workaround in this spec is wrong.** `iconv -f UTF-8 -t
+UTF-8` does not "locate offending bytes" in a useful way here and cannot
+re-encode a mixed file; there is no single source encoding to convert *from*.
+Corrected below.
 
 ### Why the run dies rather than degrading
 
@@ -705,16 +796,58 @@ S1 owns `input_storage.py`/`step_executor.py`, S3 owns `load_step.py`.
 
 ## Immediate operator workaround
 
-Independent of the fix, the blocked load can be unblocked by re-encoding the
-source file as UTF-8 and re-uploading to
-`s3://ucas-ani-prod-infrastructure-salesforce/test_inputs/`. Offending bytes
-can be located with:
+**Corrected at revision 3 after analysing the real file.** The original
+advice — "re-encode as UTF-8, locate bytes with `iconv -f UTF-8 -t UTF-8`" —
+does not work. The file is mixed-encoding, so there is no single source
+encoding to convert *from*, and `iconv` will simply abort at the first of 38
+invalid sequences without repairing anything.
+
+The file must be repaired **per byte-run**, not converted wholesale: decode
+as UTF-8 where the bytes form valid sequences, and as cp1252 where they do
+not. There is no one-line `iconv` equivalent.
+
+The script below was **run against the real file and verified**: output is
+7,684 rows of clean UTF-8, zero replacement characters, all 77 accented
+characters recovered correctly across both classes (`é í á ł ã ı ğ ï ë ę ä ń`
+plus the Vietnamese and Czech sequences). **The repair is lossless** — no
+data is sacrificed, which makes it strictly better than any in-product
+decoding strategy for this file.
 
 ```bash
-iconv -f UTF-8 -t UTF-8 Account_sample.csv > /dev/null
+python3 - <<'PY'
+raw = open('Account_sample.csv','rb').read()
+out, i = bytearray(), 0
+while i < len(raw):
+    for n in (4,3,2):                     # longest valid UTF-8 run wins
+        if i+n <= len(raw):
+            try:
+                raw[i:i+n].decode('utf-8'); out += raw[i:i+n]; i += n; break
+            except UnicodeDecodeError:
+                pass
+    else:                                  # not UTF-8 — treat as cp1252
+        out += raw[i:i+1].decode('cp1252', errors='replace').encode('utf-8')
+        i += 1
+open('Account_sample.utf8.csv','wb').write(out)
+PY
 ```
 
-The sample data appears to be generated/obfuscated names, so the invalid
-bytes are most likely mangled accented characters from the generator rather
-than meaningful content — worth confirming before re-encoding, since a
-`latin-1` round-trip would preserve them correctly if they are genuine.
+Re-upload the repaired file to
+`s3://ucas-ani-prod-infrastructure-salesforce/test_inputs/`.
+
+To inspect the damage before repairing, these list the two failure classes
+separately:
+
+```bash
+python3 -c "raw=open('Account_sample.csv','rb').read(); print([hex(b) for i,b in enumerate(raw) if b in {0x81,0x8D,0x8F,0x90,0x9D}])"
+```
+
+The names are obfuscated/generated, but the accented characters are
+**genuine** — Vietnamese (`ư ơ Đ`), Czech (`č`), Polish (`ł ę ń`) and Turkish
+(`ı ğ`) among them — not generator artefacts. A latin-1 round-trip would
+*not* preserve them; it mojibakes 25 rows.
+
+Once the product fix ships, the in-app equivalent is `encoding=cp1252` plus
+`on_decode_error=replace`, which needs no file surgery but costs 3 rows'
+accented characters. Note this is **worse than the offline repair**, which is
+lossless — so the documentation should present offline repair as the
+preferred remedy and `replace` as the get-going-now option.
