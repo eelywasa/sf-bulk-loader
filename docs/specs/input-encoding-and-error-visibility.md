@@ -95,6 +95,48 @@ Consequences:
 
 Note this is a net **deletion** of code, not an addition.
 
+**Revision 6 (2026-08-17) — encoding is a step-level setting only.**
+*Owner decision.* D1.3 had specified the override on **both** the input
+connection and the step. The connection-level field is removed; there is one
+field, on the step.
+
+The existing data model already draws this line, and connection-level
+encoding was the first thing to cross it:
+
+- `InputConnection` carries **transport only** — `provider`, `bucket`,
+  `root_prefix`, `region`, credentials, `direction`. It holds no data-format
+  settings whatsoever: no delimiter, no header configuration, nothing about
+  how to interpret bytes.
+- `LoadStep` carries **every** data-shape setting — `object_name`,
+  `operation`, `external_id_field`, `csv_file_pattern`, `soql`,
+  `partition_size`, `assignment_rule_id`.
+
+Encoding is a data-format property, so it belongs on the step. `partition_size`
+is the precedent for its exact shape: optional on the step, falling back to a
+default — *not* to a connection field.
+
+Two further points that were already true and should have settled this
+earlier:
+
+- `LoadStep.input_connection_id` is **nullable**. A step using the default
+  input source has no connection row, so a connection-level field is
+  unreachable for it. Step-level was always mandatory; connection-level was
+  always merely additive.
+- Two places to set one value means a resolution order to document and test,
+  two schema fields, two migration columns, two form controls, extra MCP tool
+  parameters, and a predictable support class — *"I set it on the connection,
+  why isn't it applying?"*
+
+*Provenance, for the record:* connection-level came from revision 2's original
+D1.3 phrasing and survived four revisions unchallenged, including the
+revision-4/5 scope review that questioned whether D1.3 was worth building but
+never asked where it belonged.
+
+**No global default setting either.** A deployment-wide encoding default was
+considered and rejected: the step-level override covers every case
+functionally, and `settings_service` remains available if a real need appears.
+Building it speculatively is the over-engineering this epic has been trimming.
+
 Corrected line reference: `_s3_outcome_code` is at `input_storage.py:376`
 (previously cited as `:396`).
 
@@ -481,15 +523,18 @@ built once:
    `utf-8-sig` BOM when computing offsets.
 3. It is where D1.4's replacement counter lives.
 
-**D1.3 — Explicit encoding override. PRIMARY MECHANISM at revision 5.** Add an
-optional `encoding` field to the input connection, and an optional per-step
-override. With detection gone this is no longer an escape hatch — it is the
-only way to read a non-UTF-8 file, so it must be genuinely usable rather than
-an expert-only setting.
+**D1.3 — Explicit encoding override, on the step. PRIMARY MECHANISM.** Add a
+single optional `encoding` field to **`LoadStep`**. With detection gone this
+is no longer an escape hatch — it is the only way to read a non-UTF-8 file,
+so it must be genuinely usable rather than an expert-only setting.
 
-*UI:* a **dropdown, defaulting to UTF-8**, on both the input-connection form
-and the step editor. A curated allow-list, **not** free text and not the
-full ~100-codec Python list:
+*Revision 6: step-level only.* The connection-level field specified in
+revisions 2–5 is removed — `InputConnection` carries transport only, and
+`LoadStep` already owns every data-format setting. See the revision-6 note
+above.
+
+*UI:* a **dropdown, defaulting to UTF-8**, in the step editor. A curated
+allow-list, **not** free text and not the full ~100-codec Python list:
 
 | Label | Codec |
 |---|---|
@@ -498,9 +543,10 @@ full ~100-codec Python list:
 | ISO-8859-1 (Latin-1) | `latin-1` |
 | UTF-16 | `utf-16` |
 
-The step field renders as "Inherit from connection" by default so the
-override is visibly optional. The allow-list is validated server-side — a
-value outside it is rejected at write time, not at read time.
+The field is optional and renders as "UTF-8 (default)" when unset, so the
+override reads as a deliberate choice rather than a required decision. The
+allow-list is validated server-side — a value outside it is rejected at write
+time, not at read time.
 
 Keep the list short. Every entry is a way for an operator to mis-set the
 encoding and corrupt data, so entries need to earn their place; add more only
@@ -519,7 +565,7 @@ without using the answer:
 - If the whole file decodes cleanly as one of the allow-listed codecs:
   *"`Account_sample.csv` is not valid UTF-8 (byte `0x81` at offset 219354).
   The file decodes cleanly as Windows-1252 — if that is correct, set Encoding
-  on the connection or step."*
+  on the step."*
 - If **no** allow-listed codec decodes the whole file:
   *"`Account_sample.csv` is not valid UTF-8 (byte `0x81` at offset 219354),
   and no supported encoding decodes the whole file. It appears to contain
@@ -535,14 +581,14 @@ right that the product must not *choose* one; naming a candidate as advice,
 with the mixed-encoding case called out explicitly, does not reintroduce that
 risk.
 
-*Note — the default input source has no `InputConnection` row.* `get_storage`
+*Why step-level is the only workable home.* `get_storage`
 (`input_storage.py:1008-1017`) resolves `None`, `""`, `"local"` and
-`"local-output"` to the default storage without a connection record, so a
-connection-level field cannot reach it. **The step-level override covers this
-case**, which is why revision 4 cut the additional app-setting tier proposed
-in revision 3 — it was solving a problem the step override already solves.
+`"local-output"` to the default storage **without a connection record at
+all**, so a connection-level field would be unreachable for every step using
+the default input source. Step-level was always the mandatory half.
 
-Resolution order: step override → connection setting → **UTF-8 default**.
+Resolution: step `encoding` if set, otherwise the **UTF-8 default**. One
+field, one fallback, no precedence chain to document or test.
 
 The encoding name must be validated at write time. Today an invalid value
 would surface only at read time, because `detect_encoding_from_bytes` swallows
@@ -613,7 +659,7 @@ and its acceptance criteria on *managing* a bad guess. Deleting the guess
 removes all of it and leaves the system safer.
 
 One element of D1.9 is worth keeping in a reduced form: **log the resolved
-encoding and where it came from** (default, connection, or step). That is
+encoding and where it came from** (step override or UTF-8 default). That is
 cheap, it makes "which encoding did we actually use for this run?" answerable
 from the logs, and it carries none of the warning machinery D1.9 required.
 
@@ -875,7 +921,7 @@ decode failure therefore logs with `event_name=storage.input.failed`,
 
 - The decode-failure log site must carry `event_name`, `outcome_code`,
   `run_id`, `step_id`, and the resolved file path.
-- Log the **resolved encoding and its source** (default / connection / step)
+- Log the **resolved encoding and its source** (step override / UTF-8 default)
   on every input read, so "which encoding did this run use?" is answerable
   without guessing. (Supersedes revision 3's replaced-character metric, cut
   with D1.4 at revision 4, and revision 4's auto-detect metric, cut with D1.9
@@ -910,14 +956,15 @@ decode failure therefore logs with `event_name=storage.input.failed`,
 
 Per the Epic DoD, shipping this requires:
 
-- `docs/usage/` — document the encoding dropdown on the input-connection and
-  step topics, with frontmatter `required_permission` checked against
+- `docs/usage/` — document the encoding dropdown on the **step / plan-editor**
+  topic, with frontmatter `required_permission` checked against
   `backend/app/auth/permissions.py`. Must state plainly that **input is
-  expected to be UTF-8**, that non-UTF-8 sources need the override set, and
+  expected to be UTF-8**, that non-UTF-8 sources set Encoding on the step, and
   that **a mixed-encoding file cannot be fixed by any override** and must be
-  repaired at source.
+  repaired at source. The input-connection topic needs no change — encoding is
+  not a connection setting.
 - **Release notes — breaking change.** Auto-detection is removed; sources that
-  relied on it must set Encoding on the connection or step. State the remedy
+  relied on it must set Encoding on the step. State the remedy
   in the note itself, not just the change.
 - `docs/architecture/` — update any description of input storage decoding.
   Revision 5 deletes the detection layer entirely, so anything describing the
@@ -928,7 +975,7 @@ Per the Epic DoD, shipping this requires:
   deliberate reversal of an original design decision and should be recorded
   as such rather than presented as a bug fix.
 - `docs/ui-conventions.md` — update if any shared component or form pattern
-  changes (S1 adds connection/step form controls; S2 changes the run error
+  changes (S1 adds the step-editor encoding dropdown; S2 changes the run error
   banner).
 - README and stale-reference sweep, per the Epic DoD in `CLAUDE.md`.
 - Run `node frontend/scripts/check-help-links.mjs` before pushing.
@@ -953,16 +1000,16 @@ Both are org-free, so Tier 1a is the correct tier.
 
 | Story | Ticket | Scope |
 |---|---|---|
-| S1 — UTF-8-by-default input decoding | SFBL-401 | D1.0–D1.3, D1.5, D1.6, D1.8, D1.10 + D4.1–D4.2 (**D1.4, D1.7, D1.9 cut/resolved**): delete auto-detection, `utf-8-sig` default, encoding dropdown (step → connection), `_DecodingTextStream` wrapper, `InputDecodeError` subclass with handler branching, file-absolute offsets, failure diagnostics, re-raise at `step_executor.py:227`, fix `LocalInputStorage` incl. `preview_file`, all six `open_text` consumers, `INPUT_DECODE_ERROR` outcome code reusing `StorageEvent.INPUT_FAILED`, migration, API/frontend/MCP surface, tests |
+| S1 — UTF-8-by-default input decoding | SFBL-401 | D1.0–D1.3, D1.5, D1.6, D1.8, D1.10 + D4.1–D4.2 (**D1.4, D1.7, D1.9 cut/resolved**): delete auto-detection, `utf-8-sig` default, encoding dropdown (step-level only), `_DecodingTextStream` wrapper, `InputDecodeError` subclass with handler branching, file-absolute offsets, failure diagnostics, re-raise at `step_executor.py:227`, fix `LocalInputStorage` incl. `preview_file`, all six `open_text` consumers, `INPUT_DECODE_ERROR` outcome code reusing `StorageEvent.INPUT_FAILED`, migration, API/frontend/MCP surface, tests |
 | S2 — Run error visibility | SFBL-402 | D2.1–D2.3: add the three missing `RunErrorSummary` fields, `_merge_run_error_summary` choke-point contract test, render populated keys across all three consumers (`RunSummaryCard.tsx`, `types.ts`, MCP `tools/runs.py`) |
 | S3 — Reject empty `object_name` | SFBL-403 | D3.1–D3.2 + D3.1a: constrain the *input* schemas only, distinct trim validator (not `_normalize_name`), merged-effective-state check on update, plan-editor validation error, tests |
 
 ### Rollout — this is a behaviour change
 
 Removing auto-detection means **a file that loads today may fail after this
-ships**. Specifically: any source that is cp1252 or latin-1, on a connection
-with no explicit `encoding`, currently auto-detects and loads; afterwards it
-fails until someone sets the dropdown.
+ships**. Specifically: any source that is cp1252 or latin-1, on a step with
+no explicit `encoding`, currently auto-detects and loads; afterwards it fails
+until someone sets the dropdown on that step.
 
 This is the intended trade, and the honest framing is that some of those loads
 are *already* silently corrupting data — the Data Loader evidence shows what
@@ -970,15 +1017,15 @@ that looks like, and by definition nobody has noticed. Converting invisible
 corruption into a visible, one-dropdown-to-fix failure is the point of the
 change, not a side effect of it.
 
-**Decision: hard switch, no backfill.** Existing connections default to UTF-8
-like new ones. Rejected alternatives:
+**Decision: hard switch, no backfill.** Existing steps default to UTF-8 like
+new ones. Rejected alternatives:
 
 - *Backfill by detecting over recent files at migration time* — reintroduces
   the guess, and bakes it into stored config where it is harder to notice and
   harder to undo than the runtime version we are removing.
-- *Grandfather existing connections onto a legacy auto-detect mode* — keeps
-  the silent-corruption path alive indefinitely for exactly the connections
-  most likely to be affected by it.
+- *Grandfather existing steps onto a legacy auto-detect mode* — keeps the
+  silent-corruption path alive indefinitely for exactly the steps most likely
+  to be affected by it.
 
 What makes the hard switch acceptable is D1.10: the failure names the file,
 the byte, the offset, and what the file appears to be, so the fix is one
@@ -986,7 +1033,7 @@ dropdown change rather than an investigation. Without D1.10 this rollout would
 not be defensible.
 
 Release notes must call this out explicitly as a breaking change, with the
-remedy (set Encoding on the connection or step) stated in the note itself.
+remedy (set Encoding on the step) stated in the note itself.
 
 ### Sequencing
 
@@ -1030,14 +1077,17 @@ validation cycle, and S1+S2 are jointly needed for the fix to be observable.
 - A cp1252 file with **no** override fails rather than loading.
   *Falsification: this file loads successfully under the pre-change code, so
   a test asserting failure proves detection is genuinely gone.*
-- The same file loads correctly **with** the override set on the connection,
-  and again with it set on the step.
+- The same file loads correctly **with** the step's `encoding` set to
+  Windows-1252.
 - A **UTF-8 file with a BOM** loads with its first header field intact —
   `Name`, not `﻿Name`. *Falsification: a bare `utf-8` default must fail
   this; only `utf-8-sig` passes.*
-- Encoding resolution order is step → connection → UTF-8 default, with a test
-  per tier, including that a step override reaches the **default** input
-  source (which has no `InputConnection` row).
+- The step override applies to files from the **default** input source,
+  which has no `InputConnection` row. *Falsification: a connection-level
+  design cannot satisfy this, which is why the field lives on the step.*
+- There is **no** `encoding` field on `InputConnection`. *Falsification: a
+  grep of the input-connection model, schemas, frontend types and MCP tools
+  returns nothing.*
 - An encoding value outside the allow-list is rejected at write time with a
   422, not at read time.
 - **D1.10, the two diagnostic branches:** a file that decodes cleanly as
@@ -1055,7 +1105,7 @@ validation cycle, and S1+S2 are jointly needed for the fix to be observable.
 - A bad byte planted inside a record with recognisable field content produces
   an error message that does **not** contain that content (`sanitization.py`).
 - The operator can set both the encoding override and the decode-error policy
-  from the connection form and the step editor, and the values round-trip
+  from the step editor, and the value round-trips
   through `GET`. *Falsification: a backend-only implementation must fail this.*
 
 **S2**
