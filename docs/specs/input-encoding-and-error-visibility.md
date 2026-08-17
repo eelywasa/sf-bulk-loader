@@ -65,6 +65,36 @@ Net effect: the two most complex pieces of the epic are removed, and what
 remains does one job — never silently corrupt, and say precisely what is
 wrong and where.
 
+**Revision 5 (2026-08-17) — remove encoding auto-detection entirely.**
+*Owner decision.* Revisions 1–4 all took prefix-sampled auto-detection as a
+given and built machinery to manage its failure modes. Revision 5 removes the
+guess instead.
+
+**Input is decoded as UTF-8 unless an explicit override says otherwise.**
+
+Rationale: detecting an encoding from a 64 KiB prefix and applying it to a
+whole stream is unsound *by construction*, and no amount of error handling
+makes it sound. Every prior revision was adding machinery around that
+unsoundness — better failures (D1.2, D1.8), a warning when the guess looks
+suspicious (D1.9), an escape hatch when it is wrong (D1.3). Removing the
+guess deletes the failure class rather than managing it.
+
+Consequences:
+
+- **D1.0 (new)** — UTF-8 is the default and the candidate ladder is deleted.
+- **D1.3 is promoted** from optional escape hatch to the *primary* mechanism.
+- **D1.9 is CUT** — there is no auto-detected encoding left to warn about.
+  The silent-mojibake class it existed to catch cannot occur.
+- **D1.7 is resolved by deletion** — `detect_encoding` and
+  `detect_encoding_from_bytes` are removed outright, so the whole-file
+  `read_bytes()` defect goes with them.
+- **D1.10 (new)** — on decode failure, run a *diagnostic* pass and tell the
+  operator what the file looks like. Diagnose, never act.
+- This is a **behaviour change** for existing users; see
+  [Rollout](#rollout--this-is-a-behaviour-change).
+
+Note this is a net **deletion** of code, not an addition.
+
 Corrected line reference: `_s3_outcome_code` is at `input_storage.py:376`
 (previously cited as `:396`).
 
@@ -354,6 +384,40 @@ Decisions are ordered by topic, not by number: D1.1–D1.6 are the original
 set, and D1.7–D1.9 (added later) sit next to the decision each one supports.
 The numbers are stable identifiers — do not renumber.
 
+**D1.0 — UTF-8 by default; no auto-detection.** *New at revision 5, and the
+decision the rest of this section now hangs off.*
+
+Delete `_ENCODING_CANDIDATES`, `detect_encoding` and
+`detect_encoding_from_bytes`. Input is decoded as UTF-8 unless an explicit
+override (D1.3) says otherwise. A file that is not UTF-8 and not overridden
+fails with an actionable error (D1.2) plus a diagnostic (D1.10).
+
+**The default codec must be `utf-8-sig`, not bare `utf-8`.** This matters more
+than it looks: Excel on Windows writes UTF-8 *with* a BOM by default, and
+under bare `utf-8` the BOM survives into the first header field as `﻿Name`
+instead of `Name`. Header matching then fails on the first column — silently,
+because the value still looks fine in most displays. `utf-8-sig` reads BOM and
+non-BOM UTF-8 identically, so it is strictly the better default. Verified:
+
+| File | `utf-8` | `utf-8-sig` |
+|---|---|---|
+| With BOM | `'﻿Name'` ❌ | `'Name'` ✅ |
+| Without BOM | `'Name'` ✅ | `'Name'` ✅ |
+
+Present it in the UI as "UTF-8"; `utf-8-sig` is the implementation detail.
+
+Call sites to change when detection is removed:
+
+- `input_storage.py:541` (`preview_file`), `:662` (`open_text`), `:929` (S3
+  `open_text`) — use the resolved encoding.
+- `csv_processor.py:124`, `:204` — already `encoding or detect_encoding(...)`;
+  the fallback becomes the default constant.
+- `csv_processor.py:321`, `:341` — these detect on **Salesforce result files**
+  (downloaded error/unprocessed CSVs), which are always UTF-8. Replace with a
+  hard `utf-8` decode; detection there was never meaningful.
+- Delete the ~9 `detect_encoding` tests in `test_csv_processor.py` and
+  `test_input_storage.py` and replace with override-resolution tests.
+
 **D1.1 — Fail loudly, not silently.** Do *not* fall back to `latin-1` on a
 mid-stream failure. A file that is 99% valid UTF-8 with one corrupt byte
 would be re-read entirely as latin-1, mangling every non-ASCII character in
@@ -417,10 +481,59 @@ built once:
    `utf-8-sig` BOM when computing offsets.
 3. It is where D1.4's replacement counter lives.
 
-**D1.3 — Explicit encoding override.** Add an optional `encoding` field to
-the input connection, and an optional per-step override. When set, detection
-is skipped entirely. This is the operator's escape hatch when they know the
-source encoding and do not want to depend on a guess.
+**D1.3 — Explicit encoding override. PRIMARY MECHANISM at revision 5.** Add an
+optional `encoding` field to the input connection, and an optional per-step
+override. With detection gone this is no longer an escape hatch — it is the
+only way to read a non-UTF-8 file, so it must be genuinely usable rather than
+an expert-only setting.
+
+*UI:* a **dropdown, defaulting to UTF-8**, on both the input-connection form
+and the step editor. A curated allow-list, **not** free text and not the
+full ~100-codec Python list:
+
+| Label | Codec |
+|---|---|
+| UTF-8 *(default)* | `utf-8-sig` |
+| Windows-1252 | `cp1252` |
+| ISO-8859-1 (Latin-1) | `latin-1` |
+| UTF-16 | `utf-16` |
+
+The step field renders as "Inherit from connection" by default so the
+override is visibly optional. The allow-list is validated server-side — a
+value outside it is rejected at write time, not at read time.
+
+Keep the list short. Every entry is a way for an operator to mis-set the
+encoding and corrupt data, so entries need to earn their place; add more only
+on evidence of a real source that needs them.
+
+**D1.10 — Diagnose on failure; never act on the diagnosis.** *New at revision
+5.* Removing detection means a previously-working cp1252 file now fails. That
+is the intended trade — visible failure over silent corruption — but the
+failure has to be genuinely actionable, or we have just moved the operator's
+problem rather than solved it.
+
+So on decode failure only (the run is already dead; a second read costs
+nothing that matters), re-read the file and report **what it looks like**,
+without using the answer:
+
+- If the whole file decodes cleanly as one of the allow-listed codecs:
+  *"`Account_sample.csv` is not valid UTF-8 (byte `0x81` at offset 219354).
+  The file decodes cleanly as Windows-1252 — if that is correct, set Encoding
+  on the connection or step."*
+- If **no** allow-listed codec decodes the whole file:
+  *"`Account_sample.csv` is not valid UTF-8 (byte `0x81` at offset 219354),
+  and no supported encoding decodes the whole file. It appears to contain
+  mixed encodings and should be repaired at source."*
+
+That second branch is exactly the incident case, and it tells the operator the
+truth that took days to establish by hand. Crucially the product still refuses
+the file — the guess is offered as *advice to a human*, never acted on. That
+is the whole difference between this and the auto-detection being removed.
+
+This supersedes C3, which said the message should not name an encoding. C3 was
+right that the product must not *choose* one; naming a candidate as advice,
+with the mixed-encoding case called out explicitly, does not reintroduce that
+risk.
 
 *Note — the default input source has no `InputConnection` row.* `get_storage`
 (`input_storage.py:1008-1017`) resolves `None`, `""`, `"local"` and
@@ -429,7 +542,7 @@ connection-level field cannot reach it. **The step-level override covers this
 case**, which is why revision 4 cut the additional app-setting tier proposed
 in revision 3 — it was solving a problem the step override already solves.
 
-Resolution order: step override → connection setting → auto-detect.
+Resolution order: step override → connection setting → **UTF-8 default**.
 
 The encoding name must be validated at write time. Today an invalid value
 would surface only at read time, because `detect_encoding_from_bytes` swallows
@@ -479,29 +592,36 @@ entirely. A fix confined to `open_text` leaves it crashing exactly as before.
 D1.6 covers `preview_file` on both providers. (`list_entries` at `:487` is
 already safe — it hardcodes `errors="replace"`.)
 
-**D1.9 — Surface the detected encoding; the silent failure is the worse
-one.** *New at revision 2; **promoted to highest-value item after the crash
-fix** at revision 4.* D1.1 is right that a mid-stream latin-1 re-read is
-unacceptable, but the same root cause has a **silent** sibling that no other
-decision covers. When the 64 KiB prefix contains a byte such as `0xE1`, UTF-8
-is rejected and `cp1252` selected for the whole stream. cp1252 rejects only
-five byte values, so a genuinely UTF-8 file will usually decode **cleanly** as
-cp1252 — and write mojibake into Salesforce with no exception, no warning and
-no failed run.
+**D1.9 — ~~Surface the detected encoding~~ — CUT at revision 5, because the
+problem it solved no longer exists.**
 
-**This is no longer hypothetical.** It is exactly what the official Salesforce
-Data Loader did to `ucas-mig2` with this file: read it as windows-1252,
-reported success, and corrupted 25 Accounts. Our own code would do the same
-whenever the offending bytes miss cp1252's five undefined values — the loud
-crash this epic fixes is the *lucky* outcome. D1.9 addresses the unlucky one.
+D1.9 existed because auto-detection could pick cp1252 for a genuinely UTF-8
+file (cp1252 rejects only five byte values, so the wrong guess usually decodes
+*cleanly*) and write mojibake into Salesforce with no exception, no warning
+and no failed run. That is not hypothetical — it is exactly what the official
+Data Loader did to `ucas-mig2`, corrupting 25 Accounts while reporting
+success.
 
-Therefore: log the resolved encoding and whether it came from an override or
-from a non-UTF-8 auto-detect fallback, and raise a **preflight warning** when
-a non-UTF-8 encoding was auto-detected — e.g. "input decoded as cp1252
-(auto-detected); set an explicit encoding to confirm". This gives the operator
-a signal before the load writes anything, and routes them to D1.3.
+**D1.0 removes the guess, so the failure mode cannot occur.** With UTF-8 as
+the default, a UTF-8 file is read as UTF-8 — always. A non-UTF-8 file fails
+loudly rather than being silently mis-decoded. There is no detected encoding
+left to warn about.
 
-**D1.7 — Bound the local sample read.** Added 2026-08-17 during ticketing;
+This is the clearest illustration of why revision 5 is the better design:
+revisions 2–4 spent an entire decision, a metric, a preflight-warning channel
+and its acceptance criteria on *managing* a bad guess. Deleting the guess
+removes all of it and leaves the system safer.
+
+One element of D1.9 is worth keeping in a reduced form: **log the resolved
+encoding and where it came from** (default, connection, or step). That is
+cheap, it makes "which encoding did we actually use for this run?" answerable
+from the logs, and it carries none of the warning machinery D1.9 required.
+
+**D1.7 — ~~Bound the local sample read~~ — RESOLVED BY DELETION at revision
+5.** `detect_encoding` is removed outright by D1.0, taking the defect with it.
+Retained below for the record.
+
+*Original text.* Added 2026-08-17 during ticketing;
 not part of the original incident analysis. `detect_encoding`
 (`input_storage.py:134`) calls `file_path.read_bytes()` and *then* slices off
 the first 64 KiB — so the whole file is loaded into memory before the sample
@@ -755,10 +875,14 @@ decode failure therefore logs with `event_name=storage.input.failed`,
 
 - The decode-failure log site must carry `event_name`, `outcome_code`,
   `run_id`, `step_id`, and the resolved file path.
-- Emit a metric when a **non-UTF-8 encoding is auto-detected** (D1.9), so the
-  silent-mojibake risk is measurable across the fleet rather than invisible.
-  (Revision 3 asked for a replaced-character metric under
-  `on_decode_error=replace`; that policy is cut at revision 4.)
+- Log the **resolved encoding and its source** (default / connection / step)
+  on every input read, so "which encoding did this run use?" is answerable
+  without guessing. (Supersedes revision 3's replaced-character metric, cut
+  with D1.4 at revision 4, and revision 4's auto-detect metric, cut with D1.9
+  at revision 5 — there is no detection left to measure.)
+- Count decode failures by `outcome_code=input_decode_error`. After the
+  rollout this doubles as the migration signal: a spike means users whose
+  files were previously auto-detected now need the override set.
 - Confirm the new error message complies with `sanitization.py` — file paths
   and byte values are safe; **decoded record content must never appear in the
   error message**.
@@ -786,14 +910,23 @@ decode failure therefore logs with `event_name=storage.input.failed`,
 
 Per the Epic DoD, shipping this requires:
 
-- `docs/usage/` — document the encoding override on the relevant
-  input-connection topic, with frontmatter `required_permission` checked
-  against `backend/app/auth/permissions.py`. Must state plainly that **a
-  mixed-encoding file cannot be fixed by an override** and must be repaired
-  at source, and must explain what the auto-detect warning (D1.9) means.
+- `docs/usage/` — document the encoding dropdown on the input-connection and
+  step topics, with frontmatter `required_permission` checked against
+  `backend/app/auth/permissions.py`. Must state plainly that **input is
+  expected to be UTF-8**, that non-UTF-8 sources need the override set, and
+  that **a mixed-encoding file cannot be fixed by any override** and must be
+  repaired at source.
+- **Release notes — breaking change.** Auto-detection is removed; sources that
+  relied on it must set Encoding on the connection or step. State the remedy
+  in the note itself, not just the change.
 - `docs/architecture/` — update any description of input storage decoding.
-- `docs/specs/implemented/input-storage-spec.md` — add a banner noting this
-  spec supersedes its encoding-detection section.
+  Revision 5 deletes the detection layer entirely, so anything describing the
+  cp1252/latin-1 ladder is now wrong rather than merely stale.
+- `docs/specs/implemented/input-storage-spec.md` — banner noting this spec
+  supersedes its encoding-detection section. Note the *original* spec §4.3
+  specified detection as a feature (commit `b85c755`), so this is a
+  deliberate reversal of an original design decision and should be recorded
+  as such rather than presented as a bug fix.
 - `docs/ui-conventions.md` — update if any shared component or form pattern
   changes (S1 adds connection/step form controls; S2 changes the run error
   banner).
@@ -820,9 +953,40 @@ Both are org-free, so Tier 1a is the correct tier.
 
 | Story | Ticket | Scope |
 |---|---|---|
-| S1 — Stream-safe input decoding | SFBL-401 | D1.1–D1.3, D1.5–D1.9 + D4.1–D4.2 (**D1.4 cut**): `_DecodingTextStream` wrapper, `InputDecodeError` subclass with handler branching, file-absolute offsets, encoding override (step → connection), re-raise at `step_executor.py:227`, fix `LocalInputStorage` incl. `preview_file`, all six `open_text` consumers, `INPUT_DECODE_ERROR` outcome code reusing `StorageEvent.INPUT_FAILED`, migration, API/frontend/MCP surface, tests |
+| S1 — UTF-8-by-default input decoding | SFBL-401 | D1.0–D1.3, D1.5, D1.6, D1.8, D1.10 + D4.1–D4.2 (**D1.4, D1.7, D1.9 cut/resolved**): delete auto-detection, `utf-8-sig` default, encoding dropdown (step → connection), `_DecodingTextStream` wrapper, `InputDecodeError` subclass with handler branching, file-absolute offsets, failure diagnostics, re-raise at `step_executor.py:227`, fix `LocalInputStorage` incl. `preview_file`, all six `open_text` consumers, `INPUT_DECODE_ERROR` outcome code reusing `StorageEvent.INPUT_FAILED`, migration, API/frontend/MCP surface, tests |
 | S2 — Run error visibility | SFBL-402 | D2.1–D2.3: add the three missing `RunErrorSummary` fields, `_merge_run_error_summary` choke-point contract test, render populated keys across all three consumers (`RunSummaryCard.tsx`, `types.ts`, MCP `tools/runs.py`) |
 | S3 — Reject empty `object_name` | SFBL-403 | D3.1–D3.2 + D3.1a: constrain the *input* schemas only, distinct trim validator (not `_normalize_name`), merged-effective-state check on update, plan-editor validation error, tests |
+
+### Rollout — this is a behaviour change
+
+Removing auto-detection means **a file that loads today may fail after this
+ships**. Specifically: any source that is cp1252 or latin-1, on a connection
+with no explicit `encoding`, currently auto-detects and loads; afterwards it
+fails until someone sets the dropdown.
+
+This is the intended trade, and the honest framing is that some of those loads
+are *already* silently corrupting data — the Data Loader evidence shows what
+that looks like, and by definition nobody has noticed. Converting invisible
+corruption into a visible, one-dropdown-to-fix failure is the point of the
+change, not a side effect of it.
+
+**Decision: hard switch, no backfill.** Existing connections default to UTF-8
+like new ones. Rejected alternatives:
+
+- *Backfill by detecting over recent files at migration time* — reintroduces
+  the guess, and bakes it into stored config where it is harder to notice and
+  harder to undo than the runtime version we are removing.
+- *Grandfather existing connections onto a legacy auto-detect mode* — keeps
+  the silent-corruption path alive indefinitely for exactly the connections
+  most likely to be affected by it.
+
+What makes the hard switch acceptable is D1.10: the failure names the file,
+the byte, the offset, and what the file appears to be, so the fix is one
+dropdown change rather than an investigation. Without D1.10 this rollout would
+not be defensible.
+
+Release notes must call this out explicitly as a breaking change, with the
+remedy (set Encoding on the connection or step) stated in the note itself.
 
 ### Sequencing
 
@@ -859,21 +1023,35 @@ validation cycle, and S1+S2 are jointly needed for the fix to be observable.
   *Falsification: the naive `except InputStorageError` swallow must fail this.*
 - `step_executor` logs the failure with step attribution **and re-raises**; a
   test asserts the run still terminates with `storage_error` populated.
-- Encoding resolution order is step → connection → auto-detect, with a test
+- **`detect_encoding`, `detect_encoding_from_bytes` and `_ENCODING_CANDIDATES`
+  no longer exist.** *Falsification: a grep for them in `backend/app` returns
+  nothing. An implementation that keeps detection as a fallback must fail
+  this.*
+- A cp1252 file with **no** override fails rather than loading.
+  *Falsification: this file loads successfully under the pre-change code, so
+  a test asserting failure proves detection is genuinely gone.*
+- The same file loads correctly **with** the override set on the connection,
+  and again with it set on the step.
+- A **UTF-8 file with a BOM** loads with its first header field intact —
+  `Name`, not `﻿Name`. *Falsification: a bare `utf-8` default must fail
+  this; only `utf-8-sig` passes.*
+- Encoding resolution order is step → connection → UTF-8 default, with a test
   per tier, including that a step override reaches the **default** input
-  source (which has no `InputConnection` row). An invalid encoding name is
-  rejected at write time, not at read time.
-- A non-UTF-8 auto-detected encoding raises a preflight warning naming the
-  encoding (D1.9). *Falsification: construct a genuinely UTF-8 file whose
-  first 64 KiB contains a stray cp1252 byte, so cp1252 is selected and the
-  whole file then decodes without error. It must produce the warning. An
-  implementation that only warns when decoding **fails** must fail this test —
-  this is the silent case, and it is the one that corrupted `ucas-mig2`.*
+  source (which has no `InputConnection` row).
+- An encoding value outside the allow-list is rejected at write time with a
+  422, not at read time.
+- **D1.10, the two diagnostic branches:** a file that decodes cleanly as
+  cp1252 produces an error naming Windows-1252 as a candidate; the attached
+  mixed-encoding `Account_sample.csv` produces an error stating that *no*
+  supported encoding decodes the whole file and that it should be repaired at
+  source. *Falsification: an implementation that silently retries with the
+  diagnosed encoding, rather than only reporting it, must fail — the run must
+  still terminate in both branches.*
 - Equivalent coverage for `LocalInputStorage`, including `preview_file`,
   which does not route through `open_text`.
-- `detect_encoding` no longer reads the whole file into memory; a test asserts
-  the bytes read are bounded by the sample size for a file much larger than
-  the detection window.
+- (Revision 5: the former D1.7 criterion about bounded sample reads is
+  obsolete — `detect_encoding` is deleted outright, so there is no sample
+  read left to bound.)
 - A bad byte planted inside a record with recognisable field content produces
   an error message that does **not** contain that content (`sanitization.py`).
 - The operator can set both the encoding override and the decode-error policy
