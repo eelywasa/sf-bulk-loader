@@ -1,10 +1,10 @@
 # Input Encoding Robustness & Run Error Visibility
 
-**Status:** Live spec — not yet ticketed. Drafted 2026-08-17 from a live
-production incident on the plan `Test 1 - Account`
+**Status:** Live spec — ticketed as epic **SFBL-400**. Drafted 2026-08-17 from a
+live production incident on the plan `Test 1 - Account`
 (`bbc8dd57-25b7-42bf-8581-629c24776d9d`). Three independent defects were
 identified; this file is the locked design for fixing all three.
-Ticket IDs are **TBD** — see [Story breakdown](#story-breakdown).
+See [Story breakdown](#story-breakdown) for the child tickets.
 
 All line references were verified against `origin/main` at `2a351ba`.
 
@@ -152,6 +152,15 @@ they may not do so accidentally.
 escaping as an unhandled exception.
 
 **D1.6 — Fix `LocalInputStorage` identically.** Same sampling flaw, same fix.
+
+**D1.7 — Bound the local sample read.** Added 2026-08-17 during ticketing;
+not part of the original incident analysis. `detect_encoding`
+(`input_storage.py:134`) calls `file_path.read_bytes()` and *then* slices off
+the first 64 KiB — so the whole file is loaded into memory before the sample
+is taken. On the 16 MB files already present in the input tree that is 16 MB
+of needless allocation per `open_text` call, and it scales with input size.
+Replace with a bounded read. Folded into S1 because D1.6 already touches this
+function.
 
 Out of scope: full-file pre-scanning for encoding detection. The input tree
 contains files up to 16 MB (`ContactPointTypeConsent_sample.csv`); a second
@@ -329,9 +338,9 @@ failing load.
 
 | Story | Ticket | Scope |
 |---|---|---|
-| S1 — Stream-safe input decoding | TBD | D1.1–D1.6 + D4.1–D4.2: `InputStorageError` conversion with file-absolute offsets, encoding override on connection + step, `on_decode_error` policy, wrap `step_executor.py:227`, fix `LocalInputStorage`, `INPUT_DECODE_ERROR` outcome code reusing the existing `StorageEvent.INPUT_FAILED`, migration for the new fields, unit + integration tests |
-| S2 — Run error visibility | TBD | D2.1–D2.3: add the two missing `RunErrorSummary` fields, contract test enumerating `error_summary` keys, render populated keys on the run detail page |
-| S3 — Reject empty `object_name` | TBD | D3.1–D3.2: `min_length=1` after trim on create + update schemas, plan-editor validation error for existing empty rows, tests |
+| S1 — Stream-safe input decoding | SFBL-401 | D1.1–D1.7 + D4.1–D4.2: `InputStorageError` conversion with file-absolute offsets, encoding override on connection + step, `on_decode_error` policy, wrap `step_executor.py:227`, fix `LocalInputStorage`, `INPUT_DECODE_ERROR` outcome code reusing the existing `StorageEvent.INPUT_FAILED`, migration for the new fields, unit + integration tests |
+| S2 — Run error visibility | SFBL-402 | D2.1–D2.3: add the two missing `RunErrorSummary` fields, contract test enumerating `error_summary` keys, render populated keys on the run detail page |
+| S3 — Reject empty `object_name` | SFBL-403 | D3.1–D3.2: `min_length=1` after trim on create + update schemas, plan-editor validation error for existing empty rows, tests |
 
 ### Acceptance criteria
 
@@ -349,6 +358,9 @@ failing load.
   `error_summary.storage_error` is populated for the UI. No new
   `StorageEvent` member is added.
 - Equivalent coverage for `LocalInputStorage`.
+- `detect_encoding` no longer reads the whole file into memory; a test asserts
+  the bytes read are bounded by the sample size for a file much larger than
+  the detection window.
 
 **S2**
 - A run failing via the broad step-loop handler exposes
