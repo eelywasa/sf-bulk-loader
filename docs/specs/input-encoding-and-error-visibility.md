@@ -31,18 +31,42 @@ had material errors. Changes:
 - D3.1 as written would have 500'd every plan containing the bad row,
   defeating D3.2.
 
-Corrected line reference: `_s3_outcome_code` is at `input_storage.py:376`
-(previously cited as `:396`).
-
 **Revision 3 (2026-08-17)** — the actual `Account_sample.csv` was obtained
 and analysed. The production error reproduces byte-for-byte. The headline
 finding is that **the file is mixed-encoding and no single codec decodes
 it**, which the earlier revisions assumed away. See
-[Ground truth](#ground-truth--analysis-of-the-actual-file). Consequences: D1.3
-alone cannot fix this file, D1.4 is load-bearing rather than optional, and
-the operator workaround given in revisions 1–2 does not work. Also adds C5
-(per-row quarantine, filed as SFBL-404) and a verified lossless repair
-script.
+[Ground truth](#ground-truth--analysis-of-the-actual-file).
+
+**Revision 4 (2026-08-17) — scope cut.** The destination org (`ucas-mig2`)
+was inspected to see what the *official Salesforce Data Loader* did with the
+same file. It read the file as **windows-1252** and **silently corrupted 25
+Account records** — it never failed. See
+[What the official Data Loader did](#what-the-official-data-loader-did).
+
+That reframes the problem and **reverses two decisions taken in revision 3**:
+
+- **The file is malformed.** Mixed encoding is not a legitimate input format.
+  The product's job is to *refuse it legibly*, not to load it.
+- **D1.4 (`on_decode_error=replace`) is CUT.** Revision 3 declared it
+  "load-bearing" because it was the only in-product path that loads this
+  file. That reasoning was wrong: the file should not load. D1.4 existed to
+  make a malformed file load lossily when a **lossless** offline repair
+  already exists, at the cost of the most intricate machinery in the epic
+  (custom `codecs.register_error` handler, per-stream counting, ContextVars).
+- **D1.3's app-setting tier is CUT.** Step-level override already reaches the
+  default input source; the extra tier was solving a problem that the step
+  override covers.
+- **C5 / SFBL-404 (per-row quarantine) is parked**, for the same reason as
+  D1.4: it is a mechanism for partially loading a malformed file.
+- **D1.9 is strengthened.** It was written as a hypothetical. It is now a
+  documented production incident, caused by the official tool.
+
+Net effect: the two most complex pieces of the epic are removed, and what
+remains does one job — never silently corrupt, and say precisely what is
+wrong and where.
+
+Corrected line reference: `_s3_outcome_code` is at `input_storage.py:376`
+(previously cited as `:396`).
 
 ---
 
@@ -163,43 +187,86 @@ Rows altered, by strategy:
 | `latin-1` (silent) | 25 mojibaked, no error |
 | `utf-8` + `replace` | 36 |
 
+### What the official Data Loader did
+
+The destination sandbox `ucas-mig2` was inspected, because the same file was
+previously loaded there with the **official Salesforce Data Loader**. The
+result is the most important evidence in this document.
+
+**It read the file as windows-1252, and silently corrupted 25 Accounts.**
+
+All 60 non-ASCII rows from the file were matched to their Account records by
+`UCAS_Account_Id__c` and compared:
+
+| Hypothesis | Rows matching (of 60) |
+|---|---|
+| Stored value equals a **windows-1252** decoding of the file | **60** |
+| Stored value equals a **UTF-8** decoding of the file | **0** |
+
+The discriminator is the `0x80`–`0x9F` range, where cp1252 and latin-1
+diverge. The org holds `0x82`→`‚` (U+201A), `0x99`→`™` (U+2122),
+`0x9A`→`š` (U+0161), `0x9E`→`ž` (U+017E) — cp1252 mappings specifically, not
+latin-1. And the five bytes cp1252 leaves *undefined* — the very bytes that
+crash our loader — are stored as raw C1 control characters (`U+0081`,
+`U+008D`, `U+0090`), because Java's `windows-1252` decoder passes them
+through where Python's raises.
+
+windows-1252 is the JVM platform default charset on Windows, so this is
+almost certainly an unconfigured Data Loader rather than a deliberate choice.
+
+Damage: **25 of 7,684 Accounts** hold mojibake. `Áhufglq-wmunh` is stored as
+`Ã` + `U+0081`; `Vbươeg Đeàb` as `VbÆ°Æ¡eg Ä` + `U+0090` + `eÃ `. The
+Vietnamese, Czech, Polish and Turkish names are destroyed, and three records
+contain unprintable control characters. The remaining 35 non-ASCII rows —
+those carrying only single-byte cp1252 accents — loaded correctly.
+
+**The load reported success.** Nothing failed, nothing warned, and the
+corruption is invisible to anyone not specifically looking for it.
+
 ### Consequences for the design
 
-**C1 — D1.3 alone cannot fix this file.** The explicit encoding override is
-advertised as "the operator's escape hatch when they know the source
-encoding". For this file there *is no* correct answer to give it. The escape
-hatch does not open. This must be stated plainly in the operator
-documentation, or the feature will be seen to have failed on the very file
-that motivated it.
+**C1 — the file is malformed, and the product's job is to refuse it.** Mixed
+encoding is not a legitimate input format. No feature should be built to
+consume it as though it were. The design already reflects this: pick one
+encoding, fail loudly when it does not hold, let the operator override it.
+That is refusing malformed input legibly — not accommodating it.
 
-**C2 — D1.4 (`on_decode_error=replace`) is load-bearing, not optional.** It
-is the only in-product path that loads this file at all. Combined with
-`encoding=cp1252` it costs 3 rows' accented characters out of 7,684 —
-99.96% clean. This decision must not be deferred to a follow-up.
+**C2 (revised — reverses revision 3) — D1.4 is cut.** Revision 3 declared
+`on_decode_error=replace` "load-bearing" on the grounds that it was the only
+in-product path that loads this file. That reasoning was wrong: **this file
+should not load.** Refusing it with an actionable error *is* the correct
+behaviour, and the operator then repairs it losslessly. D1.4 would have
+bought a lossy load of a malformed file at the price of the most intricate
+machinery in the epic, when a lossless offline repair already exists.
 
-**C3 — the recommended operator combination is `cp1252` + `replace`,** not
-UTF-8. This is counter-intuitive (the file is *mostly* UTF-8) and is exactly
-the kind of thing an operator will get wrong unaided, so the decode-error
-message should name the better-performing encoding where one is detectable.
+**C3 (revised) — there is no "recommended encoding" for this file.** Both
+`cp1252` and `utf-8` are wrong for part of it. The remedy is to repair the
+file, not to choose better. The error message should name the byte and offset
+so the operator can find it; it should not recommend an encoding, because any
+recommendation would be wrong for some of the data.
 
-**C4 — D1.9 is quantified.** A latin-1 fallback would have silently written
-mojibake into 25 rows of real customer names. D1.1's refusal to fall back is
-vindicated, and D1.9's "surface the detected encoding" warning has a concrete
-number attached to what it prevents.
+**C4 (strengthened) — D1.9 is no longer hypothetical.** It was written as a
+warning about a silent failure mode. That failure mode has now **happened in
+production, caused by the official tool**, and is sitting in `ucas-mig2`. Our
+own code would do the same whenever the offending bytes fall outside cp1252's
+five undefined values — the loud crash we are fixing is the *lucky* outcome;
+the silent success is the dangerous one. D1.9 is the decision that addresses
+the dangerous case, and it is now the highest-value item in the epic after
+the crash fix itself.
 
-**C5 — consider per-row quarantine rather than whole-file abort.** With 60 of
-7,684 rows carrying any non-ASCII and only 3 unloadable under
-`cp1252`+`replace`, aborting the entire load for 3 bad rows is a poor trade.
-Isolating undecodable **rows** — reporting them like any other failed record
-rather than killing the run — would be strictly better than either abort or
-lossy-replace, and fits the existing per-record error CSV the product
-already produces. Flagged as a design option, not yet locked: it is a larger
-change than D1.4 and should not delay the blocker fix. See SFBL-404.
+**C5 (revised) — per-row quarantine is parked.** It is a mechanism for
+partially loading a malformed file, and falls to the same objection as D1.4.
+SFBL-404 remains filed as an idea with independent merit for genuinely bad
+individual rows, but it is **not** part of this epic and should not be built
+on the strength of this incident.
 
-**C6 — the operator workaround in this spec is wrong.** `iconv -f UTF-8 -t
-UTF-8` does not "locate offending bytes" in a useful way here and cannot
-re-encode a mixed file; there is no single source encoding to convert *from*.
-Corrected below.
+**C6 — the operator workaround in revisions 1–2 was wrong.** `iconv -f UTF-8
+-t UTF-8` cannot re-encode a mixed file; there is no single source encoding to
+convert *from*. Corrected below.
+
+**C7 — the real bug is upstream.** Whatever generated this file emitted UTF-8
+and cp1252 into the same column. That generator will keep producing malformed
+files until it is fixed, and no amount of loader tolerance addresses it.
 
 ### Why the run dies rather than degrading
 
@@ -318,41 +385,41 @@ the input connection, and an optional per-step override. When set, detection
 is skipped entirely. This is the operator's escape hatch when they know the
 source encoding and do not want to depend on a guess.
 
-*Revised — a connection-level field cannot reach the source that actually
-failed.* `get_storage` (`input_storage.py:1008-1017`) resolves `None`, `""`,
-`"local"` and `"local-output"` to the default storage with **no
-`InputConnection` row at all**, so there is nowhere to hang the field. A
-deployment-level default is therefore required as well: add a DB-backed app
-setting following the `settings_service` pattern already used for
-`default_partition_size` (`step_executor.py:218-223`).
+*Note — the default input source has no `InputConnection` row.* `get_storage`
+(`input_storage.py:1008-1017`) resolves `None`, `""`, `"local"` and
+`"local-output"` to the default storage without a connection record, so a
+connection-level field cannot reach it. **The step-level override covers this
+case**, which is why revision 4 cut the additional app-setting tier proposed
+in revision 3 — it was solving a problem the step override already solves.
 
-Resolution order: step override → connection setting → app setting →
-auto-detect.
+Resolution order: step override → connection setting → auto-detect.
 
 The encoding name must be validated at write time. Today an invalid value
 would surface only at read time, because `detect_encoding_from_bytes` swallows
 `LookupError` (`input_storage.py:115`).
 
-**D1.4 — Opt-in lossy mode.** Add an `on_decode_error` policy with values
-`fail` (default) and `replace`. Under `replace`, decoding continues past bad
-bytes and the run records a **count of replaced characters** per file as a
-run-level warning. Operators may knowingly accept lossy decoding; they may
-not do so accidentally.
+**D1.4 — ~~Opt-in lossy mode~~ — CUT at revision 4.**
 
-*Revised — home and mechanism now specified.* `on_decode_error` lives
-alongside `encoding` with the identical resolution order (step → connection →
-app setting → default `fail`). The original text specified neither, making the
-requirement satisfiable wherever an implementer happened to put it.
+Revision 3 proposed an `on_decode_error` policy with a `replace` mode, and
+declared it load-bearing because it was the only in-product path that loads
+the incident file. **That was the wrong conclusion.** The file is malformed;
+it should not load. See C1/C2.
 
-The count is **not** obtainable from `errors="replace"`: the decoder exposes
-no counter, and counting `U+FFFD` in the output is wrong for sources that
-legitimately contain it. Use a `codecs.register_error` handler with per-stream
-counting inside the D1.8 wrapper — the error registry is global, so the
-handler must be registered under a per-stream name or resolve its counter via
-a ContextVar.
+Cut for three reasons:
 
-The run-level warning needs a **declared** `RunErrorSummary` field — name it
-`decode_replacements`. This is the one real coupling with S2; see Sequencing.
+1. It buys a **lossy** load of a malformed file when a **lossless** offline
+   repair already exists — strictly worse for the operator.
+2. It is the most intricate machinery in the epic. The replaced-character
+   count is not obtainable from `errors="replace"` (the decoder exposes no
+   counter, and counting `U+FFFD` is wrong for sources that legitimately
+   contain it), so it needs a `codecs.register_error` handler with per-stream
+   counting via a per-stream registration name or a ContextVar.
+3. It was the only thing coupling S1 to S2, via a new `decode_replacements`
+   field on `RunErrorSummary`. **Cutting it makes S1 and S2 fully
+   independent.**
+
+If a genuine lossy-source use case appears later, reopen it on that evidence
+rather than on this incident.
 
 **D1.5 — Attribute at the step, then re-raise.** *Revised.* The original
 wording — "`step_executor.py:227` must handle `InputStorageError` so the
@@ -376,14 +443,20 @@ D1.6 covers `preview_file` on both providers. (`list_entries` at `:487` is
 already safe — it hardcodes `errors="replace"`.)
 
 **D1.9 — Surface the detected encoding; the silent failure is the worse
-one.** *New.* D1.1 is right that a mid-stream latin-1 re-read is unacceptable,
-but the same root cause has a **silent** sibling that no other decision
-covers. When the 64 KiB prefix contains a byte such as `0xE1`, UTF-8 is
-rejected and `cp1252` selected for the whole stream. cp1252 rejects only five
-byte values, so a genuinely UTF-8 file will usually decode **cleanly** as
+one.** *New at revision 2; **promoted to highest-value item after the crash
+fix** at revision 4.* D1.1 is right that a mid-stream latin-1 re-read is
+unacceptable, but the same root cause has a **silent** sibling that no other
+decision covers. When the 64 KiB prefix contains a byte such as `0xE1`, UTF-8
+is rejected and `cp1252` selected for the whole stream. cp1252 rejects only
+five byte values, so a genuinely UTF-8 file will usually decode **cleanly** as
 cp1252 — and write mojibake into Salesforce with no exception, no warning and
-no failed run. That is precisely D1.1's stated nightmare, arriving through the
-front door rather than the error path.
+no failed run.
+
+**This is no longer hypothetical.** It is exactly what the official Salesforce
+Data Loader did to `ucas-mig2` with this file: read it as windows-1252,
+reported success, and corrupted 25 Accounts. Our own code would do the same
+whenever the offending bytes miss cp1252's five undefined values — the loud
+crash this epic fixes is the *lucky* outcome. D1.9 addresses the unlucky one.
 
 Therefore: log the resolved encoding and whether it came from an override or
 from a non-UTF-8 auto-detect fallback, and raise a **preflight warning** when
@@ -461,7 +534,9 @@ signal at all.
 
 **D2.1 — Declare the missing fields.** *Revised — three, not two.* Add
 `unexpected_exception`, `output_storage_error` and `unknown_exit`, all
-`Optional[str]`, to `RunErrorSummary`. Plus `decode_replacements` from D1.4.
+`Optional[str]`, to `RunErrorSummary`. (Revision 3 also required
+`decode_replacements` from D1.4; **D1.4 is cut at revision 4**, so that field
+is no longer needed and S2 has no dependency on S1.)
 
 **D2.2 — Prevent recurrence with a contract test.** Adding fields fixes
 today's drift but not the class of bug. This is the substantive fix; D2.1
@@ -643,8 +718,10 @@ decode failure therefore logs with `event_name=storage.input.failed`,
 
 - The decode-failure log site must carry `event_name`, `outcome_code`,
   `run_id`, `step_id`, and the resolved file path.
-- Under `on_decode_error=replace`, emit a metric for replaced-character
-  count so lossy decoding is measurable rather than invisible.
+- Emit a metric when a **non-UTF-8 encoding is auto-detected** (D1.9), so the
+  silent-mojibake risk is measurable across the fleet rather than invisible.
+  (Revision 3 asked for a replaced-character metric under
+  `on_decode_error=replace`; that policy is cut at revision 4.)
 - Confirm the new error message complies with `sanitization.py` — file paths
   and byte values are safe; **decoded record content must never appear in the
   error message**.
@@ -672,9 +749,11 @@ decode failure therefore logs with `event_name=storage.input.failed`,
 
 Per the Epic DoD, shipping this requires:
 
-- `docs/usage/` — document the encoding override and `on_decode_error`
-  policy on the relevant input-connection topic, with frontmatter
-  `required_permission` checked against `backend/app/auth/permissions.py`.
+- `docs/usage/` — document the encoding override on the relevant
+  input-connection topic, with frontmatter `required_permission` checked
+  against `backend/app/auth/permissions.py`. Must state plainly that **a
+  mixed-encoding file cannot be fixed by an override** and must be repaired
+  at source, and must explain what the auto-detect warning (D1.9) means.
 - `docs/architecture/` — update any description of input storage decoding.
 - `docs/specs/implemented/input-storage-spec.md` — add a banner noting this
   spec supersedes its encoding-detection section.
@@ -704,18 +783,20 @@ Both are org-free, so Tier 1a is the correct tier.
 
 | Story | Ticket | Scope |
 |---|---|---|
-| S1 — Stream-safe input decoding | SFBL-401 | D1.1–D1.9 + D4.1–D4.2: `_DecodingTextStream` wrapper, `InputDecodeError` subclass with handler branching, file-absolute offsets, encoding + `on_decode_error` resolution chain (step → connection → app setting), re-raise at `step_executor.py:227`, fix `LocalInputStorage` incl. `preview_file`, all six `open_text` consumers, `INPUT_DECODE_ERROR` outcome code reusing `StorageEvent.INPUT_FAILED`, migration, API/frontend/MCP surface, tests |
+| S1 — Stream-safe input decoding | SFBL-401 | D1.1–D1.3, D1.5–D1.9 + D4.1–D4.2 (**D1.4 cut**): `_DecodingTextStream` wrapper, `InputDecodeError` subclass with handler branching, file-absolute offsets, encoding override (step → connection), re-raise at `step_executor.py:227`, fix `LocalInputStorage` incl. `preview_file`, all six `open_text` consumers, `INPUT_DECODE_ERROR` outcome code reusing `StorageEvent.INPUT_FAILED`, migration, API/frontend/MCP surface, tests |
 | S2 — Run error visibility | SFBL-402 | D2.1–D2.3: add the three missing `RunErrorSummary` fields, `_merge_run_error_summary` choke-point contract test, render populated keys across all three consumers (`RunSummaryCard.tsx`, `types.ts`, MCP `tools/runs.py`) |
 | S3 — Reject empty `object_name` | SFBL-403 | D3.1–D3.2 + D3.1a: constrain the *input* schemas only, distinct trim validator (not `_normalize_name`), merged-effective-state check on update, plan-editor validation error, tests |
 
 ### Sequencing
 
-The stories are *mostly* independent, with **one real coupling**: D1.4's
-replaced-character warning (`decode_replacements`) adds a field to
-`RunErrorSummary` — the same class S2 rewrites, and its new key must satisfy
-S2's contract test. Land S2's schema change first, or have S1's key land
-alongside S2's field declarations. Otherwise the file-level split is clean:
-S1 owns `input_storage.py`/`step_executor.py`, S3 owns `load_step.py`.
+**Revision 4: the three stories are now fully independent.** The only
+coupling was D1.4's `decode_replacements` field on `RunErrorSummary`, and
+cutting D1.4 removes it. The file-level split is clean: S1 owns
+`input_storage.py`/`step_executor.py`, S2 owns `load_run.py` plus the three
+error-summary consumers, S3 owns `load_step.py`.
+
+They still ship as **one bundled PR** — they share an incident and a
+validation cycle, and S1+S2 are jointly needed for the fix to be observable.
 
 ### Acceptance criteria
 
@@ -741,16 +822,16 @@ S1 owns `input_storage.py`/`step_executor.py`, S3 owns `load_step.py`.
   *Falsification: the naive `except InputStorageError` swallow must fail this.*
 - `step_executor` logs the failure with step attribution **and re-raises**; a
   test asserts the run still terminates with `storage_error` populated.
-- Encoding resolution order is step → connection → app setting →
-  auto-detect, with a test per tier. An invalid encoding name is rejected at
-  write time, not at read time.
-- `on_decode_error=replace` completes the load and records an accurate
-  replaced-character count. A test uses a file with a known number of bad
-  bytes and asserts the exact count. *Falsification: counting `U+FFFD` in the
-  output must fail on a source that legitimately contains `U+FFFD`.*
+- Encoding resolution order is step → connection → auto-detect, with a test
+  per tier, including that a step override reaches the **default** input
+  source (which has no `InputConnection` row). An invalid encoding name is
+  rejected at write time, not at read time.
 - A non-UTF-8 auto-detected encoding raises a preflight warning naming the
-  encoding (D1.9). *Falsification: a genuinely UTF-8 file whose prefix forces
-  a cp1252 guess must produce this warning rather than loading silently.*
+  encoding (D1.9). *Falsification: construct a genuinely UTF-8 file whose
+  first 64 KiB contains a stray cp1252 byte, so cp1252 is selected and the
+  whole file then decodes without error. It must produce the warning. An
+  implementation that only warns when decoding **fails** must fail this test —
+  this is the silent case, and it is the one that corrupted `ucas-mig2`.*
 - Equivalent coverage for `LocalInputStorage`, including `preview_file`,
   which does not route through `open_text`.
 - `detect_encoding` no longer reads the whole file into memory; a test asserts
@@ -846,8 +927,12 @@ The names are obfuscated/generated, but the accented characters are
 (`ı ğ`) among them — not generator artefacts. A latin-1 round-trip would
 *not* preserve them; it mojibakes 25 rows.
 
-Once the product fix ships, the in-app equivalent is `encoding=cp1252` plus
-`on_decode_error=replace`, which needs no file surgery but costs 3 rows'
-accented characters. Note this is **worse than the offline repair**, which is
-lossless — so the documentation should present offline repair as the
-preferred remedy and `replace` as the get-going-now option.
+**There is no in-app equivalent, by design.** Revision 3 proposed
+`encoding=cp1252` + `on_decode_error=replace` as a get-going-now option;
+revision 4 cut it. A malformed file is repaired at source, losslessly, using
+the script above — the product's job is to tell the operator precisely which
+byte is wrong and where, not to load it anyway.
+
+Note also that the destination org already contains 25 Accounts corrupted by
+the previous Data Loader run of this file. Repairing the CSV and re-upserting
+on `UCAS_Account_Id__c` fixes both the file and the existing damage.
