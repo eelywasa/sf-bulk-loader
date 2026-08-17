@@ -1,7 +1,7 @@
 """Input storage service — single source of truth for local file operations.
 
 Centralises path-safety validation, directory listing, CSV preview, row counting,
-encoding detection, and glob-pattern discovery.  All file-browsing consumers
+text decoding, and glob-pattern discovery.  All file-browsing consumers
 (the files API, step preview) delegate here rather than implementing their own.
 
 Designed to match the storage abstraction interface in ``input-storage-spec.md``
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import boto3
 import botocore.exceptions
+import codecs
 import csv
 import fnmatch
 import io
@@ -20,7 +21,7 @@ import logging
 import os
 import pathlib
 from dataclasses import dataclass
-from typing import IO, Optional, Protocol
+from typing import IO, Callable, Iterator, Optional, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,12 +32,34 @@ from app.utils.encryption import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
-# Encodings attempted during detection, in priority order.
-# ``utf-8-sig`` handles UTF-8 with and without BOM and is tried first.
-# ``cp1252`` (Windows-1252) is tried before ``latin-1`` because it is the most
-# common non-UTF-8 encoding in practice.  ``latin-1`` is last because it accepts
-# every byte value and never raises, making it the universal fallback.
-_ENCODING_CANDIDATES: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
+# SFBL-401: input is decoded as UTF-8 unless a step supplies an override.
+#
+# There is deliberately **no encoding detection**.  Inferring an encoding from a
+# 64 KiB prefix and applying it to a whole stream is unsound by construction:
+# the guess can be invalidated by any byte past the sample, and — far worse —
+# a *wrong but valid* guess decodes cleanly and writes mojibake into Salesforce
+# with no error at all.  That silent case is not hypothetical; it is what the
+# official Salesforce Data Loader did to 25 Account records with the file that
+# motivated this change.  See DECISIONS.md 032.
+DEFAULT_ENCODING: str = "utf-8-sig"
+
+#: Byte cap for the post-failure diagnostic (D1.10a).  Above this the message
+#: degrades to naming the offending byte and offset only, rather than reading a
+#: large object again to identify a candidate codec.
+DIAGNOSTIC_MAX_BYTES: int = 8 * 1024 * 1024
+
+#: Codecs offered to operators, and therefore the codecs the failure diagnostic
+#: considers.  Mirrors ``app.models.load_step.InputEncoding``; duplicated as a
+#: plain tuple to keep this module free of a model import.
+_DIAGNOSTIC_CANDIDATES: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
+
+#: Chunk size for streaming decode.
+_CHUNK_BYTES: int = 64 * 1024
+
+
+def resolve_encoding(encoding: Optional[str]) -> str:
+    """Return the codec to decode with: the override, or the UTF-8 default."""
+    return encoding or DEFAULT_ENCODING
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
@@ -52,6 +75,237 @@ class InputConnectionNotFoundError(InputStorageError):
 
 class UnsupportedInputProviderError(InputStorageError):
     """Raised when an input connection refers to an unsupported provider."""
+
+
+class InputDecodeError(InputStorageError):
+    """Raised when an input file cannot be decoded with the resolved encoding.
+
+    Subclasses :class:`InputStorageError` deliberately, so it flows through the
+    existing ``except InputStorageError`` handler in the run coordinator and
+    lands in the ``storage_error`` key of ``LoadRun.error_summary`` — a field
+    that is already declared on ``RunErrorSummary``, so the failure is visible
+    without depending on SFBL-402.  (Same rationale as
+    ``StepReferenceResolutionError``.)
+
+    Handlers that care about the distinction must test for this subclass
+    *before* the generic ``InputStorageError`` branch and log
+    ``outcome_code=input_decode_error``: ``storage_error`` means the source was
+    unreachable, whereas this means the source was read perfectly and its bytes
+    are not what we expected.  Different owners, different remedies.
+
+    Attributes are structured so log sites never have to re-parse the message.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        path: str,
+        encoding: str,
+        byte_value: Optional[int] = None,
+        byte_offset: Optional[int] = None,
+    ) -> None:
+        super().__init__(message)
+        self.path = path
+        self.encoding = encoding
+        self.byte_value = byte_value
+        self.byte_offset = byte_offset
+
+
+# ── Decoding ──────────────────────────────────────────────────────────────────
+
+
+def _diagnose(
+    reread: Optional[Callable[[], IO[bytes]]],
+    failed_encoding: str,
+) -> str:
+    """Return a human-readable hint about what an undecodable file looks like.
+
+    Runs **only** after a decode failure has already terminated the read, so a
+    second pass costs nothing that matters.  It **diagnoses but never acts** —
+    the caller still refuses the file.  Silently choosing the diagnosed codec
+    is exactly the behaviour this module removed.
+
+    Bounded three ways (D1.10a): capped at :data:`DIAGNOSTIC_MAX_BYTES`, read in
+    chunks rather than materialised whole, and each candidate abandoned at its
+    first failing byte rather than read to EOF.
+    """
+    if reread is None:
+        return ""
+    try:
+        with reread() as raw:
+            data = raw.read(DIAGNOSTIC_MAX_BYTES + 1)
+    except Exception:  # pragma: no cover - diagnosis must never mask the real error
+        return ""
+
+    if len(data) > DIAGNOSTIC_MAX_BYTES:
+        mb = DIAGNOSTIC_MAX_BYTES // (1024 * 1024)
+        return f" File is larger than {mb} MB, so no encoding diagnosis was attempted."
+
+    for candidate in _DIAGNOSTIC_CANDIDATES:
+        if candidate == failed_encoding:
+            continue
+        try:
+            data.decode(candidate)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        return (
+            f" The file decodes cleanly as {candidate} — if that is correct, "
+            f"set Encoding on the step."
+        )
+
+    return (
+        " No supported encoding decodes the whole file. It appears to contain "
+        "mixed encodings and should be repaired at source."
+    )
+
+
+class _DecodingTextStream:
+    """Streaming text reader that owns its decode loop.
+
+    Exists because ``open_text`` *returns a handle* — decoding happens lazily
+    inside the caller's read loop, so there is no ``try`` at the storage
+    boundary that a :exc:`UnicodeDecodeError` would ever pass through.  Owning
+    the loop is the only place the error can be caught, and it makes the
+    reported byte offset exact **by construction**: ``TextIOWrapper.tell()``
+    raises on a non-seekable S3 body, so an offset cannot be recovered after
+    the fact.
+
+    Reproduces ``newline=""`` semantics exactly — no translation, and ``\\r``,
+    ``\\n`` and ``\\r\\n`` all terminate a line — because every caller hands this
+    to :mod:`csv`, which corrupts quoted fields containing embedded newlines
+    otherwise.
+
+    Offsets count bytes *fed to the decoder* and are **not** adjusted for a
+    ``utf-8-sig`` BOM: the cumulative count is already file-absolute.
+    """
+
+    def __init__(
+        self,
+        raw: IO[bytes],
+        *,
+        path: str,
+        encoding: str,
+        reread: Optional[Callable[[], IO[bytes]]] = None,
+        chunk_size: int = _CHUNK_BYTES,
+    ) -> None:
+        self._raw = raw
+        self._path = path
+        self._encoding = encoding
+        self._reread = reread
+        self._chunk_size = chunk_size
+        self._decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
+        self._buf = ""
+        self._consumed = 0        # bytes handed to the decoder so far
+        self._eof = False
+        self._closed = False
+
+    # -- internals ---------------------------------------------------------
+
+    def _fill(self) -> bool:
+        """Decode one more chunk into the buffer. Returns False at EOF."""
+        if self._eof:
+            return False
+        chunk = self._raw.read(self._chunk_size)
+        if not chunk:
+            self._eof = True
+            # flush any bytes the decoder is still holding
+            try:
+                self._buf += self._decoder.decode(b"", final=True)
+            except UnicodeDecodeError as exc:
+                raise self._decode_error(exc, b"") from exc
+            return False
+        try:
+            self._buf += self._decoder.decode(chunk)
+        except UnicodeDecodeError as exc:
+            raise self._decode_error(exc, chunk) from exc
+        self._consumed += len(chunk)
+        return True
+
+    def _decode_error(self, exc: UnicodeDecodeError, chunk: bytes) -> InputDecodeError:
+        # ``exc.object`` is what the decoder was working on: any bytes it had
+        # buffered from the previous call, followed by this chunk.  So the file
+        # offset of exc.object[0] is (bytes consumed before this chunk) minus
+        # that carried-over prefix.
+        pending = max(len(exc.object) - len(chunk), 0)
+        offset = self._consumed - pending + exc.start
+        byte_value = exc.object[exc.start] if exc.start < len(exc.object) else None
+        name = pathlib.PurePosixPath(self._path).name or self._path
+
+        detail = f" (0x{byte_value:02x})" if byte_value is not None else ""
+        message = (
+            f"{name} is not valid {self._encoding}: byte{detail} at offset {offset} "
+            f"could not be decoded."
+        ) + _diagnose(self._reread, self._encoding)
+
+        return InputDecodeError(
+            message,
+            path=self._path,
+            encoding=self._encoding,
+            byte_value=byte_value,
+            byte_offset=offset,
+        )
+
+    # -- text IO surface ---------------------------------------------------
+
+    def readline(self, limit: int = -1) -> str:  # noqa: ARG002 - csv never passes one
+        while True:
+            idx = self._find_terminator()
+            if idx is not None:
+                line, self._buf = self._buf[:idx], self._buf[idx:]
+                return line
+            if not self._fill():
+                line, self._buf = self._buf, ""
+                return line
+
+    def _find_terminator(self) -> Optional[int]:
+        """Index just past the first line terminator, or None if incomplete."""
+        for i, ch in enumerate(self._buf):
+            if ch == "\n":
+                return i + 1
+            if ch == "\r":
+                if i + 1 < len(self._buf):
+                    return i + 2 if self._buf[i + 1] == "\n" else i + 1
+                # trailing '\r': can't tell '\r' from '\r\n' until more arrives
+                if self._eof:
+                    return i + 1
+                return None
+        return None
+
+    def read(self, size: int = -1) -> str:
+        if size is None or size < 0:
+            while self._fill():
+                pass
+            out, self._buf = self._buf, ""
+            return out
+        while len(self._buf) < size and self._fill():
+            pass
+        out, self._buf = self._buf[:size], self._buf[size:]
+        return out
+
+    def __iter__(self) -> Iterator[str]:
+        return self
+
+    def __next__(self) -> str:
+        line = self.readline()
+        if line == "":
+            raise StopIteration
+        return line
+
+    def __enter__(self) -> "_DecodingTextStream":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._raw.close()
+        except Exception:  # pragma: no cover - best effort
+            pass
 
 
 # ── Data transfer objects ─────────────────────────────────────────────────────
@@ -95,11 +349,13 @@ class BaseInputStorage(Protocol):
         limit: int = 50,
         offset: int = 0,
         filters: list[dict[str, str]] | None = None,
+        *,
+        encoding: str | None = None,
     ) -> InputPreview: ...
 
     def discover_files(self, glob_pattern: str) -> list[str]: ...
 
-    def open_text(self, path: str) -> IO[str]: ...
+    def open_text(self, path: str, *, encoding: str | None = None) -> IO[str]: ...
 
 
 # ── Encoding detection ────────────────────────────────────────────────────────

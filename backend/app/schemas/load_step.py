@@ -3,7 +3,29 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.models.load_step import Operation, QUERY_OPERATIONS, DML_OPERATIONS
+from app.models.load_step import (
+    DML_OPERATIONS,
+    INPUT_ENCODINGS,
+    Operation,
+    QUERY_OPERATIONS,
+)
+
+
+def _validate_encoding(value: Optional[str]) -> Optional[str]:
+    """Reject an ``encoding`` outside the supported allow-list (SFBL-401).
+
+    Applied to the *input* schemas only, never to ``LoadStepBase`` itself:
+    ``LoadStepResponse`` inherits from the base, so a constraint there would
+    also reject persisted rows on read and 500 ``GET /api/plans/{id}``.
+    """
+    if value is None:
+        return None
+    if value not in INPUT_ENCODINGS:
+        supported = ", ".join(sorted(INPUT_ENCODINGS))
+        raise ValueError(
+            f"Unsupported encoding {value!r}. Supported encodings: {supported}"
+        )
+    return value
 
 
 def _normalize_name(value: Optional[str]) -> Optional[str]:
@@ -106,6 +128,9 @@ class LoadStepBase(BaseModel):
     input_connection_id: Optional[str] = None
     name: Optional[str] = None
     input_from_step_id: Optional[str] = None
+    # SFBL-401: None means "use DEFAULT_INPUT_ENCODING" (UTF-8).  Intentionally
+    # unvalidated here — see _validate_encoding.
+    encoding: Optional[str] = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -129,6 +154,11 @@ class LoadStepBase(BaseModel):
 class LoadStepCreate(LoadStepBase):
     sequence: Optional[int] = None
 
+    @field_validator("encoding")
+    @classmethod
+    def _check_encoding(cls, value):  # noqa: ANN001 — pydantic validator
+        return _validate_encoding(value)
+
 
 class LoadStepUpdate(BaseModel):
     sequence: Optional[int] = None
@@ -142,11 +172,17 @@ class LoadStepUpdate(BaseModel):
     input_connection_id: Optional[str] = None
     name: Optional[str] = None
     input_from_step_id: Optional[str] = None
+    encoding: Optional[str] = None
 
     @field_validator("name", mode="before")
     @classmethod
     def _normalize_name_field(cls, value):  # noqa: ANN001 — pydantic validator
         return _normalize_name(value) if isinstance(value, str) or value is None else value
+
+    @field_validator("encoding")
+    @classmethod
+    def _check_encoding(cls, value):  # noqa: ANN001 — pydantic validator
+        return _validate_encoding(value)
 
     @model_validator(mode="after")
     def _cross_validate_query_dml(self) -> "LoadStepUpdate":
