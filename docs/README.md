@@ -77,6 +77,9 @@ Start at [`usage/index.md`](usage/index.md), which lists topics in nav order:
   suite conforms to. Source of truth for the helpers under
   `tests/e2e/sf/playwright/helpers/allure.ts` and
   `backend/tests/_allure_helpers.py`.
+- [specs/input-encoding-and-error-visibility.md](specs/input-encoding-and-error-visibility.md)
+  — locked design for input-decoding robustness, run error-summary visibility,
+  and load-step `object_name` validation. Not yet ticketed.
 
 Historical specs that have been implemented live under
 [`specs/implemented/`](specs/implemented/) for reference; they are **not**
