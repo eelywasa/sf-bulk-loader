@@ -6,6 +6,8 @@ production incident on the plan `Test 1 - Account`
 identified; this file is the locked design for fixing all three.
 Ticket IDs are **TBD** — see [Story breakdown](#story-breakdown).
 
+All line references were verified against `origin/main` at `2a351ba`.
+
 ---
 
 ## Background
@@ -37,7 +39,7 @@ first was fixed.
 
 ### Mechanism
 
-`S3InputStorage.open_text` (`backend/app/services/input_storage.py:761`)
+`S3InputStorage.open_text` (`backend/app/services/input_storage.py:893`)
 reads the first 64 KiB of the object, infers an encoding from **that sample
 only**, then wraps the **entire** stream with it:
 
@@ -50,7 +52,7 @@ return io.TextIOWrapper(buffered, encoding=enc, newline="")
 ```
 
 `detect_encoding_from_bytes` walks `_ENCODING_CANDIDATES`
-(`input_storage.py:37`):
+(`input_storage.py:39`):
 
 ```python
 _ENCODING_CANDIDATES: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
@@ -79,7 +81,7 @@ sequence, but it is only selected if the **sample** fails to decode. Since
 the sample always decodes (that is how the encoding was chosen), the
 terminal fallback can never be reached by a mid-stream failure.
 
-`LocalInputStorage.open_text` (`input_storage.py:542`) has the same flaw via
+`LocalInputStorage.open_text` (`input_storage.py:641`) has the same flaw via
 `detect_encoding`, which samples `file_path.read_bytes()[:65536]`.
 
 ### Why the run dies rather than degrading
@@ -243,10 +245,56 @@ object. A one-line startup log naming affected step IDs is sufficient.
 ## Observability
 
 Per the Observability Definition of Done in `CLAUDE.md`, this work changes
-storage flows and terminal outcomes:
+storage flows and terminal outcomes.
 
-- Add outcome code for decode failure (e.g. `INPUT_DECODE_ERROR`) to
-  `OutcomeCode` in `app/observability/events.py`.
+### Existing machinery to reuse (do not duplicate)
+
+The input-storage observability layer already landed independently of this
+spec. S1 must build on it rather than introduce parallel names:
+
+- **`StorageEvent.INPUT_FAILED`** (`"storage.input.failed"`,
+  `app/observability/events.py:135`) already exists and is the correct
+  `event_name` for a decode failure. **No new event name is required.**
+- **`_s3_outcome_code`** (`input_storage.py:396`) maps a botocore
+  `ClientError` to `RATE_LIMITED` (throttling) or `STORAGE_ERROR`
+  (everything else). It handles *transport* failures only — a
+  `UnicodeDecodeError` never reaches it, so decode failures currently have
+  no outcome-code path at all.
+- `OutcomeCode` has `storage_error` ("input storage access failure") but
+  **no decode-specific code**.
+
+### D4.1 — A decode failure gets its own outcome code
+
+Add `INPUT_DECODE_ERROR = "input_decode_error"` to `OutcomeCode`, and
+document it in the class docstring alongside `storage_error`.
+
+Rationale: `storage_error` means *the source is unreachable* — S3 is down,
+credentials are wrong, the key is missing. A decode failure means *the source
+was read perfectly and its bytes are not what we expected*. These have
+different owners and different remedies: the first pages an engineer, the
+second is a data problem the operator fixes by re-encoding a file. Collapsing
+them into one code makes it impossible to alert on infrastructure health
+without also firing on malformed customer data.
+
+### D4.2 — The two axes are independent
+
+The `error_summary` key and the observability outcome code are **separate
+axes** and must not be conflated:
+
+| Axis | Value | Purpose |
+|---|---|---|
+| `RunErrorSummary` key | `storage_error` | UI/API visibility — reuses a field that is already declared, so it works regardless of Defect 2 |
+| `OutcomeCode` | `input_decode_error` | Logs, metrics, alerting — distinguishes malformed data from unreachable storage |
+
+D1.2 routes the failure through `InputStorageError` specifically so it lands
+in the already-declared `storage_error` key. That is a **visibility**
+decision and does not imply the outcome code must also be `storage_error`. A
+decode failure therefore logs with `event_name=storage.input.failed`,
+`outcome_code=input_decode_error`, while populating
+`error_summary.storage_error`.
+
+### Remaining requirements
+
 - The decode-failure log site must carry `event_name`, `outcome_code`,
   `run_id`, `step_id`, and the resolved file path.
 - Under `on_decode_error=replace`, emit a metric for replaced-character
@@ -254,6 +302,8 @@ storage flows and terminal outcomes:
 - Confirm the new error message complies with `sanitization.py` — file paths
   and byte values are safe; **decoded record content must never appear in the
   error message**.
+- Update the storage-flow section of `docs/observability.md`, which
+  `_s3_outcome_code` cites as its reference.
 
 ---
 
@@ -279,7 +329,7 @@ failing load.
 
 | Story | Ticket | Scope |
 |---|---|---|
-| S1 — Stream-safe input decoding | TBD | D1.1–D1.6: `InputStorageError` conversion with file-absolute offsets, encoding override on connection + step, `on_decode_error` policy, wrap `step_executor.py:227`, fix `LocalInputStorage`, migration for the new fields, unit + integration tests |
+| S1 — Stream-safe input decoding | TBD | D1.1–D1.6 + D4.1–D4.2: `InputStorageError` conversion with file-absolute offsets, encoding override on connection + step, `on_decode_error` policy, wrap `step_executor.py:227`, fix `LocalInputStorage`, `INPUT_DECODE_ERROR` outcome code reusing the existing `StorageEvent.INPUT_FAILED`, migration for the new fields, unit + integration tests |
 | S2 — Run error visibility | TBD | D2.1–D2.3: add the two missing `RunErrorSummary` fields, contract test enumerating `error_summary` keys, render populated keys on the run detail page |
 | S3 — Reject empty `object_name` | TBD | D3.1–D3.2: `min_length=1` after trim on create + update schemas, plan-editor validation error for existing empty rows, tests |
 
@@ -294,6 +344,10 @@ failing load.
 - Setting an explicit encoding on the connection bypasses detection.
 - `on_decode_error=replace` completes the load and records a
   replaced-character count.
+- The failure logs with `event_name=storage.input.failed` and
+  `outcome_code=input_decode_error` — **not** `storage_error` — while
+  `error_summary.storage_error` is populated for the UI. No new
+  `StorageEvent` member is added.
 - Equivalent coverage for `LocalInputStorage`.
 
 **S2**
