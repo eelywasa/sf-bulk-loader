@@ -132,27 +132,64 @@ def _diagnose(
     """
     if reread is None:
         return ""
+
+    # ``latin-1`` is deliberately excluded: it never raises on any byte
+    # sequence, so "it decodes cleanly as latin-1" is true of *every* file and
+    # is evidence of nothing.  Recommending it would be actively harmful — a
+    # latin-1 read is exactly what silently mojibaked 25 Account records in the
+    # incident that motivated this work.  If no strict codec matches, the file
+    # is malformed and the operator needs to hear that instead.
+    candidates = [
+        c
+        for c in _DIAGNOSTIC_CANDIDATES
+        if c != failed_encoding and c != "latin-1"
+    ]
+    if not candidates:
+        return ""
+
+    # One incremental decoder per candidate, all fed the same chunks.  A
+    # candidate is dropped the moment it fails, so a wrong codec costs only the
+    # bytes read up to its first bad byte — not a full pass per codec.
+    try:
+        decoders = {
+            c: codecs.getincrementaldecoder(c)("strict") for c in candidates
+        }
+    except LookupError:  # pragma: no cover - candidates are static
+        return ""
+
+    read_bytes = 0
     try:
         with reread() as raw:
-            data = raw.read(DIAGNOSTIC_MAX_BYTES + 1)
+            while decoders:
+                chunk = raw.read(_CHUNK_BYTES)
+                if not chunk:
+                    break
+                read_bytes += len(chunk)
+                if read_bytes > DIAGNOSTIC_MAX_BYTES:
+                    mb = DIAGNOSTIC_MAX_BYTES // (1024 * 1024)
+                    return (
+                        f" File is larger than {mb} MB, so no encoding diagnosis "
+                        f"was attempted."
+                    )
+                for name in list(decoders):
+                    try:
+                        decoders[name].decode(chunk)
+                    except UnicodeDecodeError:
+                        del decoders[name]
+            for name in list(decoders):
+                try:
+                    decoders[name].decode(b"", final=True)
+                except UnicodeDecodeError:
+                    del decoders[name]
     except Exception:  # pragma: no cover - diagnosis must never mask the real error
         return ""
 
-    if len(data) > DIAGNOSTIC_MAX_BYTES:
-        mb = DIAGNOSTIC_MAX_BYTES // (1024 * 1024)
-        return f" File is larger than {mb} MB, so no encoding diagnosis was attempted."
-
-    for candidate in _DIAGNOSTIC_CANDIDATES:
-        if candidate == failed_encoding:
-            continue
-        try:
-            data.decode(candidate)
-        except (UnicodeDecodeError, LookupError):
-            continue
-        return (
-            f" The file decodes cleanly as {candidate} — if that is correct, "
-            f"set Encoding on the step."
-        )
+    for candidate in candidates:
+        if candidate in decoders:
+            return (
+                f" The file decodes cleanly as {candidate} — if that is correct, "
+                f"set Encoding on the step."
+            )
 
     return (
         " No supported encoding decodes the whole file. It appears to contain "

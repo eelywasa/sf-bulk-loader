@@ -2,6 +2,21 @@
 
 **Jira Epic: SFBL-16**
 
+> **Superseded in part (SFBL-401, 2026-08-17).** This spec's
+> encoding-detection design — sampling a file prefix and inferring latin-1 /
+> cp1252 / UTF-8 — has been **removed from the product**. Input is now decoded
+> as UTF-8 unless a step sets an explicit `encoding`.
+>
+> This was a deliberate reversal of an original design decision, not a bug
+> fix. Detection was specified as a feature here and shipped as one; it was
+> removed because inferring an encoding from a prefix and applying it to a
+> whole stream is unsound by construction, and because a wrong-but-valid guess
+> decodes cleanly and writes mojibake into Salesforce with no error at all.
+>
+> See `docs/specs/input-encoding-and-error-visibility.md` and DECISIONS.md 032.
+> Sections of this document describing encoding detection no longer reflect
+> the product.
+
 ## Overview
 
 The app currently supports input files only from the local filesystem under the configured input directory. This spec covers expanding the system so input files can come from multiple sources:

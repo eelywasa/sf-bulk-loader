@@ -48,6 +48,12 @@ export interface StepFormData {
   input_connection_id: string
   /** ID of the upstream query step; only used in from_step mode. */
   input_from_step_id: string
+  /**
+   * SFBL-401: source-file encoding. Empty string means "use the UTF-8
+   * default" and is sent as null. Input is decoded as UTF-8 unless this is
+   * set — there is no auto-detection.
+   */
+  encoding: string
 }
 
 export const EMPTY_STEP_FORM: StepFormData = {
@@ -62,6 +68,7 @@ export const EMPTY_STEP_FORM: StepFormData = {
   assignment_rule_id: '',
   input_connection_id: '',
   input_from_step_id: '',
+  encoding: '',
 }
 
 /**

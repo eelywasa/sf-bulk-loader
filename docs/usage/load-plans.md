@@ -51,8 +51,37 @@ declares:
 | **CSV file pattern** | DML steps only — glob over the input location. See [CSV format → Glob patterns](csv-format.md#glob-patterns). Not used when **Input source** is set to "From upstream step". |
 | **SOQL** | Query steps only — the statement to execute. |
 | **Partition size** | Per-step override of the default partition size. |
+| **File encoding** | How the step's input files are decoded. Defaults to **UTF-8**; set to **Windows-1252** or **ISO-8859-1** only if you know the source encoding. Files are *not* auto-detected. See [Encoding](#file-encoding) below. |
 | **Assignment rule** | Optional Salesforce assignment rule ID (Leads / Cases). |
 | **Input source** | Three-way: **Input files**, **Previous-run output** (prior run results), or **From upstream step in this run** — feeds a named query step's artefact directly into this DML step. See [Chaining steps](chaining-steps.md). |
+
+### File encoding
+
+Input files are read as **UTF-8** unless the step says otherwise. There is no
+auto-detection.
+
+Set **File encoding** when a source system exports Windows-1252 or ISO-8859-1.
+If a file is not UTF-8 and no encoding is set, the run fails with a message
+naming the offending byte and its position in the file — it does not load the
+data incorrectly.
+
+Three things are worth knowing:
+
+- **A wrong setting does not fail.** It silently substitutes different
+  characters and the load reports success. Only set this when you know the
+  source encoding; leaving it on UTF-8 and reading the error is safer than
+  guessing.
+- **A file that mixes encodings cannot be loaded** under any setting. The
+  error says so explicitly, and the file must be repaired at source.
+- **ISO-8859-1 never fails.** It accepts every possible byte, so a step set to
+  it can never report a decode problem — including when the file is actually
+  something else.
+
+Browsing a file in the **Files** pane is more forgiving: undecodable
+characters are shown as replacement characters rather than blocking the
+preview, because previewing never sends data to Salesforce. A file that
+previews with odd characters will still fail to load until its encoding is
+correct.
 
 ### Operations
 

@@ -262,6 +262,7 @@ export function usePlanEditorState(id: string | undefined) {
         assignment_rule_id: step.assignment_rule_id ?? '',
         input_connection_id: mode === 'from_step' ? '' : (step.input_connection_id ?? ''),
         input_from_step_id: step.input_from_step_id ?? '',
+        encoding: step.encoding ?? '',
       })
     } else {
       setEditingStep(null)
@@ -333,6 +334,8 @@ export function usePlanEditorState(id: string | undefined) {
       partition_size: Number(stepForm.partition_size),
       external_id_field: stepForm.external_id_field || null,
       assignment_rule_id: stepForm.assignment_rule_id || null,
+      // '' means "use the UTF-8 default" — sent as null, never as a literal.
+      encoding: stepForm.encoding || null,
     }
 
     let data: LoadStepCreate

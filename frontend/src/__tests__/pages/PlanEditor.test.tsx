@@ -517,6 +517,55 @@ describe('PlanEditor', () => {
     })
   })
 
+  it('defaults the encoding to UTF-8 and sends null when unchanged', async () => {
+    // SFBL-401: '' in the form means "use the UTF-8 default" and must be sent
+    // as null, never as a literal string the backend would have to interpret.
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(stepsApi.create).mockResolvedValue(step1)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByLabelText(/File Encoding/)).toHaveValue('')
+
+    await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Account')
+    await user.type(within(dialog).getByLabelText(/CSV File Pattern/), 'a_*.csv')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(stepsApi.create).toHaveBeenCalledWith(
+        'plan-1',
+        expect.objectContaining({ encoding: null }),
+      )
+    })
+  })
+
+  it('sends the selected encoding when the operator overrides it', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)
+    vi.mocked(stepsApi.create).mockResolvedValue(step1)
+
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText(/No steps yet/))
+    await user.click(screen.getAllByRole('button', { name: 'Add Step' })[0])
+
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Account')
+    await user.type(within(dialog).getByLabelText(/CSV File Pattern/), 'a_*.csv')
+    await user.selectOptions(within(dialog).getByLabelText(/File Encoding/), 'cp1252')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Step' }))
+
+    await waitFor(() => {
+      expect(stepsApi.create).toHaveBeenCalledWith(
+        'plan-1',
+        expect.objectContaining({ encoding: 'cp1252' }),
+      )
+    })
+  })
+
   it('shows input source options in the step modal', async () => {
     const user = userEvent.setup()
     vi.mocked(plansApi.get).mockResolvedValue(planNoSteps)

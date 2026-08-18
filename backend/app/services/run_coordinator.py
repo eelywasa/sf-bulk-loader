@@ -26,7 +26,7 @@ from app.models.load_run import LoadRun, RunStatus
 from app.models.load_step import LoadStep
 from app.services import step_executor as _step_executor_mod
 from app.services.csv_processor import partition_csv as _default_partition
-from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
+from app.services.input_storage import InputDecodeError, InputStorageError, get_storage as _default_get_storage
 from app.services.output_storage import (
     OutputConnectionNotFoundError,
     UnsupportedOutputProviderError,
@@ -582,17 +582,28 @@ async def _execute_run_body(
                             continue
                         preflight_total += sum(1 for _ in reader)
             except InputStorageError as exc:
+                # SFBL-401: InputDecodeError subclasses InputStorageError so it
+                # still reaches the storage_error summary key, but it must be
+                # attributed distinctly: storage_error means the source was
+                # unreachable (page an engineer), input_decode_error means it
+                # was read perfectly and its bytes are wrong (a data problem
+                # the operator fixes).  Branch before the generic path.
+                _outcome = (
+                    OutcomeCode.INPUT_DECODE_ERROR
+                    if isinstance(exc, InputDecodeError)
+                    else OutcomeCode.STORAGE_ERROR
+                )
                 logger.warning(
-                    "Run %s: pre-count failed for step %s (storage error): %s",
-                    run_id, step.id, exc,
+                    "Run %s: pre-count failed for step %s (%s): %s",
+                    run_id, step.id, _outcome, exc,
                     extra={"event_name": RunEvent.PREFLIGHT_FAILED,
-                           "outcome_code": OutcomeCode.STORAGE_ERROR,
+                           "outcome_code": _outcome,
                            "run_id": run_id, "step_id": str(step.id)},
                 )
-                record_run_preflight_failure(OutcomeCode.STORAGE_ERROR)
+                record_run_preflight_failure(_outcome)
                 preflight_warnings.append({
                     "step_id": str(step.id),
-                    "outcome_code": OutcomeCode.STORAGE_ERROR,
+                    "outcome_code": _outcome,
                     "error": str(exc),
                 })
             except Exception as exc:
@@ -728,13 +739,23 @@ async def _execute_run_body(
                     **_step_kwargs
                 )
             except InputStorageError as exc:
+                # SFBL-401: see the preflight handler above — the error_summary
+                # key stays storage_error (already declared on RunErrorSummary,
+                # so the failure is visible without SFBL-402) while the outcome
+                # code distinguishes malformed data from unreachable storage.
+                _outcome = (
+                    OutcomeCode.INPUT_DECODE_ERROR
+                    if isinstance(exc, InputDecodeError)
+                    else OutcomeCode.STORAGE_ERROR
+                )
                 logger.error(
-                    "Run %s step %s: storage error: %s",
+                    "Run %s step %s: %s: %s",
                     run_id,
                     step.id,
+                    _outcome,
                     exc,
                     extra={"event_name": RunEvent.FAILED,
-                           "outcome_code": OutcomeCode.STORAGE_ERROR,
+                           "outcome_code": _outcome,
                            "run_id": run_id, "step_id": str(step.id)},
                 )
                 await _mark_run_failed(

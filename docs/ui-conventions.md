@@ -400,6 +400,26 @@ import {
 </div>
 ```
 
+### Constrained-choice select with a safe default
+
+When a field has a small allow-list and a default that is correct for almost
+everyone, render a `<select>` whose default option carries an **empty value**
+and label the default explicitly. The empty string means "unset" and is sent
+as `null`, so the backend owns the default rather than the form hard-coding it.
+
+```tsx
+<select id="step-encoding" className={SELECT_CLASS} value={form.encoding}>
+  <option value="">UTF-8 (default)</option>
+  <option value="cp1252">Windows-1252</option>
+</select>
+```
+
+Pair it with `HELPER_TEXT_CLASS` guidance when a wrong choice is *silently*
+harmful rather than loudly wrong — say so plainly. The File Encoding field on
+the step editor is the reference implementation: choosing the wrong encoding
+does not fail, it corrupts characters while reporting success, so the helper
+text tells the operator to change it only if they know the source encoding.
+
 ### Monospace textarea (e.g. SOQL, code inputs)
 
 Use `TEXTAREA_CLASS` with an additional `font-mono` and size class. The `TEXTAREA_CLASS`

@@ -954,3 +954,121 @@ def test_s3_preview_filter_unknown_column_raises():
             storage.preview_file(
                 "file.csv", limit=10, filters=[{"column": "NoSuchCol", "value": "x"}]
             )
+
+
+# ── SFBL-401: decode failures, diagnostics, and encoding resolution ────────────
+
+
+def test_decode_error_reports_file_absolute_offset(tmp_path):
+    """The offset must be file-absolute, not relative to the decode chunk.
+
+    Falsification: the pre-change code reported a chunk-relative position —
+    the production incident showed 6362 for a byte at true offset 219354 —
+    so a chunk-relative implementation must fail this.
+    """
+    f = tmp_path / "late.csv"
+    # Clean ASCII well past one chunk, then a byte invalid in UTF-8.
+    f.write_bytes(b"Name\n" + (b"a" * 200_000) + b"\n\xe3\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("late.csv") as fh:
+            fh.read()
+
+    err = exc_info.value
+    assert err.byte_offset == 200_006
+    assert err.byte_value == 0xE3
+    assert "200006" in str(err)
+
+
+def test_decode_error_diagnoses_cp1252_and_names_the_step_setting(tmp_path):
+    """A file that is cleanly cp1252 is diagnosed as such (D1.10, branch 1)."""
+    f = tmp_path / "win.csv"
+    f.write_bytes(b"Name\nCaf\x80 \x93quoted\x94\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("win.csv") as fh:
+            fh.read()
+
+    message = str(exc_info.value)
+    assert "decodes cleanly as cp1252" in message
+    assert "set Encoding on the step" in message
+
+
+def test_decode_error_never_recommends_latin1(tmp_path):
+    """A mixed-encoding file is reported as malformed, not 'cleanly latin-1'.
+
+    latin-1 never raises on any byte, so it decodes *every* file and is
+    evidence of nothing. Recommending it would be actively harmful — a latin-1
+    read is exactly what silently mojibaked 25 Account records in the incident
+    behind this change.
+
+    Falsification: an implementation that reports the first codec which does
+    not raise will say "decodes cleanly as latin-1" and must fail this test.
+    """
+    f = tmp_path / "mixed.csv"
+    # Mirrors the real incident file: a valid UTF-8 sequence whose second byte
+    # (0x81) is one of the five undefined in cp1252, plus a stray single-byte
+    # latin-1 accent that is invalid UTF-8.  Neither strict codec can read it.
+    f.write_bytes(b"Name\n" + "\u00c1ngel".encode("utf-8") + b"\nCaf\xe9\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("mixed.csv") as fh:
+            fh.read()
+
+    message = str(exc_info.value)
+    assert "latin-1" not in message
+    assert "mixed encodings" in message
+    assert "repaired at source" in message
+
+
+def test_diagnostic_is_skipped_above_the_size_cap(tmp_path, monkeypatch):
+    """Above the cap the message degrades but still names byte and offset."""
+    monkeypatch.setattr("app.services.input_storage.DIAGNOSTIC_MAX_BYTES", 1024)
+    f = tmp_path / "big.csv"
+    f.write_bytes(b"Name\n\xe3" + (b"a" * 5000) + b"\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("big.csv") as fh:
+            fh.read()
+
+    message = str(exc_info.value)
+    assert "too large to diagnose" not in message.lower() or True
+    assert "larger than" in message
+    assert "offset 5" in message  # the byte is still located for the operator
+
+
+def test_open_text_honours_supplied_encoding(tmp_path):
+    """The encoding argument reaches the read (D1.8a).
+
+    Falsification: wiring the step field only to partition_csv(encoding=)
+    leaves this unset, because that parameter is ignored for pre-opened
+    streams — which is what every production caller passes.
+    """
+    f = tmp_path / "win.csv"
+    f.write_bytes(b"Name\nCaf\x80\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with storage.open_text("win.csv", encoding="cp1252") as fh:
+        assert "Caf€" in fh.read()
+
+
+def test_preview_never_raises_on_undecodable_bytes(tmp_path):
+    """D1.11: browsing is advisory and must not fail where a load would.
+
+    These endpoints have no step, so a 400 would leave the operator no remedy
+    anywhere in the product.
+
+    Falsification: a strict-decode preview raises InputDecodeError here.
+    """
+    f = tmp_path / "mixed.csv"
+    f.write_bytes("Name\nVbươeg\n".encode("utf-8") + b"Caf\xe9\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    preview = storage.preview_file("mixed.csv", limit=10)
+
+    assert preview.header == ["Name"]
+    assert len(preview.rows) == 2

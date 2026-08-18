@@ -71,7 +71,8 @@ logger.info(
 
 Preflight events cover the pre-count phase that runs before the main step loop.
 A `run.preflight.failed` log record is emitted with a matching `outcome_code`
-(`storage_error` for `InputStorageError`, `unexpected_exception` otherwise) for
+(`input_decode_error` for `InputDecodeError`, `storage_error` for any other
+`InputStorageError`, `unexpected_exception` otherwise) for
 each step that cannot be counted. Preflight failures are **non-fatal** — the
 run proceeds with an approximate `total_records`, and warnings are surfaced on
 `LoadRun.error_summary.preflight_warnings` for the UI to render. The counter
@@ -133,6 +134,38 @@ and an outcome code mapped from the `ClientError`:
 HTTP 404, not a storage failure.) The mapping lives in
 `input_storage._s3_outcome_code`. S3 **output** write failures keep their
 existing `output_upload_error` code on `storage.output.upload.failed`.
+
+#### Decode failures (SFBL-401)
+
+`_s3_outcome_code` maps *transport* failures only. A file that is fetched
+perfectly but cannot be decoded with the resolved encoding is a different
+class of problem and carries its own outcome code:
+
+| Condition | `event_name` | `outcome_code` |
+|---|---|---|
+| Source unreachable (permissions, missing bucket/key, network) | `storage.input.failed` | `storage_error` |
+| Source read successfully, bytes undecodable | `storage.input.failed` | `input_decode_error` |
+
+The distinction is deliberate and is the point of the separate code:
+`storage_error` means infrastructure is unhealthy and should page an engineer;
+`input_decode_error` means an operator supplied a file in an unexpected
+encoding and fixes it by setting **File encoding** on the step or repairing the
+file. Collapsing them would make it impossible to alert on infrastructure
+health without also firing on malformed customer data.
+
+**No new event name is added** — `storage.input.failed` already varies its
+`outcome_code`, which is exactly the axis this uses.
+
+Note the two axes are independent. A decode failure logs
+`outcome_code=input_decode_error` while writing
+`LoadRun.error_summary.storage_error`, because `InputDecodeError` subclasses
+`InputStorageError` and that summary key is already declared on
+`RunErrorSummary` — so the failure is visible in the UI without depending on
+any schema change.
+
+After the rollout, `input_decode_error` doubles as the **migration signal**: a
+spike means steps whose files were previously auto-detected now need their
+encoding set.
 
 ### Bulk query events (SFBL-171)
 

@@ -340,9 +340,34 @@ export interface LoadStep {
   input_connection_id?: string | null
   /** SFBL-264: ID of the upstream query step whose output feeds this step. */
   input_from_step_id?: string | null
+  /**
+   * SFBL-401: source-file encoding. Null means the UTF-8 default.
+   * Input is decoded as UTF-8 unless this is set — there is no auto-detection.
+   */
+  encoding?: InputEncoding | null
   created_at: string
   updated_at: string
 }
+
+/**
+ * SFBL-401: encodings an operator may select for a step's input CSV.
+ *
+ * Deliberately short — every entry is a way to mis-set the encoding and write
+ * mojibake into Salesforce. `utf-16` is absent because, with no BOM, decoding
+ * falls back to native endianness and a UTF-16-BE file decodes cleanly into
+ * garbage. Note `latin-1` never fails on any byte, so a step set to it can
+ * never report a decode error.
+ */
+export type InputEncoding = 'utf-8-sig' | 'cp1252' | 'latin-1'
+
+export const INPUT_ENCODING_OPTIONS: ReadonlyArray<{
+  value: InputEncoding
+  label: string
+}> = [
+  { value: 'utf-8-sig', label: 'UTF-8 (default)' },
+  { value: 'cp1252', label: 'Windows-1252' },
+  { value: 'latin-1', label: 'ISO-8859-1 (Latin-1)' },
+]
 
 export interface LoadPlan {
   id: string

@@ -102,6 +102,22 @@ Previews require `files.view_contents`.
 
 ---
 
+## Previewing files that are not UTF-8
+
+Previews are deliberately forgiving. If a file is not valid UTF-8, the pane
+shows replacement characters (`�`) in place of the bytes it cannot decode
+rather than refusing to display the file at all — previewing never sends data
+to Salesforce, so showing an imperfect view is more useful than showing
+nothing.
+
+**A file that previews with odd characters will still fail to load.** Loading
+is strict: the run stops with an error naming the offending byte and its
+position. To fix it, set **File encoding** on the step that reads the file —
+see [Load plans → File encoding](load-plans.md#file-encoding).
+
+Encoding is a *step* setting, not a file or connection setting, so there is
+nothing to configure from this pane.
+
 ## Downloading result CSVs
 
 On the same Logs tab, click **Download** next to the file you want. The

@@ -481,6 +481,11 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                         "soql": {"type": "string", "description": "SOQL query string (query/queryAll ops only)."},
                         "external_id_field": {"type": "string", "description": "External ID field name for upsert operations."},
                         "partition_size": {"type": "integer", "description": "Row count per Bulk API job partition."},
+                        "encoding": {
+                            "type": "string",
+                            "enum": ["utf-8-sig", "cp1252", "latin-1"],
+                            "description": "Source-file encoding. Omit for UTF-8 (the default) — input is read as UTF-8 unless set, there is no auto-detection. Set only if you know the source encoding; a wrong value silently corrupts accented characters. A file mixing encodings cannot be loaded.",
+                        },
                         "assignment_rule_id": {"type": "string", "description": "Salesforce assignment rule ID."},
                         "input_connection_id": {"type": "string", "description": "UUID of storage connection to read CSVs from. Mutually exclusive with input_from_step_id."},
                         "input_from_step_id": {
@@ -520,6 +525,11 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                         "soql": {"type": "string"},
                         "external_id_field": {"type": "string"},
                         "partition_size": {"type": "integer"},
+                        "encoding": {
+                            "type": "string",
+                            "enum": ["utf-8-sig", "cp1252", "latin-1"],
+                            "description": "Source-file encoding. Omit for UTF-8 (the default) — input is read as UTF-8 unless set, there is no auto-detection. Set only if you know the source encoding; a wrong value silently corrupts accented characters. A file mixing encodings cannot be loaded.",
+                        },
                         "assignment_rule_id": {"type": "string"},
                         "input_connection_id": {"type": "string"},
                         "input_from_step_id": {
