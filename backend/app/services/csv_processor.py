@@ -33,7 +33,7 @@ from typing import IO, Callable, Iterator, Optional, Sequence, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.services.input_storage import InputStorageError, LocalInputStorage, detect_encoding, detect_encoding_from_bytes, get_storage as _default_get_storage  # noqa: F401 — re-export
+from app.services.input_storage import InputDecodeError, InputStorageError, LocalInputStorage, _DecodingTextStream, resolve_encoding, get_storage as _default_get_storage  # noqa: F401 — re-export
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +121,14 @@ def validate_csv_headers(
         CSVProcessorError: If the file contains no header row (completely
             empty or unreadable).
     """
-    enc = encoding or detect_encoding(file_path)
+    enc = resolve_encoding(encoding)
     warnings: list[str] = []
 
     try:
-        with file_path.open(encoding=enc, newline="") as fh:
+        with _DecodingTextStream(
+            file_path.open("rb"), path=str(file_path), encoding=enc,
+            reread=lambda: file_path.open("rb"),
+        ) as fh:
             reader = csv.reader(fh)
             try:
                 raw_headers = next(reader)
@@ -201,8 +204,11 @@ def partition_csv(
         )
 
     if isinstance(source, pathlib.Path):
-        enc = encoding or detect_encoding(source)
-        ctx: contextlib.AbstractContextManager[IO[str]] = source.open(encoding=enc, newline="")
+        enc = resolve_encoding(encoding)
+        ctx: contextlib.AbstractContextManager[IO[str]] = _DecodingTextStream(
+            source.open("rb"), path=str(source), encoding=enc,
+            reread=lambda: source.open("rb"),
+        )
         source_name = source.name
     else:
         ctx = contextlib.nullcontext(source)
@@ -318,8 +324,7 @@ async def build_retry_partitions(
                 raw = _read_result_bytes(job.error_file_path)
                 if raw is not None:
                     try:
-                        enc = detect_encoding_from_bytes(raw)
-                        reader = csv.reader(io.StringIO(raw.decode(enc, errors="replace")))
+                        reader = csv.reader(io.StringIO(raw.decode("utf-8", errors="replace")))
                         raw_header = next(reader, None)
                         if raw_header is not None:
                             # Strip sf__Id and sf__Error (always first two cols)
@@ -338,8 +343,7 @@ async def build_retry_partitions(
                 raw = _read_result_bytes(job.unprocessed_file_path)
                 if raw is not None:
                     try:
-                        enc = detect_encoding_from_bytes(raw)
-                        reader = csv.reader(io.StringIO(raw.decode(enc, errors="replace")))
+                        reader = csv.reader(io.StringIO(raw.decode("utf-8", errors="replace")))
                         raw_header = next(reader, None)
                         if raw_header is not None:
                             if track_a_header is None:

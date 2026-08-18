@@ -408,6 +408,16 @@ class OutcomeCode:
     # Emitted when the Salesforce query explain endpoint returns 400 (invalid SOQL).
     QUERY_SOQL_SYNTAX_REJECTED = "query_soql_syntax_rejected"
 
+    # Storage input (SFBL-401)
+    # Separate from STORAGE_ERROR so alerting can distinguish infrastructure
+    # health from malformed customer data: STORAGE_ERROR means the source was
+    # unreachable, INPUT_DECODE_ERROR means it was read perfectly and its bytes
+    # are not what we expected.  The first pages an engineer; the second is a
+    # data problem the operator fixes by declaring an encoding or repairing the
+    # file.  Collapsing them makes it impossible to alert on one without firing
+    # on the other.
+    INPUT_DECODE_ERROR = "input_decode_error"
+
     # Storage output (SFBL-163)
     # Separate from STORAGE_ERROR so dashboards can distinguish input-read from output-write failures.
     OUTPUT_UPLOAD_ERROR = "output_upload_error"

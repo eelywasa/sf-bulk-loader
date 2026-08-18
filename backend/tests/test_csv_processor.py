@@ -29,12 +29,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.services.input_storage import InputDecodeError
 from app.services.csv_processor import (
     CSVProcessorError,
     CSVValidationResult,
     _render_partition,
     build_retry_partitions,
-    detect_encoding,
     discover_files,
     partition_csv,
     validate_csv_headers,
@@ -66,49 +66,6 @@ def decode_partition(data: bytes) -> list[list[str]]:
 
     reader = csv.reader(io.StringIO(data.decode("utf-8")))
     return list(reader)
-
-
-# ── detect_encoding ───────────────────────────────────────────────────────────
-
-
-class TestDetectEncoding:
-    def test_utf8_file(self, tmp_path: pathlib.Path) -> None:
-        f = write_csv(tmp_path / "a.csv", "Name,Age\nAlice,30\n", "utf-8")
-        # utf-8-sig succeeds on plain UTF-8 (BOM is optional)
-        assert detect_encoding(f) == "utf-8-sig"
-
-    def test_utf8_bom_file(self, tmp_path: pathlib.Path) -> None:
-        # Write UTF-8 with BOM explicitly
-        content = "Name,Age\nAlice,30\n"
-        bom_bytes = b"\xef\xbb\xbf" + content.encode("utf-8")
-        f = tmp_path / "bom.csv"
-        f.write_bytes(bom_bytes)
-        assert detect_encoding(f) == "utf-8-sig"
-
-    def test_latin1_file(self, tmp_path: pathlib.Path) -> None:
-        # Bytes 0x81, 0x8D, 0x8F, 0x90, 0x9D are undefined in cp1252 but are
-        # valid C1 control characters in latin-1.  Using 0x81 guarantees that
-        # cp1252 decoding raises before latin-1 is tried.
-        f = tmp_path / "latin1.csv"
-        f.write_bytes(b"Name\n\x81test\n")
-        assert detect_encoding(f) == "latin-1"
-
-    def test_cp1252_file(self, tmp_path: pathlib.Path) -> None:
-        # Byte 0x80 maps to the Euro sign (€, U+20AC) in cp1252.  It is NOT
-        # valid UTF-8 and IS valid in cp1252 — write the raw byte directly
-        # rather than encoding a Python string (U+0080 ≠ €).
-        f = tmp_path / "cp1252.csv"
-        f.write_bytes(b"Price\n\x80100\n")
-        assert detect_encoding(f) == "cp1252"
-
-    def test_sample_size_respected(self, tmp_path: pathlib.Path) -> None:
-        # Place invalid-UTF-8 bytes only beyond the sample window.
-        # With a large sample_size the detection should still find utf-8-sig.
-        valid_prefix = "Name\n" + "A" * 100 + "\n"
-        f = tmp_path / "bigfile.csv"
-        f.write_bytes(valid_prefix.encode("utf-8"))
-        # sample_size larger than file → no problem
-        assert detect_encoding(f, sample_size=65536) == "utf-8-sig"
 
 
 # ── discover_files ────────────────────────────────────────────────────────────
@@ -250,14 +207,20 @@ class TestValidateCSVHeaders:
 
         assert result.is_valid
 
-    def test_latin1_encoding_detected_and_read(self, tmp_path: pathlib.Path) -> None:
-        # Header contains a latin-1 character — should be decoded without error.
+    def test_latin1_header_requires_explicit_encoding(self, tmp_path: pathlib.Path) -> None:
+        """SFBL-401: latin-1 is no longer auto-detected — it must be declared.
+
+        Falsification: this file decoded fine under the pre-change
+        auto-detection, so asserting the failure proves detection is gone.
+        """
         header = "Pr\xe9nom,Nom\n"  # Prénom,Nom in latin-1
         f = tmp_path / "latin1.csv"
         f.write_bytes(header.encode("latin-1"))
 
-        result = validate_csv_headers(f)
+        with pytest.raises(InputDecodeError):
+            validate_csv_headers(f)
 
+        result = validate_csv_headers(f, encoding="latin-1")
         assert "Prénom" in result.headers
 
 
@@ -439,17 +402,25 @@ class TestPartitionCSV:
     # ── Encoding normalisation ────────────────────────────────────────────────
 
     def test_latin1_input_produces_utf8_output(self, tmp_path: pathlib.Path) -> None:
-        """latin-1 source file is re-emitted as valid UTF-8."""
+        """A declared latin-1 source is still re-emitted as valid UTF-8."""
         # é is 0xE9 in latin-1
         content = "Name\nJos\xe9\n"
         f = tmp_path / "latin1.csv"
         f.write_bytes(content.encode("latin-1"))
 
-        raw = collect(partition_csv(f, 10))[0]
+        raw = collect(partition_csv(f, 10, encoding="latin-1"))[0]
 
         # Output must decode cleanly as UTF-8
         text = raw.decode("utf-8")
         assert "José" in text
+
+    def test_latin1_input_without_override_fails(self, tmp_path: pathlib.Path) -> None:
+        """SFBL-401: no auto-detection — an undeclared latin-1 file is refused."""
+        f = tmp_path / "latin1.csv"
+        f.write_bytes("Name\nJos\xe9\n".encode("latin-1"))
+
+        with pytest.raises(InputDecodeError):
+            collect(partition_csv(f, 10))
 
     def test_utf8_bom_stripped_in_output(self, tmp_path: pathlib.Path) -> None:
         """UTF-8 BOM in the source file must not appear in output partitions."""
@@ -463,12 +434,12 @@ class TestPartitionCSV:
         assert raw.decode("utf-8").startswith("Name")
 
     def test_cp1252_input_produces_utf8_output(self, tmp_path: pathlib.Path) -> None:
-        """cp1252 source file (e.g. containing €) is re-emitted as UTF-8."""
+        """A declared cp1252 source (e.g. containing €) is re-emitted as UTF-8."""
         # Byte 0x80 = € in cp1252; write the raw byte directly.
         f = tmp_path / "cp1252.csv"
         f.write_bytes(b"Price\n\x80100\n")
 
-        raw = collect(partition_csv(f, 10))[0]
+        raw = collect(partition_csv(f, 10, encoding="cp1252"))[0]
 
         text = raw.decode("utf-8")
         assert "€" in text

@@ -1,4 +1,4 @@
-"""Tests for the LocalInputStorage service and detect_encoding utility."""
+"""Tests for the LocalInputStorage service."""
 
 import csv
 import io
@@ -9,11 +9,11 @@ import pytest
 
 from app.models.input_connection import InputConnection
 from app.services.input_storage import (
+    InputDecodeError,
     InputStorageError,
     LOCAL_OUTPUT_SOURCE,
     LocalInputStorage,
     S3InputStorage,
-    detect_encoding,
     get_storage,
 )
 from app.utils.encryption import encrypt_secret
@@ -29,36 +29,6 @@ def _write_csv(path: str, rows: int = 3) -> None:
         writer.writerow(["Name", "Value"])
         for i in range(rows):
             writer.writerow([f"item_{i}", str(i)])
-
-
-# ── detect_encoding ───────────────────────────────────────────────────────────
-
-
-def test_detect_encoding_utf8(tmp_path):
-    f = tmp_path / "utf8.csv"
-    f.write_bytes("Name,Value\nAlpha,1\n".encode("utf-8"))
-    assert detect_encoding(f) == "utf-8-sig"
-
-
-def test_detect_encoding_utf8_bom(tmp_path):
-    f = tmp_path / "bom.csv"
-    f.write_bytes("Name,Value\nAlpha,1\n".encode("utf-8-sig"))
-    assert detect_encoding(f) == "utf-8-sig"
-
-
-def test_detect_encoding_cp1252(tmp_path):
-    f = tmp_path / "cp1252.csv"
-    # Byte 0x80 is the Euro sign in cp1252; it is invalid in utf-8.
-    f.write_bytes(b"Name\nCaf\x80\n")
-    assert detect_encoding(f) == "cp1252"
-
-
-def test_detect_encoding_latin1(tmp_path):
-    f = tmp_path / "latin1.csv"
-    # Byte 0x81 is undefined in cp1252 (raises UnicodeDecodeError) but valid in
-    # latin-1 (which maps all 256 byte values).  Forces the latin-1 fallback.
-    f.write_bytes(b"Name\n\x81\n")
-    assert detect_encoding(f) == "latin-1"
 
 
 # ── Path safety ───────────────────────────────────────────────────────────────
@@ -675,20 +645,46 @@ def test_s3_discover_files_client_error_raises_input_storage_error():
             storage.discover_files("**/*.csv")
 
 
-def test_s3_open_text_uses_detected_encoding():
-    client = _FakeS3Client(object_map={"data/cafe.csv": b"Name\nCaf\x80\n"})
+def _s3_storage(client):
     with patch("app.services.input_storage.boto3.client", return_value=client):
-        storage = S3InputStorage(
+        return S3InputStorage(
             bucket="bucket",
             root_prefix="data",
             region="us-east-1",
             access_key_id="ak",
             secret_access_key="sk",
         )
-        with storage.open_text("cafe.csv") as fh:
-            content = fh.read()
 
-    assert "Caf" in content
+
+def test_s3_open_text_uses_supplied_encoding():
+    """SFBL-401: the step's encoding reaches the S3 read (D1.8a)."""
+    # 0x80 is € in cp1252 and invalid in UTF-8.
+    client = _FakeS3Client(object_map={"data/cafe.csv": b"Name\nCaf\x80\n"})
+    storage = _s3_storage(client)
+
+    with storage.open_text("cafe.csv", encoding="cp1252") as fh:
+        content = fh.read()
+
+    assert "Caf\u20ac" in content
+
+
+def test_s3_open_text_defaults_to_utf8_and_refuses_undeclared_cp1252():
+    """No auto-detection: the same object is refused without an override.
+
+    Falsification: this decoded fine under the pre-change detection, so
+    asserting the failure proves detection is genuinely gone.
+    """
+    client = _FakeS3Client(object_map={"data/cafe.csv": b"Name\nCaf\x80\n"})
+    storage = _s3_storage(client)
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("cafe.csv") as fh:
+            fh.read()
+
+    err = exc_info.value
+    assert err.byte_value == 0x80
+    assert err.byte_offset == 8  # file-absolute, not chunk-relative
+    assert err.encoding == "utf-8-sig"
 
 
 @pytest.mark.asyncio

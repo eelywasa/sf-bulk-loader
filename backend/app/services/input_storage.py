@@ -188,13 +188,16 @@ class _DecodingTextStream:
         encoding: str,
         reread: Optional[Callable[[], IO[bytes]]] = None,
         chunk_size: int = _CHUNK_BYTES,
+        errors: str = "strict",
     ) -> None:
         self._raw = raw
         self._path = path
         self._encoding = encoding
         self._reread = reread
         self._chunk_size = chunk_size
-        self._decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
+        # ``errors="replace"`` is used only by preview surfaces (D1.11), where
+        # browsing must never raise; load paths always decode strictly.
+        self._decoder = codecs.getincrementaldecoder(encoding)(errors=errors)
         self._buf = ""
         self._consumed = 0        # bytes handed to the decoder so far
         self._eof = False
@@ -356,40 +359,6 @@ class BaseInputStorage(Protocol):
     def discover_files(self, glob_pattern: str) -> list[str]: ...
 
     def open_text(self, path: str, *, encoding: str | None = None) -> IO[str]: ...
-
-
-# ── Encoding detection ────────────────────────────────────────────────────────
-
-
-def detect_encoding_from_bytes(raw: bytes) -> str:
-    """Return the most likely text encoding for *raw* bytes."""
-    sample = raw[:65536]
-    for enc in _ENCODING_CANDIDATES:
-        try:
-            sample.decode(enc)
-            return enc
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return "latin-1"  # pragma: no cover — latin-1 never raises
-
-
-def detect_encoding(file_path: pathlib.Path, sample_size: int = 65536) -> str:
-    """Return the most likely text encoding for *file_path*.
-
-    Reads the first *sample_size* bytes (default 64 KiB) and tries each
-    encoding in :data:`_ENCODING_CANDIDATES` until one decodes without error.
-    ``latin-1`` always succeeds and acts as the universal fallback.
-
-    Args:
-        file_path: Path to the file to inspect.
-        sample_size: Number of bytes to sample.
-
-    Returns:
-        Encoding name suitable for ``open()`` / ``bytes.decode()``.
-    """
-    enc = detect_encoding_from_bytes(file_path.read_bytes()[:sample_size])
-    logger.debug("Detected encoding %s for %s", enc, file_path.name)
-    return enc
 
 
 # ── Shared path helpers ───────────────────────────────────────────────────────
@@ -764,11 +733,16 @@ class LocalInputStorage:
         limit: int = 50,
         offset: int = 0,
         filters: list[dict[str, str]] | None = None,
+        *,
+        encoding: str | None = None,
     ) -> InputPreview:
         """Return a paginated, optionally filtered page of rows from a CSV file.
 
-        Uses :func:`detect_encoding` so files encoded as cp1252 or latin-1 are
-        handled correctly.
+        Decodes with *encoding* (default UTF-8) using ``errors="replace"``, so
+        browsing **never raises** — see D1.11.  Preview is advisory: nothing
+        read here reaches Salesforce, so leniency cannot corrupt data, and the
+        two Files-page endpoints have no step on which an operator could set an
+        encoding.  *Loads* stay strict.
 
         Args:
             path: Relative path to the CSV file.
@@ -794,13 +768,13 @@ class LocalInputStorage:
         if not resolved.is_file():
             raise FileNotFoundError(f"File not found: {path!r}")
 
-        enc = detect_encoding(resolved)
+        enc = resolve_encoding(encoding)
 
         active_filters = [f for f in (filters or []) if f]
 
         if active_filters:
             # Filtered path: full scan required to count matches accurately.
-            with open(resolved, newline="", encoding=enc) as fh:
+            with open(resolved, newline="", encoding=enc, errors="replace") as fh:
                 reader = csv.DictReader(fh)
                 header = list(reader.fieldnames or [])
                 filter_tuples = _validate_filters(header, active_filters)
@@ -826,7 +800,7 @@ class LocalInputStorage:
             )
 
         # Unfiltered path: read only what is needed.
-        with open(resolved, newline="", encoding=enc) as fh:
+        with open(resolved, newline="", encoding=enc, errors="replace") as fh:
             reader = csv.DictReader(fh)
             header = list(reader.fieldnames or [])
             # Advance past offset rows without storing them.
@@ -894,17 +868,24 @@ class LocalInputStorage:
         )
         return matched
 
-    def open_text(self, path: str) -> IO[str]:
-        """Open *path* for sequential text reading with encoding auto-detection.
+    def open_text(self, path: str, *, encoding: str | None = None) -> IO[str]:
+        """Open *path* for sequential text reading.
 
-        The caller is responsible for closing the returned file object (use as
-        a context manager).
+        Decodes with *encoding*, defaulting to UTF-8.  There is no encoding
+        detection: a wrong-but-valid guess decodes cleanly and writes mojibake
+        into Salesforce with no error at all, which is the failure this module
+        exists to prevent (DECISIONS.md 032).
+
+        The caller is responsible for closing the returned handle (use as a
+        context manager).
 
         Args:
             path: Relative path to the file within the base directory.
+            encoding: Codec override; ``None`` means the UTF-8 default.
 
         Returns:
-            Opened text file handle.
+            A streaming text handle that raises :exc:`InputDecodeError` — never
+            a bare :exc:`UnicodeDecodeError` — on undecodable input.
 
         Raises:
             :exc:`InputStorageError`: If *path* is invalid or attempts traversal.
@@ -915,8 +896,13 @@ class LocalInputStorage:
             raise InputStorageError(f"Invalid path: {path!r}")
         if not resolved.is_file():
             raise FileNotFoundError(f"File not found: {path!r}")
-        enc = detect_encoding(resolved)
-        return open(resolved, encoding=enc, newline="")
+        enc = resolve_encoding(encoding)
+        return _DecodingTextStream(
+            open(resolved, "rb"),
+            path=path,
+            encoding=enc,
+            reread=lambda: open(resolved, "rb"),
+        )
 
 
 class S3InputStorage:
@@ -1045,11 +1031,15 @@ class S3InputStorage:
         limit: int = 50,
         offset: int = 0,
         filters: list[dict[str, str]] | None = None,
+        *,
+        encoding: str | None = None,
     ) -> InputPreview:
         """Return a paginated, optionally filtered page of rows from an S3 CSV object.
 
         Uses :meth:`open_text` for streaming so the full object is never loaded
-        into memory at once.
+        into memory at once.  Decodes with ``errors="replace"`` so browsing
+        never raises (D1.11) — preview is advisory, and these endpoints have no
+        step on which an operator could set an encoding.
 
         Args:
             path: Source-relative path to the S3 object.
@@ -1068,7 +1058,7 @@ class S3InputStorage:
         active_filters = [f for f in (filters or []) if f]
 
         if active_filters:
-            with self.open_text(path) as fh:
+            with self.open_text(path, encoding=encoding, errors="replace") as fh:
                 reader = csv.DictReader(fh)
                 header = list(reader.fieldnames or [])
                 filter_tuples = _validate_filters(header, active_filters)
@@ -1093,7 +1083,7 @@ class S3InputStorage:
                 has_next=has_next,
             )
 
-        with self.open_text(path) as fh:
+        with self.open_text(path, encoding=encoding, errors="replace") as fh:
             reader = csv.DictReader(fh)
             header = list(reader.fieldnames or [])
             for _ in zip(range(offset), reader):
@@ -1146,12 +1136,18 @@ class S3InputStorage:
 
         return sorted(matched)
 
-    def open_text(self, path: str) -> IO[str]:
+    def open_text(
+        self, path: str, *, encoding: str | None = None, errors: str = "strict"
+    ) -> IO[str]:
         """Open *path* for sequential text reading without loading the full object.
 
-        Reads the first 64 KiB of the S3 object for encoding detection, then
-        wraps the remaining stream so that CSV processing can read rows
-        incrementally while keeping memory usage bounded.
+        Decodes with *encoding* (default UTF-8) and streams, so memory stays
+        bounded regardless of object size.  There is no encoding detection.
+
+        A ``reread`` closure is supplied to the decoding stream because the
+        underlying :class:`_S3StreamingBodyReader` wraps an already-partially
+        consumed ``StreamingBody`` and implements no ``seek`` — without it the
+        post-failure diagnostic could not re-read the object at all.
 
         The returned handle must be used as a context manager (or closed
         explicitly) so that the underlying S3 connection is released.
@@ -1181,11 +1177,20 @@ class S3InputStorage:
             ) from exc
 
         body = response["Body"]
-        sample = body.read(65536)  # read just enough for encoding detection
-        enc = detect_encoding_from_bytes(sample)
-        raw = _S3StreamingBodyReader(body, sample)
+        raw = _S3StreamingBodyReader(body, b"")
         buffered = io.BufferedReader(raw, buffer_size=65536)
-        return io.TextIOWrapper(buffered, encoding=enc, newline="")
+
+        def _reread() -> IO[bytes]:
+            again = self._client.get_object(Bucket=self._bucket, Key=key)
+            return again["Body"]
+
+        return _DecodingTextStream(
+            buffered,
+            path=path,
+            encoding=resolve_encoding(encoding),
+            reread=_reread,
+            errors=errors,
+        )
 
 
 LOCAL_OUTPUT_SOURCE = "local-output"
