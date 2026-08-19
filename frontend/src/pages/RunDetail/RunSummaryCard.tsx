@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 import { Badge, Button, Progress } from '../../components/ui'
 import type { LoadRun, JobRecord, LoadPlanDetail } from '../../api/types'
+import { RUN_ERROR_SUMMARY_KEYS } from '../../api/types'
 import { formatDate, formatElapsed } from './utils'
 import PermissionGate from '../../components/PermissionGate'
 
@@ -124,32 +125,52 @@ export function RunSummaryCard({
       </div>
 
       {(() => {
-        // Circuit breaker abort banner (aborted runs only).
-        if (run.status === 'aborted' && run.error_summary?.circuit_breaker) {
-          return (
-            <p className="text-xs text-warning-text bg-warning-bg rounded px-3 py-1.5">
-              {run.error_summary.circuit_breaker}
-            </p>
-          )
+        // SFBL-402: render EVERY populated string-valued key, not a hardcoded
+        // subset. The previous version read only auth_error and storage_error,
+        // so a run failing under unexpected_exception, output_storage_error or
+        // unknown_exit fell through to the generic "See logs for details." —
+        // exactly what an operator saw during the incident behind this work.
+        //
+        // preflight_warnings is excluded: it is a list with its own banner
+        // below, and stringifying it here would emit [object Object].
+        const isCircuitBreakerAbort =
+          run.status === 'aborted' && typeof run.error_summary?.circuit_breaker === 'string'
+
+        const reasons = RUN_ERROR_SUMMARY_KEYS.filter(
+          (key) =>
+            typeof run.error_summary?.[key] === 'string' &&
+            // Rendered separately below with warning styling when the run was
+            // aborted by the breaker; anywhere else it belongs with the rest.
+            !(key === 'circuit_breaker' && isCircuitBreakerAbort),
+        ).map((key) => [key, run.error_summary![key] as string] as const)
+
+        if (!isCircuitBreakerAbort && reasons.length === 0) {
+          if (run.status === 'failed' && run.error_summary) {
+            return (
+              <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">
+                Run failed. See logs for details.
+              </p>
+            )
+          }
+          return null
         }
-        // Render a terminal-failure banner whenever error_summary carries a
-        // reason (auth_error, storage_error, or any other known key).
-        // For failed runs with an error_summary but no recognized reason field,
-        // fall back to a generic message so the UI never silently hides the
-        // failure context. Preflight warnings have their own banner below.
-        const reason = run.error_summary?.auth_error ?? run.error_summary?.storage_error
-        if (reason) {
-          return (
-            <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">{reason}</p>
-          )
-        }
-        if (run.status === 'failed' && run.error_summary) {
-          return (
-            <p className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5">
-              Run failed. See logs for details.
-            </p>
-          )
-        }
+
+        return (
+          <>
+            {isCircuitBreakerAbort && (
+              <p className="text-xs text-warning-text bg-warning-bg rounded px-3 py-1.5">
+                {run.error_summary!.circuit_breaker}
+              </p>
+            )}
+            {reasons.length > 0 && (
+              <div className="text-xs text-error-text bg-error-bg rounded px-3 py-1.5 space-y-1">
+                {reasons.map(([key, message]) => (
+                  <p key={key}>{message}</p>
+                ))}
+              </div>
+            )}
+          </>
+        )
         return null
       })()}
 

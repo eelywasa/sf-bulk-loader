@@ -395,12 +395,38 @@ export interface PreflightWarning {
   error: string
 }
 
+/**
+ * Run-level error context. Mirrors `RunErrorSummary` in
+ * `backend/app/schemas/load_run.py` — keep both in sync, or new keys are
+ * unreachable here under `strict`.
+ */
 export interface RunErrorSummary {
   auth_error?: string | null
   storage_error?: string | null
   circuit_breaker?: string | null
+  /** SFBL-402: previously written by the backend but undeclared, so invisible. */
+  output_storage_error?: string | null
+  unexpected_exception?: string | null
+  /** The last-resort backstop: the run body exited without finalising status. */
+  unknown_exit?: string | null
   preflight_warnings?: PreflightWarning[] | null
 }
+
+/**
+ * String-valued `RunErrorSummary` keys, in display order.
+ *
+ * `preflight_warnings` is deliberately absent — it is a list of objects with
+ * its own dedicated banner, and a generic renderer would stringify it as
+ * `[object Object]` and duplicate that banner.
+ */
+export const RUN_ERROR_SUMMARY_KEYS = [
+  'auth_error',
+  'storage_error',
+  'output_storage_error',
+  'unexpected_exception',
+  'unknown_exit',
+  'circuit_breaker',
+] as const satisfies ReadonlyArray<keyof RunErrorSummary>
 
 export interface LoadRun {
   id: string

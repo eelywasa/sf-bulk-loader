@@ -66,6 +66,25 @@ The page stops polling as soon as the run reaches a terminal state
 | `failed` | Run hit an unrecoverable error outside step-level error accounting (e.g. auth failure). |
 | `aborted` | Run was stopped — user-triggered abort, or a step exceeded the threshold with abort-on-step-failure on. |
 
+### Why a run failed
+
+A `failed` or `aborted` run shows its reason on the run detail page, directly
+under the status. The reason comes from whichever of these applied:
+
+| Shown when | Typical cause |
+|---|---|
+| Authentication failed | The connection's JWT exchange was rejected — expired key, wrong consumer key, or user not pre-authorised. |
+| Input storage error | A source file or bucket could not be read. If the message mentions decoding, see [Load plans → File encoding](load-plans.md#file-encoding). |
+| Output storage error | Results could not be written to the configured output location. |
+| Circuit breaker | Consecutive step failures reached the plan's threshold. |
+| Unexpected error | An error outside the paths above; the message carries the detail. |
+
+If more than one applies, all are shown — one does not mask another.
+
+A run that reports **"Run failed. See logs for details."** carries no reason at
+all. That is now unusual and worth reporting, because every failure path
+records one.
+
 ---
 
 ## Aborting a run

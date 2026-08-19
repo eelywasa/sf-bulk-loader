@@ -393,6 +393,118 @@ describe('RunDetail', () => {
     })
   })
 
+  it.each([
+    ['unexpected_exception', 'ValueError: something blew up'],
+    ['output_storage_error', 'S3 output bucket denied'],
+    ['unknown_exit', 'run body exited without finalising status'],
+  ])('renders %s, which was previously invisible', async (key, message) => {
+    // SFBL-402: these three keys were written to the database but not declared
+    // on RunErrorSummary, so they were dropped before reaching the UI and the
+    // operator saw only "Run failed. See logs for details." — exactly what
+    // happened during the incident behind this work.
+    const run: LoadRun = {
+      ...runFailed,
+      error_summary: { [key]: message } as LoadRun['error_summary'],
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(run)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText(message)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/Run failed\. See logs for details\./)).not.toBeInTheDocument()
+  })
+
+  it('renders every populated reason, not just the first', async () => {
+    const run: LoadRun = {
+      ...runFailed,
+      error_summary: {
+        storage_error: 'could not read input',
+        unexpected_exception: 'and then it blew up',
+      } as LoadRun['error_summary'],
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(run)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText('could not read input')).toBeInTheDocument()
+    })
+    // Falsification: the previous `auth_error ?? storage_error` implementation
+    // rendered exactly one reason and would fail here.
+    expect(screen.getByText('and then it blew up')).toBeInTheDocument()
+  })
+
+  it('does not stringify preflight_warnings into the failure banner', async () => {
+    // preflight_warnings is a list of objects with its own banner; a naive
+    // Object.entries renderer would emit "[object Object]" and duplicate it.
+    const run: LoadRun = {
+      ...runFailed,
+      error_summary: {
+        storage_error: 'real reason',
+        preflight_warnings: [
+          { step_id: 'step-1', outcome_code: 'storage_error', error: 'count failed' },
+        ],
+      },
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(run)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText('real reason')).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Preflight warnings')).toBeInTheDocument()
+  })
+
+  it('renders circuit_breaker on a run that was not aborted', async () => {
+    // The warning banner above only fires for aborted runs, so excluding
+    // circuit_breaker from the generic renderer would drop it everywhere else.
+    const run: LoadRun = {
+      ...runFailed,
+      error_summary: { circuit_breaker: 'consecutive failures hit the threshold' },
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(run)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(
+        screen.getByText('consecutive failures hit the threshold'),
+      ).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/Run failed\. See logs for details\./)).not.toBeInTheDocument()
+  })
+
+  it('shows the breaker banner and other reasons together on an aborted run', async () => {
+    // The breaker keeps its warning styling, but must not mask a second key.
+    const run: LoadRun = {
+      ...runFailed,
+      status: 'aborted',
+      error_summary: {
+        circuit_breaker: 'breaker tripped',
+        storage_error: 'and the input was unreadable',
+      } as LoadRun['error_summary'],
+    }
+    vi.mocked(runsApi.get).mockResolvedValue(run)
+    vi.mocked(runsApi.jobs).mockResolvedValue([])
+    vi.mocked(plansApi.get).mockResolvedValue(planDetail)
+
+    renderRunDetail()
+    await waitFor(() => {
+      expect(screen.getByText('breaker tripped')).toBeInTheDocument()
+    })
+    expect(screen.getByText('and the input was unreadable')).toBeInTheDocument()
+    // The breaker must appear exactly once, not in both banners.
+    expect(screen.getAllByText('breaker tripped')).toHaveLength(1)
+  })
+
   it('renders generic failure message for failed run with no recognized reason', async () => {
     // Defensive: a future error_summary key (not yet mapped on the frontend)
     // must not cause the failure banner to silently disappear.
