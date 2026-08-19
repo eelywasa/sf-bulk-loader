@@ -50,7 +50,7 @@ permissions:
   contents: read
   id-token: write   # OIDC assumption against the SFBL-341 publisher role
   pull-requests: write  # to post the deep-link comment
-  actions: read   # required by actions/download-artifact@v4 with `run-id`
+  actions: read   # required by actions/download-artifact@v8 with `run-id`
                   # to fetch artefacts from another workflow run. Without
                   # it the download silently fails (Codex P1 on PR #91).
 
@@ -232,7 +232,7 @@ jobs:
     if: needs.resolve.outputs.is_fork == 'true' && needs.resolve.outputs.is_pr == 'true'
     steps:
       - name: Post explanatory PR comment
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ needs.resolve.outputs.pr_number }}
           body: |
@@ -267,7 +267,7 @@ jobs:
       needs.resolve.outputs.prefix != '' &&
       needs.resolve.outputs.sibling_ready == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Sparse checkout — we only need the wrapper script + workflows.
           # The full test source isn't needed because we're working from
@@ -277,7 +277,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Set up Node (for allure-commandline)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
 
@@ -285,7 +285,7 @@ jobs:
         run: npm install -g allure-commandline@2
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.PUBLISHER_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -299,7 +299,7 @@ jobs:
       # patterns against both runs so the workflow stays symmetric — the
       # non-matching patterns just produce empty downloads.
       - name: Download Playwright allure-results from this run
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ needs.resolve.outputs.this_run_id }}
@@ -309,7 +309,7 @@ jobs:
         continue-on-error: true
 
       - name: Download Playwright allure-results from sibling run
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ needs.resolve.outputs.sibling_run_id }}
@@ -319,7 +319,7 @@ jobs:
         continue-on-error: true
 
       - name: Download backend allure-results from this run
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ needs.resolve.outputs.this_run_id }}
@@ -329,7 +329,7 @@ jobs:
         continue-on-error: true
 
       - name: Download backend allure-results from sibling run
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ needs.resolve.outputs.sibling_run_id }}
@@ -345,7 +345,7 @@ jobs:
       # share a head_sha.
       - name: Download Tier 2 allure-results from this run
         if: needs.resolve.outputs.is_tier_2 == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ needs.resolve.outputs.this_run_id }}
@@ -406,7 +406,7 @@ jobs:
 
       - name: Post deep-link PR comment
         if: needs.resolve.outputs.is_pr == 'true'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ needs.resolve.outputs.pr_number }}
           body: |

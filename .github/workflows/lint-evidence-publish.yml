@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 3
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Grep workflows for raw `aws s3 sync` against the evidence bucket
         # We allow the literal string ONLY inside publish-evidence.sh. Any
