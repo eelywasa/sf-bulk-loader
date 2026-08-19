@@ -469,7 +469,7 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                     "type": "object",
                     "properties": {
                         "plan_id": {"type": "string", "description": "UUID of the load plan to add the step to."},
-                        "object_name": {"type": "string", "description": "Salesforce SObject API name (e.g. Account)."},
+                        "object_name": {"type": "string", "minLength": 1, "description": "Salesforce SObject API name (e.g. Account). Must not be empty."},
                         "operation": {
                             "type": "string",
                             "enum": ["insert", "update", "upsert", "delete", "query", "queryAll"],
@@ -514,7 +514,7 @@ def _register_tools(server: Server, client: BulkLoaderClient, settings: McpSetti
                     "properties": {
                         "plan_id": {"type": "string", "description": "UUID of the load plan."},
                         "step_id": {"type": "string", "description": "UUID of the step to update."},
-                        "object_name": {"type": "string"},
+                        "object_name": {"type": "string", "minLength": 1},
                         "operation": {
                             "type": "string",
                             "enum": ["insert", "update", "upsert", "delete", "query", "queryAll"],

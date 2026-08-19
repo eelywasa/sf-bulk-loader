@@ -171,6 +171,31 @@ const planWithQueryStep = {
   load_steps: [queryStep],
 }
 
+// SFBL-403: a step persisted before object_name was validated. Cannot be
+// created through the API any more, but existing plans still carry them.
+const blankObjectStep = {
+  ...step1,
+  id: 'step-blank',
+  name: 'Account v2',
+  object_name: '',
+  operation: 'upsert' as const,
+  external_id_field: 'Ext_Id__c',
+}
+
+const planWithBlankObjectStep = {
+  id: 'plan-1',
+  name: 'Q1 Migration',
+  description: 'Test plan description',
+  connection_id: 'conn-1',
+  abort_on_step_failure: true,
+  error_threshold_pct: 10,
+  max_parallel_jobs: 5,
+  output_connection_id: null,
+  created_at: '2024-03-01T00:00:00Z',
+  updated_at: '2024-03-01T00:00:00Z',
+  load_steps: [blankObjectStep],
+}
+
 const plan1 = {
   id: 'plan-1',
   name: 'Q1 Migration',
@@ -1558,5 +1583,152 @@ describe('PlanEditor', () => {
 
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByDisplayValue('SELECT Id, Name FROM Account')).toBeInTheDocument()
+  })
+
+  // ── SFBL-403: empty object_name ─────────────────────────────────────────────
+
+  it('blocks saving a step with a blank Salesforce Object', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    await user.clear(within(dialog).getByLabelText(/Salesforce Object/))
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Salesforce Object is required.',
+    )
+    expect(stepsApi.update).not.toHaveBeenCalled()
+  })
+
+  it('blocks saving a query step with a blank Salesforce Object', async () => {
+    // Falsification: gate the check behind the DML branch and this passes the
+    // blank straight to the API, which rejects it with a 422 the operator has
+    // to decode from a server error instead of an inline message.
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithQueryStep)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    await user.clear(within(dialog).getByLabelText(/Salesforce Object/))
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Salesforce Object is required.',
+    )
+    expect(stepsApi.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects a whitespace-only Salesforce Object', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    const objectInput = within(dialog).getByLabelText(/Salesforce Object/)
+    await user.clear(objectInput)
+    await user.type(objectInput, '   ')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Salesforce Object is required.',
+    )
+    expect(stepsApi.update).not.toHaveBeenCalled()
+  })
+
+  it('trims a padded Salesforce Object before sending it', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    vi.mocked(stepsApi.update).mockResolvedValue({ ...step1, object_name: 'Contact' })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    const objectInput = within(dialog).getByLabelText(/Salesforce Object/)
+    await user.clear(objectInput)
+    await user.type(objectInput, '  Contact  ')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(stepsApi.update).toHaveBeenCalledWith(
+        'plan-1',
+        'step-1',
+        expect.objectContaining({ object_name: 'Contact' }),
+      )
+    })
+  })
+
+  it('flags a step whose stored object_name is blank in the step list', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(planWithBlankObjectStep)
+    renderEditor('plan-1')
+
+    // The row is otherwise indistinguishable — it renders its step name and
+    // nothing else, so without the badge the operator has no reason to open it.
+    expect(await screen.findByText('No object set')).toBeInTheDocument()
+  })
+
+  it('does not flag steps that have an object_name', async () => {
+    vi.mocked(plansApi.get).mockResolvedValue(plan1)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account'))
+
+    expect(screen.queryByText('No object set')).not.toBeInTheDocument()
+  })
+
+  it('explains the blank field when opening a step with no object_name', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithBlankObjectStep)
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account v2'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'This step has no Salesforce Object set.',
+    )
+  })
+
+  it('lets the operator repair a blank object_name and save', async () => {
+    const user = userEvent.setup()
+    vi.mocked(plansApi.get).mockResolvedValue(planWithBlankObjectStep)
+    vi.mocked(stepsApi.update).mockResolvedValue({
+      ...blankObjectStep,
+      object_name: 'Account',
+    })
+    renderEditor('plan-1')
+    await waitFor(() => screen.getByText('Account v2'))
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    await user.click(editButtons[editButtons.length - 1])
+
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/Salesforce Object/), 'Account')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(stepsApi.update).toHaveBeenCalledWith(
+        'plan-1',
+        'step-blank',
+        expect.objectContaining({ object_name: 'Account' }),
+      )
+    })
   })
 })

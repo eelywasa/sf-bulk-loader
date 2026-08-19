@@ -51,6 +51,27 @@ async def duplicate_plan(db: AsyncSession, plan_id: str) -> LoadPlan:
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Load plan not found")
 
+    # SFBL-403: duplication clones columns straight into the ORM, bypassing the
+    # Pydantic input schemas entirely — it is the one creation path a schema
+    # constraint cannot reach. Refuse rather than mint a second invalid plan;
+    # the operator fixes the source step and duplicates again.
+    invalid_steps = [
+        step for step in source.load_steps if not (step.object_name or "").strip()
+    ]
+    if invalid_steps:
+        labels = ", ".join(
+            f"{step.name or f'step {step.sequence}'} ({step.id})"
+            for step in sorted(invalid_steps, key=lambda s: s.sequence)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Cannot duplicate this plan — the following step(s) have no "
+                f"Salesforce object set: {labels}. Set an object on each, then "
+                "duplicate again."
+            ),
+        )
+
     new_plan = LoadPlan(
         name=f"Copy of {source.name}",
         **_copy_columns(source, _PLAN_EXCLUDED),

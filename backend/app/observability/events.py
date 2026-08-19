@@ -68,6 +68,11 @@ class StepEvent:
     # SFBL-166: emitted by the orchestrator when a DML step's input has been
     # resolved from an upstream query step (via input_from_step_id).
     INPUT_RESOLVED_FROM_STEP = "step.input.resolved_from_step"
+    # SFBL-403: emitted once at startup, naming steps whose persisted
+    # object_name is empty. Such rows predate the validation constraint and are
+    # deliberately left in place for the operator to correct — they are never
+    # backfilled or deleted — so this log is the only signal they exist.
+    INVALID_OBJECT_NAME_DETECTED = "step.invalid_object_name.detected"
 
 
 class JobEvent:

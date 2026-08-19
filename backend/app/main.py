@@ -17,7 +17,9 @@ configure_error_monitoring(settings)
 
 logger = logging.getLogger(__name__)
 
-from app.observability.events import EmailEvent, OutcomeCode
+from sqlalchemy import func, or_, select
+
+from app.observability.events import EmailEvent, OutcomeCode, StepEvent
 from app.api.admin_about import router as admin_about_router
 from app.api.admin_email import router as admin_email_router
 from app.api.admin_users import router as admin_users_router, profiles_router as admin_profiles_router
@@ -41,12 +43,52 @@ from app.api.utility import router as utility_router
 from app.api.utility import ws_router
 from app.auth.permissions import ALL_PERMISSION_KEYS
 from app.database import AsyncSessionLocal, assert_sqlite_fk_enforcement_active, engine
+from app.models.load_step import LoadStep
 from app.services.auth import seed_admin
 from app.services.email import delivery_log as email_delivery_log
 from app.services.email import init_email_service
 from app.services.email.service import get_email_service, init_email_service_async
 from app.services.notifications import init_notification_dispatcher
 from app.services.settings.service import init_settings_service
+
+
+async def _log_steps_with_empty_object_name() -> None:
+    """Warn once at startup about load steps with an empty ``object_name``.
+
+    Split out of ``lifespan`` so it is directly testable. Failure here must
+    never block startup — an unreadable table is not a reason to refuse to
+    serve.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(LoadStep).where(
+                    or_(
+                        LoadStep.object_name.is_(None),
+                        func.trim(LoadStep.object_name) == "",
+                    )
+                )
+            )
+            steps = list(result.scalars().all())
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to scan for load steps with an empty object_name")
+        return
+
+    if not steps:
+        return
+
+    logger.warning(
+        "%d load step(s) have an empty object_name and will fail at Bulk API "
+        "job creation until an object is set: %s",
+        len(steps),
+        ", ".join(f"{s.id} (plan {s.load_plan_id})" for s in steps),
+        extra={
+            "event_name": StepEvent.INVALID_OBJECT_NAME_DETECTED,
+            "outcome_code": OutcomeCode.VALIDATION_ERROR,
+            "step_count": len(steps),
+            "step_ids": [s.id for s in steps],
+        },
+    )
 
 
 @asynccontextmanager
@@ -76,6 +118,13 @@ async def lifespan(app: FastAPI):
             f"Unknown permission key(s) in profile_permissions table: {sorted(_unknown)}. "
             "Update app.auth.permissions.ALL_PERMISSION_KEYS or fix the seed data."
         )
+
+    # Startup: surface load steps whose persisted object_name is empty
+    # (SFBL-403). These rows predate the validation constraint. They are
+    # deliberately NOT backfilled or deleted — the correct object is only known
+    # to the operator — so this log is the only signal they exist until someone
+    # opens the plan editor.
+    await _log_steps_with_empty_object_name()
 
     # Startup: seed initial admin user if database is empty
     async with AsyncSessionLocal() as session:

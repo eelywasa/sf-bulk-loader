@@ -204,6 +204,25 @@ async def update_step(
             detail=str(exc),
         ) from exc
 
+    # SFBL-403: validate the merged effective object_name, not just the patch.
+    # Rows predating the constraint may carry an empty object_name; a PATCH that
+    # simply omits the field would otherwise return 200 and leave the invalid
+    # value persisted. The schema validator cannot see this — it only sees what
+    # the client sent.
+    effective_object_name = (
+        update_data["object_name"]
+        if "object_name" in update_data
+        else step.object_name
+    )
+    if not (effective_object_name or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "'object_name' must not be empty — this step has no Salesforce "
+                "object set. Supply one with this update."
+            ),
+        )
+
     effective_sequence = update_data.get("sequence", step.sequence)
     # Re-run reference validation whenever the effective state carries an
     # input_from_step_id, not only when the patch sets one. Otherwise a

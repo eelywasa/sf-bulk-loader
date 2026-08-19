@@ -1088,6 +1088,17 @@ schema-validated. MCP `add_step`/`update_step` go over HTTP and inherit
 backend validation; their JSON schemas lack `minLength`, which only means a
 422 instead of a client-side reject.)
 
+**As built (SFBL-403).** Duplication *rejects* with a 422 naming the offending
+step IDs, rather than accepting and documenting: silently minting a second
+invalid plan is worse than a refusal the operator can act on, and the remedy
+(set the object, duplicate again) is one edit away. The MCP `object_name`
+schemas gained `minLength: 1` so the client rejects before the round trip.
+Nothing backfills or deletes the existing rows — the startup scan
+(`_log_steps_with_empty_object_name`, emitting
+`step.invalid_object_name.detected`) only names them, and the plan editor
+flags the row with a "No object set" badge plus a pre-seeded modal error so
+the blank field is explained rather than silent.
+
 ---
 
 ## Observability

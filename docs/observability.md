@@ -80,6 +80,14 @@ run proceeds with an approximate `total_records`, and warnings are surfaced on
 
 ### Step events
 `step.started` · `step.completed` · `step.failed` · `step.threshold_exceeded`
+`step.input.resolved_from_step` · `step.invalid_object_name.detected`
+
+`step.invalid_object_name.detected` is emitted once at startup, not during a
+run: it names any load step whose persisted `object_name` is empty. Such rows
+predate the validation constraint and are deliberately left alone — nothing
+backfills or deletes them — so this warning is the only signal they exist
+until someone opens the plan editor. Carries `outcome_code=validation_error`,
+`step_count` and `step_ids`.
 
 ### Job / partition events
 `job.created` · `job.status_changed` · `job.completed` · `job.failed` · `job.aborted`

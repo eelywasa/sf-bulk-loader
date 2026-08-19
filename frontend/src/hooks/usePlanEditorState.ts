@@ -268,7 +268,15 @@ export function usePlanEditorState(id: string | undefined) {
       setEditingStep(null)
       setStepForm(EMPTY_STEP_FORM)
     }
-    setStepFormErrors([])
+    // SFBL-403: a step saved before object_name was validated renders as a
+    // blank required field with no explanation. Say why up front, so the
+    // operator knows the value is missing rather than assuming the form
+    // failed to load.
+    setStepFormErrors(
+      step && !step.object_name.trim()
+        ? ['This step has no Salesforce Object set. Choose one before saving.']
+        : [],
+    )
     setShowFilePicker(false)
     setStepModalOpen(true)
   }
@@ -314,6 +322,12 @@ export function usePlanEditorState(id: string | undefined) {
 
   function handleSaveStep() {
     setStepFormErrors([])
+    // Applies to query steps too — object_name is their free-text label, and
+    // the backend requires it for every operation.
+    if (!stepForm.object_name.trim()) {
+      setStepFormErrors(['Salesforce Object is required.'])
+      return
+    }
     if (isQueryOp(stepForm.operation)) {
       const soqlErr = validateSoqlClientSide(stepForm.soql)
       if (soqlErr) {
@@ -328,7 +342,7 @@ export function usePlanEditorState(id: string | undefined) {
     // ── Input-source mode → payload mapping (SFBL-264) ──────────────────────
     // name is always sent raw (incl. ""); backend trims and coerces empty→NULL
     const commonFields = {
-      object_name: stepForm.object_name,
+      object_name: stepForm.object_name.trim(),
       operation: stepForm.operation,
       name: stepForm.name,
       partition_size: Number(stepForm.partition_size),

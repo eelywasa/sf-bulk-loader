@@ -28,6 +28,34 @@ def _validate_encoding(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def _validate_object_name(value: Optional[str]) -> Optional[str]:
+    """Trim ``object_name`` and reject empty/whitespace-only values (SFBL-403).
+
+    Deliberately **not** ``_normalize_name``. That helper maps empty to ``None``,
+    which is right for the nullable ``name`` column and wrong here: ``None``
+    survives ``model_dump(exclude_unset=True)`` and writes NULL into a
+    ``nullable=False`` column, producing a 500 instead of the required 422.
+
+    Like :func:`_validate_encoding`, applied to the *input* schemas only and
+    never to ``LoadStepBase`` — ``LoadStepResponse`` inherits the base, so a
+    constraint there would reject the already-persisted empty row on **read**
+    and 500 ``GET /api/plans/{id}``, leaving the operator no way to see, let
+    alone correct, the offending step.
+
+    The trim runs before the emptiness check, so a lone space or tab is
+    rejected too — not just the empty string.
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        raise ValueError(
+            "'object_name' must not be empty — set the Salesforce object this "
+            "step loads (e.g. 'Account')"
+        )
+    return trimmed
+
+
 def _normalize_name(value: Optional[str]) -> Optional[str]:
     """Trim whitespace; treat empty/whitespace-only strings as NULL.
 
@@ -118,6 +146,7 @@ def _validate_query_dml_fields(
 
 class LoadStepBase(BaseModel):
     sequence: int
+    # SFBL-403: intentionally an unconstrained str — see _validate_object_name.
     object_name: str
     operation: Operation
     external_id_field: Optional[str] = None
@@ -154,6 +183,11 @@ class LoadStepBase(BaseModel):
 class LoadStepCreate(LoadStepBase):
     sequence: Optional[int] = None
 
+    @field_validator("object_name")
+    @classmethod
+    def _check_object_name(cls, value):  # noqa: ANN001 — pydantic validator
+        return _validate_object_name(value)
+
     @field_validator("encoding")
     @classmethod
     def _check_encoding(cls, value):  # noqa: ANN001 — pydantic validator
@@ -178,6 +212,13 @@ class LoadStepUpdate(BaseModel):
     @classmethod
     def _normalize_name_field(cls, value):  # noqa: ANN001 — pydantic validator
         return _normalize_name(value) if isinstance(value, str) or value is None else value
+
+    @field_validator("object_name")
+    @classmethod
+    def _check_object_name(cls, value):  # noqa: ANN001 — pydantic validator
+        # None stays valid: a partial update that omits the field must not be
+        # forced to resupply it. The empty string is what this rejects.
+        return _validate_object_name(value)
 
     @field_validator("encoding")
     @classmethod

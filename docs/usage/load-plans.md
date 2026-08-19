@@ -45,7 +45,7 @@ declares:
 |---|---|
 | **Sequence** | Ordering within the plan (managed by the drag handle). |
 | **Step name** | Optional human-readable identifier (e.g. `stale_accounts`). Must be unique within the plan when set. Used to reference this step as an upstream input source. |
-| **Object name** | Salesforce API name (`Account`, `Contact`, `Custom_Object__c`). For query steps this is a free-text label only. |
+| **Object name** | Salesforce API name (`Account`, `Contact`, `Custom_Object__c`). Required — a step cannot be saved without one, and surrounding whitespace is trimmed. For query steps this is a free-text label only, but still required. |
 | **Operation** | One of `insert`, `update`, `upsert`, `delete`, `query`, `queryAll`. See table below. |
 | **External ID field** | Required for `upsert`. The field Salesforce uses to decide insert-vs-update. |
 | **CSV file pattern** | DML steps only — glob over the input location. See [CSV format → Glob patterns](csv-format.md#glob-patterns). Not used when **Input source** is set to "From upstream step". |
@@ -54,6 +54,20 @@ declares:
 | **File encoding** | How the step's input files are decoded. Defaults to **UTF-8**; set to **Windows-1252** or **ISO-8859-1** only if you know the source encoding. Files are *not* auto-detected. See [Encoding](#file-encoding) below. |
 | **Assignment rule** | Optional Salesforce assignment rule ID (Leads / Cases). |
 | **Input source** | Three-way: **Input files**, **Previous-run output** (prior run results), or **From upstream step in this run** — feeds a named query step's artefact directly into this DML step. See [Chaining steps](chaining-steps.md). |
+
+### Steps saved without an object
+
+Plans created before the object name was enforced may contain a step with no
+object set. Such a step is flagged **No object set** in the step list, and
+opening it shows a validation message explaining the blank field. It cannot
+run — it fails when the loader tries to create the Salesforce job — so set the
+object and save.
+
+Until it is corrected, that plan also cannot be duplicated: duplication is
+refused with a message naming the offending step, rather than copying the
+problem into a second plan. Nothing is deleted or guessed on your behalf —
+only you know which object the step was meant to load. The backend logs the
+affected step IDs once at startup.
 
 ### File encoding
 

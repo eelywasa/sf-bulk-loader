@@ -75,6 +75,8 @@ function SortableStepRow({
     transition,
   }
 
+  const hasObjectName = Boolean(step.object_name?.trim())
+
   const upstreamStep = step.input_from_step_id
     ? allSteps.find((s) => s.id === step.input_from_step_id)
     : null
@@ -126,7 +128,7 @@ function SortableStepRow({
           <div className="min-w-0">
             <p className="font-medium text-content-primary text-sm">
               {step.name || step.object_name}
-              {step.name && (
+              {step.name && step.object_name && (
                 <span className="ml-1 text-xs font-normal text-content-muted">
                   ({step.object_name})
                 </span>
@@ -136,6 +138,16 @@ function SortableStepRow({
                   {step.operation}
                 </Badge>
               </span>
+              {/* SFBL-403: rows predating the object_name constraint would
+                  otherwise render as a blank label with no hint that anything
+                  is wrong, and the step fails only once a run reaches Bulk API
+                  job creation. Flag it here so it is findable without opening
+                  every step. */}
+              {!hasObjectName && (
+                <span className="ml-2">
+                  <Badge variant="error">No object set</Badge>
+                </span>
+              )}
             </p>
             {/* Upstream chain badge */}
             {upstreamLabel && (
