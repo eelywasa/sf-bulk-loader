@@ -38,18 +38,26 @@ export function Modal({
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
 
-      {/* Panel container */}
+      {/* Panel container.
+          `max-h-full` + a flex column is what keeps a tall modal usable: the
+          panel can never grow past the viewport, so the footer stays on screen
+          and the *body* scrolls instead. Without it the panel overflows a short
+          viewport in both directions and — because neither this container nor
+          the page scrolls — the footer buttons become unreachable: the step
+          editor could not be saved or cancelled below roughly 830px of viewport
+          height (SFBL-405). */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
           className={clsx(
             'bg-surface-elevated rounded-lg w-full overflow-hidden',
+            'flex flex-col max-h-full',
             OVERLAY_SHADOW_CLASS,
             sizeClasses[size],
           )}
         >
-          {/* Header */}
+          {/* Header — fixed; shrink-0 so it is never squeezed by a long body. */}
           {(title || description) && (
-            <div className="px-6 py-4 border-b border-border-base">
+            <div className="px-6 py-4 border-b border-border-base shrink-0">
               {title && (
                 <DialogTitle className="text-lg font-semibold text-content-primary">
                   {title}
@@ -61,12 +69,14 @@ export function Modal({
             </div>
           )}
 
-          {/* Body */}
-          <div className="px-6 py-4">{children}</div>
+          {/* Body — the only scrolling region. `min-h-0` is required: a flex
+              child defaults to min-height:auto, which refuses to shrink below
+              its content and would reintroduce the overflow this fixes. */}
+          <div className="px-6 py-4 overflow-y-auto min-h-0 flex-1">{children}</div>
 
-          {/* Footer */}
+          {/* Footer — fixed; always reachable however long the body is. */}
           {footer && (
-            <div className="px-6 py-4 border-t border-border-base bg-surface-sunken flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-border-base bg-surface-sunken flex justify-end gap-3 shrink-0">
               {footer}
             </div>
           )}

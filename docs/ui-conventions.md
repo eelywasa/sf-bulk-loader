@@ -506,7 +506,7 @@ one-off equivalents inline.
 | `Button` | All interactive buttons | Variants: `primary`, `secondary`, `ghost`, `danger`. One primary per section |
 | `Badge` | Status labels, counts, tags | Variants map 1:1 to state tokens |
 | `DataTable` | Server-curated rows (runs, plans, users) | Small N, known columns. **Not for CSV previews.** See "DataTable vs CsvPreviewPanel" below |
-| `Modal` | Dialogs requiring user action | Uses `surface-elevated` + `OVERLAY_SHADOW_CLASS` |
+| `Modal` | Dialogs requiring user action | Uses `surface-elevated` + `OVERLAY_SHADOW_CLASS`. Height-capped — see "Modal height and scrolling" below |
 | `Tabs` | Switching between content panels within a page | Active tab uses `border-border-focus` underline |
 | `Toast` | Transient feedback | Auto-dismiss 5 s default; error toasts manual dismiss |
 | `EmptyState` | Zero-item states in lists and tables | No duplicate CTA if page header already has one |
@@ -819,10 +819,33 @@ Every interactive element must show a visible focus ring. `border-border-focus`
 (blue-500 / blue-400) is the default. Never remove focus styles — use `focus-visible:` if
 reducing focus on mouse users is needed.
 
+### Modal height and scrolling
+
+`Modal` caps its panel at `max-h-full` and lays it out as a flex column:
+**header and footer are `shrink-0`; only the body scrolls** (`overflow-y-auto
+min-h-0 flex-1`).
+
+Do not remove any part of that. The panel sits in a `fixed inset-0` container
+that does not scroll, and neither does the page behind it — so an uncapped
+panel taller than the viewport is simply clipped at both ends with no scrollbar,
+putting the footer buttons permanently out of reach. That was a real shipped
+defect: the step editor could not be saved or cancelled below roughly 830px of
+viewport height, which covers ordinary 1366×768 laptops (SFBL-405).
+
+`min-h-0` on the body is the subtle one. A flex child defaults to
+`min-height: auto`, which refuses to shrink below its content — without it the
+body never scrolls and the overflow returns.
+
+When adding a modal with a long form, do not add your own scroll container or
+height cap; the primitive already handles it. Tier 1a E2E specs run at
+1280×720, so any spec that drives a modal exercises this for real.
+
 ### Keyboard
 
 - All `<button>`, `<a>`, and form controls reachable by Tab.
 - Modals trap focus until closed; Esc closes.
+- A modal's footer actions must stay reachable at any viewport height — see
+  "Modal height and scrolling".
 - Actionable `DataTable` rows activate on Enter/Space via their native `<button>` or
   `<a>` wrapper.
 - **Skip link:** `AppShell.tsx` renders an `href="#main-content"` anchor styled
