@@ -109,3 +109,83 @@ def test_abort_nonexistent_run_returns_404(auth_client):
     assert auth_client.post("/api/runs/bad-id/abort").status_code == 404
 
 
+
+
+# ── SFBL-402: error_summary visibility ─────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["auth_error", "storage_error", "output_storage_error",
+     "unexpected_exception", "unknown_exit", "circuit_breaker"],
+)
+def test_every_error_summary_key_survives_the_api(auth_client, key):
+    """Each key written by run_coordinator must reach the API response.
+
+    ``RunErrorSummary`` uses ``extra="ignore"``, so an undeclared key is
+    persisted and then silently dropped — the run shows as failed with no
+    visible reason. Three keys drifted that way before SFBL-402, including
+    ``unknown_exit``, the last-resort backstop.
+
+    Falsification: remove any of these fields from ``RunErrorSummary`` and its
+    parametrised case fails.
+    """
+    import json
+
+    from app.models.load_run import LoadRun
+    from tests.conftest import _TestSession, _run_async
+
+    _, plan_id = _setup(auth_client)
+    run_id = _start_run(auth_client, plan_id)["id"]
+
+    async def _write() -> None:
+        async with _TestSession() as db:
+            run = await db.get(LoadRun, run_id)
+            run.error_summary = json.dumps({key: f"{key} happened"})
+            await db.commit()
+
+    _run_async(_write())
+
+    body = auth_client.get(f"/api/runs/{run_id}").json()
+
+    assert body["error_summary"] is not None, (
+        f"{key} was written to the database but the whole error_summary came "
+        f"back null"
+    )
+    assert body["error_summary"].get(key) == f"{key} happened", (
+        f"{key} was written to the database but did not survive serialisation "
+        f"— it is probably missing from RunErrorSummary"
+    )
+
+
+def test_error_summary_preserves_multiple_keys_together(auth_client):
+    """A run can carry several keys at once; none may mask another."""
+    import json
+
+    from app.models.load_run import LoadRun
+    from tests.conftest import _TestSession, _run_async
+
+    _, plan_id = _setup(auth_client)
+    run_id = _start_run(auth_client, plan_id)["id"]
+
+    written = {
+        "storage_error": "could not read input",
+        "unexpected_exception": "boom",
+        "preflight_warnings": [
+            {"step_id": "s1", "outcome_code": "storage_error", "error": "nope"}
+        ],
+    }
+
+    async def _write() -> None:
+        async with _TestSession() as db:
+            run = await db.get(LoadRun, run_id)
+            run.error_summary = json.dumps(written)
+            await db.commit()
+
+    _run_async(_write())
+
+    summary = auth_client.get(f"/api/runs/{run_id}").json()["error_summary"]
+
+    assert summary["storage_error"] == "could not read input"
+    assert summary["unexpected_exception"] == "boom"
+    assert len(summary["preflight_warnings"]) == 1

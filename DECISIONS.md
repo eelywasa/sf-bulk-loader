@@ -1061,5 +1061,57 @@ loads are already silently corrupting data — converting invisible corruption
 into a visible, one-dropdown fix is the point. Blast radius is bounded: there
 is no in-product scheduler, so no unattended recurring loads.
 
-Full design, evidence and rejected options: `docs/specs/input-encoding-and-error-visibility.md` (revision 7+).
+Full design, evidence and rejected options: `docs/specs/implemented/input-encoding-and-error-visibility.md` (revision 7).
 
+
+## 033 — The decoding stream delegates to `io.TextIOWrapper`; physical lines are capped (SFBL-417)
+
+`_DecodingTextStream` (032) keeps its job — turning a `UnicodeDecodeError`
+raised inside a caller's read loop into an `InputDecodeError` with an exact,
+file-absolute byte offset — but no longer splits lines itself. Decoding and
+line splitting are delegated to the C `io.TextIOWrapper` with `newline=""`,
+reading through a thin `_ByteCountingReader`.
+
+**Why.** The hand-written scanner looked for terminators one character at a
+time in Python and copied the remaining buffer on every line. On the UCAS
+sample files it read 4.8–5× slower than a plain `open()` (1.78 s vs 0.36 s
+for 100k Contact rows; 8.5 s vs 1.7 s for 1.2M consent rows), and every load
+path reads through it. It was also quadratic on a line with no terminator
+(15.6 s for 8 MB). Shipping 032 as-is would have made every large-file stall
+behind SFBL-407 about five times longer.
+
+**How the offset stays exact.** `TextIOWrapper.tell()` is unusable — it
+raises on a non-seekable S3 body, the reason 032 owned the loop. Instead, the
+counting reader records every byte handed to the decoder, and the wrapper
+decodes each chunk as soon as it reads it. A `UnicodeDecodeError`'s `object`
+is the decoder's carried-over bytes plus that chunk, so it always ends at the
+last byte read: offset = bytes counted − `len(exc.object)` + `exc.start`. This
+also corrects a latent off-by-3: the old stream under-reported offsets in the
+first chunk of a BOM-prefixed file, because the `utf-8-sig` decoder strips the
+BOM from `object`.
+
+**Line cap.** A physical line longer than `MAX_LINE_CHARS` (1,048,576
+characters, terminator included) raises `InputLineTooLongError`. That is far
+above any record Salesforce accepts, so only a file with missing line breaks
+reaches it, and without the cap such a file is buffered whole as one "line".
+It subclasses `InputDecodeError` so every existing handler classifies it as a
+data problem for the operator (`input_decode_error`, 400 from step preview,
+422 from retry), not a storage outage.
+
+Rejected: tuning the hand-written scanner — a cursor-and-regex prototype read
+600k rows in 1.44 s, against 4.1 s for the old code and 0.83 s for stdlib, and
+it keeps a reimplementation of `newline=""` semantics we would have to keep
+correct by hand; counting bytes at the raw layer beneath a `BufferedReader` —
+the buffer's read-ahead counts bytes the decoder has not seen yet, which
+breaks the offset arithmetic.
+
+**Correction to 032.** 032 says the failure diagnostic "runs off the event
+loop". It runs wherever the reader runs, and today the load-path readers
+(partitioning, the run-start pre-count, step preview) run on the event loop.
+It becomes true when SFBL-411 and SFBL-421 move those reads off the loop. The
+cost was bounded throughout — at most 8 MB, abandoned per codec at the first
+failing byte.
+
+Two read sites also dropped the step's encoding — the run-start pre-count and
+retry Track B. Both now pass it, and a static test fails if any
+`open_text(...)` call in `backend/app` omits `encoding=`.

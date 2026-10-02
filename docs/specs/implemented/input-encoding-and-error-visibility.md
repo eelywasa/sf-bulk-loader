@@ -1,3 +1,5 @@
+> **Archived — SFBL-400 (2026-10-02).** This document captured the design at delivery (revision 7), plus SFBL-417's follow-up fixes to the decoding stream. For current behaviour see [`docs/usage/csv-format.md`](../../usage/csv-format.md), [`docs/usage/load-plans.md`](../../usage/load-plans.md), [`docs/architecture/storage.md`](../../architecture/storage.md) and DECISIONS.md 032–033. No further edits — historical reference only.
+
 # Input Encoding Robustness & Run Error Visibility
 
 **Status:** Live spec — ticketed as epic **SFBL-400**. Drafted 2026-08-17 from a
@@ -1087,6 +1089,17 @@ or accept and document. (`api/load_steps.py:122` is fine: `step_data` is
 schema-validated. MCP `add_step`/`update_step` go over HTTP and inherit
 backend validation; their JSON schemas lack `minLength`, which only means a
 422 instead of a client-side reject.)
+
+**As built (SFBL-403).** Duplication *rejects* with a 422 naming the offending
+step IDs, rather than accepting and documenting: silently minting a second
+invalid plan is worse than a refusal the operator can act on, and the remedy
+(set the object, duplicate again) is one edit away. The MCP `object_name`
+schemas gained `minLength: 1` so the client rejects before the round trip.
+Nothing backfills or deletes the existing rows — the startup scan
+(`_log_steps_with_empty_object_name`, emitting
+`step.invalid_object_name.detected`) only names them, and the plan editor
+flags the row with a "No object set" badge plus a pre-seeded modal error so
+the blank field is explained rather than silent.
 
 ---
 

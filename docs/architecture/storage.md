@@ -26,7 +26,7 @@ Each discovered CSV is streamed through `partition_csv()` into fixed-size chunks
 - **Default partition size** — `default_partition_size` from settings (DB-backed since SFBL-156).
 - **Per-step override** — `LoadStep.partition_size`.
 - **Memory profile** — streaming via the stdlib `csv` module; at most one partition's rows in memory.
-- **Encoding** — input encodings (latin-1, cp1252, UTF-8 ± BOM) are detected and re-emitted as UTF-8 with LF line endings (required by Salesforce Bulk API 2.0).
+- **Encoding** — input is decoded as UTF-8 (`utf-8-sig`, so a BOM is handled) unless the step sets `encoding`, and re-emitted as UTF-8 with LF line endings (required by Salesforce Bulk API 2.0). **There is no auto-detection** (SFBL-401): inferring an encoding from a file prefix and applying it to the whole stream is unsound — a wrong-but-valid guess decodes cleanly and writes mojibake with no error. Undecodable input raises `InputDecodeError` carrying a *file-absolute* byte offset. Preview surfaces decode leniently (`errors="replace"`) and never raise, because browsing is advisory and those endpoints have no step on which to set an encoding; only loads are strict. See DECISIONS.md 032.
 - **Headers** — the original CSV header row is preserved on every partition.
 
 Example: a 50 000-row CSV with partition size 10 000 yields 5 partitions and therefore 5 `JobRecord` rows, processed concurrently subject to `LoadPlan.max_parallel_jobs`.

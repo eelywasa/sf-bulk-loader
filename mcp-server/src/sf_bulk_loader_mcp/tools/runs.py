@@ -198,9 +198,15 @@ def format_run(payload: dict[str, Any], *, include_jobs: bool = False) -> str:
     error_summary = payload.get("error_summary") or {}
     error_parts: list[str] = []
     if isinstance(error_summary, dict):
-        for key in ("auth_error", "storage_error", "circuit_breaker"):
-            val = error_summary.get(key)
-            if val:
+        # SFBL-402: render EVERY populated string-valued key rather than a
+        # hardcoded subset.  A fixed tuple here was a third independent
+        # instance of the same defect as the Pydantic schema and the web UI —
+        # fixing those alone would still have left this surface blind to
+        # unexpected_exception, output_storage_error and unknown_exit.
+        for key, val in error_summary.items():
+            if key == "preflight_warnings":
+                continue  # a list, summarised separately below
+            if isinstance(val, str) and val:
                 error_parts.append(f"    {key}: {val}")
         preflight = error_summary.get("preflight_warnings") or []
         if preflight:

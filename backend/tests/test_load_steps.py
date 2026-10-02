@@ -428,25 +428,38 @@ def test_preview_step_traversal_pattern_returns_400(auth_client):
     assert resp.status_code == 400
 
 
-def test_preview_step_cp1252_file_returns_correct_row_count(auth_client):
-    """Row count for a cp1252-encoded file must be reported correctly."""
-    import csv as _csv
+def test_preview_step_cp1252_file_requires_declared_encoding(auth_client):
+    """SFBL-401: preview surfaces a decode failure instead of reporting 0 rows.
 
+    Falsification: the pre-change code auto-detected cp1252 and returned 3, and
+    a naive fix that lets ``except InputStorageError`` swallow the error would
+    return 200 with ``total_rows == 0`` — a corrupt file reported as empty,
+    with no operator signal. Both must fail this test.
+    """
     pid = _plan_id(auth_client, _conn_id(auth_client))
     step_id = _add_step(auth_client, pid, {"csv_file_pattern": "cp1252_data.csv"})["id"]
 
     with tempfile.TemporaryDirectory() as tmpdir:
         csv_path = os.path.join(tmpdir, "cp1252_data.csv")
-        # Write header + 3 rows with a cp1252-specific byte in values
+        # Header + 3 rows with a cp1252-specific byte (0x80 = €) in values
         with open(csv_path, "wb") as f:
             f.write(b"Name,Value\nCaf\x80,1\nCaf\x80,2\nCaf\x80,3\n")
 
         with patch("app.services.input_storage.settings.input_dir", tmpdir):
             resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
 
+            assert resp.status_code == 400
+            assert "not valid" in resp.json()["detail"]
+
+            # Declaring the encoding on the step makes it readable again.
+            auth_client.put(
+                f"/api/load-plans/{pid}/steps/{step_id}",
+                json={"encoding": "cp1252"},
+            )
+            resp = auth_client.post(f"/api/load-plans/{pid}/steps/{step_id}/preview")
+
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["total_rows"] == 3
+    assert resp.json()["total_rows"] == 3
 
 
 def test_preview_step_remote_source_returns_matched_files(auth_client):

@@ -28,7 +28,7 @@ from app.models.job import JobRecord, JobStatus
 from app.models.load_plan import LoadPlan
 from app.models.load_step import LoadStep, QUERY_OPERATIONS
 from app.observability.context import input_connection_id_ctx_var, step_id_ctx_var
-from app.observability.events import JobEvent, OutcomeCode, StepEvent
+from app.observability.events import JobEvent, OutcomeCode, StepEvent, StorageEvent
 from app.observability.metrics import (
     record_bulk_query_job_created,
     record_bulk_query_job_failed,
@@ -37,7 +37,7 @@ from app.observability.metrics import (
 from app.observability import tracing
 from app.services.bulk_query_executor import BulkQueryJobFailed, run_bulk_query
 from app.services.csv_processor import partition_csv as _default_partition
-from app.services.input_storage import InputStorageError, get_storage as _default_get_storage
+from app.services.input_storage import InputDecodeError, InputStorageError, get_storage as _default_get_storage
 from app.services.output_storage import OutputStorage
 from app.services.partition_executor import process_partition
 from app.services.result_persistence import _result_path, count_csv_rows
@@ -224,9 +224,31 @@ async def _execute_step(
 
     partitions: list[tuple[int, bytes]] = []
     for rel_path in rel_paths:
-        with storage.open_text(rel_path) as fh:
-            for chunk in _partition(fh, _effective_partition_size):
-                partitions.append((len(partitions), chunk))
+        try:
+            with storage.open_text(rel_path, encoding=step.encoding) as fh:
+                for chunk in _partition(fh, _effective_partition_size):
+                    partitions.append((len(partitions), chunk))
+        except InputDecodeError as exc:
+            # SFBL-401 (D1.5): attribute the failure to this step and file,
+            # then RE-RAISE.  run_coordinator's `except InputStorageError` is
+            # the only thing that writes error_summary={"storage_error": ...},
+            # so swallowing it here would leave the run failing with no visible
+            # reason — the exact defect this epic exists to fix.
+            logger.error(
+                "Run %s step %s: could not decode %s: %s",
+                run_id,
+                step.id,
+                rel_path,
+                exc,
+                extra={
+                    "event_name": StorageEvent.INPUT_FAILED,
+                    "outcome_code": OutcomeCode.INPUT_DECODE_ERROR,
+                    "run_id": run_id,
+                    "step_id": str(step.id),
+                    "file_path": rel_path,
+                },
+            )
+            raise
 
     if not partitions:
         logger.warning(

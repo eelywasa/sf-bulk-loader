@@ -598,6 +598,55 @@ async def test_preflight_storage_failure_surfaces_warning_and_run_proceeds(
     assert after - before == 1
 
 
+async def test_preflight_pre_count_uses_the_step_encoding(
+    db: AsyncSession, tmp_path, caplog
+):
+    """SFBL-417: the run-start pre-count reads with the step's encoding.
+
+    A correctly configured cp1252 step must produce no preflight warning and
+    a pre-count over every row.
+
+    Falsification: without ``encoding=`` the pre-count decodes as UTF-8,
+    raises on the cp1252 byte, and records an input_decode_error preflight
+    warning with a zero total.
+    """
+    import json
+    import logging
+    from app.services.input_storage import LocalInputStorage
+
+    conn = await _make_connection(db)
+    plan = await _make_plan(db, conn)
+    step = await _make_step(db, plan)
+    step.encoding = "cp1252"
+    await db.commit()
+    run = await _make_run(db, plan)
+
+    (tmp_path / "accounts_1.csv").write_bytes(
+        b"Name,ExternalId__c\nCaf\x80,EXT-1\nBeta,EXT-2\nGamma,EXT-3\n"
+    )
+    storage = LocalInputStorage(str(tmp_path))
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    with (
+        caplog.at_level(logging.INFO, logger="app.services.run_coordinator"),
+        patch("app.services.orchestrator.get_access_token", new=AsyncMock(return_value="token")),
+        patch("app.services.orchestrator.SalesforceBulkClient", return_value=_make_bulk_client_mock()),
+        patch("app.services.orchestrator.get_storage", new=AsyncMock(return_value=storage)),
+        patch("app.services.orchestrator.partition_csv", return_value=[CSV_2_ROWS]),
+        patch("app.services.orchestrator.ws_manager.broadcast", new=AsyncMock()),
+        patch("app.services.orchestrator.settings.output_dir", str(output_dir)),
+    ):
+        await _execute_run(run.id, db, db_factory=make_db_factory(db))
+
+    await db.refresh(run)
+    summary = json.loads(run.error_summary) if run.error_summary else {}
+    assert not summary.get("preflight_warnings")
+    completed = [r for r in caplog.records if "preflight completed" in r.getMessage()]
+    assert completed, "expected the preflight-completed log line"
+    assert "total_records=3" in completed[0].getMessage()
+
+
 async def test_preflight_warning_preserved_when_auth_fails_later(
     db: AsyncSession, tmp_path
 ):

@@ -27,6 +27,7 @@ from app.schemas.load_run import (
 )
 from app.services import orchestrator
 from app.services import load_run_service
+from app.services.input_storage import InputDecodeError, InputStorageError
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +136,20 @@ async def retry_step(
     current_user: User = Depends(_require_execute),
 ) -> LoadRun:
     """Create a new LoadRun that retries only the failed/aborted jobs of one step."""
-    new_run, partitions = await load_run_service.prepare_retry_step(
-        db, run_id, step_id, current_user.email
-    )
+    try:
+        new_run, partitions = await load_run_service.prepare_retry_step(
+            db, run_id, step_id, current_user.email
+        )
+    except InputDecodeError as exc:
+        # SFBL-401: rebuilding retry partitions re-reads the source file, so a
+        # decode failure surfaces here too.  Without this it escaped as a 500;
+        # it is a problem with the operator's data, not with the server.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except InputStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     background_tasks.add_task(orchestrator.execute_retry_run, new_run.id, step_id, partitions)
     return new_run

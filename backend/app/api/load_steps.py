@@ -17,8 +17,10 @@ from app.models.load_step import LoadStep, QUERY_OPERATIONS
 from app.models.user import User
 from app.auth.permissions import PLANS_MANAGE, PLANS_VIEW, require_permission
 from app.services.auth import get_current_user
+from app.observability.events import OutcomeCode, StorageEvent
 from app.services.input_storage import (
     InputConnectionNotFoundError,
+    InputDecodeError,
     InputStorageError,
     LOCAL_OUTPUT_SOURCE,
     UnsupportedInputProviderError,
@@ -201,6 +203,25 @@ async def update_step(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
+
+    # SFBL-403: validate the merged effective object_name, not just the patch.
+    # Rows predating the constraint may carry an empty object_name; a PATCH that
+    # simply omits the field would otherwise return 200 and leave the invalid
+    # value persisted. The schema validator cannot see this — it only sees what
+    # the client sent.
+    effective_object_name = (
+        update_data["object_name"]
+        if "object_name" in update_data
+        else step.object_name
+    )
+    if not (effective_object_name or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "'object_name' must not be empty — this step has no Salesforce "
+                "object set. Supply one with this update."
+            ),
+        )
 
     effective_sequence = update_data.get("sequence", step.sequence)
     # Re-run reference validation whenever the effective state carries an
@@ -435,10 +456,26 @@ async def preview_step(
     for filepath in matched_paths:
         row_count = 0
         try:
-            with storage.open_text(filepath) as fh:
+            with storage.open_text(filepath, encoding=step.encoding) as fh:
                 reader = csv.reader(fh)
                 next(reader, None)  # skip header
                 row_count = sum(1 for _ in reader)
+        except InputDecodeError as exc:
+            # SFBL-401: must NOT be swallowed into row_count=0.  The generic
+            # handler below would report a corrupt file as "0 rows" with no
+            # operator signal — a silent failure, in the change whose whole
+            # premise is that silent failures caused the incident.
+            logger.warning(
+                "Step preview decode failed for %s: %s", filepath, exc,
+                extra={
+                    "event_name": StorageEvent.INPUT_FAILED,
+                    "outcome_code": OutcomeCode.INPUT_DECODE_ERROR,
+                    "step_id": str(step.id),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
         except (FileNotFoundError, InputStorageError, OSError) as exc:
             logger.warning("Could not read %s for preview: %s", filepath, exc)
         file_infos.append(

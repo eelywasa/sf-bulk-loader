@@ -304,6 +304,46 @@ class TestGetRun:
         assert PLAN_ID in text
         assert "completed" in text
 
+    def test_format_run_renders_every_error_summary_key(self) -> None:
+        """SFBL-402: format_run iterated a hardcoded three-key tuple.
+
+        That was a third independent instance of the same defect as the
+        Pydantic schema and the web UI — fixing those alone would have left
+        the MCP surface blind to these keys.
+
+        Falsification: the previous
+        ``for key in ("auth_error", "storage_error", "circuit_breaker")``
+        renders none of the three below.
+        """
+        payload = {
+            **RUN,
+            "error_summary": {
+                "unexpected_exception": "ValueError: boom",
+                "output_storage_error": "S3 denied",
+                "unknown_exit": "run body exited without finalising status",
+            },
+        }
+        text = format_run(payload)
+        assert "ValueError: boom" in text
+        assert "S3 denied" in text
+        assert "run body exited without finalising status" in text
+
+    def test_format_run_summarises_preflight_warnings_without_stringifying(self) -> None:
+        """preflight_warnings is a list; it must be counted, not dumped."""
+        payload = {
+            **RUN,
+            "error_summary": {
+                "storage_error": "real reason",
+                "preflight_warnings": [
+                    {"step_id": "s1", "outcome_code": "storage_error", "error": "x"},
+                ],
+            },
+        }
+        text = format_run(payload)
+        assert "real reason" in text
+        assert "1 warning(s)" in text
+        assert "step_id" not in text  # the raw dict must not be dumped
+
     def test_format_run_shows_record_counts(self) -> None:
         text = format_run(RUN)
         assert "1000" in text  # total_records

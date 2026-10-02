@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { Button, Modal, ComboInput, RequiredAsterisk } from './ui'
 import FilePicker from './FilePicker'
 import type { InputConnection, LoadStep, StepPreviewQueryPlan } from '../api/types'
+import { INPUT_ENCODING_OPTIONS } from '../api/types'
 import {
   OPERATIONS,
   isQueryOp,
@@ -498,6 +499,32 @@ export default function StepEditorModal({
                 onChange={(e) => onChange('partition_size', e.target.value)}
                 className={INPUT_CLASS}
               />
+            </div>
+
+            {/* SFBL-401: file encoding. Input is read as UTF-8 unless set. */}
+            <div>
+              <label htmlFor="step-encoding" className={LABEL_CLASS}>
+                File Encoding
+              </label>
+              <select
+                id="step-encoding"
+                value={stepForm.encoding}
+                onChange={(e) => onChange('encoding', e.target.value)}
+                className={SELECT_CLASS}
+              >
+                <option value="">UTF-8 (default)</option>
+                {INPUT_ENCODING_OPTIONS.filter((o) => o.value !== 'utf-8-sig').map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <p className={HELPER_TEXT_CLASS}>
+                Files are read as UTF-8 unless you choose otherwise. Change this only
+                if you know the source encoding — a wrong setting silently corrupts
+                accented characters. A file mixing encodings cannot be loaded and must
+                be repaired at source.
+              </p>
             </div>
           </>
         )}

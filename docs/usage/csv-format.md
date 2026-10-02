@@ -23,10 +23,26 @@ are discovered at run time. Read this before authoring a load plan.
 The Salesforce Bulk API 2.0 is strict. The loader normalises and re-emits
 files to satisfy its rules, but input files should still meet the following:
 
-- **Encoding** — UTF-8 is preferred. Latin-1 and CP-1252 are auto-detected and
-  re-encoded to UTF-8. A UTF-8 BOM is tolerated.
+- **Encoding** — **UTF-8 is expected.** A UTF-8 BOM is tolerated. Files are no
+  longer auto-detected: if a source is Windows-1252 or ISO-8859-1, set
+  **File Encoding** on the step (see [Load plans](load-plans.md)). A file that
+  is not UTF-8 and has no encoding set fails with a message naming the
+  offending byte and its position, rather than loading incorrectly.
+
+  Set this only when you know the source encoding. A wrong setting does not
+  fail — it silently replaces accented characters with different ones, and the
+  load reports success.
+
+  A file that **mixes encodings** cannot be loaded under any setting and must
+  be repaired at source; the error says so explicitly when it detects that
+  case. Note that a step set to ISO-8859-1 can never report a decode error,
+  because that encoding accepts every possible byte.
 - **Line endings** — LF (`\n`) in the output. The loader re-emits with LF even
-  if the input uses CRLF.
+  if the input uses CRLF. Input may use LF, CRLF or CR.
+- **Line length** — no single line of the file may exceed 1,048,576
+  characters. That is far longer than any record Salesforce accepts, so in
+  practice it only rejects a file with missing line breaks, or one that is not
+  a CSV at all. The error names the line.
 - **Headers** — the first row contains **Salesforce field API names**
   (case-sensitive, exact match) — `FirstName`, not `First Name`.
 - **Nulls** — use `#N/A` (literal, uppercase) to explicitly null a field.

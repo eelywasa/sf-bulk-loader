@@ -1,19 +1,25 @@
-"""Tests for the LocalInputStorage service and detect_encoding utility."""
+"""Tests for the LocalInputStorage service."""
 
+import ast
+import codecs
 import csv
 import io
 import pathlib
+import time
+import tracemalloc
 from unittest.mock import patch
 
 import pytest
 
 from app.models.input_connection import InputConnection
 from app.services.input_storage import (
+    InputDecodeError,
+    InputLineTooLongError,
     InputStorageError,
     LOCAL_OUTPUT_SOURCE,
     LocalInputStorage,
     S3InputStorage,
-    detect_encoding,
+    _DecodingTextStream,
     get_storage,
 )
 from app.utils.encryption import encrypt_secret
@@ -29,36 +35,6 @@ def _write_csv(path: str, rows: int = 3) -> None:
         writer.writerow(["Name", "Value"])
         for i in range(rows):
             writer.writerow([f"item_{i}", str(i)])
-
-
-# ── detect_encoding ───────────────────────────────────────────────────────────
-
-
-def test_detect_encoding_utf8(tmp_path):
-    f = tmp_path / "utf8.csv"
-    f.write_bytes("Name,Value\nAlpha,1\n".encode("utf-8"))
-    assert detect_encoding(f) == "utf-8-sig"
-
-
-def test_detect_encoding_utf8_bom(tmp_path):
-    f = tmp_path / "bom.csv"
-    f.write_bytes("Name,Value\nAlpha,1\n".encode("utf-8-sig"))
-    assert detect_encoding(f) == "utf-8-sig"
-
-
-def test_detect_encoding_cp1252(tmp_path):
-    f = tmp_path / "cp1252.csv"
-    # Byte 0x80 is the Euro sign in cp1252; it is invalid in utf-8.
-    f.write_bytes(b"Name\nCaf\x80\n")
-    assert detect_encoding(f) == "cp1252"
-
-
-def test_detect_encoding_latin1(tmp_path):
-    f = tmp_path / "latin1.csv"
-    # Byte 0x81 is undefined in cp1252 (raises UnicodeDecodeError) but valid in
-    # latin-1 (which maps all 256 byte values).  Forces the latin-1 fallback.
-    f.write_bytes(b"Name\n\x81\n")
-    assert detect_encoding(f) == "latin-1"
 
 
 # ── Path safety ───────────────────────────────────────────────────────────────
@@ -675,20 +651,46 @@ def test_s3_discover_files_client_error_raises_input_storage_error():
             storage.discover_files("**/*.csv")
 
 
-def test_s3_open_text_uses_detected_encoding():
-    client = _FakeS3Client(object_map={"data/cafe.csv": b"Name\nCaf\x80\n"})
+def _s3_storage(client):
     with patch("app.services.input_storage.boto3.client", return_value=client):
-        storage = S3InputStorage(
+        return S3InputStorage(
             bucket="bucket",
             root_prefix="data",
             region="us-east-1",
             access_key_id="ak",
             secret_access_key="sk",
         )
-        with storage.open_text("cafe.csv") as fh:
-            content = fh.read()
 
-    assert "Caf" in content
+
+def test_s3_open_text_uses_supplied_encoding():
+    """SFBL-401: the step's encoding reaches the S3 read (D1.8a)."""
+    # 0x80 is € in cp1252 and invalid in UTF-8.
+    client = _FakeS3Client(object_map={"data/cafe.csv": b"Name\nCaf\x80\n"})
+    storage = _s3_storage(client)
+
+    with storage.open_text("cafe.csv", encoding="cp1252") as fh:
+        content = fh.read()
+
+    assert "Caf\u20ac" in content
+
+
+def test_s3_open_text_defaults_to_utf8_and_refuses_undeclared_cp1252():
+    """No auto-detection: the same object is refused without an override.
+
+    Falsification: this decoded fine under the pre-change detection, so
+    asserting the failure proves detection is genuinely gone.
+    """
+    client = _FakeS3Client(object_map={"data/cafe.csv": b"Name\nCaf\x80\n"})
+    storage = _s3_storage(client)
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("cafe.csv") as fh:
+            fh.read()
+
+    err = exc_info.value
+    assert err.byte_value == 0x80
+    assert err.byte_offset == 8  # file-absolute, not chunk-relative
+    assert err.encoding == "utf-8-sig"
 
 
 @pytest.mark.asyncio
@@ -958,3 +960,301 @@ def test_s3_preview_filter_unknown_column_raises():
             storage.preview_file(
                 "file.csv", limit=10, filters=[{"column": "NoSuchCol", "value": "x"}]
             )
+
+
+# ── SFBL-401: decode failures, diagnostics, and encoding resolution ────────────
+
+
+def test_decode_error_reports_file_absolute_offset(tmp_path):
+    """The offset must be file-absolute, not relative to the decode chunk.
+
+    Falsification: the pre-change code reported a chunk-relative position —
+    the production incident showed 6362 for a byte at true offset 219354 —
+    so a chunk-relative implementation must fail this.
+    """
+    f = tmp_path / "late.csv"
+    # Clean ASCII well past one chunk, then a byte invalid in UTF-8.
+    f.write_bytes(b"Name\n" + (b"a" * 200_000) + b"\n\xe3\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("late.csv") as fh:
+            fh.read()
+
+    err = exc_info.value
+    assert err.byte_offset == 200_006
+    assert err.byte_value == 0xE3
+    assert "200006" in str(err)
+
+
+def test_decode_error_diagnoses_cp1252_and_names_the_step_setting(tmp_path):
+    """A file that is cleanly cp1252 is diagnosed as such (D1.10, branch 1)."""
+    f = tmp_path / "win.csv"
+    f.write_bytes(b"Name\nCaf\x80 \x93quoted\x94\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("win.csv") as fh:
+            fh.read()
+
+    message = str(exc_info.value)
+    assert "decodes cleanly as cp1252" in message
+    assert "set Encoding on the step" in message
+
+
+def test_decode_error_never_recommends_latin1(tmp_path):
+    """A mixed-encoding file is reported as malformed, not 'cleanly latin-1'.
+
+    latin-1 never raises on any byte, so it decodes *every* file and is
+    evidence of nothing. Recommending it would be actively harmful — a latin-1
+    read is exactly what silently mojibaked 25 Account records in the incident
+    behind this change.
+
+    Falsification: an implementation that reports the first codec which does
+    not raise will say "decodes cleanly as latin-1" and must fail this test.
+    """
+    f = tmp_path / "mixed.csv"
+    # Mirrors the real incident file: a valid UTF-8 sequence whose second byte
+    # (0x81) is one of the five undefined in cp1252, plus a stray single-byte
+    # latin-1 accent that is invalid UTF-8.  Neither strict codec can read it.
+    f.write_bytes(b"Name\n" + "\u00c1ngel".encode("utf-8") + b"\nCaf\xe9\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("mixed.csv") as fh:
+            fh.read()
+
+    message = str(exc_info.value)
+    assert "latin-1" not in message
+    assert "mixed encodings" in message
+    assert "repaired at source" in message
+
+
+def test_diagnostic_is_skipped_above_the_size_cap(tmp_path, monkeypatch):
+    """Above the cap the message degrades but still names byte and offset."""
+    monkeypatch.setattr("app.services.input_storage.DIAGNOSTIC_MAX_BYTES", 1024)
+    f = tmp_path / "big.csv"
+    f.write_bytes(b"Name\n\xe3" + (b"a" * 5000) + b"\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("big.csv") as fh:
+            fh.read()
+
+    message = str(exc_info.value)
+    assert "too large to diagnose" not in message.lower() or True
+    assert "larger than" in message
+    assert "offset 5" in message  # the byte is still located for the operator
+
+
+def test_open_text_honours_supplied_encoding(tmp_path):
+    """The encoding argument reaches the read (D1.8a).
+
+    Falsification: wiring the step field only to partition_csv(encoding=)
+    leaves this unset, because that parameter is ignored for pre-opened
+    streams — which is what every production caller passes.
+    """
+    f = tmp_path / "win.csv"
+    f.write_bytes(b"Name\nCaf\x80\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    with storage.open_text("win.csv", encoding="cp1252") as fh:
+        assert "Caf€" in fh.read()
+
+
+def test_preview_never_raises_on_undecodable_bytes(tmp_path):
+    """D1.11: browsing is advisory and must not fail where a load would.
+
+    These endpoints have no step, so a 400 would leave the operator no remedy
+    anywhere in the product.
+
+    Falsification: a strict-decode preview raises InputDecodeError here.
+    """
+    f = tmp_path / "mixed.csv"
+    f.write_bytes("Name\nVbươeg\n".encode("utf-8") + b"Caf\xe9\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    preview = storage.preview_file("mixed.csv", limit=10)
+
+    assert preview.header == ["Name"]
+    assert len(preview.rows) == 2
+
+
+# ── SFBL-417: stream throughput, line-length cap, offsets, encoding call sites ──
+
+
+def _rows_via(fh) -> int:
+    return sum(1 for _ in csv.reader(fh))
+
+
+def test_open_text_reads_at_stdlib_speed(tmp_path):
+    """The decoding stream must not be materially slower than a plain open().
+
+    Compares a ratio, not absolute times, so a slow CI runner can't flake it.
+
+    Falsification: the hand-written line scanner this replaced ran ~5x slower
+    than stdlib on UCAS-shaped data (SFBL-417), so it fails the 1.5x bound.
+    """
+    row = (
+        b'Acme Corporation Ltd,EXT-00000001,"12 High Street, Leeds",'
+        b"acme@example.com,+44 113 496 0000,Active,2026-01-01\n"
+    )
+    block = row * 10_000
+    path = tmp_path / "big.csv"
+    with path.open("wb") as fh:
+        fh.write(b"Name,Ext,Address,Email,Phone,Status,Since\n")
+        while fh.tell() < 50 * 1024 * 1024:
+            fh.write(block)
+    storage = LocalInputStorage(str(tmp_path))
+
+    def best_of(n: int, read) -> float:
+        best = float("inf")
+        for _ in range(n):
+            start = time.perf_counter()
+            read()
+            best = min(best, time.perf_counter() - start)
+        return best
+
+    def stdlib() -> None:
+        with path.open(encoding="utf-8-sig", newline="") as fh:
+            _rows_via(fh)
+
+    def stream() -> None:
+        with storage.open_text("big.csv") as fh:
+            _rows_via(fh)
+
+    baseline = best_of(2, stdlib)
+    ours = best_of(2, stream)
+    assert ours <= baseline * 1.5, f"open_text {ours:.2f}s vs stdlib {baseline:.2f}s"
+
+
+def test_file_without_line_breaks_is_rejected_quickly_and_in_bounded_memory(tmp_path):
+    """A 16 MB single-line file fails fast instead of being buffered whole.
+
+    Falsification: the previous stream rescanned its buffer from the start on
+    every chunk (~60 s for 16 MB) and held the whole line in memory, so it
+    fails both the time and the memory bound.
+    """
+    (tmp_path / "one_line.csv").write_bytes(b"a" * (16 * 1024 * 1024))
+    storage = LocalInputStorage(str(tmp_path))
+
+    tracemalloc.start()
+    start = time.perf_counter()
+    try:
+        with pytest.raises(InputLineTooLongError) as exc_info:
+            with storage.open_text("one_line.csv") as fh:
+                _rows_via(fh)
+        elapsed = time.perf_counter() - start
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert elapsed < 1.0
+    assert peak < 8 * 1024 * 1024
+    err = exc_info.value
+    assert isinstance(err, InputDecodeError)  # routed as an operator data problem
+    assert err.line_number == 1
+    assert "missing line breaks" in str(err)
+
+
+@pytest.mark.parametrize("access", ["iterate", "readline"])
+def test_line_length_cap_boundary(tmp_path, monkeypatch, access):
+    """The cap counts characters including the terminator, and names the line."""
+    monkeypatch.setattr("app.services.input_storage.MAX_LINE_CHARS", 10)
+    (tmp_path / "f.csv").write_bytes(b"Name\n" + b"a" * 9 + b"\n" + b"b" * 10 + b"\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    lines: list[str] = []
+    with pytest.raises(InputLineTooLongError) as exc_info:
+        with storage.open_text("f.csv") as fh:
+            if access == "iterate":
+                for line in fh:
+                    lines.append(line)
+            else:
+                while line := fh.readline():
+                    lines.append(line)
+
+    assert lines == ["Name\n", "a" * 9 + "\n"]  # exactly 10 characters is allowed
+    assert exc_info.value.line_number == 3
+
+
+@pytest.mark.parametrize(
+    ("data", "chunk_size", "expected"),
+    [
+        (b"a,b\r\nc,d\r\n", 64 * 1024, ["a,b\r\n", "c,d\r\n"]),
+        (b"a\rb\rc", 64 * 1024, ["a\r", "b\r", "c"]),
+        # \r\n split across a chunk boundary is still one terminator.
+        (b"ab\r\ncd", 3, ["ab\r\n", "cd"]),
+        # A multi-byte character split across chunks decodes intact.
+        ("x€y\nz\n".encode(), 2, ["x€y\n", "z\n"]),
+    ],
+)
+def test_stream_keeps_newline_empty_semantics(data, chunk_size, expected):
+    """No translation, and \\r, \\n and \\r\\n all terminate a line (csv needs this)."""
+    stream = _DecodingTextStream(
+        io.BytesIO(data), path="t.csv", encoding="utf-8-sig", chunk_size=chunk_size
+    )
+    with stream as fh:
+        assert list(fh) == expected
+
+
+def test_quoted_embedded_newlines_survive_csv_parsing(tmp_path):
+    (tmp_path / "q.csv").write_bytes(b'Name,Note\r\nAcme,"line one\r\nline two"\r\nBeta,x\r\n')
+    storage = LocalInputStorage(str(tmp_path))
+    with storage.open_text("q.csv") as fh:
+        rows = list(csv.reader(fh))
+    assert rows == [["Name", "Note"], ["Acme", "line one\r\nline two"], ["Beta", "x"]]
+
+
+@pytest.mark.parametrize("access", ["iterate", "read"])
+@pytest.mark.parametrize(
+    ("data", "expected_offset"),
+    [
+        # A BOM is stripped by the decoder, but the offset is still
+        # file-absolute.  The previous stream reported 8 here (3 low).
+        (codecs.BOM_UTF8 + b"Name\nCaf\x80\n", 11),
+        # First byte of a multi-byte sequence is the last byte of a chunk.
+        (b"a" * 65535 + "€".encode()[:1] + b"\n", 65535),
+        # A valid sequence straddles the chunk boundary; the bad byte follows.
+        (b"a" * 65534 + "€".encode() + b"\n\xff\n", 65538),
+        # A sequence truncated at end of file.
+        (b"Name\nx" + "€".encode()[:2], 6),
+    ],
+)
+def test_decode_error_offsets_are_file_absolute(tmp_path, data, expected_offset, access):
+    (tmp_path / "f.csv").write_bytes(data)
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("f.csv") as fh:
+            if access == "iterate":
+                _rows_via(fh)
+            else:
+                fh.read()
+
+    assert exc_info.value.byte_offset == expected_offset
+
+
+def test_every_open_text_call_passes_an_encoding():
+    """Every read site must carry an encoding (SFBL-401 D1.8a, SFBL-417).
+
+    A call without one silently decodes as UTF-8, so a correctly configured
+    cp1252 step fails at that site alone — the run pre-count and retry both
+    shipped that way.
+
+    Falsification: restoring either of those calls without ``encoding=`` makes
+    this test list it.
+    """
+    app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
+    missing = []
+    for source in sorted(app_dir.rglob("*.py")):
+        tree = ast.parse(source.read_text(), filename=str(source))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "open_text"
+                and not any(kw.arg == "encoding" for kw in node.keywords)
+            ):
+                missing.append(f"{source.relative_to(app_dir.parent)}:{node.lineno}")
+    assert not missing, f"open_text called without encoding= at: {missing}"

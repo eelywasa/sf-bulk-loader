@@ -24,11 +24,28 @@ class PreflightWarning(BaseModel):
 
 
 class RunErrorSummary(BaseModel):
-    """Typed structure for run-level error context stored in LoadRun.error_summary."""
+    """Typed structure for run-level error context stored in LoadRun.error_summary.
+
+    **Every key written to ``LoadRun.error_summary`` must be declared here.**
+    ``extra="ignore"`` means an undeclared key is persisted to the database and
+    then silently dropped on the way out — the run shows as failed with no
+    visible reason. That is not hypothetical: ``output_storage_error``,
+    ``unexpected_exception`` and ``unknown_exit`` were all written and all
+    invisible until SFBL-402, and ``unknown_exit`` is the last-resort backstop
+    whose message an operator most needs.
+
+    ``tests/test_error_summary_contract.py`` enforces the invariant. If you add
+    a key in ``run_coordinator``, add the field here or that test fails.
+    """
 
     auth_error: Optional[str] = None
     storage_error: Optional[str] = None
     circuit_breaker: Optional[str] = None
+    # SFBL-402: written by run_coordinator but previously undeclared, so
+    # persisted and then discarded before the API response.
+    output_storage_error: Optional[str] = None
+    unexpected_exception: Optional[str] = None
+    unknown_exit: Optional[str] = None
     preflight_warnings: Optional[List[PreflightWarning]] = None
 
     model_config = ConfigDict(extra="ignore")

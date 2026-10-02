@@ -77,9 +77,6 @@ Start at [`usage/index.md`](usage/index.md), which lists topics in nav order:
   suite conforms to. Source of truth for the helpers under
   `tests/e2e/sf/playwright/helpers/allure.ts` and
   `backend/tests/_allure_helpers.py`.
-- [specs/input-encoding-and-error-visibility.md](specs/input-encoding-and-error-visibility.md)
-  — locked design for input-decoding robustness, run error-summary visibility,
-  and load-step `object_name` validation. Not yet ticketed.
 
 Historical specs that have been implemented live under
 [`specs/implemented/`](specs/implemented/) for reference; they are **not**
@@ -90,6 +87,10 @@ instead. Notable historical artefacts:
   — the Phase 1 hosting spike that informed (and then was overturned by)
   the SFBL-334 cross-layer Allure dashboard architecture. Preserved for the
   size + history-merge numbers, not the verdict.
+- [specs/implemented/input-encoding-and-error-visibility.md](specs/implemented/input-encoding-and-error-visibility.md)
+  — the SFBL-400 design (UTF-8 by default, per-step encoding override,
+  run error-summary visibility). Its rejected-options log is the record to
+  check before anyone re-proposes encoding auto-detection.
 
 ---
 

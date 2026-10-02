@@ -1,7 +1,7 @@
 """Input storage service — single source of truth for local file operations.
 
 Centralises path-safety validation, directory listing, CSV preview, row counting,
-encoding detection, and glob-pattern discovery.  All file-browsing consumers
+text decoding, and glob-pattern discovery.  All file-browsing consumers
 (the files API, step preview) delegate here rather than implementing their own.
 
 Designed to match the storage abstraction interface in ``input-storage-spec.md``
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import boto3
 import botocore.exceptions
+import codecs
 import csv
 import fnmatch
 import io
@@ -20,7 +21,7 @@ import logging
 import os
 import pathlib
 from dataclasses import dataclass
-from typing import IO, Optional, Protocol
+from typing import IO, Callable, Iterator, Optional, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,12 +32,40 @@ from app.utils.encryption import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
-# Encodings attempted during detection, in priority order.
-# ``utf-8-sig`` handles UTF-8 with and without BOM and is tried first.
-# ``cp1252`` (Windows-1252) is tried before ``latin-1`` because it is the most
-# common non-UTF-8 encoding in practice.  ``latin-1`` is last because it accepts
-# every byte value and never raises, making it the universal fallback.
-_ENCODING_CANDIDATES: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
+# SFBL-401: input is decoded as UTF-8 unless a step supplies an override.
+#
+# There is deliberately **no encoding detection**.  Inferring an encoding from a
+# 64 KiB prefix and applying it to a whole stream is unsound by construction:
+# the guess can be invalidated by any byte past the sample, and — far worse —
+# a *wrong but valid* guess decodes cleanly and writes mojibake into Salesforce
+# with no error at all.  That silent case is not hypothetical; it is what the
+# official Salesforce Data Loader did to 25 Account records with the file that
+# motivated this change.  See DECISIONS.md 032.
+DEFAULT_ENCODING: str = "utf-8-sig"
+
+#: Byte cap for the post-failure diagnostic (D1.10a).  Above this the message
+#: degrades to naming the offending byte and offset only, rather than reading a
+#: large object again to identify a candidate codec.
+DIAGNOSTIC_MAX_BYTES: int = 8 * 1024 * 1024
+
+#: Codecs offered to operators, and therefore the codecs the failure diagnostic
+#: considers.  Mirrors ``app.models.load_step.InputEncoding``; duplicated as a
+#: plain tuple to keep this module free of a model import.
+_DIAGNOSTIC_CANDIDATES: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
+
+#: Chunk size for streaming decode.
+_CHUNK_BYTES: int = 64 * 1024
+
+#: Longest physical line (characters, terminator included) a load will read.
+#: Comfortably above the largest record Salesforce accepts, so only a file with
+#: missing or unsupported line breaks reaches it.  Without the cap such a file
+#: is buffered whole as one "line" before :mod:`csv` sees any of it (SFBL-417).
+MAX_LINE_CHARS: int = 1024 * 1024
+
+
+def resolve_encoding(encoding: Optional[str]) -> str:
+    """Return the codec to decode with: the override, or the UTF-8 default."""
+    return encoding or DEFAULT_ENCODING
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
@@ -52,6 +81,329 @@ class InputConnectionNotFoundError(InputStorageError):
 
 class UnsupportedInputProviderError(InputStorageError):
     """Raised when an input connection refers to an unsupported provider."""
+
+
+class InputDecodeError(InputStorageError):
+    """Raised when an input file cannot be decoded with the resolved encoding.
+
+    Subclasses :class:`InputStorageError` deliberately, so it flows through the
+    existing ``except InputStorageError`` handler in the run coordinator and
+    lands in the ``storage_error`` key of ``LoadRun.error_summary`` — a field
+    that is already declared on ``RunErrorSummary``, so the failure is visible
+    without depending on SFBL-402.  (Same rationale as
+    ``StepReferenceResolutionError``.)
+
+    Handlers that care about the distinction must test for this subclass
+    *before* the generic ``InputStorageError`` branch and log
+    ``outcome_code=input_decode_error``: ``storage_error`` means the source was
+    unreachable, whereas this means the source was read perfectly and its bytes
+    are not what we expected.  Different owners, different remedies.
+
+    Attributes are structured so log sites never have to re-parse the message.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        path: str,
+        encoding: str,
+        byte_value: Optional[int] = None,
+        byte_offset: Optional[int] = None,
+    ) -> None:
+        super().__init__(message)
+        self.path = path
+        self.encoding = encoding
+        self.byte_value = byte_value
+        self.byte_offset = byte_offset
+
+
+class InputLineTooLongError(InputDecodeError):
+    """Raised when a physical line exceeds :data:`MAX_LINE_CHARS`.
+
+    Subclasses :class:`InputDecodeError` so every handler treats it the same
+    way: the source was read fine but its contents are not a usable CSV — a
+    data problem for the operator, not a storage outage.  There is no single
+    offending byte, so ``byte_value`` and ``byte_offset`` are ``None``.
+    """
+
+    def __init__(self, message: str, *, path: str, encoding: str, line_number: int) -> None:
+        super().__init__(message, path=path, encoding=encoding)
+        self.line_number = line_number
+
+
+# ── Decoding ──────────────────────────────────────────────────────────────────
+
+
+def _diagnose(
+    reread: Optional[Callable[[], IO[bytes]]],
+    failed_encoding: str,
+) -> str:
+    """Return a human-readable hint about what an undecodable file looks like.
+
+    Runs **only** after a decode failure has already terminated the read, so a
+    second pass costs nothing that matters.  It **diagnoses but never acts** —
+    the caller still refuses the file.  Silently choosing the diagnosed codec
+    is exactly the behaviour this module removed.
+
+    Bounded three ways (D1.10a): capped at :data:`DIAGNOSTIC_MAX_BYTES`, read in
+    chunks rather than materialised whole, and each candidate abandoned at its
+    first failing byte rather than read to EOF.
+    """
+    if reread is None:
+        return ""
+
+    # ``latin-1`` is deliberately excluded: it never raises on any byte
+    # sequence, so "it decodes cleanly as latin-1" is true of *every* file and
+    # is evidence of nothing.  Recommending it would be actively harmful — a
+    # latin-1 read is exactly what silently mojibaked 25 Account records in the
+    # incident that motivated this work.  If no strict codec matches, the file
+    # is malformed and the operator needs to hear that instead.
+    candidates = [
+        c
+        for c in _DIAGNOSTIC_CANDIDATES
+        if c != failed_encoding and c != "latin-1"
+    ]
+    if not candidates:
+        return ""
+
+    # One incremental decoder per candidate, all fed the same chunks.  A
+    # candidate is dropped the moment it fails, so a wrong codec costs only the
+    # bytes read up to its first bad byte — not a full pass per codec.
+    try:
+        decoders = {
+            c: codecs.getincrementaldecoder(c)("strict") for c in candidates
+        }
+    except LookupError:  # pragma: no cover - candidates are static
+        return ""
+
+    read_bytes = 0
+    try:
+        with reread() as raw:
+            while decoders:
+                chunk = raw.read(_CHUNK_BYTES)
+                if not chunk:
+                    break
+                read_bytes += len(chunk)
+                if read_bytes > DIAGNOSTIC_MAX_BYTES:
+                    mb = DIAGNOSTIC_MAX_BYTES // (1024 * 1024)
+                    return (
+                        f" File is larger than {mb} MB, so no encoding diagnosis "
+                        f"was attempted."
+                    )
+                for name in list(decoders):
+                    try:
+                        decoders[name].decode(chunk)
+                    except UnicodeDecodeError:
+                        del decoders[name]
+            for name in list(decoders):
+                try:
+                    decoders[name].decode(b"", final=True)
+                except UnicodeDecodeError:
+                    del decoders[name]
+    except Exception:  # pragma: no cover - diagnosis must never mask the real error
+        return ""
+
+    for candidate in candidates:
+        if candidate in decoders:
+            return (
+                f" The file decodes cleanly as {candidate} — if that is correct, "
+                f"set Encoding on the step."
+            )
+
+    return (
+        " No supported encoding decodes the whole file. It appears to contain "
+        "mixed encodings and should be repaired at source."
+    )
+
+
+class _ByteCountingReader(io.BufferedIOBase):
+    """Byte source for :class:`io.TextIOWrapper` that counts what it hands over.
+
+    The wrapper decodes every chunk as soon as it reads it, so ``consumed`` is
+    exactly the number of bytes fed to the decoder so far — the quantity a
+    decode error's file offset is derived from.
+    """
+
+    def __init__(self, raw: IO[bytes]) -> None:
+        super().__init__()
+        self._raw = raw
+        self.consumed = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def read(self, size: Optional[int] = -1) -> bytes:
+        data = self._raw.read() if size is None or size < 0 else self._raw.read(size)
+        self.consumed += len(data)
+        return data
+
+    read1 = read
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        try:
+            self._raw.close()
+        except Exception:  # pragma: no cover - best effort
+            pass
+        finally:
+            super().close()
+
+
+class _DecodingTextStream:
+    """Streaming text reader that turns decode failures into :exc:`InputDecodeError`.
+
+    Exists because ``open_text`` *returns a handle* — decoding happens lazily
+    inside the caller's read loop, so there is no ``try`` at the storage
+    boundary that a :exc:`UnicodeDecodeError` would ever pass through.  This
+    wrapper is that ``try``.
+
+    Decoding and line splitting are delegated to :class:`io.TextIOWrapper` with
+    ``newline=""`` — no translation, and ``\\r``, ``\\n`` and ``\\r\\n`` all
+    terminate a line — because every caller hands this to :mod:`csv`, which
+    corrupts quoted fields containing embedded newlines otherwise.  A
+    hand-written line scanner here ran ~5× slower than the stdlib and was
+    quadratic on long lines (SFBL-417, DECISIONS.md 033).
+
+    Offsets are file-absolute **by construction**, without ``tell()`` (which
+    raises on a non-seekable S3 body): the wrapper reads through a
+    :class:`_ByteCountingReader`, and a :exc:`UnicodeDecodeError`'s ``object``
+    always ends at the last byte read.  That holds when a ``utf-8-sig`` decoder
+    strips a BOM too, because it strips it from ``object`` as well.
+
+    Physical lines longer than :data:`MAX_LINE_CHARS` raise
+    :exc:`InputLineTooLongError` instead of being buffered whole.
+    """
+
+    def __init__(
+        self,
+        raw: IO[bytes],
+        *,
+        path: str,
+        encoding: str,
+        reread: Optional[Callable[[], IO[bytes]]] = None,
+        chunk_size: int = _CHUNK_BYTES,
+        errors: str = "strict",
+    ) -> None:
+        self._path = path
+        self._encoding = encoding
+        self._reread = reread
+        self._source = _ByteCountingReader(raw)
+        # ``errors="replace"`` is used only by preview surfaces (D1.11), where
+        # browsing must never raise; load paths always decode strictly.
+        self._text = io.TextIOWrapper(
+            self._source, encoding=encoding, errors=errors, newline=""
+        )
+        self._text._CHUNK_SIZE = chunk_size  # type: ignore[attr-defined]
+        self._lines_read = 0
+        self._closed = False
+
+    # -- internals ---------------------------------------------------------
+
+    def _decode_error(self, exc: UnicodeDecodeError) -> InputDecodeError:
+        # ``exc.object`` ends at the last byte handed to the decoder (any bytes
+        # it carried over from the previous chunk, then this chunk), so its
+        # first byte sits at ``consumed - len(exc.object)`` in the file.
+        offset = max(self._source.consumed - len(exc.object) + exc.start, 0)
+        byte_value = exc.object[exc.start] if exc.start < len(exc.object) else None
+        name = pathlib.PurePosixPath(self._path).name or self._path
+
+        detail = f" (0x{byte_value:02x})" if byte_value is not None else ""
+        message = (
+            f"{name} is not valid {self._encoding}: byte{detail} at offset {offset} "
+            f"could not be decoded."
+        ) + _diagnose(self._reread, self._encoding)
+
+        return InputDecodeError(
+            message,
+            path=self._path,
+            encoding=self._encoding,
+            byte_value=byte_value,
+            byte_offset=offset,
+        )
+
+    def _line_too_long(self) -> InputLineTooLongError:
+        name = pathlib.PurePosixPath(self._path).name or self._path
+        line_number = self._lines_read + 1
+        return InputLineTooLongError(
+            f"{name}: line {line_number:,} is longer than {MAX_LINE_CHARS:,} "
+            f"characters, so the file cannot be read as a CSV. It is probably "
+            f"missing line breaks, or is not a CSV file.",
+            path=self._path,
+            encoding=self._encoding,
+            line_number=line_number,
+        )
+
+    def _lines(self) -> Iterator[str]:
+        # Hot path: one C-level readline per physical line.  The size argument
+        # bounds memory for a file with no line breaks; reading one character
+        # past the cap is how an over-long line is told apart from one that
+        # fits exactly.
+        readline = self._text.readline
+        cap = MAX_LINE_CHARS
+        size = cap + 1
+        count = self._lines_read
+        try:
+            while True:
+                line = readline(size)
+                if not line:
+                    return
+                if len(line) > cap:
+                    self._lines_read = count
+                    raise self._line_too_long()
+                count += 1
+                yield line
+        except UnicodeDecodeError as exc:
+            raise self._decode_error(exc) from exc
+        finally:
+            self._lines_read = count
+
+    # -- text IO surface ---------------------------------------------------
+
+    def readline(self, limit: int = -1) -> str:
+        cap = MAX_LINE_CHARS
+        try:
+            if limit is not None and 0 <= limit <= cap:
+                return self._text.readline(limit)
+            line = self._text.readline(cap + 1)
+        except UnicodeDecodeError as exc:
+            raise self._decode_error(exc) from exc
+        if len(line) > cap:
+            raise self._line_too_long()
+        if line:
+            self._lines_read += 1
+        return line
+
+    def read(self, size: int = -1) -> str:
+        try:
+            return self._text.read(-1 if size is None else size)
+        except UnicodeDecodeError as exc:
+            raise self._decode_error(exc) from exc
+
+    def __iter__(self) -> Iterator[str]:
+        return self._lines()
+
+    def __next__(self) -> str:
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
+
+    def __enter__(self) -> "_DecodingTextStream":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._text.close()
+        except Exception:  # pragma: no cover - best effort
+            pass
 
 
 # ── Data transfer objects ─────────────────────────────────────────────────────
@@ -95,45 +447,13 @@ class BaseInputStorage(Protocol):
         limit: int = 50,
         offset: int = 0,
         filters: list[dict[str, str]] | None = None,
+        *,
+        encoding: str | None = None,
     ) -> InputPreview: ...
 
     def discover_files(self, glob_pattern: str) -> list[str]: ...
 
-    def open_text(self, path: str) -> IO[str]: ...
-
-
-# ── Encoding detection ────────────────────────────────────────────────────────
-
-
-def detect_encoding_from_bytes(raw: bytes) -> str:
-    """Return the most likely text encoding for *raw* bytes."""
-    sample = raw[:65536]
-    for enc in _ENCODING_CANDIDATES:
-        try:
-            sample.decode(enc)
-            return enc
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return "latin-1"  # pragma: no cover — latin-1 never raises
-
-
-def detect_encoding(file_path: pathlib.Path, sample_size: int = 65536) -> str:
-    """Return the most likely text encoding for *file_path*.
-
-    Reads the first *sample_size* bytes (default 64 KiB) and tries each
-    encoding in :data:`_ENCODING_CANDIDATES` until one decodes without error.
-    ``latin-1`` always succeeds and acts as the universal fallback.
-
-    Args:
-        file_path: Path to the file to inspect.
-        sample_size: Number of bytes to sample.
-
-    Returns:
-        Encoding name suitable for ``open()`` / ``bytes.decode()``.
-    """
-    enc = detect_encoding_from_bytes(file_path.read_bytes()[:sample_size])
-    logger.debug("Detected encoding %s for %s", enc, file_path.name)
-    return enc
+    def open_text(self, path: str, *, encoding: str | None = None) -> IO[str]: ...
 
 
 # ── Shared path helpers ───────────────────────────────────────────────────────
@@ -508,11 +828,16 @@ class LocalInputStorage:
         limit: int = 50,
         offset: int = 0,
         filters: list[dict[str, str]] | None = None,
+        *,
+        encoding: str | None = None,
     ) -> InputPreview:
         """Return a paginated, optionally filtered page of rows from a CSV file.
 
-        Uses :func:`detect_encoding` so files encoded as cp1252 or latin-1 are
-        handled correctly.
+        Decodes with *encoding* (default UTF-8) using ``errors="replace"``, so
+        browsing **never raises** — see D1.11.  Preview is advisory: nothing
+        read here reaches Salesforce, so leniency cannot corrupt data, and the
+        two Files-page endpoints have no step on which an operator could set an
+        encoding.  *Loads* stay strict.
 
         Args:
             path: Relative path to the CSV file.
@@ -538,13 +863,13 @@ class LocalInputStorage:
         if not resolved.is_file():
             raise FileNotFoundError(f"File not found: {path!r}")
 
-        enc = detect_encoding(resolved)
+        enc = resolve_encoding(encoding)
 
         active_filters = [f for f in (filters or []) if f]
 
         if active_filters:
             # Filtered path: full scan required to count matches accurately.
-            with open(resolved, newline="", encoding=enc) as fh:
+            with open(resolved, newline="", encoding=enc, errors="replace") as fh:
                 reader = csv.DictReader(fh)
                 header = list(reader.fieldnames or [])
                 filter_tuples = _validate_filters(header, active_filters)
@@ -570,7 +895,7 @@ class LocalInputStorage:
             )
 
         # Unfiltered path: read only what is needed.
-        with open(resolved, newline="", encoding=enc) as fh:
+        with open(resolved, newline="", encoding=enc, errors="replace") as fh:
             reader = csv.DictReader(fh)
             header = list(reader.fieldnames or [])
             # Advance past offset rows without storing them.
@@ -638,17 +963,24 @@ class LocalInputStorage:
         )
         return matched
 
-    def open_text(self, path: str) -> IO[str]:
-        """Open *path* for sequential text reading with encoding auto-detection.
+    def open_text(self, path: str, *, encoding: str | None = None) -> IO[str]:
+        """Open *path* for sequential text reading.
 
-        The caller is responsible for closing the returned file object (use as
-        a context manager).
+        Decodes with *encoding*, defaulting to UTF-8.  There is no encoding
+        detection: a wrong-but-valid guess decodes cleanly and writes mojibake
+        into Salesforce with no error at all, which is the failure this module
+        exists to prevent (DECISIONS.md 032).
+
+        The caller is responsible for closing the returned handle (use as a
+        context manager).
 
         Args:
             path: Relative path to the file within the base directory.
+            encoding: Codec override; ``None`` means the UTF-8 default.
 
         Returns:
-            Opened text file handle.
+            A streaming text handle that raises :exc:`InputDecodeError` — never
+            a bare :exc:`UnicodeDecodeError` — on undecodable input.
 
         Raises:
             :exc:`InputStorageError`: If *path* is invalid or attempts traversal.
@@ -659,8 +991,13 @@ class LocalInputStorage:
             raise InputStorageError(f"Invalid path: {path!r}")
         if not resolved.is_file():
             raise FileNotFoundError(f"File not found: {path!r}")
-        enc = detect_encoding(resolved)
-        return open(resolved, encoding=enc, newline="")
+        enc = resolve_encoding(encoding)
+        return _DecodingTextStream(
+            open(resolved, "rb"),
+            path=path,
+            encoding=enc,
+            reread=lambda: open(resolved, "rb"),
+        )
 
 
 class S3InputStorage:
@@ -789,11 +1126,15 @@ class S3InputStorage:
         limit: int = 50,
         offset: int = 0,
         filters: list[dict[str, str]] | None = None,
+        *,
+        encoding: str | None = None,
     ) -> InputPreview:
         """Return a paginated, optionally filtered page of rows from an S3 CSV object.
 
         Uses :meth:`open_text` for streaming so the full object is never loaded
-        into memory at once.
+        into memory at once.  Decodes with ``errors="replace"`` so browsing
+        never raises (D1.11) — preview is advisory, and these endpoints have no
+        step on which an operator could set an encoding.
 
         Args:
             path: Source-relative path to the S3 object.
@@ -812,7 +1153,7 @@ class S3InputStorage:
         active_filters = [f for f in (filters or []) if f]
 
         if active_filters:
-            with self.open_text(path) as fh:
+            with self.open_text(path, encoding=encoding, errors="replace") as fh:
                 reader = csv.DictReader(fh)
                 header = list(reader.fieldnames or [])
                 filter_tuples = _validate_filters(header, active_filters)
@@ -837,7 +1178,7 @@ class S3InputStorage:
                 has_next=has_next,
             )
 
-        with self.open_text(path) as fh:
+        with self.open_text(path, encoding=encoding, errors="replace") as fh:
             reader = csv.DictReader(fh)
             header = list(reader.fieldnames or [])
             for _ in zip(range(offset), reader):
@@ -890,12 +1231,18 @@ class S3InputStorage:
 
         return sorted(matched)
 
-    def open_text(self, path: str) -> IO[str]:
+    def open_text(
+        self, path: str, *, encoding: str | None = None, errors: str = "strict"
+    ) -> IO[str]:
         """Open *path* for sequential text reading without loading the full object.
 
-        Reads the first 64 KiB of the S3 object for encoding detection, then
-        wraps the remaining stream so that CSV processing can read rows
-        incrementally while keeping memory usage bounded.
+        Decodes with *encoding* (default UTF-8) and streams, so memory stays
+        bounded regardless of object size.  There is no encoding detection.
+
+        A ``reread`` closure is supplied to the decoding stream because the
+        underlying :class:`_S3StreamingBodyReader` wraps an already-partially
+        consumed ``StreamingBody`` and implements no ``seek`` — without it the
+        post-failure diagnostic could not re-read the object at all.
 
         The returned handle must be used as a context manager (or closed
         explicitly) so that the underlying S3 connection is released.
@@ -925,11 +1272,20 @@ class S3InputStorage:
             ) from exc
 
         body = response["Body"]
-        sample = body.read(65536)  # read just enough for encoding detection
-        enc = detect_encoding_from_bytes(sample)
-        raw = _S3StreamingBodyReader(body, sample)
+        raw = _S3StreamingBodyReader(body, b"")
         buffered = io.BufferedReader(raw, buffer_size=65536)
-        return io.TextIOWrapper(buffered, encoding=enc, newline="")
+
+        def _reread() -> IO[bytes]:
+            again = self._client.get_object(Bucket=self._bucket, Key=key)
+            return again["Body"]
+
+        return _DecodingTextStream(
+            buffered,
+            path=path,
+            encoding=resolve_encoding(encoding),
+            reread=_reread,
+            errors=errors,
+        )
 
 
 LOCAL_OUTPUT_SOURCE = "local-output"

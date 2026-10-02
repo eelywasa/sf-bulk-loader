@@ -167,6 +167,7 @@ def format_step(payload: dict[str, Any]) -> str:
         f"  load_plan_id:      {payload['load_plan_id']}",
         f"  external_id_field: {payload.get('external_id_field') or '(none)'}",
         f"  partition_size:    {payload.get('partition_size') or '(default)'}",
+        f"  encoding:          {payload.get('encoding') or 'utf-8 (default)'}",
         f"  assignment_rule_id:{payload.get('assignment_rule_id') or '(none)'}",
         f"  created_at:        {payload.get('created_at', 'N/A')}",
         f"  updated_at:        {payload.get('updated_at', 'N/A')}",

@@ -177,8 +177,14 @@ def test_preview_wrong_plan_id_returns_404(auth_client, tmp_path):
     assert resp.status_code == 404
 
 
-def test_preview_multiple_encodings_in_one_glob(auth_client, tmp_path):
-    """Both UTF-8 and latin-1 files in the same glob are counted correctly."""
+def test_preview_mixed_encodings_in_one_glob_is_refused(auth_client, tmp_path):
+    """SFBL-401: one encoding applies per step, so a mixed glob cannot succeed.
+
+    A step declares a single encoding, so a glob spanning UTF-8 and latin-1
+    files has no correct setting — the latin-1 file is refused whichever way
+    it is set. Surfacing that beats silently counting rows the loader would
+    later mangle.
+    """
     pid = _plan_id(auth_client, _conn_id(auth_client))
     step_id = _add_step(auth_client, pid, pattern="*.csv")
 
@@ -188,9 +194,21 @@ def test_preview_multiple_encodings_in_one_glob(auth_client, tmp_path):
         fh.write("Name\nCaf\xe9\nCaf\xe9\nCaf\xe9\n".encode("latin-1"))
 
     resp = _preview(auth_client, pid, step_id, str(tmp_path))
+    assert resp.status_code == 400
+    assert "not valid" in resp.json()["detail"]
+
+
+def test_preview_all_utf8_glob_counts_every_file(auth_client, tmp_path):
+    """The multi-file counting path itself still works when encodings agree."""
+    pid = _plan_id(auth_client, _conn_id(auth_client))
+    step_id = _add_step(auth_client, pid, pattern="*.csv")
+
+    (tmp_path / "a.csv").write_text("Name\nAlice\nBob\n", encoding="utf-8")
+    (tmp_path / "b.csv").write_text("Name\nCafé\nCafé\nCafé\n", encoding="utf-8")
+
+    resp = _preview(auth_client, pid, step_id, str(tmp_path))
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["total_rows"] == 5
+    assert resp.json()["total_rows"] == 5
 
 
 def test_preview_pattern_matching_no_files_returns_empty(auth_client, tmp_path):
