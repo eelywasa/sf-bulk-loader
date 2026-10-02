@@ -1,3 +1,5 @@
+> **Archived — SFBL-400 (2026-10-02).** This document captured the design at delivery (revision 7), plus SFBL-417's follow-up fixes to the decoding stream. For current behaviour see [`docs/usage/csv-format.md`](../../usage/csv-format.md), [`docs/usage/load-plans.md`](../../usage/load-plans.md), [`docs/architecture/storage.md`](../../architecture/storage.md) and DECISIONS.md 032–033. No further edits — historical reference only.
+
 # Input Encoding Robustness & Run Error Visibility
 
 **Status:** Live spec — ticketed as epic **SFBL-400**. Drafted 2026-08-17 from a

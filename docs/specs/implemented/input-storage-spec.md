@@ -13,7 +13,7 @@
 > whole stream is unsound by construction, and because a wrong-but-valid guess
 > decodes cleanly and writes mojibake into Salesforce with no error at all.
 >
-> See `docs/specs/input-encoding-and-error-visibility.md` and DECISIONS.md 032.
+> See `docs/specs/implemented/input-encoding-and-error-visibility.md` and DECISIONS.md 032.
 > Sections of this document describing encoding detection no longer reflect
 > the product.
 

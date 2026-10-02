@@ -1061,7 +1061,7 @@ loads are already silently corrupting data — converting invisible corruption
 into a visible, one-dropdown fix is the point. Blast radius is bounded: there
 is no in-product scheduler, so no unattended recurring loads.
 
-Full design, evidence and rejected options: `docs/specs/input-encoding-and-error-visibility.md` (revision 7+).
+Full design, evidence and rejected options: `docs/specs/implemented/input-encoding-and-error-visibility.md` (revision 7).
 
 
 ## 033 — The decoding stream delegates to `io.TextIOWrapper`; physical lines are capped (SFBL-417)
