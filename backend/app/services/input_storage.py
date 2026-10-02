@@ -56,6 +56,12 @@ _DIAGNOSTIC_CANDIDATES: tuple[str, ...] = ("utf-8-sig", "cp1252", "latin-1")
 #: Chunk size for streaming decode.
 _CHUNK_BYTES: int = 64 * 1024
 
+#: Longest physical line (characters, terminator included) a load will read.
+#: Comfortably above the largest record Salesforce accepts, so only a file with
+#: missing or unsupported line breaks reaches it.  Without the cap such a file
+#: is buffered whole as one "line" before :mod:`csv` sees any of it (SFBL-417).
+MAX_LINE_CHARS: int = 1024 * 1024
+
 
 def resolve_encoding(encoding: Optional[str]) -> str:
     """Return the codec to decode with: the override, or the UTF-8 default."""
@@ -110,6 +116,20 @@ class InputDecodeError(InputStorageError):
         self.encoding = encoding
         self.byte_value = byte_value
         self.byte_offset = byte_offset
+
+
+class InputLineTooLongError(InputDecodeError):
+    """Raised when a physical line exceeds :data:`MAX_LINE_CHARS`.
+
+    Subclasses :class:`InputDecodeError` so every handler treats it the same
+    way: the source was read fine but its contents are not a usable CSV — a
+    data problem for the operator, not a storage outage.  There is no single
+    offending byte, so ``byte_value`` and ``byte_offset`` are ``None``.
+    """
+
+    def __init__(self, message: str, *, path: str, encoding: str, line_number: int) -> None:
+        super().__init__(message, path=path, encoding=encoding)
+        self.line_number = line_number
 
 
 # ── Decoding ──────────────────────────────────────────────────────────────────
@@ -197,24 +217,63 @@ def _diagnose(
     )
 
 
+class _ByteCountingReader(io.BufferedIOBase):
+    """Byte source for :class:`io.TextIOWrapper` that counts what it hands over.
+
+    The wrapper decodes every chunk as soon as it reads it, so ``consumed`` is
+    exactly the number of bytes fed to the decoder so far — the quantity a
+    decode error's file offset is derived from.
+    """
+
+    def __init__(self, raw: IO[bytes]) -> None:
+        super().__init__()
+        self._raw = raw
+        self.consumed = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def read(self, size: Optional[int] = -1) -> bytes:
+        data = self._raw.read() if size is None or size < 0 else self._raw.read(size)
+        self.consumed += len(data)
+        return data
+
+    read1 = read
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        try:
+            self._raw.close()
+        except Exception:  # pragma: no cover - best effort
+            pass
+        finally:
+            super().close()
+
+
 class _DecodingTextStream:
-    """Streaming text reader that owns its decode loop.
+    """Streaming text reader that turns decode failures into :exc:`InputDecodeError`.
 
     Exists because ``open_text`` *returns a handle* — decoding happens lazily
     inside the caller's read loop, so there is no ``try`` at the storage
-    boundary that a :exc:`UnicodeDecodeError` would ever pass through.  Owning
-    the loop is the only place the error can be caught, and it makes the
-    reported byte offset exact **by construction**: ``TextIOWrapper.tell()``
-    raises on a non-seekable S3 body, so an offset cannot be recovered after
-    the fact.
+    boundary that a :exc:`UnicodeDecodeError` would ever pass through.  This
+    wrapper is that ``try``.
 
-    Reproduces ``newline=""`` semantics exactly — no translation, and ``\\r``,
-    ``\\n`` and ``\\r\\n`` all terminate a line — because every caller hands this
-    to :mod:`csv`, which corrupts quoted fields containing embedded newlines
-    otherwise.
+    Decoding and line splitting are delegated to :class:`io.TextIOWrapper` with
+    ``newline=""`` — no translation, and ``\\r``, ``\\n`` and ``\\r\\n`` all
+    terminate a line — because every caller hands this to :mod:`csv`, which
+    corrupts quoted fields containing embedded newlines otherwise.  A
+    hand-written line scanner here ran ~5× slower than the stdlib and was
+    quadratic on long lines (SFBL-417, DECISIONS.md 033).
 
-    Offsets count bytes *fed to the decoder* and are **not** adjusted for a
-    ``utf-8-sig`` BOM: the cumulative count is already file-absolute.
+    Offsets are file-absolute **by construction**, without ``tell()`` (which
+    raises on a non-seekable S3 body): the wrapper reads through a
+    :class:`_ByteCountingReader`, and a :exc:`UnicodeDecodeError`'s ``object``
+    always ends at the last byte read.  That holds when a ``utf-8-sig`` decoder
+    strips a BOM too, because it strips it from ``object`` as well.
+
+    Physical lines longer than :data:`MAX_LINE_CHARS` raise
+    :exc:`InputLineTooLongError` instead of being buffered whole.
     """
 
     def __init__(
@@ -227,48 +286,26 @@ class _DecodingTextStream:
         chunk_size: int = _CHUNK_BYTES,
         errors: str = "strict",
     ) -> None:
-        self._raw = raw
         self._path = path
         self._encoding = encoding
         self._reread = reread
-        self._chunk_size = chunk_size
+        self._source = _ByteCountingReader(raw)
         # ``errors="replace"`` is used only by preview surfaces (D1.11), where
         # browsing must never raise; load paths always decode strictly.
-        self._decoder = codecs.getincrementaldecoder(encoding)(errors=errors)
-        self._buf = ""
-        self._consumed = 0        # bytes handed to the decoder so far
-        self._eof = False
+        self._text = io.TextIOWrapper(
+            self._source, encoding=encoding, errors=errors, newline=""
+        )
+        self._text._CHUNK_SIZE = chunk_size  # type: ignore[attr-defined]
+        self._lines_read = 0
         self._closed = False
 
     # -- internals ---------------------------------------------------------
 
-    def _fill(self) -> bool:
-        """Decode one more chunk into the buffer. Returns False at EOF."""
-        if self._eof:
-            return False
-        chunk = self._raw.read(self._chunk_size)
-        if not chunk:
-            self._eof = True
-            # flush any bytes the decoder is still holding
-            try:
-                self._buf += self._decoder.decode(b"", final=True)
-            except UnicodeDecodeError as exc:
-                raise self._decode_error(exc, b"") from exc
-            return False
-        try:
-            self._buf += self._decoder.decode(chunk)
-        except UnicodeDecodeError as exc:
-            raise self._decode_error(exc, chunk) from exc
-        self._consumed += len(chunk)
-        return True
-
-    def _decode_error(self, exc: UnicodeDecodeError, chunk: bytes) -> InputDecodeError:
-        # ``exc.object`` is what the decoder was working on: any bytes it had
-        # buffered from the previous call, followed by this chunk.  So the file
-        # offset of exc.object[0] is (bytes consumed before this chunk) minus
-        # that carried-over prefix.
-        pending = max(len(exc.object) - len(chunk), 0)
-        offset = self._consumed - pending + exc.start
+    def _decode_error(self, exc: UnicodeDecodeError) -> InputDecodeError:
+        # ``exc.object`` ends at the last byte handed to the decoder (any bytes
+        # it carried over from the previous chunk, then this chunk), so its
+        # first byte sits at ``consumed - len(exc.object)`` in the file.
+        offset = max(self._source.consumed - len(exc.object) + exc.start, 0)
         byte_value = exc.object[exc.start] if exc.start < len(exc.object) else None
         name = pathlib.PurePosixPath(self._path).name or self._path
 
@@ -286,49 +323,70 @@ class _DecodingTextStream:
             byte_offset=offset,
         )
 
+    def _line_too_long(self) -> InputLineTooLongError:
+        name = pathlib.PurePosixPath(self._path).name or self._path
+        line_number = self._lines_read + 1
+        return InputLineTooLongError(
+            f"{name}: line {line_number:,} is longer than {MAX_LINE_CHARS:,} "
+            f"characters, so the file cannot be read as a CSV. It is probably "
+            f"missing line breaks, or is not a CSV file.",
+            path=self._path,
+            encoding=self._encoding,
+            line_number=line_number,
+        )
+
+    def _lines(self) -> Iterator[str]:
+        # Hot path: one C-level readline per physical line.  The size argument
+        # bounds memory for a file with no line breaks; reading one character
+        # past the cap is how an over-long line is told apart from one that
+        # fits exactly.
+        readline = self._text.readline
+        cap = MAX_LINE_CHARS
+        size = cap + 1
+        count = self._lines_read
+        try:
+            while True:
+                line = readline(size)
+                if not line:
+                    return
+                if len(line) > cap:
+                    self._lines_read = count
+                    raise self._line_too_long()
+                count += 1
+                yield line
+        except UnicodeDecodeError as exc:
+            raise self._decode_error(exc) from exc
+        finally:
+            self._lines_read = count
+
     # -- text IO surface ---------------------------------------------------
 
-    def readline(self, limit: int = -1) -> str:  # noqa: ARG002 - csv never passes one
-        while True:
-            idx = self._find_terminator()
-            if idx is not None:
-                line, self._buf = self._buf[:idx], self._buf[idx:]
-                return line
-            if not self._fill():
-                line, self._buf = self._buf, ""
-                return line
-
-    def _find_terminator(self) -> Optional[int]:
-        """Index just past the first line terminator, or None if incomplete."""
-        for i, ch in enumerate(self._buf):
-            if ch == "\n":
-                return i + 1
-            if ch == "\r":
-                if i + 1 < len(self._buf):
-                    return i + 2 if self._buf[i + 1] == "\n" else i + 1
-                # trailing '\r': can't tell '\r' from '\r\n' until more arrives
-                if self._eof:
-                    return i + 1
-                return None
-        return None
+    def readline(self, limit: int = -1) -> str:
+        cap = MAX_LINE_CHARS
+        try:
+            if limit is not None and 0 <= limit <= cap:
+                return self._text.readline(limit)
+            line = self._text.readline(cap + 1)
+        except UnicodeDecodeError as exc:
+            raise self._decode_error(exc) from exc
+        if len(line) > cap:
+            raise self._line_too_long()
+        if line:
+            self._lines_read += 1
+        return line
 
     def read(self, size: int = -1) -> str:
-        if size is None or size < 0:
-            while self._fill():
-                pass
-            out, self._buf = self._buf, ""
-            return out
-        while len(self._buf) < size and self._fill():
-            pass
-        out, self._buf = self._buf[:size], self._buf[size:]
-        return out
+        try:
+            return self._text.read(-1 if size is None else size)
+        except UnicodeDecodeError as exc:
+            raise self._decode_error(exc) from exc
 
     def __iter__(self) -> Iterator[str]:
-        return self
+        return self._lines()
 
     def __next__(self) -> str:
         line = self.readline()
-        if line == "":
+        if not line:
             raise StopIteration
         return line
 
@@ -343,7 +401,7 @@ class _DecodingTextStream:
             return
         self._closed = True
         try:
-            self._raw.close()
+            self._text.close()
         except Exception:  # pragma: no cover - best effort
             pass
 

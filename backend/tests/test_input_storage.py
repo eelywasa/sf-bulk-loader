@@ -1,8 +1,12 @@
 """Tests for the LocalInputStorage service."""
 
+import ast
+import codecs
 import csv
 import io
 import pathlib
+import time
+import tracemalloc
 from unittest.mock import patch
 
 import pytest
@@ -10,10 +14,12 @@ import pytest
 from app.models.input_connection import InputConnection
 from app.services.input_storage import (
     InputDecodeError,
+    InputLineTooLongError,
     InputStorageError,
     LOCAL_OUTPUT_SOURCE,
     LocalInputStorage,
     S3InputStorage,
+    _DecodingTextStream,
     get_storage,
 )
 from app.utils.encryption import encrypt_secret
@@ -1072,3 +1078,183 @@ def test_preview_never_raises_on_undecodable_bytes(tmp_path):
 
     assert preview.header == ["Name"]
     assert len(preview.rows) == 2
+
+
+# ── SFBL-417: stream throughput, line-length cap, offsets, encoding call sites ──
+
+
+def _rows_via(fh) -> int:
+    return sum(1 for _ in csv.reader(fh))
+
+
+def test_open_text_reads_at_stdlib_speed(tmp_path):
+    """The decoding stream must not be materially slower than a plain open().
+
+    Compares a ratio, not absolute times, so a slow CI runner can't flake it.
+
+    Falsification: the hand-written line scanner this replaced ran ~5x slower
+    than stdlib on UCAS-shaped data (SFBL-417), so it fails the 1.5x bound.
+    """
+    row = (
+        b'Acme Corporation Ltd,EXT-00000001,"12 High Street, Leeds",'
+        b"acme@example.com,+44 113 496 0000,Active,2026-01-01\n"
+    )
+    block = row * 10_000
+    path = tmp_path / "big.csv"
+    with path.open("wb") as fh:
+        fh.write(b"Name,Ext,Address,Email,Phone,Status,Since\n")
+        while fh.tell() < 50 * 1024 * 1024:
+            fh.write(block)
+    storage = LocalInputStorage(str(tmp_path))
+
+    def best_of(n: int, read) -> float:
+        best = float("inf")
+        for _ in range(n):
+            start = time.perf_counter()
+            read()
+            best = min(best, time.perf_counter() - start)
+        return best
+
+    def stdlib() -> None:
+        with path.open(encoding="utf-8-sig", newline="") as fh:
+            _rows_via(fh)
+
+    def stream() -> None:
+        with storage.open_text("big.csv") as fh:
+            _rows_via(fh)
+
+    baseline = best_of(2, stdlib)
+    ours = best_of(2, stream)
+    assert ours <= baseline * 1.5, f"open_text {ours:.2f}s vs stdlib {baseline:.2f}s"
+
+
+def test_file_without_line_breaks_is_rejected_quickly_and_in_bounded_memory(tmp_path):
+    """A 16 MB single-line file fails fast instead of being buffered whole.
+
+    Falsification: the previous stream rescanned its buffer from the start on
+    every chunk (~60 s for 16 MB) and held the whole line in memory, so it
+    fails both the time and the memory bound.
+    """
+    (tmp_path / "one_line.csv").write_bytes(b"a" * (16 * 1024 * 1024))
+    storage = LocalInputStorage(str(tmp_path))
+
+    tracemalloc.start()
+    start = time.perf_counter()
+    try:
+        with pytest.raises(InputLineTooLongError) as exc_info:
+            with storage.open_text("one_line.csv") as fh:
+                _rows_via(fh)
+        elapsed = time.perf_counter() - start
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert elapsed < 1.0
+    assert peak < 8 * 1024 * 1024
+    err = exc_info.value
+    assert isinstance(err, InputDecodeError)  # routed as an operator data problem
+    assert err.line_number == 1
+    assert "missing line breaks" in str(err)
+
+
+@pytest.mark.parametrize("access", ["iterate", "readline"])
+def test_line_length_cap_boundary(tmp_path, monkeypatch, access):
+    """The cap counts characters including the terminator, and names the line."""
+    monkeypatch.setattr("app.services.input_storage.MAX_LINE_CHARS", 10)
+    (tmp_path / "f.csv").write_bytes(b"Name\n" + b"a" * 9 + b"\n" + b"b" * 10 + b"\n")
+    storage = LocalInputStorage(str(tmp_path))
+
+    lines: list[str] = []
+    with pytest.raises(InputLineTooLongError) as exc_info:
+        with storage.open_text("f.csv") as fh:
+            if access == "iterate":
+                for line in fh:
+                    lines.append(line)
+            else:
+                while line := fh.readline():
+                    lines.append(line)
+
+    assert lines == ["Name\n", "a" * 9 + "\n"]  # exactly 10 characters is allowed
+    assert exc_info.value.line_number == 3
+
+
+@pytest.mark.parametrize(
+    ("data", "chunk_size", "expected"),
+    [
+        (b"a,b\r\nc,d\r\n", 64 * 1024, ["a,b\r\n", "c,d\r\n"]),
+        (b"a\rb\rc", 64 * 1024, ["a\r", "b\r", "c"]),
+        # \r\n split across a chunk boundary is still one terminator.
+        (b"ab\r\ncd", 3, ["ab\r\n", "cd"]),
+        # A multi-byte character split across chunks decodes intact.
+        ("x€y\nz\n".encode(), 2, ["x€y\n", "z\n"]),
+    ],
+)
+def test_stream_keeps_newline_empty_semantics(data, chunk_size, expected):
+    """No translation, and \\r, \\n and \\r\\n all terminate a line (csv needs this)."""
+    stream = _DecodingTextStream(
+        io.BytesIO(data), path="t.csv", encoding="utf-8-sig", chunk_size=chunk_size
+    )
+    with stream as fh:
+        assert list(fh) == expected
+
+
+def test_quoted_embedded_newlines_survive_csv_parsing(tmp_path):
+    (tmp_path / "q.csv").write_bytes(b'Name,Note\r\nAcme,"line one\r\nline two"\r\nBeta,x\r\n')
+    storage = LocalInputStorage(str(tmp_path))
+    with storage.open_text("q.csv") as fh:
+        rows = list(csv.reader(fh))
+    assert rows == [["Name", "Note"], ["Acme", "line one\r\nline two"], ["Beta", "x"]]
+
+
+@pytest.mark.parametrize("access", ["iterate", "read"])
+@pytest.mark.parametrize(
+    ("data", "expected_offset"),
+    [
+        # A BOM is stripped by the decoder, but the offset is still
+        # file-absolute.  The previous stream reported 8 here (3 low).
+        (codecs.BOM_UTF8 + b"Name\nCaf\x80\n", 11),
+        # First byte of a multi-byte sequence is the last byte of a chunk.
+        (b"a" * 65535 + "€".encode()[:1] + b"\n", 65535),
+        # A valid sequence straddles the chunk boundary; the bad byte follows.
+        (b"a" * 65534 + "€".encode() + b"\n\xff\n", 65538),
+        # A sequence truncated at end of file.
+        (b"Name\nx" + "€".encode()[:2], 6),
+    ],
+)
+def test_decode_error_offsets_are_file_absolute(tmp_path, data, expected_offset, access):
+    (tmp_path / "f.csv").write_bytes(data)
+    storage = LocalInputStorage(str(tmp_path))
+
+    with pytest.raises(InputDecodeError) as exc_info:
+        with storage.open_text("f.csv") as fh:
+            if access == "iterate":
+                _rows_via(fh)
+            else:
+                fh.read()
+
+    assert exc_info.value.byte_offset == expected_offset
+
+
+def test_every_open_text_call_passes_an_encoding():
+    """Every read site must carry an encoding (SFBL-401 D1.8a, SFBL-417).
+
+    A call without one silently decodes as UTF-8, so a correctly configured
+    cp1252 step fails at that site alone — the run pre-count and retry both
+    shipped that way.
+
+    Falsification: restoring either of those calls without ``encoding=`` makes
+    this test list it.
+    """
+    app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
+    missing = []
+    for source in sorted(app_dir.rglob("*.py")):
+        tree = ast.parse(source.read_text(), filename=str(source))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "open_text"
+                and not any(kw.arg == "encoding" for kw in node.keywords)
+            ):
+                missing.append(f"{source.relative_to(app_dir.parent)}:{node.lineno}")
+    assert not missing, f"open_text called without encoding= at: {missing}"

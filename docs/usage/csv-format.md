@@ -38,7 +38,11 @@ files to satisfy its rules, but input files should still meet the following:
   case. Note that a step set to ISO-8859-1 can never report a decode error,
   because that encoding accepts every possible byte.
 - **Line endings** — LF (`\n`) in the output. The loader re-emits with LF even
-  if the input uses CRLF.
+  if the input uses CRLF. Input may use LF, CRLF or CR.
+- **Line length** — no single line of the file may exceed 1,048,576
+  characters. That is far longer than any record Salesforce accepts, so in
+  practice it only rejects a file with missing line breaks, or one that is not
+  a CSV at all. The error names the line.
 - **Headers** — the first row contains **Salesforce field API names**
   (case-sensitive, exact match) — `FirstName`, not `First Name`.
 - **Nulls** — use `#N/A` (literal, uppercase) to explicitly null a field.

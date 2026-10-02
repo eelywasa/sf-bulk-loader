@@ -574,7 +574,9 @@ async def _execute_run_body(
                 storage = await _get_storage(step.input_connection_id, db)
                 rel_paths = storage.discover_files(step.csv_file_pattern)
                 for rel_path in rel_paths:
-                    with storage.open_text(rel_path) as fh:
+                    # SFBL-417: the step's encoding must reach every read, or a
+                    # correctly configured cp1252 step fails here as UTF-8.
+                    with storage.open_text(rel_path, encoding=step.encoding) as fh:
                         reader = csv.reader(fh)
                         try:
                             next(reader)  # skip header

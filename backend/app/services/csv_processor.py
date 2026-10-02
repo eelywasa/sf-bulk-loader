@@ -369,7 +369,11 @@ async def build_retry_partitions(
                 _retry_partition_size = partition_size  # caller-supplied default
 
             for rel_path in rel_paths:
-                with storage.open_text(rel_path) as fh:
+                # SFBL-417: rebuild with the step's encoding, as the original
+                # run did, or a non-UTF-8 step can never be retried.
+                with storage.open_text(
+                    rel_path, encoding=getattr(step, "encoding", None)
+                ) as fh:
                     for chunk in partition_csv(fh, _retry_partition_size):
                         if current_idx == target_idx:
                             track_b_chunks.append(chunk)

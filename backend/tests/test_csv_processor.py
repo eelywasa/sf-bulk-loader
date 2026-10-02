@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.services.input_storage import InputDecodeError
+from app.services.input_storage import InputDecodeError, LocalInputStorage
 from app.services.csv_processor import (
     CSVProcessorError,
     CSVValidationResult,
@@ -720,6 +720,30 @@ class TestBuildRetryPartitions:
         assert len(result) == 1
         assert b"Acme" in result[0]
         mock_get_storage.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_track_b_rebuilds_with_the_step_encoding(self, tmp_path: pathlib.Path) -> None:
+        """SFBL-417: Track B re-reads the source with the step's encoding.
+
+        Falsification: without ``encoding=`` the rebuild decodes as UTF-8 and
+        raises InputDecodeError on the cp1252 byte, so a non-UTF-8 step could
+        never be retried.
+        """
+        (tmp_path / "win.csv").write_bytes(b"Name\nCaf\x80\n")
+        step = _fake_step(csv_file_pattern="win.csv", partition_size=100)
+        step.encoding = "cp1252"
+
+        result = await build_retry_partitions(
+            job_records=[_fake_job(partition_index=0)],
+            step=step,
+            partition_size=100,
+            output_dir=str(tmp_path),
+            db=_fake_db(),
+            _get_storage=AsyncMock(return_value=LocalInputStorage(str(tmp_path))),
+        )
+
+        assert len(result) == 1
+        assert "Caf\u20ac".encode("utf-8") in result[0]
 
     @pytest.mark.asyncio
     async def test_track_b_s3_source_uses_get_storage(self) -> None:
