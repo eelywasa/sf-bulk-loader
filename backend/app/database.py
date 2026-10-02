@@ -60,6 +60,20 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db() -> AsyncSession:
+    """Request-handler session.  Always depend on it as
+    ``Depends(get_db, scope="function")``.
+
+    The default ("request") scope closes the session only after the response
+    is sent *and its BackgroundTasks have finished*.  Starting a run schedules
+    the whole run as a BackgroundTask, so the request's session — left in a
+    read transaction by its last query — stayed open for hours: an idle
+    connection, and on SQLite a reader that blocks every WAL checkpoint.
+    Function scope closes it as soon as the endpoint returns (SFBL-408).
+
+    Every site must use the same scope.  FastAPI caches dependencies per scope,
+    so mixing them opens a second session per request and the request-scoped
+    one is still pinned.  ``tests/test_session_lifecycle.py`` enforces this.
+    """
     async with AsyncSessionLocal() as session:
         yield session
 

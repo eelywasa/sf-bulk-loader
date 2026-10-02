@@ -64,7 +64,7 @@ async def _get_or_404(ic_id: str, db: AsyncSession) -> InputConnection:
 @router.get("/", response_model=List[InputConnectionResponse])
 async def list_input_connections(
     direction: Optional[str] = Query(default=None, description="Filter by direction. 'in' returns in+both; 'out' returns out+both; other values match exactly."),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _view: None = Depends(_require_view),
 ) -> List[InputConnection]:
     stmt = select(InputConnection).order_by(InputConnection.created_at.desc())
@@ -82,7 +82,7 @@ async def list_input_connections(
 @router.post("/", response_model=InputConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_input_connection(
     data: InputConnectionCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: None = Depends(_require_manage),
 ) -> InputConnection:
     ic = InputConnection(
@@ -105,7 +105,7 @@ async def create_input_connection(
 @router.get("/{ic_id}", response_model=InputConnectionResponse)
 async def get_input_connection(
     ic_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _view: None = Depends(_require_view),
 ) -> InputConnection:
     return await _get_or_404(ic_id, db)
@@ -115,7 +115,7 @@ async def get_input_connection(
 async def update_input_connection(
     ic_id: str,
     data: InputConnectionUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: None = Depends(_require_manage),
 ) -> InputConnection:
     ic = await _get_or_404(ic_id, db)
@@ -133,7 +133,7 @@ async def update_input_connection(
 @router.delete("/{ic_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_input_connection(
     ic_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: None = Depends(_require_manage),
 ) -> None:
     ic = await _get_or_404(ic_id, db)
@@ -172,7 +172,7 @@ async def delete_input_connection(
 @router.post("/{ic_id}/test", response_model=InputConnectionTestResponse)
 async def test_input_connection(
     ic_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: None = Depends(_require_manage),
 ) -> InputConnectionTestResponse:
     """Verify S3 credentials: always checks read access; also checks write access for output connections."""

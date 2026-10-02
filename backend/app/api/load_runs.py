@@ -58,7 +58,7 @@ async def list_runs(
     run_status: Optional[RunStatus] = None,
     started_after: Optional[datetime] = None,
     started_before: Optional[datetime] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> List[LoadRun]:
     query = select(LoadRun)
     if plan_id is not None:
@@ -75,7 +75,7 @@ async def list_runs(
 
 
 @router.get("/{run_id}", response_model=LoadRunDetailResponse)
-async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> LoadRun:
+async def get_run(run_id: str, db: AsyncSession = Depends(get_db, scope="function")) -> LoadRun:
     result = await db.execute(
         select(LoadRun)
         .where(LoadRun.id == run_id)
@@ -90,7 +90,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> LoadRun:
 @router.post("/{run_id}/abort", response_model=LoadRunResponse)
 async def abort_run(
     run_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _abort: User = Depends(_require_abort),
 ) -> LoadRun:
     """Abort a pending or running load. In-progress jobs are marked aborted."""
@@ -103,7 +103,7 @@ async def download_logs_zip(
     success: bool = True,
     errors: bool = True,
     unprocessed: bool = True,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> StreamingResponse:
     """Stream a ZIP of all selected result CSVs for every job in this run.
 
@@ -132,7 +132,7 @@ async def retry_step(
     run_id: str,
     step_id: str,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User = Depends(_require_execute),
 ) -> LoadRun:
     """Create a new LoadRun that retries only the failed/aborted jobs of one step."""

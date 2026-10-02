@@ -336,7 +336,8 @@ backend/
 4. Broadcasts WebSocket status updates throughout
 
 Key implementation details:
-- Each concurrent partition gets its own `AsyncSession` (never share sessions across tasks)
+- Each concurrent partition gets its own `AsyncSession` (never share sessions across tasks), opened only *after* acquiring the run semaphore — a session opened while queued holds a connection for the whole wait and exhausted fds in production (SFBL-408)
+- Route handlers depend on the DB as `Depends(get_db, scope="function")`; the default scope keeps the session open until BackgroundTasks (whole runs) finish. A test enforces this.
 - Polling uses exponential backoff: starts at `SF_POLL_INTERVAL_INITIAL` (5s), doubles to `SF_POLL_INTERVAL_MAX` (30s)
 - HTTP retries: 3 attempts with 1s/2s/4s backoff on 5xx and 429
 - JWT lifetime: 180s (Salesforce enforced); token cached with 300s refresh buffer before expiry

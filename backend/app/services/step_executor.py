@@ -298,6 +298,11 @@ async def _execute_step(
     # Snapshot IDs now (while objects are fresh) so expire_all() below is safe.
     job_record_ids = [jr.id for jr in job_records]
 
+    # SFBL-408: the refreshes above left this session in a read transaction.
+    # End it before the gather, which can run for hours: an open transaction
+    # holds a connection idle, and on SQLite stops WAL checkpoints throughout.
+    await db.commit()
+
     # ── 4. Process all partitions concurrently ────────────────────────────────
     tasks = [
         _process(

@@ -25,6 +25,6 @@ _require_settings = require_permission(SYSTEM_SETTINGS)
 @router.get("")
 async def get_about(
     _user: User = Depends(_require_settings),
-    session: AsyncSession = Depends(get_db),
+    session: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict[str, Any]:
     return await get_about_payload(session)

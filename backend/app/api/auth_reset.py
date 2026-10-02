@@ -123,7 +123,7 @@ async def _reset_url(raw_token: str, request: Request) -> str:
 async def request_password_reset(
     body: PasswordResetRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     email_service: EmailService = Depends(get_email_service),
     _ip: None = Depends(_ip_limiter),
 ) -> None:
@@ -239,7 +239,7 @@ async def request_password_reset(
 @router.post("/confirm", status_code=status.HTTP_204_NO_CONTENT)
 async def confirm_password_reset(
     body: PasswordResetConfirm,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Redeem a password-reset token and set a new password."""
     with tracing.auth_password_reset_confirm_span() as span:

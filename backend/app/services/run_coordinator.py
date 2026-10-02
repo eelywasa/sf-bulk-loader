@@ -305,7 +305,11 @@ async def _build_retry_job_records(
     await db.commit()
     for jr in job_records:
         await db.refresh(jr)
-    return [jr.id for jr in job_records]
+    job_record_ids = [jr.id for jr in job_records]
+    # SFBL-408: end the read transaction the refreshes opened, so the session
+    # holds no connection while the caller gathers the retry partitions.
+    await db.commit()
+    return job_record_ids
 
 
 async def _execute_run(

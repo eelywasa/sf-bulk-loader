@@ -104,7 +104,7 @@ def _mask_email(email: str) -> str:
 async def update_profile(
     body: ProfileUpdateRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> UserResponse:
     """Update the authenticated user's display name.
 
@@ -155,7 +155,7 @@ async def request_email_change(
     body: EmailChangeRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     email_service=Depends(get_email_service),
 ) -> dict:
     """Request an email address change.
@@ -329,7 +329,7 @@ async def request_email_change(
 @router.post("/email-change/confirm", status_code=status.HTTP_204_NO_CONTENT)
 async def confirm_email_change(
     body: EmailChangeConfirm,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Confirm an email address change using the token from the verification link.
 

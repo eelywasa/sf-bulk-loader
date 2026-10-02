@@ -154,7 +154,7 @@ async def _guard_last_admin(
 @router.get("/", response_model=AdminUserListResponse, include_in_schema=False)
 async def list_users(
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     status_filter: Optional[str] = Query(None, alias="status"),
     include_deleted: bool = Query(False),
     page: int = Query(1, ge=1),
@@ -200,7 +200,7 @@ class AdminStatsResponse(BaseModel):
 @router.get("/stats", response_model=AdminStatsResponse, summary="Admin user statistics")
 async def get_admin_stats(
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AdminStatsResponse:
     """Return lightweight admin statistics.
 
@@ -222,7 +222,7 @@ async def get_admin_stats(
 async def get_user(
     user_id: str,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AdminUserResponse:
     user = await _get_user_or_404(user_id, db)
     return AdminUserResponse.from_user(user)
@@ -236,7 +236,7 @@ async def get_user(
 async def invite_user(
     body: InviteUserRequest,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> InviteUserResponse:
     """Create a pending user row and an invitation token.
 
@@ -335,7 +335,7 @@ async def update_user(
     user_id: str,
     body: UpdateUserRequest,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AdminUserResponse:
     """Update a user's profile assignment and/or display name.
 
@@ -395,7 +395,7 @@ async def update_user(
 async def admin_unlock_user(
     user_id: str,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> UserResponse:
     """Clear tier-1 and/or tier-2 lockout for the target user.
 
@@ -458,7 +458,7 @@ async def admin_unlock_user(
 async def deactivate_user(
     user_id: str,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AdminUserResponse:
     """Transition a user from ``active`` → ``deactivated``.
 
@@ -502,7 +502,7 @@ async def deactivate_user(
 async def reactivate_user(
     user_id: str,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AdminUserResponse:
     """Transition a user from ``deactivated`` → ``active``.
 
@@ -547,7 +547,7 @@ async def reactivate_user(
 async def admin_reset_password(
     user_id: str,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AdminResetPasswordResponse:
     """Generate a 16-character temporary password for the target user.
 
@@ -598,7 +598,7 @@ async def admin_reset_password(
 async def resend_invite(
     user_id: str,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ResendInviteResponse:
     """Issue a fresh InvitationToken for a user whose status is ``invited``.
 
@@ -657,7 +657,7 @@ async def resend_invite(
 async def delete_user(
     user_id: str,
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Set ``status='deleted'`` on the target user (tombstone / soft delete).
 
@@ -722,7 +722,7 @@ class AdminReset2faResponse(BaseModel):
 async def admin_reset_2fa(
     user_id: str,
     current_user: _UsersReset2faUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> AdminReset2faResponse:
     """Clear a user's TOTP factor + all backup codes (SFBL-249).
 
@@ -811,7 +811,7 @@ class ProfileListItem(BaseModel):
 @profiles_router.get("", response_model=List[ProfileListItem], summary="List profiles (admin)")
 async def list_profiles(
     current_user: _UsersManageUser,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> List[ProfileListItem]:
     """Return all profiles so the invite form can populate the profile selector."""
     result = await db.execute(select(Profile).order_by(Profile.name))

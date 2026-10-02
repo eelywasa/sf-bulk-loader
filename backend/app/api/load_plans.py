@@ -54,7 +54,7 @@ async def _get_plan_with_steps(plan_id: str, db: AsyncSession) -> LoadPlan:
 
 
 @router.get("/", response_model=List[LoadPlanListResponse])
-async def list_load_plans(db: AsyncSession = Depends(get_db)) -> List[LoadPlan]:
+async def list_load_plans(db: AsyncSession = Depends(get_db, scope="function")) -> List[LoadPlan]:
     result = await db.execute(select(LoadPlan).order_by(LoadPlan.created_at.desc()))
     return list(result.scalars().all())
 
@@ -80,7 +80,7 @@ async def _validate_output_connection(output_connection_id: str, db: AsyncSessio
 @router.post("/", response_model=LoadPlanResponse, status_code=status.HTTP_201_CREATED)
 async def create_load_plan(
     data: LoadPlanCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> LoadPlan:
     # Validate the referenced Salesforce connection exists
@@ -101,7 +101,7 @@ async def create_load_plan(
 
 
 @router.get("/{plan_id}", response_model=LoadPlanResponse)
-async def get_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> LoadPlan:
+async def get_load_plan(plan_id: str, db: AsyncSession = Depends(get_db, scope="function")) -> LoadPlan:
     return await _get_plan_with_steps(plan_id, db)
 
 
@@ -109,7 +109,7 @@ async def get_load_plan(plan_id: str, db: AsyncSession = Depends(get_db)) -> Loa
 async def update_load_plan(
     plan_id: str,
     data: LoadPlanUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> LoadPlan:
     plan = await _get_plan_with_steps(plan_id, db)
@@ -133,7 +133,7 @@ async def update_load_plan(
 @router.delete("/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_load_plan(
     plan_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> None:
     plan = await db.get(LoadPlan, plan_id)
@@ -152,7 +152,7 @@ async def delete_load_plan(
 @router.post("/{plan_id}/duplicate", response_model=LoadPlanResponse, status_code=status.HTTP_201_CREATED)
 async def duplicate_load_plan(
     plan_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> LoadPlan:
     """Create a copy of an existing load plan including all its steps."""
@@ -163,7 +163,7 @@ async def duplicate_load_plan(
 async def start_load_run(
     plan_id: str,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User = Depends(_require_execute),
 ) -> LoadRun:
     """Create a new Load Run for a plan and enqueue it for background execution."""

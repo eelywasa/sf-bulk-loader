@@ -264,7 +264,7 @@ async def list_jobs(
     run_id: str,
     step_id: Optional[str] = None,
     job_status: Optional[JobStatus] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> List[JobRecord]:
     query = select(JobRecord).where(JobRecord.load_run_id == run_id)
     if step_id is not None:
@@ -277,7 +277,7 @@ async def list_jobs(
 
 
 @router.get("/api/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> JobResponse:
+async def get_job(job_id: str, db: AsyncSession = Depends(get_db, scope="function")) -> JobResponse:
     result = await db.execute(
         select(JobRecord)
         .options(
@@ -300,19 +300,19 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)) -> JobRespons
 
 
 @router.get("/api/jobs/{job_id}/success-csv", dependencies=[Depends(_require_file_contents)])
-async def download_success_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
+async def download_success_csv(job_id: str, db: AsyncSession = Depends(get_db, scope="function")) -> Any:
     job = await _get_job_or_404(job_id, db)
     return await _serve_result_file(job, job.success_file_path, "Success CSV", db)
 
 
 @router.get("/api/jobs/{job_id}/error-csv", dependencies=[Depends(_require_file_contents)])
-async def download_error_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
+async def download_error_csv(job_id: str, db: AsyncSession = Depends(get_db, scope="function")) -> Any:
     job = await _get_job_or_404(job_id, db)
     return await _serve_result_file(job, job.error_file_path, "Error CSV", db)
 
 
 @router.get("/api/jobs/{job_id}/unprocessed-csv", dependencies=[Depends(_require_file_contents)])
-async def download_unprocessed_csv(job_id: str, db: AsyncSession = Depends(get_db)) -> Any:
+async def download_unprocessed_csv(job_id: str, db: AsyncSession = Depends(get_db, scope="function")) -> Any:
     job = await _get_job_or_404(job_id, db)
     return await _serve_result_file(job, job.unprocessed_file_path, "Unprocessed records CSV", db)
 
@@ -323,7 +323,7 @@ async def preview_success_csv(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
     parsed_filters = _parse_filters_param(filters)
@@ -336,7 +336,7 @@ async def preview_error_csv(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
     parsed_filters = _parse_filters_param(filters)
@@ -349,7 +349,7 @@ async def preview_unprocessed_csv(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Dict[str, Any]:
     job = await _get_job_or_404(job_id, db)
     parsed_filters = _parse_filters_param(filters)

@@ -97,14 +97,19 @@ async def _process_partition_body(
     output_storage: OutputStorage,
     _partition_span,
 ) -> tuple[int, int]:
-    async with db_factory() as db:
-        job_rec = await db.get(JobRecord, job_record_id)
-        if job_rec is None:
-            logger.error("process_partition: JobRecord %s not found", job_record_id,
-                         extra={"run_id": run_id, "job_record_id": job_record_id})
-            return 0, 0
+    # SFBL-408: take a slot BEFORE opening the session.  Every partition of a
+    # step is gathered at once, so a session opened while queued holds a
+    # connection (two file descriptors on SQLite) for as long as the partition
+    # waits — hours on a large step.  A few hundred queued partitions exhausted
+    # the process's fd limit and every new connection, login included, failed.
+    async with semaphore:
+        async with db_factory() as db:
+            job_rec = await db.get(JobRecord, job_record_id)
+            if job_rec is None:
+                logger.error("process_partition: JobRecord %s not found", job_record_id,
+                             extra={"run_id": run_id, "job_record_id": job_record_id})
+                return 0, 0
 
-        async with semaphore:
             # Check for external abort before submitting to Salesforce.
             run_check = await db.get(LoadRun, run_id)
             if run_check and run_check.status == RunStatus.aborted:

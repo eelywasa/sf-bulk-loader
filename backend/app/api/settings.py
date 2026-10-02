@@ -143,7 +143,7 @@ def _known_categories() -> list[str]:
 @router.get("/", response_model=AllSettings)
 async def get_all_settings(
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User = Depends(_require_settings),
 ) -> AllSettings:
     """Return all settings grouped by category. Secrets are masked as '***'."""
@@ -157,7 +157,7 @@ async def get_all_settings(
 async def get_category_settings(
     category: str,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User = Depends(_require_settings),
 ) -> CategorySettings:
     """Return settings for a single category. 404 if the category is unknown."""
@@ -176,7 +176,7 @@ async def patch_category_settings(
     category: str,
     body: PatchRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User = Depends(_require_settings),
 ) -> CategorySettings:
     """Update one or more settings within *category*.

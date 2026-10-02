@@ -103,7 +103,7 @@ async def _lookup_pending_token(
 )
 async def get_invitation_info(
     raw_token: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> InvitationInfoResponse:
     """Validate the invitation token and return enough info to render the welcome screen.
 
@@ -151,7 +151,7 @@ async def get_invitation_info(
 async def accept_invitation(
     raw_token: str,
     body: InvitationAcceptRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> InvitationAcceptResponse:
     """Accept an invitation token by setting a password.
 

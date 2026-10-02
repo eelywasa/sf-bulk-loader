@@ -127,7 +127,7 @@ async def _get_enrolment(db: AsyncSession, user_id: str) -> UserTotp | None:
 @router.post("/enroll/start", response_model=EnrollStartResponse)
 async def enroll_start(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> EnrollStartResponse:
     """Begin TOTP enrolment — return a fresh secret + QR for the authenticator.
 
@@ -189,7 +189,7 @@ async def enroll_start(
 async def enroll_confirm(
     body: EnrollConfirmRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> EnrollConfirmResponse:
     """Verify the first code + persist the factor + return a fresh JWT.
 
@@ -299,7 +299,7 @@ async def enroll_confirm(
 async def regenerate_backup_codes(
     body: RegenerateBackupCodesRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> BackupCodesResponse:
     """Rotate the full backup-code set — requires a valid current TOTP code."""
     if settings.auth_mode == "none":
@@ -377,7 +377,7 @@ async def regenerate_backup_codes(
 async def disable_factor(
     body: DisableRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Disable the user's own 2FA factor.
 

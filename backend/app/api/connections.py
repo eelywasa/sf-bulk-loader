@@ -83,7 +83,7 @@ def _respond(conn: Connection, has_credentials: bool) -> Any:
 
 @router.get("/", response_model=List[ConnectionPublic])
 async def list_connections(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _view: User = Depends(_require_view),
 ) -> List[ConnectionPublic]:
     """List connections — public fields only.
@@ -99,7 +99,7 @@ async def list_connections(
 @router.post("/", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_connection(
     data: ConnectionCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> ConnectionResponse:
     conn = Connection(
@@ -120,7 +120,7 @@ async def create_connection(
 @router.get("/{connection_id}", response_model=Union[ConnectionResponse, ConnectionPublic])
 async def get_connection(
     connection_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User = Depends(_require_view),
 ) -> Any:
     """Return connection detail.
@@ -148,7 +148,7 @@ async def get_connection(
 async def update_connection(
     connection_id: str,
     data: ConnectionUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> ConnectionResponse:
     conn = await _get_or_404(connection_id, db)
@@ -165,7 +165,7 @@ async def update_connection(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> None:
     conn = await _get_or_404(connection_id, db)
@@ -176,7 +176,7 @@ async def delete_connection(
 @router.get("/{connection_id}/objects", response_model=List[str])
 async def list_connection_objects(
     connection_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _view: User = Depends(_require_view),
 ) -> List[str]:
     """Return sorted SObject API names that can be used as load targets.
@@ -240,7 +240,7 @@ async def list_connection_objects(
 @router.post("/{connection_id}/test", response_model=ConnectionTestResponse)
 async def test_connection(
     connection_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _view: User = Depends(_require_view),
 ) -> ConnectionTestResponse:
     """Attempt authentication and a lightweight Salesforce API call to verify credentials."""

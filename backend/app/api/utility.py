@@ -92,7 +92,7 @@ def _resolve_provider(storage: BaseInputStorage) -> str:
 async def list_input_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
     source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User = Depends(_require_files_view),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories at the given path within the input directory."""
@@ -133,7 +133,7 @@ async def preview_input_file(
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
     source: Optional[str] = Query(default=None, description="Input source id or 'local'"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User = Depends(_require_files_view_contents),
 ) -> InputPreviewResponse:
     """Return a paginated page of data rows (plus header) from a CSV file."""
@@ -203,7 +203,7 @@ async def preview_input_file(
 @router.get("/api/files/output", response_model=List[InputDirectoryEntry])
 async def list_output_files(
     path: str = Query(default="", description="Relative subdirectory path to list"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User = Depends(_require_files_view),
 ) -> List[InputDirectoryEntry]:
     """List CSV files and subdirectories within the default output location.
@@ -244,7 +244,7 @@ async def preview_output_file(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     filters: Optional[str] = Query(default=None, description="JSON array of filter objects"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User = Depends(_require_files_view_contents),
 ) -> InputPreviewResponse:
     """Preview a CSV from the default output location.
@@ -386,7 +386,7 @@ async def health_live() -> Dict[str, Any]:
 
 
 @router.get("/api/health/ready", include_in_schema=False)
-async def health_ready(db: AsyncSession = Depends(get_db)) -> Any:
+async def health_ready(db: AsyncSession = Depends(get_db, scope="function")) -> Any:
     """Readiness probe: service is ready to receive traffic.
 
     Checks database connectivity. Returns 503 if the database is unavailable.
@@ -443,7 +443,7 @@ async def _check_email(backend_name: str) -> tuple[str, str | None]:
 
 
 @router.get("/api/health/dependencies", include_in_schema=False)
-async def health_dependencies(db: AsyncSession = Depends(get_db)) -> Any:
+async def health_dependencies(db: AsyncSession = Depends(get_db, scope="function")) -> Any:
     """Dependency health: per-dependency status for operator inspection.
 
     Returns detailed view of each dependency with ok/degraded/failed status.
@@ -498,7 +498,7 @@ async def health_dependencies(db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.get("/api/health")
-async def health_check(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+async def health_check(db: AsyncSession = Depends(get_db, scope="function")) -> Dict[str, Any]:
     """Return application health: DB connectivity and basic config.
 
     Kept for backward compatibility. Prefer /api/health/ready for readiness checks.

@@ -1115,3 +1115,41 @@ failing byte.
 Two read sites also dropped the step's encoding — the run-start pre-count and
 retry Track B. Both now pass it, and a static test fails if any
 `open_text(...)` call in `backend/app` omits `encoding=`.
+
+## 034 — Request DB sessions are function-scoped; partition sessions open inside the semaphore (SFBL-408)
+
+Two related rules about how long a database session may live.
+
+**Partition sessions open only after a semaphore slot is held.** Every
+partition of a step is gathered at once. The session used to be opened, and
+`db.get(JobRecord)` run, *before* `async with semaphore`, so every queued
+partition held a real connection while it waited — with SQLite's `NullPool`,
+two file descriptors each, for hours. On 2026-10-01 a few hundred queued
+partitions exhausted a 1024 fd limit, and every new connection in the process,
+login included, failed with `unable to open database file` until a restart.
+The run-level session also commits before the gather, because the preceding
+`refresh` loop left it in a read transaction for the whole step, which on
+SQLite blocks every WAL checkpoint.
+
+**Route handlers use `Depends(get_db, scope="function")`.** Since FastAPI
+0.118.0, a dependency's cleanup runs after the response has been sent *and
+after BackgroundTasks finish*. Starting a run (or a retry) schedules the
+entire run as a BackgroundTask, so the starting request's session, left in a
+transaction by its last query, stayed open for the whole run. Function scope,
+added in FastAPI 0.121.0, closes it when the endpoint returns. The minimum
+FastAPI version moves from 0.111.0 to 0.121.0 in both requirements files.
+
+Every site must use function scope. FastAPI caches dependencies per scope, so
+mixing them opens two sessions per request, and the request-scoped one is still
+pinned. A test fails on any `Depends(get_db)` in `backend/app` without
+`scope="function"`. This is safe because no route uses its session after it
+returns: BackgroundTasks receive ids, not sessions, and the only
+`StreamingResponse` builds its body before returning.
+
+Rejected: committing or closing the session by hand at the end of the two
+run-starting routes. That fixes those two but leaves every other request
+holding its connection until the response is fully sent, including slow file
+downloads and the auth dependency's session. Also rejected: replacing
+BackgroundTasks with detached `asyncio.create_task` calls. That changes run
+lifecycle semantics, and SFBL-413 will revisit it alongside the restart
+reconciler.

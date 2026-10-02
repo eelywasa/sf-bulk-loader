@@ -93,7 +93,7 @@ async def _validate_plan_id(plan_id: str | None, db: AsyncSession) -> None:
 
 @router.get("", response_model=List[NotificationSubscriptionResponse])
 async def list_subscriptions(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> list[NotificationSubscription]:
     _block_desktop_profile()
@@ -112,7 +112,7 @@ async def list_subscriptions(
 )
 async def create_subscription(
     data: NotificationSubscriptionCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationSubscription:
     _block_desktop_profile()
@@ -142,7 +142,7 @@ async def create_subscription(
 @router.get("/{subscription_id}", response_model=NotificationSubscriptionResponse)
 async def get_subscription(
     subscription_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationSubscription:
     _block_desktop_profile()
@@ -153,7 +153,7 @@ async def get_subscription(
 async def update_subscription(
     subscription_id: str,
     data: NotificationSubscriptionUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationSubscription:
     _block_desktop_profile()
@@ -200,7 +200,7 @@ async def update_subscription(
 @router.delete("/{subscription_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_subscription(
     subscription_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> None:
     _block_desktop_profile()
@@ -215,7 +215,7 @@ async def delete_subscription(
 )
 async def test_subscription(
     subscription_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_permission(NOTIFICATIONS_MANAGE)),
 ) -> NotificationTestResponse:
     _block_desktop_profile()

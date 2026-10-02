@@ -38,7 +38,7 @@ _DUMMY_HASH = hash_password("__dummy_constant_time_hash__")
 async def change_password(
     body: PasswordChangeRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TokenResponse:
     """Change the authenticated user's password.
 
@@ -188,7 +188,7 @@ class LoginHistoryEntry(BaseModel):
 @router.get("/login-history", response_model=list[LoginHistoryEntry])
 async def get_login_history(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ) -> list[LoginHistoryEntry]:
     """Return recent sign-in activity for the authenticated user.

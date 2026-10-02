@@ -209,7 +209,7 @@ async def login_2fa(
     body: Login2FARequest,
     request: Request,
     mfa: tuple[User, bool] = Depends(get_mfa_pending_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TokenResponse:
     """Phase-2 login: verify TOTP or a backup code against the pending user."""
     from app.api.auth import _login_success_phase2  # local import avoids cycle
@@ -416,7 +416,7 @@ async def login_2fa_enroll_and_verify(
     body: Login2FAEnrollAndVerifyRequest,
     request: Request,
     mfa: tuple[User, bool] = Depends(get_mfa_pending_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Login2FAEnrollAndVerifyResponse:
     """Forced-enrolment confirm — verify code, persist factor, issue full token."""
     from app.api.auth import _login_success_phase2  # local import avoids cycle

@@ -99,7 +99,7 @@ async def _validate_input_connection_direction(input_connection_id: str, db: Asy
 async def add_step(
     plan_id: str,
     data: LoadStepCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> LoadStep:
     await _get_plan_or_404(plan_id, db)
@@ -133,7 +133,7 @@ async def add_step(
 async def reorder_steps(
     plan_id: str,
     data: StepReorderRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> List[LoadStep]:
     """Reassign step sequences based on the ordered list of step IDs provided."""
@@ -146,7 +146,7 @@ async def update_step(
     plan_id: str,
     step_id: str,
     data: LoadStepUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> LoadStep:
     step = await _get_step_or_404(plan_id, step_id, db)
@@ -254,7 +254,7 @@ async def update_step(
 async def delete_step(
     plan_id: str,
     step_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _manage: User = Depends(_require_manage),
 ) -> None:
     step = await _get_step_or_404(plan_id, step_id, db)
@@ -292,7 +292,7 @@ async def delete_step(
 async def validate_soql(
     plan_id: str,
     data: ValidateSoqlRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> ValidateSoqlResponse:
     """Validate an ad-hoc SOQL string against the plan's Salesforce connection.
 
@@ -347,7 +347,7 @@ async def validate_soql(
 async def preview_step(
     plan_id: str,
     step_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> StepPreviewResponse:
     """Discover CSV files matching the step's pattern and return row counts.
 

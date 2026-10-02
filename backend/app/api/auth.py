@@ -143,7 +143,7 @@ async def _login_success_phase2(
 async def login(
     body: LoginRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TokenResponse | MfaRequiredResponse:
     """Authenticate with email + password and return a JWT.
 
@@ -410,7 +410,7 @@ async def login(
 @router.get("/me", response_model=UserResponse)
 async def me(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> UserResponse:
     """Return the authenticated user's profile including RBAC permissions.
 

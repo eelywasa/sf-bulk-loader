@@ -55,7 +55,7 @@ def _block_desktop_mode() -> None:
 @router.get("", response_model=list[PatMetadata])
 async def list_tokens(
     current_user: User = Depends(require_permission(TOKENS_MANAGE)),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[PersonalAccessToken]:
     """List the authenticated user's PATs (metadata only — no plaintext or hash).
 
@@ -75,7 +75,7 @@ async def list_tokens(
 async def create_token(
     body: PatCreate,
     current_user: User = Depends(require_session_auth),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> PatCreateResponse:
     """Issue a new PAT for the authenticated user.
 
@@ -131,7 +131,7 @@ async def create_token(
 async def revoke_token(
     token_id: str,
     current_user: User = Depends(require_session_auth),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Revoke a PAT owned by the authenticated user.
 

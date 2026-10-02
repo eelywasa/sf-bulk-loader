@@ -114,7 +114,7 @@ _LAST_USED_THROTTLE_SECONDS = 300  # 5 minutes
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     request: Request = None,  # FastAPI special-cases Request; None default allows direct calls in tests
 ) -> User:
     if settings.auth_mode == "none":
@@ -433,7 +433,7 @@ async def _authenticate_pat(
 
 async def get_mfa_pending_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> tuple[User, bool]:
     """Dependency used exclusively by ``/api/auth/login/2fa*`` routes.
 

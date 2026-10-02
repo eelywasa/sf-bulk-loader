@@ -74,15 +74,20 @@ Each run creates `asyncio.Semaphore(plan.max_parallel_jobs)` (default 5). Partit
 
 ### Session isolation (critical invariant)
 
-Every partition task must own its own `AsyncSession`:
+Every partition task must own its own `AsyncSession`, opened only **after** it holds a semaphore slot:
 
 ```python
-async with db_session_factory() as db:
-    job = await db.get(JobRecord, job_id)
-    ...
+async with semaphore:
+    async with db_session_factory() as db:
+        job = await db.get(JobRecord, job_id)
+        ...
 ```
 
 Sharing a session across concurrent coroutines causes dirty reads, lost updates, and rollback surprises. If you extend the orchestrator, preserve this.
+
+**Order matters (SFBL-408).** Every partition of a step is gathered at once, so a session opened while a partition waits for a slot holds a real connection — two file descriptors on SQLite, where the engine uses `NullPool` — for as long as it queues, often hours. A few hundred queued partitions exhausted the process's file descriptors in production, and every new connection failed with `unable to open database file`, login included. On Postgres the same mistake drains the connection pool.
+
+The same rule applies to any session that outlives a long wait: the run-level session commits before the step's gather so it isn't left in a read transaction, which on SQLite blocks WAL checkpoints for the whole step. Request handlers depend on `get_db` with `scope="function"`, so a run's BackgroundTask doesn't keep the starting request's session open for the entire run (DECISIONS.md 034).
 
 ### Partitioning
 
